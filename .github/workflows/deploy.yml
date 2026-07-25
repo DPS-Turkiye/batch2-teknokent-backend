@@ -3,11 +3,11 @@ name: Deploy
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 env:
   AWS_REGION: eu-central-1
@@ -20,6 +20,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: .ci/m2
+          key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Run tests
+        run: ./mvnw -B clean test
+        env:
+          MVNW_M2_HOST_DIR: .ci/m2
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -72,3 +85,13 @@ jobs:
             --command-id "${COMMAND_ID}" \
             --instance-id "${INSTANCE_ID}" \
             --query '[Status,StandardOutputContent,StandardErrorContent]'
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          append_body: true
+          body: |
+            ### Deploy
+
+            **ECR image:** `${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.ref_name }}`
