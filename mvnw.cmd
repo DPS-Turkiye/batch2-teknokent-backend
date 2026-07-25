@@ -25,6 +25,7 @@
 @REM   MVNW_REPOURL - repo url base for downloading maven distribution
 @REM   MVNW_USERNAME/MVNW_PASSWORD - user and password for downloading maven
 @REM   MVNW_VERBOSE - true: enable verbose log; others: silence the output
+@REM   MVNW_M2_HOST_DIR - optional host directory mounted as /root/.m2 (for CI cache)
 @REM ----------------------------------------------------------------------------
 
 @REM Always run Maven in Docker unless already inside the container.
@@ -34,7 +35,12 @@ docker --version >nul 2>&1
   @echo Docker is required to run mvnw.cmd. 1>&2
   @exit /b 1
 )
-docker run --rm -e MVNW_IN_DOCKER=1 -v "%cd%":/project -v m2-cache:/root/.m2 -w /project eclipse-temurin:25-jdk-jammy ./mvnw %*
+@IF NOT "%MVNW_M2_HOST_DIR%"=="" (
+  @IF NOT EXIST "%MVNW_M2_HOST_DIR%" mkdir "%MVNW_M2_HOST_DIR%"
+  docker run --rm -e MVNW_IN_DOCKER=1 -v "%cd%":/project -v "%MVNW_M2_HOST_DIR%":/root/.m2 -w /project eclipse-temurin:25-jdk-jammy ./mvnw %*
+) ELSE (
+  docker run --rm -e MVNW_IN_DOCKER=1 -v "%cd%":/project -v m2-cache:/root/.m2 -w /project eclipse-temurin:25-jdk-jammy ./mvnw %*
+)
 @exit /b %ERRORLEVEL%
 
 :runMaven
