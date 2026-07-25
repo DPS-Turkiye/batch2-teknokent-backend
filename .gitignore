@@ -1,5 +1,7 @@
 HELP.md
 target/
+.env
+!.env.example
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -30,4 +32,6 @@ build/
 !**/src/test/**/build/
 
 ### VS Code ###
-.vscode/
+# Commit shared formatter settings; ignore local launch/tasks overrides
+.vscode/launch.json
+.vscode/tasks.json

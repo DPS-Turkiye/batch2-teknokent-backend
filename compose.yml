@@ -1,0 +1,39 @@
+services:
+  teknokent:
+    build: .
+    container_name: teknokent
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      DATABASE_HOST: teknokent-postgres
+      DATABASE_PORT: 5432
+    depends_on:
+      - teknokent-postgres
+    networks:
+      - teknokent-network
+
+  teknokent-postgres:
+    image: postgres:17
+    container_name: teknokent-postgres
+    restart: unless-stopped
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - teknokent-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  teknokent-network:
+    driver: bridge

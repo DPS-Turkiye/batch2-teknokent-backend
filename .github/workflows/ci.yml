@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@v4.1.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4.2.1
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Run tests
+        env:
+          MVNW_USE_DOCKER: '0'
+        run: ./mvnw -B clean test
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@v4.1.1
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: Start stack
+        run: docker compose up --build -d
+
+      - name: Wait for health endpoint
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health; then
+              echo
+              exit 0
+            fi
+            echo "Waiting for app... (${attempt}/30)"
+            sleep 3
+          done
+          echo "Health check failed"
+          docker compose logs
+          exit 1
+
+      - name: Smoke test health response
+        run: |
+          response="$(curl -sf http://localhost:8080/health)"
+          echo "$response"
+          echo "$response" | grep -q '"status":"UP"'
+
+      - name: Smoke test API docs
+        run: |
+          curl -sf -o /dev/null -w "docs status: %{http_code}\n" http://localhost:8080/docs
+          curl -sf http://localhost:8080/v3/api-docs | grep -q '"openapi"'
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
