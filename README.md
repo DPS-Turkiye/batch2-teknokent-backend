@@ -51,4 +51,4 @@ Compose services: `app` (8080), `postgres` (5432). Production image: multi-stage
 docker build -t backend:latest .
 ```
 
-CI runs on `main` via GitHub Actions (tests + compose smoke test).
+CI runs on `main` via GitHub Actions (`./mvnw test`).
