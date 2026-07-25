@@ -1,4 +1,6 @@
 package com.dps.teknokent.dto.responses;
 
-public record HealthResponse(String status, String timestamp) {
+import com.dps.teknokent.domain.HealthStatus;
+
+public record HealthResponse(HealthStatus status, String timestamp, HealthComponentsResponse components) {
 }

@@ -30,16 +30,15 @@
 # ----------------------------------------------------------------------------
 
 # Always run Maven in Docker unless already inside the container.
-# Set MVNW_USE_DOCKER=0 to use a local Java 25 JDK instead.
-if [ "${MVNW_IN_DOCKER-}" != "1" ] && [ "${MVNW_USE_DOCKER-}" != "0" ]; then
+if [ "${MVNW_IN_DOCKER-}" != "1" ]; then
   if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker is required to run ./mvnw. Install Docker or set MVNW_USE_DOCKER=0 with a local Java 25 JDK." >&2
+    echo "Docker is required to run ./mvnw." >&2
     exit 1
   fi
   exec docker run --rm \
     -e MVNW_IN_DOCKER=1 \
     -v "$(pwd)":/project \
-    -v teknokent-m2-cache:/root/.m2 \
+    -v m2-cache:/root/.m2 \
     -w /project \
     eclipse-temurin:25-jdk-jammy \
     ./mvnw "$@"

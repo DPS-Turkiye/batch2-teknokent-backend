@@ -27,6 +27,18 @@
 @REM   MVNW_VERBOSE - true: enable verbose log; others: silence the output
 @REM ----------------------------------------------------------------------------
 
+@REM Always run Maven in Docker unless already inside the container.
+@IF "%MVNW_IN_DOCKER%"=="1" GOTO runMaven
+docker --version >nul 2>&1
+@IF ERRORLEVEL 1 (
+  @echo Docker is required to run mvnw.cmd. 1>&2
+  @exit /b 1
+)
+docker run --rm -e MVNW_IN_DOCKER=1 -v "%cd%":/project -v m2-cache:/root/.m2 -w /project eclipse-temurin:25-jdk-jammy ./mvnw %*
+@exit /b %ERRORLEVEL%
+
+:runMaven
+
 @IF "%__MVNW_ARG0_NAME__%"=="" (SET __MVNW_ARG0_NAME__=%~nx0)
 @SET __MVNW_CMD__=
 @SET __MVNW_ERROR__=
