@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,12 +20,16 @@ public class HealthService {
 
 	private final HealthProbeRepository healthProbeRepository;
 
+	@Value("${APP_VERSION:local}")
+	private String appVersion;
+
 	@Transactional(readOnly = true)
 	public HealthResponse checkHealth() {
 		HealthStatus databaseStatus = checkDatabase();
 		HealthStatus status = databaseStatus.isUp() ? HealthStatus.UP : HealthStatus.DOWN;
 
-		return new HealthResponse(status, Instant.now().toString(), new HealthComponentsResponse(databaseStatus));
+		return new HealthResponse(status, Instant.now().toString(), appVersion,
+				new HealthComponentsResponse(databaseStatus));
 	}
 
 	private HealthStatus checkDatabase() {

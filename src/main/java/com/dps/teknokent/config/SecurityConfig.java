@@ -44,14 +44,12 @@ public class SecurityConfig {
 				.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers("/health").permitAll()
+						.requestMatchers("/api/health").permitAll()
 						.requestMatchers(
-								"/docs",
-								"/docs/**",
-								"/v3/api-docs",
-								"/v3/api-docs/**",
-								"/swagger-ui.html",
-								"/swagger-ui/**")
+								"/api/docs",
+								"/api/docs/**",
+								"/api/v3/api-docs",
+								"/api/v3/api-docs/**")
 						.permitAll()
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults());

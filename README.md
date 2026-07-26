@@ -11,8 +11,8 @@ cp .env.example .env   # Windows: copy .env.example .env
 docker compose up --build
 ```
 
-- Health: http://localhost:8080/health
-- Docs: http://localhost:8080/docs
+- Health: http://localhost:8080/api/health
+- Docs: http://localhost:8080/api/docs
 
 ```bash
 docker compose down      # stop

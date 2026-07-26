@@ -11,6 +11,9 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 FROM eclipse-temurin:25-jre-jammy AS runtime
 
+ARG APP_VERSION=local
+ENV APP_VERSION=$APP_VERSION
+
 WORKDIR /app
 
 RUN groupadd -r spring && useradd -r -g spring spring

@@ -31,9 +31,9 @@ class HealthControllerTest {
 	@Test
 	void returnsOkWhenHealthIsUp() throws Exception {
 		when(healthService.checkHealth()).thenReturn(
-				new HealthResponse(HealthStatus.UP, "2026-01-01T00:00:00Z", new HealthComponentsResponse(HealthStatus.UP)));
+				new HealthResponse(HealthStatus.UP, "2026-01-01T00:00:00Z", "local", new HealthComponentsResponse(HealthStatus.UP)));
 
-		mockMvc.perform(get("/health"))
+		mockMvc.perform(get("/api/health"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("UP"))
 				.andExpect(jsonPath("$.components.database").value("UP"));
@@ -42,9 +42,9 @@ class HealthControllerTest {
 	@Test
 	void returnsServiceUnavailableWhenHealthIsDown() throws Exception {
 		when(healthService.checkHealth()).thenReturn(
-				new HealthResponse(HealthStatus.DOWN, "2026-01-01T00:00:00Z", new HealthComponentsResponse(HealthStatus.DOWN)));
+				new HealthResponse(HealthStatus.DOWN, "2026-01-01T00:00:00Z", "local", new HealthComponentsResponse(HealthStatus.DOWN)));
 
-		mockMvc.perform(get("/health"))
+		mockMvc.perform(get("/api/health"))
 				.andExpect(status().isServiceUnavailable())
 				.andExpect(jsonPath("$.status").value("DOWN"))
 				.andExpect(jsonPath("$.components.database").value("DOWN"));

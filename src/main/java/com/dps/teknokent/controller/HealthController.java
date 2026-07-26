@@ -20,7 +20,7 @@ public class HealthController {
 	private final HealthService healthService;
 
 	@Operation(summary = "Check application health", description = "Returns application status and database connectivity")
-	@GetMapping("/health")
+	@GetMapping("/api/health")
 	public ResponseEntity<HealthResponse> health() {
 		HealthResponse response = healthService.checkHealth();
 		HttpStatus httpStatus = response.status().isUp() ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;

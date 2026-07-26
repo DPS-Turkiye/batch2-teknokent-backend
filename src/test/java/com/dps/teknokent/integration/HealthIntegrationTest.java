@@ -33,9 +33,10 @@ class HealthIntegrationTest {
 		probe.setUpdatedAt(Instant.now());
 		healthProbeRepository.save(probe);
 
-		mockMvc.perform(get("/health"))
+		mockMvc.perform(get("/api/health"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("UP"))
+				.andExpect(jsonPath("$.version").value("local"))
 				.andExpect(jsonPath("$.components.database").value("UP"));
 	}
 
