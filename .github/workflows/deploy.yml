@@ -70,6 +70,39 @@ jobs:
             exit 1
           fi
 
+          echo "Waiting for EC2 bootstrap (/opt/batch2/deploy.sh + docker)..."
+          for attempt in $(seq 1 36); do
+            WAIT_ID=$(aws ssm send-command \
+              --document-name "AWS-RunShellScript" \
+              --instance-ids "${INSTANCE_ID}" \
+              --parameters 'commands=["test -x /opt/batch2/deploy.sh && systemctl is-active --quiet docker"]' \
+              --query 'Command.CommandId' \
+              --output text)
+
+            aws ssm wait command-executed \
+              --command-id "${WAIT_ID}" \
+              --instance-id "${INSTANCE_ID}" || true
+
+            WAIT_STATUS=$(aws ssm get-command-invocation \
+              --command-id "${WAIT_ID}" \
+              --instance-id "${INSTANCE_ID}" \
+              --query 'Status' \
+              --output text)
+
+            if [ "${WAIT_STATUS}" = "Success" ]; then
+              echo "EC2 bootstrap ready."
+              break
+            fi
+
+            if [ "${attempt}" -eq 36 ]; then
+              echo "Timed out waiting for EC2 bootstrap."
+              exit 1
+            fi
+
+            echo "Bootstrap not ready yet (${attempt}/36), retrying in 10s..."
+            sleep 10
+          done
+
           COMMAND_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "${INSTANCE_ID}" \
