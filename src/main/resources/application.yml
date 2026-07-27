@@ -30,8 +30,8 @@ spring:
 
   security:
     user:
-      name: ${SECURITY_USERNAME:teknokent}
-      password: ${SECURITY_PASSWORD:change-me}
+      name: ${SECURITY_USERNAME}
+      password: ${SECURITY_PASSWORD}
 
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
