@@ -24,6 +24,7 @@ public class SecurityConfig {
 
 	private static final String[] PUBLIC_PATHS = {
 			"/api/health",
+			"/api/assistant/**", 
 	};
 
 	@Bean

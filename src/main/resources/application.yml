@@ -61,3 +61,12 @@ springdoc:
     path: /api/v3/api-docs
   swagger-ui:
     path: /api/docs
+
+meeting:
+  provider:
+    base-url: ${MEETING_PROVIDER_BASE_URL}
+    api-key: ${MEETING_PROVIDER_API_KEY}
+
+
+    
+
