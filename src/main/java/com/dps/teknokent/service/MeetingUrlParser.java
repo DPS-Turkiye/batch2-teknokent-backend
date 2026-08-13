@@ -27,12 +27,11 @@ public final class MeetingUrlParser {
       String[] parts = uri.getPath().split("/");
       String code = parts[parts.length - 1].toLowerCase(Locale.ROOT);
       if (!GMEET.matcher(code).matches()) {
-        throw new IllegalArgumentException("Geçersiz Google Meet linki");
+        throw new IllegalArgumentException("Invalid Google Meet link");
       }
       return new Parsed("google_meet", code);
     }
 
-    // Zoom / Teams için sonra eklersin
-    throw new IllegalArgumentException("Desteklenmeyen toplantı linki");
+    throw new IllegalArgumentException("Unsupported meeting link");
   }
 }

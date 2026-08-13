@@ -27,13 +27,13 @@ class MeetingUrlParserTest {
   void rejectsInvalidGoogleMeetCodeInUrl() {
     assertThatThrownBy(() -> MeetingUrlParser.parse("https://meet.google.com/not-valid"))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Geçersiz Google Meet");
+        .hasMessageContaining("Invalid Google Meet");
   }
 
   @Test
   void rejectsUnsupportedPlatform() {
     assertThatThrownBy(() -> MeetingUrlParser.parse("https://zoom.us/j/123456789"))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Desteklenmeyen");
+        .hasMessageContaining("Unsupported");
   }
 }

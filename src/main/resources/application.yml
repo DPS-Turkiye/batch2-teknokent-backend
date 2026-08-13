@@ -66,7 +66,3 @@ meeting:
   provider:
     base-url: ${MEETING_PROVIDER_BASE_URL}
     api-key: ${MEETING_PROVIDER_API_KEY}
-
-
-    
-

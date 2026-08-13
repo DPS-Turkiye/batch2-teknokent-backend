@@ -2,6 +2,8 @@ package com.dps.teknokent.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,8 +13,6 @@ import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.ErrorResponse;
 import com.dps.teknokent.service.AssistantService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +22,7 @@ import lombok.RequiredArgsConstructor;
 public class AssistantController {
 
   private final AssistantService assistantService;
-//bot ekleme içinn
+
   @PostMapping("/api/assistant/bots")
   public ResponseEntity<?> addBot(@Valid @RequestBody AddBotRequest request) {
     try {
@@ -35,23 +35,23 @@ public class AssistantController {
           .body(new ErrorResponse(ex.getResponseBodyAsString()));
     } catch (Exception ex) {
       return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-          .body(new ErrorResponse("Sağlayıcıya ulaşılamadı: " + ex.getMessage()));
+          .body(new ErrorResponse("Failed to reach meeting provider: " + ex.getMessage()));
     }
   }
-  //transkript içinn
+
   @GetMapping("/api/assistant/transcripts/{platform}/{nativeMeetingId}")
-public ResponseEntity<?> getTranscript(
-    @PathVariable String platform,
-    @PathVariable String nativeMeetingId) {
-  try {
-    return ResponseEntity.ok(
-        assistantService.getTranscript(platform, nativeMeetingId));
-  } catch (RestClientResponseException ex) {
-    return ResponseEntity.status(ex.getStatusCode())
-        .body(new ErrorResponse(ex.getResponseBodyAsString()));
-  } catch (Exception ex) {
-    return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-        .body(new ErrorResponse("Transcript alınamadı: " + ex.getMessage()));
+  public ResponseEntity<?> getTranscript(
+      @PathVariable String platform,
+      @PathVariable String nativeMeetingId) {
+    try {
+      return ResponseEntity.ok(
+          assistantService.getTranscript(platform, nativeMeetingId));
+    } catch (RestClientResponseException ex) {
+      return ResponseEntity.status(ex.getStatusCode())
+          .body(new ErrorResponse(ex.getResponseBodyAsString()));
+    } catch (Exception ex) {
+      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+          .body(new ErrorResponse("Failed to fetch transcript: " + ex.getMessage()));
+    }
   }
-}
 }

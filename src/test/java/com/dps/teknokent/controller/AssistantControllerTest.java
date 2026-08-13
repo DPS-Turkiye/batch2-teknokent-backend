@@ -1,14 +1,18 @@
 package com.dps.teknokent.controller;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.HttpClientErrorException;
+import org.junit.jupiter.api.Test;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.dto.requests.AddBotRequest;
@@ -23,20 +27,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-//“HTTP isteği gelince controller doğru status/JSON mu dönüyor?”
-@WebMvcTest(AssistantController.class) // sadece asistantcontroller ı test, sadece uygulamanın web katmanını açar,servis fln yüklenmez controller ı kontrol için
-@Import(SecurityConfig.class) // /api/assistant/** permitAll için
+
+@WebMvcTest(AssistantController.class)
+@Import(SecurityConfig.class)
 class AssistantControllerTest {
 
   @Autowired
-  private MockMvc mockMvc; // sahte HTTP istemcisi,Spring MVC’ye içeriden sahte HTTP isteği atar:
+  private MockMvc mockMvc;
 
-  @MockitoBean  //Controller’ın constructor’ında AssistantService var. Bean olmazsa context ayağa kalkmaz.
-  private AssistantService assistantService; // service sahte; gerçek logic yok onu zaten test ettik
+  @MockitoBean
+  private AssistantService assistantService;
 
   @Test
   void addBotReturnsCreated() throws Exception {
-    //ervice addBot çağrılınca hazır AddBotResponse döner.
     when(assistantService.addBot(any(AddBotRequest.class)))
         .thenReturn(new AddBotResponse(
             "bot-1",
@@ -45,7 +48,7 @@ class AssistantControllerTest {
             "joining",
             "Mentor Bot"
         ));
-//Gerçek HTTP gibi: POST /api/assistant/bots + JSON body.
+
     mockMvc.perform(post("/api/assistant/bots")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
@@ -54,23 +57,39 @@ class AssistantControllerTest {
         .andExpect(jsonPath("$.platform").value("google_meet"))
         .andExpect(jsonPath("$.nativeMeetingId").value("abc-defg-hij"));
   }
-//İspat: Controller’daki catch (IllegalArgumentException) → 400 + ErrorResponse.
-//service hata atınca controller 400 + detail döner mi?
+
   @Test
   void addBotReturnsBadRequestOnInvalidUrl() throws Exception {
     when(assistantService.addBot(any(AddBotRequest.class)))
-        .thenThrow(new IllegalArgumentException("Desteklenmeyen toplantı linki"));
+        .thenThrow(new IllegalArgumentException("Unsupported meeting link"));
 
     mockMvc.perform(post("/api/assistant/bots")
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"meetingUrl\":\"https://zoom.us/j/1\"}"))  // JSON body’de Zoom linki.
+            .content("{\"meetingUrl\":\"https://zoom.us/j/1\"}"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.detail").value("Desteklenmeyen toplantı linki"));
+        .andExpect(jsonPath("$.detail").value("Unsupported meeting link"));
   }
-//İspat: Path variable’lar service’e gider, cevap JSON’a yazılır.
+
+  @Test
+  void addBotReturnsProviderStatusOnRestClientError() throws Exception {
+    when(assistantService.addBot(any(AddBotRequest.class)))
+        .thenThrow(HttpClientErrorException.create(
+            HttpStatus.CONFLICT,
+            "Conflict",
+            HttpHeaders.EMPTY,
+            "provider conflict".getBytes(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8
+        ));
+
+    mockMvc.perform(post("/api/assistant/bots")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail").value("provider conflict"));
+  }
+
   @Test
   void getTranscriptReturnsOk() throws Exception {
-    //Service hazır segment listesi döner.
     when(assistantService.getTranscript("google_meet", "abc-defg-hij"))
         .thenReturn(new TranscriptResponse(List.of(
             new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "01:05")
@@ -82,15 +101,22 @@ class AssistantControllerTest {
         .andExpect(jsonPath("$.segments[0].text").value("Merhaba"))
         .andExpect(jsonPath("$.segments[0].at").value("01:05"));
   }
-//İspat: Controller’daki genel catch → 502 + anlamlı mesaj.
+
   @Test
   void getTranscriptReturnsBadGatewayOnFailure() throws Exception {
-    //Service RuntimeException("provider down") fırlatır.
     when(assistantService.getTranscript("google_meet", "abc-defg-hij"))
         .thenThrow(new RuntimeException("provider down"));
 
     mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij"))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Transcript alınamadı: provider down"));
+        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript: provider down"));
+  }
+
+  @Test
+  void addBotReturnsBadRequestOnBlankMeetingUrl() throws Exception {
+    mockMvc.perform(post("/api/assistant/bots")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"\"}"))
+        .andExpect(status().isBadRequest());
   }
 }

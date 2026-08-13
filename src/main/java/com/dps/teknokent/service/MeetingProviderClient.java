@@ -7,6 +7,9 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import com.dps.teknokent.dto.provider.ProviderBotResponse;
+import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
+
 import tools.jackson.databind.json.JsonMapper;
 
 @Component
@@ -20,31 +23,27 @@ public class MeetingProviderClient {
     this.jsonMapper = jsonMapper;
   }
 
-  @SuppressWarnings("unchecked")
-  public Map<String, Object> sendBot(String platform, String nativeId, String meetingUrl) {
-    //JSOn body oluşturur
+  public ProviderBotResponse sendBot(String platform, String nativeId, String meetingUrl) {
     Map<String, Object> payload = new LinkedHashMap<>();
     payload.put("platform", platform);
     payload.put("native_meeting_id", nativeId);
     payload.put("meeting_url", meetingUrl);
     payload.put("bot_name", "Mentor Bot");
 
-    byte[] json = jsonMapper.writeValueAsBytes(payload);//byte array e çevirir,bozuk json olmasın diye
+    byte[] json = jsonMapper.writeValueAsBytes(payload);
 
-    //rest client ile post request gönderir,client ı kuran ise: MeetingProviderConfig.java,server a gönderdi
     return client.post()
         .uri("/bots")
         .contentType(MediaType.APPLICATION_JSON)
         .body(json)
         .retrieve()
-        .body(Map.class);
+        .body(ProviderBotResponse.class);
   }
 
-  @SuppressWarnings("unchecked")
-  public Map<String, Object> getTranscript(String platform, String nativeMeetingId) {
-      return client.get()
-         .uri("/transcripts/{platform}/{nativeId}", platform, nativeMeetingId)
-         .retrieve()
-         .body(Map.class);
-}
+  public ProviderTranscriptResponse getTranscript(String platform, String nativeMeetingId) {
+    return client.get()
+        .uri("/transcripts/{platform}/{nativeId}", platform, nativeMeetingId)
+        .retrieve()
+        .body(ProviderTranscriptResponse.class);
+  }
 }
