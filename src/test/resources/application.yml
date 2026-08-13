@@ -15,3 +15,7 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+meeting:
+  provider:
+    base-url: http://localhost
+    api-key: test-key
