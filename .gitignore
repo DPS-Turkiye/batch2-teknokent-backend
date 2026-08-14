@@ -36,3 +36,16 @@ build/
 # Commit shared formatter settings; ignore local launch/tasks overrides
 .vscode/launch.json
 .vscode/tasks.json
+
+### Local/generated artifacts ###
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+tools/**/results/
+
+# Public test fixtures live in the repository; raw third-party CV datasets do not.
+tools/pdf-token-benchmark/fixtures/kaggle-resumes/source/
+tools/pdf-token-benchmark/fixtures/kaggle-resumes/pdfs/
+tools/pdf-token-benchmark/fixtures/kaggle-resumes/rendered/

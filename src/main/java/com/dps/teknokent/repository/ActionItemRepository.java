@@ -1,0 +1,20 @@
+package com.dps.teknokent.repository;
+
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.entity.ActionItem;
+
+public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
+
+	List<ActionItem> findAllByOrderByCreatedAtDesc();
+
+	long countByStatusNotInAndDueDateBefore(Collection<ActionItemStatus> statuses, LocalDate threshold);
+	long countByOrganizationIdAndStatusNotInAndDueDateBefore(
+			UUID organizationId, Collection<ActionItemStatus> statuses, LocalDate threshold);
+}

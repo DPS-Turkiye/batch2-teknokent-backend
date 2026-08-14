@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Teknokent API Test Console</title>
+	<link rel="stylesheet" href="/test-ui/styles.css">
+</head>
+<body>
+	<header class="topbar">
+		<div class="brand">Teknokent API Test Console</div>
+		<div class="service-status" aria-label="Service status">
+			<span id="backend-status" class="status"><i></i>Backend checking</span>
+			<span id="database-status" class="status"><i></i>Database checking</span>
+		</div>
+		<form id="auth-form" class="auth-form">
+			<label>
+				<span>Username</span>
+				<input id="username" autocomplete="username" value="teknokent">
+			</label>
+			<label>
+				<span>Password</span>
+				<input id="password" type="password" autocomplete="current-password" value="change-me">
+			</label>
+			<button type="submit">Connect</button>
+		</form>
+	</header>
+
+	<div class="app-shell">
+		<nav class="sidebar" aria-label="Test areas">
+			<button class="nav-item active" data-view="overview">Overview</button>
+			<button class="nav-item" data-view="organizations">Organizations</button>
+			<button class="nav-item" data-view="mentorships">Mentorships</button>
+			<button class="nav-item" data-view="progress">Progress</button>
+			<button class="nav-item" data-view="bottlenecks">Bottlenecks</button>
+			<button class="nav-item" data-view="meetings">Meetings</button>
+			<button class="nav-item" data-view="actions">Actions</button>
+		</nav>
+
+		<main id="workspace" class="workspace" tabindex="-1"></main>
+
+		<aside class="response-panel">
+			<div class="panel-heading">
+				<div>
+					<h2>Live response</h2>
+					<p>Send any backend request.</p>
+				</div>
+			</div>
+			<form id="request-form" class="request-line">
+				<select id="request-method" aria-label="HTTP method">
+					<option>GET</option>
+					<option>POST</option>
+					<option>PATCH</option>
+				</select>
+				<input id="request-path" aria-label="API path" value="/api/dashboard/summary">
+				<button type="submit">Send</button>
+			</form>
+			<label class="request-body-label" for="request-body">JSON request body</label>
+			<textarea id="request-body" class="request-body" spellcheck="false" placeholder="{ }"></textarea>
+			<div class="response-meta">
+				<span id="response-status" class="response-code">Waiting</span>
+				<span id="response-time">— ms</span>
+			</div>
+			<pre id="response-output" aria-live="polite">Connect to begin testing.</pre>
+			<button id="copy-response" class="secondary-button" type="button">Copy response</button>
+		</aside>
+	</div>
+
+	<div id="toast" class="toast" role="status" aria-live="polite"></div>
+	<script src="/test-ui/app.js"></script>
+</body>
+</html>

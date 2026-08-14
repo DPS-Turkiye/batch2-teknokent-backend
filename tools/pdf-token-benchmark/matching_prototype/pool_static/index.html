@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Generate and review auditable suggested mentor pools." />
+    <title>Mentor Pool Lab</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">Mentor Pool Lab</a>
+      <nav aria-label="Connected AI labs">
+        <a href="http://127.0.0.1:8765">PDF Parse Lab</a>
+        <a href="http://127.0.0.1:8766">Mentor Match Lab</a>
+      </nav>
+      <div class="privacy-note">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.9 8.6 7 10 4.1-1.4 7-5.4 7-10V6l-7-3Z"/><path d="m9.5 12 1.7 1.7 3.7-4"/></svg>
+        API key stays server-side
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="workflow-rail">
+        <ol class="workflow-steps" aria-label="Mentor pool workflow">
+          <li><button class="step-button" data-step="readiness"><span>1</span>Mentor readiness<i></i></button></li>
+          <li><button class="step-button is-active" data-step="problem"><span>2</span>Problem intake<i></i></button></li>
+          <li><button class="step-button" data-step="interpretation"><span>3</span>Interpretation<i></i></button></li>
+          <li><button class="step-button" data-step="pool"><span>4</span>Suggested pool<i></i></button></li>
+          <li><button class="step-button" data-step="review"><span>5</span>Review &amp; export<i></i></button></li>
+        </ol>
+
+        <section class="run-information" aria-labelledby="run-information-heading">
+          <h2 id="run-information-heading">Run information</h2>
+          <dl>
+            <div><dt>Profile source</dt><dd id="profile-source">Loading…</dd></div>
+            <div><dt>Mentors</dt><dd id="mentor-total">—</dd></div>
+            <div><dt>Provider</dt><dd id="run-provider">Offline test</dd></div>
+            <div><dt>Status</dt><dd id="run-state"><span class="status-dot"></span>Ready</dd></div>
+          </dl>
+          <button class="secondary-button is-full" id="reset-button" type="button">Load example problem</button>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <section class="workflow-panel" data-panel="readiness" hidden>
+          <div class="page-heading">
+            <div><h1>Mentor readiness</h1><p>Confirm operational information that cannot safely be inferred from a CV.</p></div>
+            <button class="primary-button" data-next="problem" type="button">Continue to problem</button>
+          </div>
+          <div class="source-banner"><strong id="readiness-source">Profile library</strong><span>Changes here are enrichment overlays; parser output remains unchanged.</span></div>
+          <div class="mentor-readiness-table" id="mentor-readiness-table"></div>
+        </section>
+
+        <section class="workflow-panel" data-panel="problem">
+          <div class="page-heading">
+            <div><h1>Mentee problem intake</h1><p>Describe the problem and the outcome the mentee wants—not only their sector.</p></div>
+            <div class="page-actions"><button class="secondary-button" id="clear-problem-button" type="button">Clear form</button><button class="primary-button" id="review-interpretation-button" type="button">Review interpretation</button></div>
+          </div>
+          <form class="problem-form" id="problem-form">
+            <label class="field is-wide"><span>Problem statement</span><textarea id="problem-statement" rows="5" required></textarea><small>Preserved verbatim and used as the main retrieval query.</small></label>
+            <p class="form-error" id="problem-error" role="alert" hidden></p>
+            <label class="field is-wide"><span>Desired outcome</span><input id="desired-outcome" type="text" /></label>
+            <label class="field"><span>Sector</span><input id="sector" type="text" placeholder="B2B SaaS" /></label>
+            <label class="field"><span>Startup stage</span><select id="startup-stage"><option value="">Not specified</option><option>Idea</option><option>Pre-MVP</option><option>MVP</option><option>Early revenue</option><option>Seed</option><option>Growth</option></select></label>
+            <label class="field"><span>Technologies</span><input id="technologies" type="text" placeholder="CRM, Salesforce" /></label>
+            <label class="field"><span>Required language</span><input id="languages" type="text" placeholder="English" /></label>
+            <label class="field"><span>Meeting format</span><select id="meeting-formats"><option value="">No preference</option><option>Online</option><option>In person</option><option>Hybrid</option></select></label>
+            <label class="field"><span>Organization</span><input id="organization" type="text" placeholder="Used only for conflict checks" /></label>
+            <label class="field"><span>Minimum mentor experience</span><input id="minimum-mentor-years" type="number" min="0" max="60" step="1" value="0" /></label>
+            <label class="field"><span>Urgency</span><select id="urgency"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option><option value="low">Low</option></select></label>
+          </form>
+        </section>
+
+        <section class="workflow-panel" data-panel="interpretation" hidden>
+          <div class="page-heading">
+            <div><h1>Interpretation review</h1><p>Confirm the controlled taxonomy before candidate retrieval.</p></div>
+            <button class="primary-button" id="use-interpretation-button" type="button">Generate suggested pool</button>
+          </div>
+          <div class="interpretation-layout">
+            <section>
+              <h2>Problem summary</h2>
+              <blockquote id="interpretation-problem"></blockquote>
+              <dl class="interpretation-facts" id="interpretation-facts"></dl>
+            </section>
+            <section>
+              <h2>Problem domains</h2>
+              <p>Select every capability that a useful mentor should bring.</p>
+              <p class="taxonomy-hint" id="taxonomy-hint">Relevant domains will be inferred from the problem text. You can adjust them before generating.</p>
+              <div class="taxonomy-grid" id="taxonomy-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="workflow-panel pool-panel" data-panel="pool" hidden>
+          <div class="pool-main">
+            <div class="page-heading pool-heading">
+              <div><h1>Suggested mentor pool</h1><p>Eligibility, hybrid discovery, evidence reranking, and diversity-aware selection.</p></div>
+              <div class="run-controls">
+                <label>Provider<select id="provider"><option value="deterministic">Offline test</option><option value="ollama">Local BGE-M3</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select></label>
+                <label>Model<select id="model"></select></label>
+                <label>Reranker<select id="reranker"><option value="evidence">Evidence-aware</option><option value="cross_encoder">Cross-encoder</option><option value="llm">LLM judge (experimental)</option><option value="off">Off</option></select></label>
+                <label>Pool size<select id="pool-size"><option>3</option><option selected>5</option><option>8</option></select></label>
+                <button class="primary-button" id="generate-button" type="button">Generate pool</button>
+              </div>
+            </div>
+
+            <div class="metric-strip" id="metric-strip">
+              <div><strong id="ready-count">—</strong><span>Ready</span></div>
+              <div><strong id="eligible-count">—</strong><span>Eligible</span></div>
+              <div><strong id="excluded-count">—</strong><span>Excluded</span></div>
+              <div><strong id="suggested-count">—</strong><span>Suggested</span></div>
+              <div><strong id="confidence-level">—</strong><span>Confidence</span></div>
+            </div>
+
+            <div class="problem-band">
+              <div><span>Mentee problem</span><strong id="problem-band-text">Complete problem intake to generate a pool.</strong></div>
+              <div><span>Top taxonomy terms</span><div id="problem-tags"></div></div>
+            </div>
+
+            <div class="empty-state" id="pool-empty">
+              <svg aria-hidden="true" viewBox="0 0 64 64"><circle cx="22" cy="22" r="9"/><circle cx="44" cy="25" r="7"/><path d="M7 49c1-10 7-15 15-15s14 5 15 15M36 49c1-7 5-11 11-11s10 4 11 11"/></svg>
+              <h2 id="pool-empty-title">Ready to generate a suggested pool</h2>
+              <p id="pool-empty-message">Enter a problem, review the interpretation, and generate an auditable ranking.</p>
+            </div>
+
+            <div class="candidate-table" id="candidate-table" hidden>
+              <div class="candidate-header">
+                <span>Rank</span><span>Mentor</span><span>Final score</span><span>Component scores</span><span>Evidence-based reason</span><span>Eligibility</span><span>Actions</span>
+              </div>
+              <div id="candidate-rows"></div>
+            </div>
+
+            <details class="exclusion-panel" id="exclusion-panel" hidden>
+              <summary><strong id="exclusion-summary"></strong> View hard-filter decisions</summary>
+              <div id="exclusion-list"></div>
+            </details>
+
+            <footer class="pool-footer">
+              <p id="run-status" role="status" aria-live="polite"><span class="status-dot"></span>Ready to generate.</p>
+              <button class="primary-button" id="save-review-button" type="button" disabled>Save review</button>
+              <a class="secondary-button" id="export-run" href="#" download aria-disabled="true">Export run JSON</a>
+            </footer>
+          </div>
+
+          <aside class="candidate-inspector" id="candidate-inspector" hidden>
+            <div class="inspector-heading"><div><span>Candidate details</span><h2 id="inspector-name"></h2><a id="inspector-id"></a></div><span class="eligible-mark">✓ Eligible</span></div>
+            <div class="final-score"><span>Final score</span><strong id="inspector-score"></strong></div>
+            <div class="confidence-card"><span>Confidence</span><strong id="inspector-confidence"></strong><small id="inspector-confidence-note"></small></div>
+            <nav class="inspector-tabs" aria-label="Candidate details"><button class="is-active" type="button">Retrieval</button><button type="button">Breakdown</button><button type="button">Evidence</button><button type="button">Label</button></nav>
+            <section class="inspector-section"><h3>Retrieval sources &amp; scores</h3><div id="retrieval-scores"></div></section>
+            <section class="inspector-section"><h3>Field-level breakdown</h3><div id="component-scores"></div></section>
+            <section class="inspector-section"><h3>Evidence quality</h3><div id="evidence-quality"></div><h3>Profile evidence</h3><ul id="evidence-list"></ul><h3>Uncertainties</h3><ul id="uncertainty-list"></ul></section>
+            <section class="inspector-section coordinator-label">
+              <h3>Coordinator label</h3>
+              <label><input type="radio" name="candidate-label" value="strong" /> <span><strong>Strong</strong><small>High confidence this mentor can help.</small></span></label>
+              <label><input type="radio" name="candidate-label" value="possible" /> <span><strong>Possible</strong><small>Potential fit with some uncertainty.</small></span></label>
+              <label><input type="radio" name="candidate-label" value="weak" /> <span><strong>Weak</strong><small>Limited relevance.</small></span></label>
+              <label><input type="radio" name="candidate-label" value="inappropriate" /> <span><strong>Inappropriate</strong><small>Not a good fit for this problem.</small></span></label>
+              <label class="notes-label"><span>Notes</span><textarea id="candidate-notes" rows="4" maxlength="1000" placeholder="Add evidence or a rejection reason…"></textarea></label>
+            </section>
+          </aside>
+        </section>
+
+        <section class="workflow-panel" data-panel="review" hidden>
+          <div class="page-heading"><div><h1>Review &amp; export</h1><p>Save coordinator labels as evaluation truth and export the complete auditable run.</p></div></div>
+          <div class="review-summary" id="review-summary"><p>Generate a mentor pool before completing the review.</p></div>
+          <section class="feedback-summary"><h2>Learning signals</h2><p>Aggregated coordinator decisions for future weight calibration.</p><div id="feedback-metrics"></div></section>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

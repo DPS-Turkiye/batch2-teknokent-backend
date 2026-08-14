@@ -8,6 +8,11 @@ spring:
   application:
     name: backend
 
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 52MB
+
   datasource:
     url: jdbc:postgresql://${DATABASE_HOST:localhost}:${DATABASE_PORT:5432}/${DATABASE_NAME:db}
     username: ${DATABASE_USERNAME:teknokent}
@@ -61,3 +66,11 @@ springdoc:
     path: /api/v3/api-docs
   swagger-ui:
     path: /api/docs
+
+profile-labs:
+  parser-url: ${PROFILE_PARSER_URL:http://host.docker.internal:8765}
+  matcher-url: ${PROFILE_MATCHER_URL:http://host.docker.internal:8766}
+
+matching:
+  pgvector:
+    enabled: ${MATCHING_PGVECTOR_ENABLED:true}

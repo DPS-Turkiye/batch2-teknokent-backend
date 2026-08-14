@@ -1,0 +1,196 @@
+{
+  "dataset": {
+    "title": "Resume Dataset for NLP and Recruitment Analytics",
+    "kaggle_slug": "souptikghosh/resume-dataset",
+    "source_url": "https://www.kaggle.com/datasets/souptikghosh/resume-dataset",
+    "license": "MIT",
+    "downloaded_file": "source/resume_dataset_2.csv",
+    "total_rows": 815
+  },
+  "selection": {
+    "mentee_rule": "Years_Experience <= 1",
+    "mentor_rule": "Years_Experience >= 7",
+    "roles": [
+      "Software Engineer",
+      "Data Scientist",
+      "Financial Analyst"
+    ],
+    "records_per_role_per_cohort": 2,
+    "deduplication": "Unique Resume_Text SHA-256 and unique name within each cohort",
+    "contact_handling": "Email and phone lines omitted from generated PDFs"
+  },
+  "cohorts": {
+    "mentees": [
+      {
+        "source_id": "babe2f79c7ec",
+        "synthetic_name": "Andrew Cooper",
+        "job_role": "Software Engineer",
+        "years_experience": 0,
+        "skills": [
+          "Git",
+          "Spring Boot",
+          "REST API",
+          "Microservices",
+          "Kubernetes"
+        ],
+        "pdf": "pdfs/mentees/mentee-software-engineer-babe2f79c7ec.pdf"
+      },
+      {
+        "source_id": "28429dcd34a9",
+        "synthetic_name": "Benjamin Keith",
+        "job_role": "Software Engineer",
+        "years_experience": 0,
+        "skills": [
+          "Spring Boot",
+          "Docker",
+          "OOP",
+          "REST API",
+          "Python"
+        ],
+        "pdf": "pdfs/mentees/mentee-software-engineer-28429dcd34a9.pdf"
+      },
+      {
+        "source_id": "9eefa43030fe",
+        "synthetic_name": "Alexander Perez",
+        "job_role": "Data Scientist",
+        "years_experience": 0,
+        "skills": [
+          "NLP",
+          "Machine Learning",
+          "Pandas",
+          "SQL",
+          "Data Visualization"
+        ],
+        "pdf": "pdfs/mentees/mentee-data-scientist-9eefa43030fe.pdf"
+      },
+      {
+        "source_id": "7a29cd56e2a8",
+        "synthetic_name": "Anna Jackson",
+        "job_role": "Data Scientist",
+        "years_experience": 0,
+        "skills": [
+          "Machine Learning",
+          "NLP",
+          "Pandas",
+          "Scikit-learn",
+          "Python"
+        ],
+        "pdf": "pdfs/mentees/mentee-data-scientist-7a29cd56e2a8.pdf"
+      },
+      {
+        "source_id": "3ef2139f4216",
+        "synthetic_name": "Aaron Roy",
+        "job_role": "Financial Analyst",
+        "years_experience": 0,
+        "skills": [
+          "Budgeting",
+          "Accounting",
+          "Power BI",
+          "SQL",
+          "Financial Modeling"
+        ],
+        "pdf": "pdfs/mentees/mentee-financial-analyst-3ef2139f4216.pdf"
+      },
+      {
+        "source_id": "ce0382f03e10",
+        "synthetic_name": "Alexis Baker",
+        "job_role": "Financial Analyst",
+        "years_experience": 0,
+        "skills": [
+          "Forecasting",
+          "Financial Modeling",
+          "Excel",
+          "Tableau",
+          "Power BI"
+        ],
+        "pdf": "pdfs/mentees/mentee-financial-analyst-ce0382f03e10.pdf"
+      }
+    ],
+    "mentors": [
+      {
+        "source_id": "8762c7430c0b",
+        "synthetic_name": "Douglas Weber",
+        "job_role": "Software Engineer",
+        "years_experience": 8,
+        "skills": [
+          "Git",
+          "Java",
+          "Microservices",
+          "Python",
+          "Spring Boot"
+        ],
+        "pdf": "pdfs/mentors/mentor-software-engineer-8762c7430c0b.pdf"
+      },
+      {
+        "source_id": "0a385e120138",
+        "synthetic_name": "Dr. William Wagner",
+        "job_role": "Software Engineer",
+        "years_experience": 8,
+        "skills": [
+          "Kubernetes",
+          "Python",
+          "Git",
+          "REST API",
+          "C++"
+        ],
+        "pdf": "pdfs/mentors/mentor-software-engineer-0a385e120138.pdf"
+      },
+      {
+        "source_id": "198dd982fe11",
+        "synthetic_name": "Adam Mcclain",
+        "job_role": "Data Scientist",
+        "years_experience": 8,
+        "skills": [
+          "TensorFlow",
+          "Machine Learning",
+          "NumPy",
+          "Python",
+          "SQL"
+        ],
+        "pdf": "pdfs/mentors/mentor-data-scientist-198dd982fe11.pdf"
+      },
+      {
+        "source_id": "6cf68b3606ce",
+        "synthetic_name": "Barbara Castro",
+        "job_role": "Data Scientist",
+        "years_experience": 8,
+        "skills": [
+          "Statistics",
+          "NumPy",
+          "SQL",
+          "Machine Learning",
+          "Scikit-learn"
+        ],
+        "pdf": "pdfs/mentors/mentor-data-scientist-6cf68b3606ce.pdf"
+      },
+      {
+        "source_id": "c1564c1c1b95",
+        "synthetic_name": "Aaron Mcclure MD",
+        "job_role": "Financial Analyst",
+        "years_experience": 8,
+        "skills": [
+          "Accounting",
+          "SQL",
+          "Tableau",
+          "Excel",
+          "Financial Modeling"
+        ],
+        "pdf": "pdfs/mentors/mentor-financial-analyst-c1564c1c1b95.pdf"
+      },
+      {
+        "source_id": "eb289f0b675f",
+        "synthetic_name": "Helen Jenkins",
+        "job_role": "Financial Analyst",
+        "years_experience": 8,
+        "skills": [
+          "Tableau",
+          "Financial Modeling",
+          "Excel",
+          "SQL",
+          "Forecasting"
+        ],
+        "pdf": "pdfs/mentors/mentor-financial-analyst-eb289f0b675f.pdf"
+      }
+    ]
+  }
+}
