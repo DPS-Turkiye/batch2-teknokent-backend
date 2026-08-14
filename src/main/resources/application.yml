@@ -77,5 +77,7 @@ matching:
 
 meeting:
   provider:
-    base-url: ${MEETING_PROVIDER_BASE_URL}
-    api-key: ${MEETING_PROVIDER_API_KEY}
+    # The meeting assistant is optional for local MVP work. Supplying no
+    # provider configuration must not prevent the rest of the API from starting.
+    base-url: ${MEETING_PROVIDER_BASE_URL:http://localhost}
+    api-key: ${MEETING_PROVIDER_API_KEY:}
