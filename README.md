@@ -89,7 +89,7 @@ outside this MVP branch.
 
 ## Docker
 
-Compose services: `app` (8080), `postgres` (host port 5433, container port 5432).
+Compose services: `app` (8080), `postgres` (host and container port 5432 by default).
 Production image: multi-stage `Dockerfile`.
 
 ```bash

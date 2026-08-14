@@ -22,6 +22,18 @@ public class SecurityConfig {
 			"http://localhost:*",
 			"http://127.0.0.1:*");
 
+	private static final String[] PUBLIC_PATHS = {
+			"/api/health",
+			"/api/assistant/**",
+			"/test-ui",
+			"/test-ui/**",
+			"/api/docs",
+			"/api/docs/**",
+			"/api/swagger-ui/**",
+			"/api/v3/api-docs",
+			"/api/v3/api-docs/**"
+	};
+
 	@Bean
 	CorsConfigurationSource corsConfigurationSource(Environment environment) {
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -44,15 +56,7 @@ public class SecurityConfig {
 				.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers("/api/health").permitAll()
-						.requestMatchers("/test-ui", "/test-ui/**").permitAll()
-						.requestMatchers(
-								"/api/docs",
-								"/api/docs/**",
-								"/api/swagger-ui/**",
-								"/api/v3/api-docs",
-								"/api/v3/api-docs/**")
-						.permitAll()
+						.requestMatchers(PUBLIC_PATHS).permitAll()
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults());
 

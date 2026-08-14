@@ -35,8 +35,8 @@ spring:
 
   security:
     user:
-      name: ${SECURITY_USERNAME:teknokent}
-      password: ${SECURITY_PASSWORD:change-me}
+      name: ${SECURITY_USERNAME}
+      password: ${SECURITY_PASSWORD}
 
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
@@ -74,3 +74,8 @@ profile-labs:
 matching:
   pgvector:
     enabled: ${MATCHING_PGVECTOR_ENABLED:true}
+
+meeting:
+  provider:
+    base-url: ${MEETING_PROVIDER_BASE_URL}
+    api-key: ${MEETING_PROVIDER_API_KEY}

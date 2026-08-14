@@ -17,7 +17,7 @@ import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 				version = "v1",
 				description = "Interactive API documentation for the Teknokent backend",
 				contact = @Contact(name = "Teknokent Support", email = "support@teknokent.com")),
-		servers = @Server(url = "http://localhost:8080", description = "Local development server"),
+		servers = @Server(url = "/", description = "Current server"),
 		security = @SecurityRequirement(name = "basicAuth"))
 @SecurityScheme(
 		name = "basicAuth",
