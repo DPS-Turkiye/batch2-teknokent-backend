@@ -1,5 +1,4 @@
--- Fictional composite profiles inspired by common roles in the Turkish startup ecosystem.
--- Names, companies, and email addresses are demo data and do not represent real affiliations.
+-- Development seed data for mentor profiles.
 
 INSERT INTO app_user (id, email, full_name, role) VALUES
     ('00000000-0000-0000-0000-000000000006', 'ece.demir@teknokent.demo', 'Ece Demir', 'MENTOR'),
