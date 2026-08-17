@@ -7,6 +7,10 @@ import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import com.dps.teknokent.dto.requests.RecommendationItemSubmission;
+import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.util.TextUtils;
+
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -29,6 +33,25 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class MentorshipRequestRecommendationItem {
+	public static MentorshipRequestRecommendationItem fromSubmission(
+			MentorshipRequestRecommendationRun run,
+			RecommendationItemSubmission submission,
+			AppUser mentor,
+			MentorProfileResponse canonicalMentor,
+			List<RecommendationEvidenceSnapshot> evidence) {
+		MentorshipRequestRecommendationItem item = new MentorshipRequestRecommendationItem();
+		item.run = run;
+		item.mentor = mentor;
+		item.rank = submission.rank();
+		item.selected = submission.selected();
+		item.mentorName = canonicalMentor.fullName();
+		item.professionalTitle = canonicalMentor.professionalTitle();
+		item.company = canonicalMentor.company();
+		item.reasons = submission.reasons().stream().map(TextUtils::trim).distinct().toList();
+		item.evidence = new ArrayList<>(evidence);
+		return item;
+	}
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
 	private UUID id;

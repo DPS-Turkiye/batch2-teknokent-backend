@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
+import com.dps.teknokent.entity.MentorshipRequestMessage;
 
 public record MentorshipRequestMessageResponse(
 		UUID id,
@@ -12,4 +13,14 @@ public record MentorshipRequestMessageResponse(
 		MentorshipRequestMessageType messageType,
 		String body,
 		Instant createdAt) {
+
+	public static MentorshipRequestMessageResponse fromEntity(MentorshipRequestMessage message) {
+		return new MentorshipRequestMessageResponse(
+				message.getId(),
+				message.getAuthor().getId(),
+				message.getAuthor().getFullName(),
+				message.getMessageType(),
+				message.getBody(),
+				message.getCreatedAt());
+	}
 }

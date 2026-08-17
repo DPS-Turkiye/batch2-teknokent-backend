@@ -8,6 +8,9 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.dto.requests.CreateActionItemRequest;
+import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -30,6 +33,28 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class ActionItem {
+
+	public static ActionItem fromRequest(
+			CreateActionItemRequest request, Organization organization, Meeting meeting, AppUser owner) {
+		ActionItem actionItem = new ActionItem();
+		actionItem.organization = organization;
+		actionItem.meeting = meeting;
+		actionItem.owner = owner;
+		actionItem.title = TextUtils.trim(request.title());
+		actionItem.description = TextUtils.normalizeOptional(request.description());
+		actionItem.status = ActionItemStatus.OPEN;
+		actionItem.dueDate = request.dueDate();
+		return actionItem;
+	}
+
+	public void apply(UpdateActionItemRequest request, AppUser requestedOwner) {
+		if (request.ownerId() != null) owner = requestedOwner;
+		if (request.title() != null) title = TextUtils.trim(request.title());
+		if (request.description() != null) description = TextUtils.normalizeOptional(request.description());
+		if (request.status() != null) status = request.status();
+		if (request.dueDate() != null) dueDate = request.dueDate();
+		if (request.completionNotes() != null) completionNotes = TextUtils.normalizeOptional(request.completionNotes());
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

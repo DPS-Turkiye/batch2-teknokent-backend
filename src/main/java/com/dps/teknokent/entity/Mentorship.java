@@ -8,6 +8,8 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.dto.requests.CreateMentorshipRequest;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -30,6 +32,18 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class Mentorship {
+
+	public static Mentorship fromRequest(
+			CreateMentorshipRequest request, AppUser mentor, Organization organization) {
+		Mentorship mentorship = new Mentorship();
+		mentorship.mentor = mentor;
+		mentorship.organization = organization;
+		mentorship.status = request.status();
+		mentorship.startDate = request.startDate();
+		mentorship.endDate = request.endDate();
+		mentorship.goals = TextUtils.normalizeOptional(request.goals());
+		return mentorship;
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

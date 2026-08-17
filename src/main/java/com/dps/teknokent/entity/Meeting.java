@@ -7,6 +7,8 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.dto.requests.CreateMeetingRequest;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -29,6 +31,32 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class Meeting {
+
+	public static Meeting fromRequest(CreateMeetingRequest request, Organization organization, AppUser mentor) {
+		Meeting meeting = new Meeting();
+		meeting.organization = organization;
+		meeting.mentor = mentor;
+		meeting.scheduledAt = request.scheduledAt();
+		meeting.durationMinutes = request.durationMinutes();
+		meeting.agenda = TextUtils.normalizeOptional(request.agenda());
+		meeting.notes = TextUtils.normalizeOptional(request.notes());
+		meeting.outcomes = TextUtils.normalizeOptional(request.outcomes());
+		meeting.meetLink = TextUtils.normalizeOptional(request.meetLink());
+		meeting.status = request.status();
+		return meeting;
+	}
+
+	public static Meeting forMentorshipRequest(MentorshipRequest request, MentorAvailabilitySlot slot) {
+		Meeting meeting = new Meeting();
+		meeting.mentorshipRequest = request;
+		meeting.organization = request.getOrganization();
+		meeting.mentor = request.getMentor();
+		meeting.scheduledAt = slot.getStartsAt();
+		meeting.durationMinutes = slot.getDurationMinutes();
+		meeting.agenda = request.getSupportArea() + " — Mentorluk Görüşmesi";
+		meeting.status = MeetingStatus.SCHEDULED;
+		return meeting;
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

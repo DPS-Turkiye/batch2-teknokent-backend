@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 
 import com.dps.teknokent.domain.ProgressStatus;
+import com.dps.teknokent.dto.requests.CreateProgressUpdateRequest;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -29,6 +31,19 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class ProgressUpdate {
+
+	public static ProgressUpdate fromRequest(
+			CreateProgressUpdateRequest request, Organization organization, AppUser author) {
+		ProgressUpdate update = new ProgressUpdate();
+		update.organization = organization;
+		update.author = author;
+		update.category = TextUtils.trim(request.category());
+		update.status = request.status();
+		update.summary = TextUtils.trim(request.summary());
+		update.evidence = TextUtils.normalizeOptional(request.evidence());
+		update.recordedAt = request.recordedAt();
+		return update;
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

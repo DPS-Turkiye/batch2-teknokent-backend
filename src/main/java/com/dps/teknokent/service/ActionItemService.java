@@ -6,7 +6,6 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.dto.requests.CreateActionItemRequest;
 import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
 import com.dps.teknokent.dto.responses.ActionItemResponse;
@@ -29,7 +28,7 @@ public class ActionItemService {
 	@Transactional(readOnly = true)
 	public List<ActionItemResponse> findAll() {
 		return actionItemRepository.findAllByOrderByCreatedAtDesc().stream()
-				.map(this::toResponse)
+				.map(ActionItemResponse::fromEntity)
 				.toList();
 	}
 
@@ -41,15 +40,9 @@ public class ActionItemService {
 			throw new InvalidRequestException("Meeting and action item must belong to the same organization");
 		}
 
-		ActionItem actionItem = new ActionItem();
-		actionItem.setOrganization(organization);
-		actionItem.setMeeting(meeting);
-		actionItem.setOwner(domainLookupService.requireUser(request.ownerId()));
-		actionItem.setTitle(request.title().trim());
-		actionItem.setDescription(request.description());
-		actionItem.setStatus(ActionItemStatus.OPEN);
-		actionItem.setDueDate(request.dueDate());
-		return toResponse(actionItemRepository.saveAndFlush(actionItem));
+		ActionItem actionItem = ActionItem.fromRequest(request, organization, meeting,
+				domainLookupService.requireUser(request.ownerId()));
+		return ActionItemResponse.fromEntity(actionItemRepository.saveAndFlush(actionItem));
 	}
 
 	@Transactional
@@ -57,42 +50,8 @@ public class ActionItemService {
 		ActionItem actionItem = actionItemRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Action item not found: " + id));
 
-		if (request.ownerId() != null) {
-			actionItem.setOwner(domainLookupService.requireUser(request.ownerId()));
-		}
-		if (request.title() != null) {
-			actionItem.setTitle(request.title().trim());
-		}
-		if (request.description() != null) {
-			actionItem.setDescription(request.description());
-		}
-		if (request.status() != null) {
-			actionItem.setStatus(request.status());
-		}
-		if (request.dueDate() != null) {
-			actionItem.setDueDate(request.dueDate());
-		}
-		if (request.completionNotes() != null) {
-			actionItem.setCompletionNotes(request.completionNotes());
-		}
-
-		return toResponse(actionItemRepository.saveAndFlush(actionItem));
-	}
-
-	private ActionItemResponse toResponse(ActionItem actionItem) {
-		return new ActionItemResponse(
-				actionItem.getId(),
-				actionItem.getOrganization().getId(),
-				actionItem.getOrganization().getName(),
-				actionItem.getMeeting() == null ? null : actionItem.getMeeting().getId(),
-				actionItem.getOwner().getId(),
-				actionItem.getOwner().getFullName(),
-				actionItem.getTitle(),
-				actionItem.getDescription(),
-				actionItem.getStatus(),
-				actionItem.getDueDate(),
-				actionItem.getCompletionNotes(),
-				actionItem.getCreatedAt(),
-				actionItem.getUpdatedAt());
+		actionItem.apply(request,
+				request.ownerId() == null ? null : domainLookupService.requireUser(request.ownerId()));
+		return ActionItemResponse.fromEntity(actionItemRepository.saveAndFlush(actionItem));
 	}
 }

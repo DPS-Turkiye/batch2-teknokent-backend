@@ -24,34 +24,15 @@ public class ProgressUpdateService {
 	public List<ProgressUpdateResponse> findByOrganization(UUID organizationId) {
 		domainLookupService.requireOrganization(organizationId);
 		return progressUpdateRepository.findByOrganizationIdOrderByRecordedAtDesc(organizationId).stream()
-				.map(this::toResponse)
+				.map(ProgressUpdateResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional
 	public ProgressUpdateResponse create(UUID organizationId, CreateProgressUpdateRequest request) {
-		ProgressUpdate update = new ProgressUpdate();
-		update.setOrganization(domainLookupService.requireOrganization(organizationId));
-		update.setAuthor(domainLookupService.requireUser(request.authorId()));
-		update.setCategory(request.category().trim());
-		update.setStatus(request.status());
-		update.setSummary(request.summary().trim());
-		update.setEvidence(request.evidence());
-		update.setRecordedAt(request.recordedAt());
-		return toResponse(progressUpdateRepository.saveAndFlush(update));
-	}
-
-	private ProgressUpdateResponse toResponse(ProgressUpdate update) {
-		return new ProgressUpdateResponse(
-				update.getId(),
-				update.getOrganization().getId(),
-				update.getAuthor().getId(),
-				update.getAuthor().getFullName(),
-				update.getCategory(),
-				update.getStatus(),
-				update.getSummary(),
-				update.getEvidence(),
-				update.getRecordedAt(),
-				update.getCreatedAt());
+		ProgressUpdate update = ProgressUpdate.fromRequest(request,
+				domainLookupService.requireOrganization(organizationId),
+				domainLookupService.requireUser(request.authorId()));
+		return ProgressUpdateResponse.fromEntity(progressUpdateRepository.saveAndFlush(update));
 	}
 }

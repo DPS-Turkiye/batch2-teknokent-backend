@@ -6,11 +6,23 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
+
 @Embeddable
 @Getter
 @Setter
 @NoArgsConstructor
 public class RecommendationEvidenceSnapshot {
+	public static RecommendationEvidenceSnapshot fromEvidence(MentorEvidenceResponse evidence) {
+		RecommendationEvidenceSnapshot snapshot = new RecommendationEvidenceSnapshot();
+		snapshot.category = evidence.category();
+		snapshot.claim = evidence.claim();
+		snapshot.quote = evidence.quote();
+		snapshot.sourcePage = evidence.sourcePage();
+		snapshot.profileVersion = evidence.profileVersion();
+		return snapshot;
+	}
+
 	@Column(nullable = false, length = 80)
 	private String category;
 

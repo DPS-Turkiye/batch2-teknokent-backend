@@ -28,6 +28,15 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class MentorshipRequestMessage {
+	public static MentorshipRequestMessage create(
+			MentorshipRequest request, AppUser author, MentorshipRequestMessageType messageType, String body) {
+		MentorshipRequestMessage message = new MentorshipRequestMessage();
+		message.request = request;
+		message.author = author;
+		message.messageType = messageType;
+		message.body = body.trim();
+		return message;
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

@@ -25,7 +25,7 @@ public class MentorshipService {
 	@Transactional(readOnly = true)
 	public List<MentorshipResponse> findAll() {
 		return mentorshipRepository.findAllByOrderByCreatedAtDesc().stream()
-				.map(this::toResponse)
+				.map(MentorshipResponse::fromEntity)
 				.toList();
 	}
 
@@ -40,26 +40,8 @@ public class MentorshipService {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 
-		Mentorship mentorship = new Mentorship();
-		mentorship.setMentor(mentor);
-		mentorship.setOrganization(domainLookupService.requireOrganization(request.organizationId()));
-		mentorship.setStatus(request.status());
-		mentorship.setStartDate(request.startDate());
-		mentorship.setEndDate(request.endDate());
-		mentorship.setGoals(request.goals());
-		return toResponse(mentorshipRepository.save(mentorship));
-	}
-
-	private MentorshipResponse toResponse(Mentorship mentorship) {
-		return new MentorshipResponse(
-				mentorship.getId(),
-				mentorship.getMentor().getId(),
-				mentorship.getMentor().getFullName(),
-				mentorship.getOrganization().getId(),
-				mentorship.getOrganization().getName(),
-				mentorship.getStatus(),
-				mentorship.getStartDate(),
-				mentorship.getEndDate(),
-				mentorship.getGoals());
+		Mentorship mentorship = Mentorship.fromRequest(request, mentor,
+				domainLookupService.requireOrganization(request.organizationId()));
+		return MentorshipResponse.fromEntity(mentorshipRepository.save(mentorship));
 	}
 }

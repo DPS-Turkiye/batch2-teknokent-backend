@@ -25,20 +25,13 @@ public class AppUserService {
 		return appUserRepository.findAll().stream()
 				.filter(user -> role == null || user.getRole() == role)
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
-				.map(this::toResponse)
+				.map(UserResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public UserResponse findById(UUID id) {
-		return appUserRepository.findById(id).map(this::toResponse)
+		return appUserRepository.findById(id).map(UserResponse::fromEntity)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
-	}
-
-	private UserResponse toResponse(com.dps.teknokent.entity.AppUser user) {
-		return new UserResponse(user.getId(), user.getEmail(), user.getFullName(), user.getRole(),
-				user.getOrganization() == null ? null : user.getOrganization().getId(),
-				user.getOrganization() == null ? null : user.getOrganization().getName(),
-				user.getJobTitle());
 	}
 }

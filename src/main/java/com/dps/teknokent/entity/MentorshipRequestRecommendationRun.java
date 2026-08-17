@@ -7,6 +7,9 @@ import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import com.dps.teknokent.dto.requests.RecommendationSnapshotSubmission;
+import com.dps.teknokent.util.TextUtils;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -31,6 +34,26 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class MentorshipRequestRecommendationRun {
+	public static MentorshipRequestRecommendationRun fromSubmission(
+			MentorshipRequest request, RecommendationSnapshotSubmission snapshot) {
+		MentorshipRequestRecommendationRun run = new MentorshipRequestRecommendationRun();
+		run.request = request;
+		run.matchingMethod = TextUtils.trim(snapshot.matchingMethod());
+		run.matchingModel = TextUtils.normalizeOptional(snapshot.matchingModel());
+		run.generatedAt = snapshot.generatedAt();
+		run.startupName = TextUtils.normalizeOptional(snapshot.startupName());
+		run.startupSector = TextUtils.normalizeOptional(snapshot.startupSector());
+		run.startupStage = TextUtils.normalizeOptional(snapshot.startupStage());
+		run.startupSummary = TextUtils.normalizeOptional(snapshot.startupSummary());
+		run.startupTechnologies = snapshot.startupTechnologies().stream()
+				.map(TextUtils::trim).distinct().toList();
+		return run;
+	}
+
+	public void replaceRecommendations(List<MentorshipRequestRecommendationItem> items) {
+		recommendations = new ArrayList<>(items);
+	}
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
 	private UUID id;

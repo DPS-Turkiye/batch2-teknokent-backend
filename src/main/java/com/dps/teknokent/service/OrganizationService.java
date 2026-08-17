@@ -24,29 +24,17 @@ public class OrganizationService {
 	@Transactional(readOnly = true)
 	public List<OrganizationResponse> findAll() {
 		return organizationRepository.findAll(Sort.by(Sort.Direction.ASC, "name")).stream()
-				.map(this::toResponse)
+				.map(OrganizationResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public OrganizationResponse findById(UUID id) {
-		return toResponse(domainLookupService.requireOrganization(id));
+		return OrganizationResponse.fromEntity(domainLookupService.requireOrganization(id));
 	}
 
 	@Transactional
 	public OrganizationResponse create(CreateOrganizationRequest request) {
-		Organization organization = new Organization();
-		organization.setName(request.name().trim());
-		organization.setDescription(request.description());
-		return toResponse(organizationRepository.saveAndFlush(organization));
-	}
-
-	private OrganizationResponse toResponse(Organization organization) {
-		return new OrganizationResponse(
-				organization.getId(),
-				organization.getName(),
-				organization.getDescription(),
-				organization.getCreatedAt(),
-				organization.getUpdatedAt());
+		return OrganizationResponse.fromEntity(organizationRepository.saveAndFlush(Organization.fromRequest(request)));
 	}
 }

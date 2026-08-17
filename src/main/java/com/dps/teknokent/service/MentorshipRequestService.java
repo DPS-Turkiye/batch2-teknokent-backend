@@ -26,7 +26,6 @@ import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestMessageResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
-import com.dps.teknokent.dto.responses.RecommendationItemResponse;
 import com.dps.teknokent.dto.responses.RecommendationSnapshotResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -45,6 +44,7 @@ import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -89,18 +89,11 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 
-		MentorshipRequest mentorshipRequest = new MentorshipRequest();
-		mentorshipRequest.setRequester(requester);
-		mentorshipRequest.setOrganization(domainLookupService.requireOrganization(request.organizationId()));
-		mentorshipRequest.setMentor(mentor);
-		mentorshipRequest.setRequestedForName(request.requestedForName().trim());
-		mentorshipRequest.setSupportArea(request.supportArea().trim());
-		mentorshipRequest.setSummary(request.summary().trim());
-		mentorshipRequest.setUrgency(request.urgency());
-		mentorshipRequest.setMentorshipFormat(request.mentorshipFormat());
-		mentorshipRequest.setMeetingMode(request.meetingMode());
-		mentorshipRequest.setStatus(MentorshipRequestStatus.PENDING);
-		mentorshipRequest.setRequesterMessage(normalizeOptionalText(request.requesterMessage()));
+		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(
+				request,
+				requester,
+				domainLookupService.requireOrganization(request.organizationId()),
+				mentor);
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(mentorshipRequest);
 		if (request.recommendationSnapshot() != null) {
 			saveRecommendationSnapshot(savedRequest, request.recommendationSnapshot());
@@ -125,13 +118,8 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Decision status must be ACCEPTED, DECLINED, or MORE_INFO_REQUESTED");
 		}
 
-		String message = decision.message().trim();
-		request.setStatus(decision.status());
-		if (decision.status() == MentorshipRequestStatus.DECLINED) {
-			request.setRejectionReason(message);
-		} else {
-			request.setMentorMessage(message);
-		}
+		String message = TextUtils.trim(decision.message());
+		request.recordDecision(decision.status(), message);
 		if (decision.status() == MentorshipRequestStatus.MORE_INFO_REQUESTED) {
 			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_QUESTION, message);
 		}
@@ -147,8 +135,9 @@ public class MentorshipRequestService {
 		if (request.getStatus() != MentorshipRequestStatus.MORE_INFO_REQUESTED) {
 			throw new InvalidRequestException("A reply can only be sent when more information was requested");
 		}
-		saveMessage(request, request.getRequester(), MentorshipRequestMessageType.MENTEE_REPLY, reply.message().trim());
-		request.setStatus(MentorshipRequestStatus.PENDING);
+		saveMessage(request, request.getRequester(), MentorshipRequestMessageType.MENTEE_REPLY,
+				TextUtils.trim(reply.message()));
+		request.markReplied();
 		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
 	}
 
@@ -162,7 +151,7 @@ public class MentorshipRequestService {
 				&& request.getStatus() != MentorshipRequestStatus.MORE_INFO_REQUESTED) {
 			throw new InvalidRequestException("Only an unanswered request can be withdrawn");
 		}
-		request.setStatus(MentorshipRequestStatus.WITHDRAWN);
+		request.withdraw();
 		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
 	}
 
@@ -204,27 +193,12 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("This slot has just been booked. Please choose another time");
 		}
 
-		Meeting meeting = new Meeting();
-		meeting.setMentorshipRequest(request);
-		meeting.setOrganization(request.getOrganization());
-		meeting.setMentor(request.getMentor());
-		meeting.setScheduledAt(slot.getStartsAt());
-		meeting.setDurationMinutes(slot.getDurationMinutes());
-		meeting.setAgenda(request.getSupportArea() + " — Mentorluk Görüşmesi");
-		meeting.setStatus(MeetingStatus.SCHEDULED);
-		return toMeetingResponse(meetingRepository.saveAndFlush(meeting));
+		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(Meeting.forMentorshipRequest(request, slot)));
 	}
 
 	@Transactional(readOnly = true)
 	public List<MentorProfileResponse> findAlternatives(UUID id) {
 		return mentorProfileService.findAllExcept(requireRequest(id).getMentor().getId());
-	}
-
-	private String normalizeOptionalText(String value) {
-		if (value == null || value.isBlank()) {
-			return null;
-		}
-		return value.trim();
 	}
 
 	private void saveRecommendationSnapshot(
@@ -249,57 +223,35 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Recommendation snapshot contains an unknown mentor");
 		}
 
-		MentorshipRequestRecommendationRun run = new MentorshipRequestRecommendationRun();
-		run.setRequest(request);
-		run.setMatchingMethod(snapshot.matchingMethod().trim());
-		run.setMatchingModel(normalizeOptionalText(snapshot.matchingModel()));
-		run.setGeneratedAt(snapshot.generatedAt());
-		run.setStartupName(normalizeOptionalText(snapshot.startupName()));
-		run.setStartupSector(normalizeOptionalText(snapshot.startupSector()));
-		run.setStartupStage(normalizeOptionalText(snapshot.startupStage()));
-		run.setStartupSummary(normalizeOptionalText(snapshot.startupSummary()));
-		run.setStartupTechnologies(snapshot.startupTechnologies().stream().map(String::trim).distinct().toList());
+		MentorshipRequestRecommendationRun run =
+				MentorshipRequestRecommendationRun.fromSubmission(request, snapshot);
 
 		List<MentorshipRequestRecommendationItem> items = snapshot.recommendations().stream()
 				.map(submission -> {
 					MentorProfileResponse canonicalMentor = canonicalMentors.get(submission.mentorId());
-					MentorshipRequestRecommendationItem item = new MentorshipRequestRecommendationItem();
-					item.setRun(run);
-					item.setMentor(domainLookupService.requireUser(submission.mentorId()));
-					item.setRank(submission.rank());
-					item.setSelected(submission.selected());
-					item.setMentorName(canonicalMentor.fullName());
-					item.setProfessionalTitle(canonicalMentor.professionalTitle());
-					item.setCompany(canonicalMentor.company());
-					item.setReasons(submission.reasons().stream().map(String::trim).distinct().toList());
-					item.setEvidence(submission.evidence().stream()
-							.map(evidence -> toValidatedEvidenceSnapshot(canonicalMentor, evidence))
-							.toList());
-					return item;
+					return MentorshipRequestRecommendationItem.fromSubmission(
+							run, submission, domainLookupService.requireUser(submission.mentorId()), canonicalMentor,
+							submission.evidence().stream()
+									.map(evidence -> toValidatedEvidenceSnapshot(canonicalMentor, evidence))
+									.toList());
 				})
 				.toList();
-		run.setRecommendations(items);
+		run.replaceRecommendations(items);
 		recommendationRunRepository.saveAndFlush(run);
 	}
 
 	private RecommendationEvidenceSnapshot toValidatedEvidenceSnapshot(
 			MentorProfileResponse mentor, RecommendationEvidenceSubmission submission) {
 		MentorEvidenceResponse canonical = mentor.recommendationEvidence().stream()
-				.filter(evidence -> evidence.category().equals(submission.category().trim())
-						&& evidence.claim().equals(submission.claim().trim())
-						&& evidence.quote().equals(submission.quote().trim())
+				.filter(evidence -> evidence.category().equals(TextUtils.trim(submission.category()))
+						&& evidence.claim().equals(TextUtils.trim(submission.claim()))
+						&& evidence.quote().equals(TextUtils.trim(submission.quote()))
 						&& java.util.Objects.equals(evidence.sourcePage(), submission.sourcePage())
-						&& evidence.profileVersion().equals(submission.profileVersion().trim()))
+						&& evidence.profileVersion().equals(TextUtils.trim(submission.profileVersion())))
 				.findFirst()
 				.orElseThrow(() -> new InvalidRequestException(
 						"Recommendation evidence must come from the mentor's confirmed profile"));
-		RecommendationEvidenceSnapshot snapshot = new RecommendationEvidenceSnapshot();
-		snapshot.setCategory(canonical.category());
-		snapshot.setClaim(canonical.claim());
-		snapshot.setQuote(canonical.quote());
-		snapshot.setSourcePage(canonical.sourcePage());
-		snapshot.setProfileVersion(canonical.profileVersion());
-		return snapshot;
+		return RecommendationEvidenceSnapshot.fromEvidence(canonical);
 	}
 
 	private MentorshipRequest requireRequest(UUID id) {
@@ -307,92 +259,24 @@ public class MentorshipRequestService {
 				.orElseThrow(() -> new ResourceNotFoundException("Mentorship request not found: " + id));
 	}
 
-	private MeetingResponse toMeetingResponse(Meeting meeting) {
-		return new MeetingResponse(
-				meeting.getId(),
-				meeting.getMentorshipRequest() == null ? null : meeting.getMentorshipRequest().getId(),
-				meeting.getOrganization().getId(),
-				meeting.getOrganization().getName(),
-				meeting.getMentor() == null ? null : meeting.getMentor().getId(),
-				meeting.getMentor() == null ? null : meeting.getMentor().getFullName(),
-				meeting.getScheduledAt(),
-				meeting.getDurationMinutes(),
-				meeting.getAgenda(),
-				meeting.getNotes(),
-				meeting.getOutcomes(),
-				meeting.getMeetLink(),
-				meeting.getStatus());
-	}
-
 	private void saveMessage(
 			MentorshipRequest request,
 			AppUser author,
 			MentorshipRequestMessageType messageType,
 			String body) {
-		MentorshipRequestMessage message = new MentorshipRequestMessage();
-		message.setRequest(request);
-		message.setAuthor(author);
-		message.setMessageType(messageType);
-		message.setBody(body);
-		mentorshipRequestMessageRepository.saveAndFlush(message);
+		mentorshipRequestMessageRepository.saveAndFlush(
+				MentorshipRequestMessage.create(request, author, messageType, body));
 	}
 
 	private MentorshipRequestResponse toResponse(MentorshipRequest request) {
 		List<MentorshipRequestMessageResponse> messages = mentorshipRequestMessageRepository
 				.findByRequestIdOrderByCreatedAtAsc(request.getId())
 				.stream()
-				.map(message -> new MentorshipRequestMessageResponse(
-						message.getId(),
-						message.getAuthor().getId(),
-						message.getAuthor().getFullName(),
-						message.getMessageType(),
-						message.getBody(),
-						message.getCreatedAt()))
+				.map(MentorshipRequestMessageResponse::fromEntity)
 				.toList();
 		RecommendationSnapshotResponse recommendationSnapshot = recommendationRunRepository.findByRequestId(request.getId())
-				.map(run -> new RecommendationSnapshotResponse(
-						run.getMatchingMethod(),
-						run.getMatchingModel(),
-						run.getGeneratedAt(),
-						run.getStartupName(),
-						run.getStartupSector(),
-						run.getStartupStage(),
-						run.getStartupSummary(),
-						List.copyOf(run.getStartupTechnologies()),
-						run.getRecommendations().stream()
-								.sorted(java.util.Comparator.comparingInt(MentorshipRequestRecommendationItem::getRank))
-								.map(item -> new RecommendationItemResponse(
-										item.getMentor().getId(), item.getRank(), item.isSelected(),
-										item.getMentorName(), item.getProfessionalTitle(), item.getCompany(),
-										List.copyOf(item.getReasons()),
-										item.getEvidence().stream()
-												.map(evidence -> new MentorEvidenceResponse(
-														evidence.getCategory(), evidence.getClaim(), evidence.getQuote(),
-														evidence.getSourcePage(), evidence.getProfileVersion()))
-												.toList()))
-								.toList()))
+				.map(RecommendationSnapshotResponse::fromEntity)
 				.orElse(null);
-		return new MentorshipRequestResponse(
-				request.getId(),
-				request.getRequester().getId(),
-				request.getRequester().getFullName(),
-				request.getOrganization().getId(),
-				request.getOrganization().getName(),
-				request.getMentor().getId(),
-				request.getMentor().getFullName(),
-				request.getRequestedForName(),
-				request.getSupportArea(),
-				request.getSummary(),
-				request.getUrgency(),
-				request.getMentorshipFormat(),
-				request.getMeetingMode(),
-				request.getStatus(),
-				request.getRequesterMessage(),
-				request.getMentorMessage(),
-				request.getRejectionReason(),
-				request.getCreatedAt(),
-				request.getUpdatedAt(),
-				messages,
-				recommendationSnapshot);
+		return MentorshipRequestResponse.fromEntity(request, messages, recommendationSnapshot);
 	}
 }

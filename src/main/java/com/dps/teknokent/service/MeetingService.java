@@ -29,45 +29,21 @@ public class MeetingService {
 				? meetingRepository.findAllByOrderByScheduledAtDesc()
 				: meetingRepository.findByOrganizationIdOrderByScheduledAtDesc(organizationId);
 		return meetings.stream()
-				.map(this::toResponse)
+				.map(MeetingResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional
 	public MeetingResponse create(CreateMeetingRequest request) {
-		Meeting meeting = new Meeting();
-		meeting.setOrganization(domainLookupService.requireOrganization(request.organizationId()));
+		AppUser mentor = null;
 		if (request.mentorId() != null) {
-			AppUser mentor = domainLookupService.requireUser(request.mentorId());
+			mentor = domainLookupService.requireUser(request.mentorId());
 			if (mentor.getRole() != UserRole.MENTOR) {
 				throw new InvalidRequestException("Selected user does not have the MENTOR role");
 			}
-			meeting.setMentor(mentor);
 		}
-		meeting.setScheduledAt(request.scheduledAt());
-		meeting.setDurationMinutes(request.durationMinutes());
-		meeting.setAgenda(request.agenda());
-		meeting.setNotes(request.notes());
-		meeting.setOutcomes(request.outcomes());
-		meeting.setMeetLink(request.meetLink());
-		meeting.setStatus(request.status());
-		return toResponse(meetingRepository.save(meeting));
-	}
-
-	private MeetingResponse toResponse(Meeting meeting) {
-		return new MeetingResponse(
-				meeting.getId(),
-				meeting.getMentorshipRequest() == null ? null : meeting.getMentorshipRequest().getId(),
-				meeting.getOrganization().getId(),
-				meeting.getOrganization().getName(),
-				meeting.getMentor() == null ? null : meeting.getMentor().getId(),
-				meeting.getMentor() == null ? null : meeting.getMentor().getFullName(),
-				meeting.getScheduledAt(),
-				meeting.getDurationMinutes(),
-				meeting.getAgenda(),
-				meeting.getNotes(),
-				meeting.getOutcomes(),
-				meeting.getMeetLink(),
-				meeting.getStatus());
+		Meeting meeting = Meeting.fromRequest(request,
+				domainLookupService.requireOrganization(request.organizationId()), mentor);
+		return MeetingResponse.fromEntity(meetingRepository.save(meeting));
 	}
 }

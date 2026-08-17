@@ -6,6 +6,9 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
+import com.dps.teknokent.util.TextUtils;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -22,6 +25,13 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class Organization {
+
+	public static Organization fromRequest(CreateOrganizationRequest request) {
+		Organization organization = new Organization();
+		organization.name = TextUtils.trim(request.name());
+		organization.description = TextUtils.normalizeOptional(request.description());
+		return organization;
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

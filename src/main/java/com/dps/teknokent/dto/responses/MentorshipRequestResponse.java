@@ -8,6 +8,7 @@ import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
+import com.dps.teknokent.entity.MentorshipRequest;
 
 public record MentorshipRequestResponse(
 		UUID id,
@@ -31,4 +32,32 @@ public record MentorshipRequestResponse(
 		Instant updatedAt,
 		List<MentorshipRequestMessageResponse> messages,
 		RecommendationSnapshotResponse recommendationSnapshot) {
+
+	public static MentorshipRequestResponse fromEntity(
+			MentorshipRequest request,
+			List<MentorshipRequestMessageResponse> messages,
+			RecommendationSnapshotResponse recommendationSnapshot) {
+		return new MentorshipRequestResponse(
+				request.getId(),
+				request.getRequester().getId(),
+				request.getRequester().getFullName(),
+				request.getOrganization().getId(),
+				request.getOrganization().getName(),
+				request.getMentor().getId(),
+				request.getMentor().getFullName(),
+				request.getRequestedForName(),
+				request.getSupportArea(),
+				request.getSummary(),
+				request.getUrgency(),
+				request.getMentorshipFormat(),
+				request.getMeetingMode(),
+				request.getStatus(),
+				request.getRequesterMessage(),
+				request.getMentorMessage(),
+				request.getRejectionReason(),
+				request.getCreatedAt(),
+				request.getUpdatedAt(),
+				List.copyOf(messages),
+				recommendationSnapshot);
+	}
 }

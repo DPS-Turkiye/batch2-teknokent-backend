@@ -9,6 +9,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import com.dps.teknokent.domain.BottleneckSeverity;
 import com.dps.teknokent.domain.BottleneckStatus;
+import com.dps.teknokent.dto.requests.CreateBottleneckRequest;
+import com.dps.teknokent.dto.requests.UpdateBottleneckRequest;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -31,6 +34,29 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class Bottleneck {
+
+	public static Bottleneck fromRequest(
+			CreateBottleneckRequest request, Organization organization, AppUser owner) {
+		Bottleneck bottleneck = new Bottleneck();
+		bottleneck.organization = organization;
+		bottleneck.owner = owner;
+		bottleneck.title = TextUtils.trim(request.title());
+		bottleneck.description = TextUtils.normalizeOptional(request.description());
+		bottleneck.severity = request.severity();
+		bottleneck.status = BottleneckStatus.OPEN;
+		bottleneck.targetResolutionDate = request.targetResolutionDate();
+		return bottleneck;
+	}
+
+	public void apply(UpdateBottleneckRequest request, AppUser requestedOwner) {
+		if (request.ownerId() != null) owner = requestedOwner;
+		if (request.title() != null) title = TextUtils.trim(request.title());
+		if (request.description() != null) description = TextUtils.normalizeOptional(request.description());
+		if (request.severity() != null) severity = request.severity();
+		if (request.status() != null) status = request.status();
+		if (request.targetResolutionDate() != null) targetResolutionDate = request.targetResolutionDate();
+		if (request.resolutionNotes() != null) resolutionNotes = TextUtils.normalizeOptional(request.resolutionNotes());
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

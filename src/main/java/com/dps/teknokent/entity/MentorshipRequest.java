@@ -10,6 +10,8 @@ import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
+import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -32,6 +34,43 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class MentorshipRequest {
+
+	public static MentorshipRequest fromRequest(
+			CreateMentorshipRequestSubmission request,
+			AppUser requester,
+			Organization organization,
+			AppUser mentor) {
+		MentorshipRequest mentorshipRequest = new MentorshipRequest();
+		mentorshipRequest.requester = requester;
+		mentorshipRequest.organization = organization;
+		mentorshipRequest.mentor = mentor;
+		mentorshipRequest.requestedForName = TextUtils.trim(request.requestedForName());
+		mentorshipRequest.supportArea = TextUtils.trim(request.supportArea());
+		mentorshipRequest.summary = TextUtils.trim(request.summary());
+		mentorshipRequest.urgency = request.urgency();
+		mentorshipRequest.mentorshipFormat = request.mentorshipFormat();
+		mentorshipRequest.meetingMode = request.meetingMode();
+		mentorshipRequest.status = MentorshipRequestStatus.PENDING;
+		mentorshipRequest.requesterMessage = TextUtils.normalizeOptional(request.requesterMessage());
+		return mentorshipRequest;
+	}
+
+	public void recordDecision(MentorshipRequestStatus decision, String message) {
+		status = decision;
+		if (decision == MentorshipRequestStatus.DECLINED) {
+			rejectionReason = TextUtils.trim(message);
+		} else {
+			mentorMessage = TextUtils.trim(message);
+		}
+	}
+
+	public void markReplied() {
+		status = MentorshipRequestStatus.PENDING;
+	}
+
+	public void withdraw() {
+		status = MentorshipRequestStatus.WITHDRAWN;
+	}
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
