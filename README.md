@@ -4,10 +4,6 @@ Spring Boot REST API for the Teknokent platform. Runs with Docker; Maven wrapper
 
 Works on macOS, Linux, and Windows (Docker Desktop).
 
-For a file-by-file explanation of the original GitHub template and all local
-prototype additions, see
-[`docs/BACKEND_TEMPLATE_AND_CHANGES_GUIDE.md`](docs/BACKEND_TEMPLATE_AND_CHANGES_GUIDE.md).
-
 ## Quick Start
 
 ```bash
@@ -17,12 +13,9 @@ docker compose up --build
 
 - Health: http://localhost:8080/api/health
 - Docs: http://localhost:8080/api/docs
-- Test UI: http://localhost:8080/test-ui
 
 All endpoints except health and API docs use HTTP Basic authentication. The
 default local credentials from `.env.example` are `teknokent` / `change-me`.
-The test UI is an internal console for exercising the prototype APIs through
-resource forms and a general request inspector.
 
 ```bash
 docker compose down      # stop
@@ -49,15 +42,16 @@ Configuration lives in `.env` (see `.env.example`).
 
 ## Stack
 
-Java 25, Spring Boot 4.1, PostgreSQL 17 + pgvector, Flyway, Spring Security, springdoc-openapi, Lombok.
+Java 25, Spring Boot 4.1, PostgreSQL 17 + pgvector, Apache PDFBox,
+Tesseract OCR, Flyway, Spring Security, springdoc-openapi, Lombok.
 
 Tests use H2; local/production use PostgreSQL. Migrations: `src/main/resources/db/migration/`.
 
 Mentor recommendations use pgvector cosine retrieval as a shortlist before the
-existing semantic matcher. Confirmed mentor profile embeddings are cached in
+request-specific Java ranking layer. Confirmed mentor profile embeddings are cached in
 `mentor_profile_embedding` and refreshed whenever their source profile changes.
-If pgvector or the local embedding service is unavailable, the existing semantic
-and deterministic fallbacks keep the flow usable.
+If pgvector or the configured embedding API is unavailable, the deterministic
+keyword/evidence fallback keeps the flow usable.
 
 ## Implemented MVP and AI features
 
@@ -80,9 +74,8 @@ and deterministic fallbacks keep the flow usable.
   call, editable review, explicit confirmation, and a manual-entry fallback.
 - Evidence-based technology inference for technologies implied by projects and
   experience, without silently replacing the user's confirmed profile.
-- Local parser/matching labs for model, token, cost, accuracy, evidence, and
-  recommendation evaluation. See
-  [`tools/pdf-token-benchmark/README.md`](tools/pdf-token-benchmark/README.md).
+- Parsing and matching run directly inside Spring Boot; no Python service or
+  localhost ports 8765/8766 are required at runtime.
 
 Authentication remains a shared HTTP Basic development gate. Real user auth is
 outside this MVP branch.
@@ -136,18 +129,10 @@ curl -u teknokent:change-me \
 
 ## Using the AI-assisted flow
 
-1. Copy `.env.example` to `.env` and set either `OPENAI_API_KEY` or the
-   OpenRouter variables. Never commit `.env`.
-2. Start the connected local parser/matcher services:
-
-   ```bash
-   cd tools/pdf-token-benchmark
-   python3 -m venv .venv
-   .venv/bin/pip install -r requirements.txt
-   .venv/bin/python integrated_app.py
-   ```
-
-3. From another terminal, start Spring Boot and PostgreSQL:
+1. Copy `.env.example` to `.env`, choose `AI_PROVIDER=openai` or
+   `AI_PROVIDER=openrouter`, and set the matching API key. Never commit `.env`.
+2. Start Spring Boot and PostgreSQL. The image already contains Turkish and
+   English Tesseract language data:
 
    ```bash
    cd /path/to/Backend
@@ -155,19 +140,20 @@ curl -u teknokent:change-me \
    docker compose up --build
    ```
 
-4. Open `http://localhost:8080/api/docs` for Swagger or run the frontend and
+3. Open `http://localhost:8080/api/docs` for Swagger or run the frontend and
    open `/profile`. Accept the processing consent, choose the profile type and
    OCR mode, upload a PDF, review/edit the extracted fields, and confirm them.
-5. Create a mentorship request. At stage 4 choose **Önerileri Hazırla**. The
+4. Create a mentorship request. At stage 4 choose **Önerileri Hazırla**. The
    backend ranks eligible mentors using the current request plus the confirmed
    mentee/startup profile and returns reasons/evidence. Select a mentor and submit
    the request at stage 5.
 
-Useful local services when `integrated_app.py` is running:
-
-- PDF Parse Lab: `http://127.0.0.1:8765`
-- Mentor Match Lab: `http://127.0.0.1:8766`
-- Mentor Pool Lab: `http://127.0.0.1:8767`
+The native parsing path is: PDFBox text extraction → Tesseract for scanned pages
+when OCR is `auto` or `force` → local PII redaction → structured OpenAI/OpenRouter
+response → evidence-based technology inference → editable confirmation. Mentor
+matching embeds the request and confirmed mentor profiles directly through the
+configured provider, stores vectors in PostgreSQL, and falls back to deterministic
+request/profile overlap if semantic retrieval is unavailable.
 
 To inspect persisted requests directly:
 
