@@ -1,4 +1,0 @@
-openai
-pydantic>=2
-pypdf
-python-dotenv

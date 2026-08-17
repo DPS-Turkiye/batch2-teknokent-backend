@@ -30,7 +30,6 @@ class MentorRecommendationServiceTest {
 	@BeforeEach
 	void setUp() {
 		recommendationService = new MentorRecommendationService(mentorProfileService, pgVectorRetrievalService);
-		ReflectionTestUtils.setField(recommendationService, "matcherUrl", "http://127.0.0.1:1");
 		ReflectionTestUtils.setField(recommendationService, "provider", "openrouter");
 		ReflectionTestUtils.setField(recommendationService, "openRouterModel", "openai/text-embedding-3-small");
 		ReflectionTestUtils.setField(recommendationService, "openAiModel", "text-embedding-3-small");
@@ -39,7 +38,7 @@ class MentorRecommendationServiceTest {
 					org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList(),
 					org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
 					org.mockito.ArgumentMatchers.anyInt()))
-					.thenAnswer(invocation -> invocation.getArgument(1));
+					.thenThrow(new IllegalStateException("pgvector unavailable"));
 		} catch (Exception error) {
 			throw new IllegalStateException(error);
 		}
@@ -89,6 +88,46 @@ class MentorRecommendationServiceTest {
 		assertThat(result.mentors().getFirst().recommendationEvidence())
 				.extracting(MentorEvidenceResponse::claim)
 				.containsExactly("Yapay zeka sistemleri kurdu");
+	}
+
+	@Test
+	void preservesPgvectorSimilarityOrderAndAddsRequestSpecificReasons() throws Exception {
+		MentorProfileResponse financeMentor = mentor("Zeynep Finans", "Finans", List.of("Yatırım"));
+		MentorProfileResponse softwareMentor = mentor("Ali Yazılım", "Mimar", List.of("Yapay zeka"));
+		List<MentorProfileResponse> pool = List.of(financeMentor, softwareMentor);
+		when(mentorProfileService.findAll()).thenReturn(pool);
+		when(pgVectorRetrievalService.shortlist(
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(pool),
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.anyInt()))
+				.thenReturn(List.of(softwareMentor, financeMentor));
+
+		var result = recommendationService.recommend(new RecommendMentorsRequest(
+				"Yapay zeka", "Yapay zeka mimarisi", "THIS_WEEK", "SINGLE_MEETING",
+				"ONLINE", "Teknoloji", "MVP", "Platform", List.of("Java"), null));
+
+		assertThat(result.matchingMethod()).isEqualTo("PGVECTOR_SEMANTIC");
+		assertThat(result.mentors()).extracting(MentorProfileResponse::fullName)
+				.containsExactly("Ali Yazılım", "Zeynep Finans");
+	}
+
+	@Test
+	void addsGenericFallbackReasonWhenNoRequestSpecificReasonMatches() throws Exception {
+		MentorProfileResponse mentor = mentor("Zeynep Finans", "Finans", List.of("Yatırım"));
+		List<MentorProfileResponse> pool = List.of(mentor);
+		when(mentorProfileService.findAll()).thenReturn(pool);
+		when(pgVectorRetrievalService.shortlist(
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(pool),
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.anyInt()))
+				.thenReturn(pool);
+
+		var result = recommendationService.recommend(new RecommendMentorsRequest(
+				"İş modeli ve strateji", "Gelir modeli oluşturma desteği", "WHENEVER", "SINGLE_MEETING",
+				"ASYNCHRONOUS", "Sağlık", "Fikir", "Mobil uygulama", List.of(), null));
+
+		assertThat(result.mentors().getFirst().recommendationReasons())
+				.containsExactly("İş modeli ve strateji talebiyle uzmanlık yakınlığı");
 	}
 
 	private MentorProfileResponse mentor(String fullName, String title, List<String> specialties) {

@@ -1,15 +1,9 @@
 package com.dps.teknokent.service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -24,13 +18,13 @@ import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorRecommendationResult;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MentorRecommendationService {
 	private static final Set<String> MATCH_STOP_WORDS = Set.of(
 			"bir", "bu", "icin", "için", "ile", "ve", "veya", "talep", "destek", "istiyoruz",
@@ -51,10 +45,6 @@ public class MentorRecommendationService {
 
 	private final MentorProfileService mentorProfileService;
 	private final PgVectorMentorRetrievalService pgVectorRetrievalService;
-	private final ObjectMapper objectMapper = new ObjectMapper();
-
-	@Value("${profile-labs.matcher-url:http://host.docker.internal:8766}")
-	private String matcherUrl;
 
 	@Value("${AI_PROVIDER:openrouter}")
 	private String provider;
@@ -78,17 +68,21 @@ public class MentorRecommendationService {
 			candidates = pgVectorRetrievalService.shortlist(
 					queryText(request), mentors, normalizedProvider(), embeddingModel(), 15);
 			vectorRetrieved = true;
-		} catch (Exception ignored) {
-			// Keep recommendations available while pgvector or the embedding service is offline.
+		} catch (Exception exception) {
+			log.warn(
+					"Semantic mentor retrieval failed; using deterministic fallback. "
+							+ "provider={}, model={}, mentorCount={}, errorType={}, errorMessage={}",
+					normalizedProvider(), embeddingModel(), mentors.size(),
+					exception.getClass().getSimpleName(), exception.getMessage());
+			log.debug("Semantic mentor retrieval failure details", exception);
 		}
-		try {
-			return new MentorRecommendationResult(
-					vectorRetrieved ? "PGVECTOR_SEMANTIC" : "SEMANTIC",
-					normalizedProvider() + ":" + embeddingModel(), Instant.now(), semanticRank(request, candidates));
-		} catch (Exception ignored) {
-			return new MentorRecommendationResult(
-					"DETERMINISTIC", "keyword-overlap-v1", Instant.now(), deterministicRank(request, mentors));
+		if (vectorRetrieved) {
+			return new MentorRecommendationResult("PGVECTOR_SEMANTIC",
+					normalizedProvider() + ":" + embeddingModel(), Instant.now(), candidates.stream()
+							.limit(5).map(mentor -> withReasons(request, mentor, fallbackReasons(request, mentor))).toList());
 		}
+		return new MentorRecommendationResult(
+				"DETERMINISTIC", "keyword-overlap-v1", Instant.now(), deterministicRank(request, mentors));
 	}
 
 	private String queryText(RecommendMentorsRequest request) {
@@ -100,68 +94,6 @@ public class MentorRecommendationService {
 				"Girişim: " + value(request.startupSummary()),
 				"Teknolojiler: " + String.join(", ",
 						request.startupTechnologies() == null ? List.of() : request.startupTechnologies()));
-	}
-
-	private List<MentorProfileResponse> semanticRank(
-			RecommendMentorsRequest request, List<MentorProfileResponse> mentors) throws Exception {
-		List<Map<String, Object>> mentorRecords = mentors.stream().map(mentor -> Map.<String, Object>of(
-				"mentor_id", mentor.id().toString(),
-				"profile_version", mentor.recommendationEvidence().stream()
-						.map(MentorEvidenceResponse::profileVersion).findFirst().orElse("app-profile-v1"),
-				"profile", Map.of(
-						"industries", values(mentor.sectorExperience()),
-						"professional_functions", mentor.specialties(),
-						"technologies", mentor.specialties(),
-						"startup_stage_experience", values(mentor.startupStages()),
-						"mentoring_areas", mentor.specialties(),
-						"employment_highlights", matcherEvidence(mentor))))
-				.toList();
-
-		Map<String, Object> menteeProfile = new LinkedHashMap<>();
-		menteeProfile.put("stage", request.startupStage());
-		menteeProfile.put("sectors", values(request.startupSector()));
-		menteeProfile.put("technologies",
-				request.startupTechnologies() == null ? List.of() : request.startupTechnologies());
-		menteeProfile.put("current_bottlenecks", List.of(evidence(request.summary())));
-		menteeProfile.put("goals", List.of(evidence(value(request.startupSummary()) + " " + request.summary())));
-		menteeProfile.put("support_needs", List.of(evidence(request.supportArea())));
-
-		Map<String, Object> matchingPreferences = Map.of(
-				"meeting_format", value(request.mentorshipFormat()) + " / " + value(request.meetingMode()),
-				"urgency", value(request.urgency()));
-
-		Map<String, Object> payload = Map.of(
-				"provider", normalizedProvider(),
-				"model", embeddingModel(),
-				"mentors", mentorRecords,
-				"mentees", List.of(Map.of(
-						"mentee_id", "request-draft",
-						"profile_version", "request-draft-v1",
-						"profile", menteeProfile,
-						"matching_preferences", matchingPreferences)));
-
-		HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(matcherUrl + "/api/match"))
-				.timeout(Duration.ofSeconds(45))
-				.header("Content-Type", "application/json")
-				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
-				.build();
-		HttpResponse<String> response = HttpClient.newHttpClient().send(httpRequest, HttpResponse.BodyHandlers.ofString());
-		if (response.statusCode() < 200 || response.statusCode() >= 300) {
-			throw new IllegalStateException("Matcher returned " + response.statusCode());
-		}
-		JsonNode recommendations = objectMapper.readTree(response.body()).path("results").path(0).path("recommendations");
-		Map<UUID, MentorProfileResponse> byId = mentors.stream()
-				.collect(Collectors.toMap(MentorProfileResponse::id, mentor -> mentor));
-		List<MentorProfileResponse> ranked = new ArrayList<>();
-		for (JsonNode recommendation : recommendations) {
-			MentorProfileResponse mentor = byId.get(UUID.fromString(recommendation.path("mentor_id").asText()));
-			if (mentor != null) {
-				ranked.add(withReasons(request, mentor, semanticReasons(request, mentor, recommendation)));
-			}
-			if (ranked.size() == 5) break;
-		}
-		if (ranked.isEmpty()) throw new IllegalStateException("Matcher returned no usable mentors");
-		return ranked;
 	}
 
 	private List<MentorProfileResponse> deterministicRank(
@@ -186,21 +118,8 @@ public class MentorRecommendationService {
 		return (int) query.stream().filter(mentorTokens::contains).count();
 	}
 
-	private List<String> semanticReasons(
-			RecommendMentorsRequest request, MentorProfileResponse mentor, JsonNode recommendation) {
-		List<String> reasons = new ArrayList<>(requestSpecificReasons(request, mentor));
-		JsonNode shared = recommendation.path("shared_fields");
-		shared.fields().forEachRemaining(field -> {
-			if (field.getValue().isArray() && !field.getValue().isEmpty()) {
-				reasons.add(sharedFieldReason(field.getKey(), field.getValue().get(0).asText()));
-			}
-		});
-		if (reasons.isEmpty()) reasons.add(request.supportArea() + " talebiyle semantik uyum");
-		return reasons.stream().distinct().limit(3).toList();
-	}
-
 	private List<String> fallbackReasons(RecommendMentorsRequest request, MentorProfileResponse mentor) {
-		List<String> reasons = requestSpecificReasons(request, mentor);
+		List<String> reasons = new ArrayList<>(requestSpecificReasons(request, mentor));
 		if (reasons.isEmpty()) reasons.add(request.supportArea() + " talebiyle uzmanlık yakınlığı");
 		return reasons.stream().limit(3).toList();
 	}
@@ -235,17 +154,6 @@ public class MentorRecommendationService {
 			reasons.add("Talebinizin zamanlamasına uygun: " + mentor.availabilityLabel());
 		}
 		return reasons.stream().distinct().limit(3).toList();
-	}
-
-	private String sharedFieldReason(String field, String value) {
-		return switch (field) {
-			case "industry_sector" -> "İlgili sektör deneyimi: " + value;
-			case "startup_stage" -> value + " aşamasındaki girişimlerle deneyimli";
-			case "technologies" -> "İlgili teknoloji deneyimi: " + value;
-			case "expertise_support" -> "Talebinizle örtüşen uzmanlık: " + value;
-			case "languages" -> "Ortak çalışma dili: " + value;
-			default -> "Talebinizle ortak nokta: " + value;
-		};
 	}
 
 	private boolean overlaps(Set<String> requestTokens, String candidate) {
@@ -316,28 +224,6 @@ public class MentorRecommendationService {
 				.limit(2)
 				.map(Map.Entry::getKey)
 				.toList();
-	}
-
-	private List<Map<String, Object>> matcherEvidence(MentorProfileResponse mentor) {
-		if (mentor.recommendationEvidence().isEmpty()) {
-			return List.of(evidence(mentor.professionalTitle() + " at " + mentor.company()));
-		}
-		return mentor.recommendationEvidence().stream().map(item -> {
-			Map<String, Object> evidence = new LinkedHashMap<>();
-			evidence.put("claim", item.claim());
-			evidence.put("page", item.sourcePage() == null ? 1 : item.sourcePage());
-			evidence.put("quote", item.quote());
-			evidence.put("information_type", "explicit");
-			return evidence;
-		}).toList();
-	}
-
-	private Map<String, Object> evidence(String claim) {
-		return Map.of("claim", value(claim), "page", 1, "quote", "request input", "information_type", "explicit");
-	}
-
-	private List<String> values(String input) {
-		return input == null || input.isBlank() ? List.of() : List.of(input);
 	}
 
 	private String value(String input) {

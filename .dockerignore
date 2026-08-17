@@ -1,5 +1,7 @@
 target/
 .git/
+tools/
+docs/
 .idea/
 *.iml
 .vscode/

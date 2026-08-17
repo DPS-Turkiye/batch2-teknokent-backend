@@ -3,6 +3,11 @@ package com.dps.teknokent.entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -17,6 +22,43 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class ProfileAnalysis {
+
+	public static ProfileAnalysis fromParsedProfile(
+			UUID organizationId, String sourceFilename, String profileType, String parsedProfile,
+			String redactionSummary, String ocrSummary, Instant now) {
+		ProfileAnalysis analysis = new ProfileAnalysis();
+		analysis.id = UUID.randomUUID();
+		analysis.organizationId = organizationId;
+		analysis.sourceFilename = sourceFilename;
+		analysis.profileType = profileType;
+		analysis.parsedProfile = parsedProfile;
+		analysis.consentAcceptedAt = now;
+		analysis.redactionSummary = redactionSummary;
+		analysis.ocrSummary = ocrSummary;
+		analysis.createdAt = now;
+		return analysis;
+	}
+
+	public static ProfileAnalysis fromManualProfile(
+			UUID organizationId, CreateManualProfileRequest request, String serializedProfile, Instant now) {
+		ProfileAnalysis analysis = new ProfileAnalysis();
+		analysis.id = UUID.randomUUID();
+		analysis.organizationId = organizationId;
+		analysis.sourceFilename = "manual-entry";
+		analysis.profileType = request.profileType();
+		analysis.parsedProfile = serializedProfile;
+		analysis.confirmedProfile = serializedProfile;
+		analysis.status = "CONFIRMED";
+		analysis.confirmedAt = now;
+		analysis.createdAt = now;
+		return analysis;
+	}
+
+	public void confirm(String serializedProfile, Instant now) {
+		confirmedProfile = serializedProfile;
+		status = "CONFIRMED";
+		confirmedAt = now;
+	}
 
 	@Id
 	private UUID id;
@@ -48,7 +90,8 @@ public class ProfileAnalysis {
 	@Column(name = "redaction_summary", nullable = false, columnDefinition = "TEXT")
 	private String redactionSummary = "{}";
 
-	@Column(name = "ocr_summary", nullable = false, columnDefinition = "TEXT")
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(name = "ocr_summary", nullable = false)
 	private String ocrSummary = "{}";
 
 	@Column(name = "created_at", nullable = false)

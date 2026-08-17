@@ -1,30 +1,24 @@
 package com.dps.teknokent.service;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
+import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.entity.ProfileAnalysis;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProfileAnalysisRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.dps.teknokent.util.JsonUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -37,22 +31,9 @@ public class ProfileAnalysisService {
 	private final ProfileAnalysisRepository profileAnalysisRepository;
 	private final OrganizationRepository organizationRepository;
 	private final TechnologyInferenceService technologyInferenceService;
-	private final ObjectMapper objectMapper = new ObjectMapper();
-
-	@Value("${profile-labs.parser-url:http://host.docker.internal:8765}")
-	private String parserUrl;
-
-	@Value("${profile-labs.matcher-url:http://host.docker.internal:8766}")
-	private String matcherUrl;
-
-	@Value("${OPENAI_MODEL:gpt-5.6-luna}")
-	private String parserModel;
-
-	@Value("${OPENROUTER_MODEL:openai/gpt-4o-mini}")
-	private String openRouterParserModel;
-
-	@Value("${AI_PROVIDER:openai}")
-	private String aiProvider;
+	private final NativeProfileParserService nativeProfileParserService;
+	private final MentorRecommendationService mentorRecommendationService;
+	private final JsonUtils jsonUtils;
 
 	public ProfileAnalysisResponse parse(
 			UUID organizationId, String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
@@ -72,35 +53,23 @@ public class ProfileAnalysisService {
 			throw new InvalidRequestException("Please upload a PDF pitch deck or company profile.");
 		}
 
-		JsonNode labResult = callParser(file, profileType, ocrMode);
-		JsonNode profile = labResult.path("results").path("verified").path("profile");
-		if (!profile.isObject()) {
-			profile = labResult.path("results").path("direct_pdf").path("profile");
+		NativeProfileParserService.ParseResult parseResult;
+		try {
+			parseResult = nativeProfileParserService.parse(file.getBytes(), profileType, ocrMode);
+		} catch (IOException error) {
+			throw new InvalidRequestException("The uploaded PDF could not be read.");
 		}
-		if (!profile.isObject()) {
-			profile = labResult.path("results").path("local_text").path("profile");
-		}
-		if (!profile.isObject()) {
-			String detail = labResult.path("results").path("direct_pdf").path("error")
-					.asText(labResult.path("results").path("local_text").path("error")
-							.asText("The parser did not return a usable profile."));
-			throw new InvalidRequestException(detail);
-		}
+		JsonNode profile = parseResult.profile();
+		if (!profile.isObject()) throw new InvalidRequestException("The parser did not return a usable profile.");
 		profile = technologyInferenceService.enrich(((com.fasterxml.jackson.databind.node.ObjectNode) profile).deepCopy());
 
-		ProfileAnalysis analysis = new ProfileAnalysis();
-		analysis.setId(UUID.randomUUID());
-		analysis.setOrganizationId(resolvedOrganizationId);
-		analysis.setSourceFilename(file.getOriginalFilename());
-		analysis.setProfileType(profileType);
-		analysis.setParsedProfile(writeJson(profile));
-		analysis.setConsentAcceptedAt(Instant.now());
-		JsonNode redactionSummary = labResult.path("pii_redaction");
-		analysis.setRedactionSummary(redactionSummary.isObject() ? writeJson(redactionSummary) : "{}");
-		JsonNode ocrSummary = labResult.path("ocr");
-		analysis.setOcrSummary(ocrSummary.isObject() ? writeJson(ocrSummary) : "{}");
-		analysis.setCreatedAt(Instant.now());
-		return toResponse(profileAnalysisRepository.save(analysis));
+		JsonNode redactionSummary = parseResult.redactionSummary();
+		JsonNode ocrSummary = parseResult.ocrSummary();
+		ProfileAnalysis analysis = ProfileAnalysis.fromParsedProfile(
+				resolvedOrganizationId, file.getOriginalFilename(), profileType, jsonUtils.writeValue(profile),
+				redactionSummary.isObject() ? jsonUtils.writeValue(redactionSummary) : "{}",
+				ocrSummary.isObject() ? jsonUtils.writeValue(ocrSummary) : "{}", Instant.now());
+		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
 	}
 
 	public ProfileAnalysisResponse createManual(UUID organizationId, CreateManualProfileRequest request) {
@@ -120,23 +89,15 @@ public class ProfileAnalysisService {
 		}
 
 		Instant now = Instant.now();
-		ProfileAnalysis analysis = new ProfileAnalysis();
-		analysis.setId(UUID.randomUUID());
-		analysis.setOrganizationId(resolvedOrganizationId);
-		analysis.setSourceFilename("manual-entry");
-		analysis.setProfileType(request.profileType());
-		analysis.setParsedProfile(writeJson(request.profile()));
-		analysis.setConfirmedProfile(writeJson(request.profile()));
-		analysis.setStatus("CONFIRMED");
-		analysis.setConfirmedAt(now);
-		analysis.setCreatedAt(now);
-		return toResponse(profileAnalysisRepository.save(analysis));
+		ProfileAnalysis analysis = ProfileAnalysis.fromManualProfile(
+				resolvedOrganizationId, request, jsonUtils.writeValue(request.profile()), now);
+		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
 	}
 
 	public ProfileAnalysisResponse findLatest(UUID organizationId) {
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		return profileAnalysisRepository.findFirstByOrganizationIdOrderByCreatedAtDesc(resolvedOrganizationId)
-				.map(this::toResponse)
+				.map(ProfileAnalysisResponse::fromEntity)
 				.orElseThrow(() -> new ResourceNotFoundException("No parsed startup profile was found."));
 	}
 
@@ -145,100 +106,60 @@ public class ProfileAnalysisService {
 		return profileAnalysisRepository
 				.findFirstByOrganizationIdAndProfileTypeAndStatusOrderByCreatedAtDesc(
 						resolvedOrganizationId, "mentee", "CONFIRMED")
-				.map(this::toResponse)
+				.map(ProfileAnalysisResponse::fromEntity)
 				.orElseThrow(() -> new ResourceNotFoundException("No confirmed startup profile was found."));
 	}
 
 	public JsonNode recommendations(UUID id) {
 		ProfileAnalysis analysis = profileAnalysisRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Parsed startup profile not found."));
-		JsonNode library = getJson(matcherUrl + "/api/parsed-profiles");
-		JsonNode mentors = library.path("mentors");
-		if (!mentors.isArray() || mentors.isEmpty()) {
-			throw new InvalidRequestException("No parsed mentor profiles are loaded in Mentor Match Lab yet.");
-		}
 		if (analysis.getConfirmedProfile() == null) {
 			throw new InvalidRequestException("Review and confirm the profile before requesting mentors.");
 		}
-		JsonNode parsedProfile = readJson(analysis.getConfirmedProfile());
-		String profileKind = "individual_mentee".equals(analysis.getProfileType()) ? "individual" : "startup";
-		Map<String, Object> payload = Map.of(
-				"provider", "ollama",
-				"mentors", mentors,
-				"mentees", java.util.List.of(Map.of(
-						"mentee_id", "startup-" + analysis.getId(),
-						"profile_kind", profileKind,
-						"profile_version", "saved-" + analysis.getId(),
-						"profile", parsedProfile)));
-		return postJson(matcherUrl + "/api/match", payload);
+		JsonNode profile = jsonUtils.readTree(analysis.getConfirmedProfile());
+		RecommendMentorsRequest request = new RecommendMentorsRequest(
+				firstText(profile, "support_needs", "skills_to_develop", "desired_role", "current_role"),
+				firstText(profile, "startup_summary", "professional_summary", "career_goals", "goals"),
+				"NEXT_TWO_WEEKS", "SINGLE_MEETING", "ONLINE",
+				firstText(profile, "sectors", "industries"), profile.path("stage").asText(""),
+				firstText(profile, "startup_summary", "professional_summary"), textList(profile.path("technologies")), null);
+		return jsonUtils.valueToTree(mentorRecommendationService.recommend(request));
 	}
 
 	public ProfileAnalysisResponse confirm(UUID id, String payload) {
 		ProfileAnalysis analysis = profileAnalysisRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Parsed startup profile not found."));
-		JsonNode request = readJson(payload);
+		JsonNode request = jsonUtils.readTree(payload);
 		JsonNode profile = request.path("profile");
 		if (!profile.isObject()) {
 			throw new InvalidRequestException("A profile object is required.");
 		}
-		analysis.setConfirmedProfile(writeJson(profile));
-		analysis.setStatus("CONFIRMED");
-		analysis.setConfirmedAt(Instant.now());
-		return toResponse(profileAnalysisRepository.save(analysis));
+		analysis.confirm(jsonUtils.writeValue(profile), Instant.now());
+		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
 	}
 
-	private JsonNode callParser(MultipartFile file, String profileType, String ocrMode) {
-		try {
-			Map<String, Object> payload = Map.of(
-					"profile_type", profileType,
-					"model", "openrouter".equalsIgnoreCase(aiProvider) ? openRouterParserModel : parserModel,
-					"pdf_detail", "high",
-					"order", "local-first",
-					"privacy_mode", "local-redacted",
-					"ocr_mode", ocrMode,
-					"filename", file.getOriginalFilename(),
-					"pdf_base64", Base64.getEncoder().encodeToString(file.getBytes()));
-			return postJson(parserUrl + "/api/benchmark", payload);
-		} catch (IOException error) {
-			throw new InvalidRequestException("The uploaded PDF could not be read.");
-		}
-	}
-
-	private JsonNode getJson(String url) {
-		return send(HttpRequest.newBuilder(URI.create(url)).GET().build());
-	}
-
-	private JsonNode postJson(String url, Object payload) {
-		return send(HttpRequest.newBuilder(URI.create(url))
-				.header("Content-Type", "application/json")
-				.POST(HttpRequest.BodyPublishers.ofString(writeJson(payload)))
-				.build());
-	}
-
-	private JsonNode send(HttpRequest request) {
-		try {
-			HttpResponse<String> response = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
-					.send(request, HttpResponse.BodyHandlers.ofString());
-			JsonNode body = readJson(response.body());
-			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new InvalidRequestException(body.path("detail").asText("Profile lab request failed."));
+	private String firstText(JsonNode profile, String... fields) {
+		for (String field : fields) {
+			JsonNode value = profile.path(field);
+			if (value.isTextual() && !value.asText().isBlank()) return value.asText();
+			if (value.isArray() && !value.isEmpty()) {
+				JsonNode first = value.get(0);
+				if (first.isTextual()) return first.asText();
+				if (first.isObject()) {
+					String claim = first.path("claim").asText("");
+					if (!claim.isBlank()) return claim;
+				}
 			}
-			return body;
-		} catch (IOException error) {
-			throw new InvalidRequestException("Profile Lab is not running. Start the local AI tools first.");
-		} catch (InterruptedException error) {
-			Thread.currentThread().interrupt();
-			throw new InvalidRequestException("Profile Lab request was interrupted.");
 		}
+		return "Genel mentorluk desteği";
 	}
 
-	private ProfileAnalysisResponse toResponse(ProfileAnalysis analysis) {
-		String displayedProfile = analysis.getConfirmedProfile() == null
-				? analysis.getParsedProfile()
-				: analysis.getConfirmedProfile();
-		return new ProfileAnalysisResponse(analysis.getId(), analysis.getOrganizationId(), analysis.getSourceFilename(),
-				analysis.getProfileType(), displayedProfile, analysis.getStatus(), analysis.getConsentAcceptedAt(),
-				analysis.getRedactionSummary(), analysis.getOcrSummary(), analysis.getCreatedAt());
+	private List<String> textList(JsonNode values) {
+		List<String> result = new ArrayList<>();
+		if (values.isArray()) values.forEach(value -> {
+			if (value.isTextual() && !value.asText().isBlank()) result.add(value.asText());
+		});
+		return result;
 	}
 
 	private void validateProfileType(String profileType) {
@@ -254,19 +175,4 @@ public class ProfileAnalysisService {
 		return false;
 	}
 
-	private JsonNode readJson(String json) {
-		try {
-			return objectMapper.readTree(json);
-		} catch (JsonProcessingException error) {
-			throw new IllegalStateException("Saved profile data is invalid.", error);
-		}
-	}
-
-	private String writeJson(Object value) {
-		try {
-			return objectMapper.writeValueAsString(value);
-		} catch (JsonProcessingException error) {
-			throw new IllegalStateException("Profile data could not be prepared.", error);
-		}
-	}
 }

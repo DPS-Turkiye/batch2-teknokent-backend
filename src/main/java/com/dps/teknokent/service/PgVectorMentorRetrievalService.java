@@ -1,15 +1,8 @@
 package com.dps.teknokent.service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,8 +14,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,10 +21,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PgVectorMentorRetrievalService {
 	private final JdbcTemplate jdbcTemplate;
-	private final ObjectMapper objectMapper = new ObjectMapper();
-
-	@Value("${profile-labs.matcher-url:http://host.docker.internal:8766}")
-	private String matcherUrl;
+	private final AiProviderClient aiProviderClient;
 
 	@Value("${matching.pgvector.enabled:true}")
 	private boolean enabled;
@@ -102,31 +90,10 @@ public class PgVectorMentorRetrievalService {
 	}
 
 	private List<List<Double>> embed(List<String> texts, String provider, String model) throws Exception {
-		Map<String, Object> payload = new LinkedHashMap<>();
-		payload.put("provider", provider);
-		payload.put("model", model);
-		payload.put("texts", texts);
-		HttpRequest request = HttpRequest.newBuilder(URI.create(matcherUrl + "/api/embeddings"))
-				.timeout(Duration.ofSeconds(45))
-				.header("Content-Type", "application/json")
-				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
-				.build();
-		HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
-		if (response.statusCode() < 200 || response.statusCode() >= 300) {
-			throw new IllegalStateException("Embedding service returned " + response.statusCode());
+		if (!aiProviderClient.providerName().equals(provider) || !aiProviderClient.embeddingModel().equals(model)) {
+			throw new IllegalStateException("Embedding configuration changed while building the shortlist.");
 		}
-		JsonNode values = objectMapper.readTree(response.body()).path("embeddings");
-		if (!values.isArray() || values.size() != texts.size()) {
-			throw new IllegalStateException("Embedding service returned an invalid vector count");
-		}
-		List<List<Double>> result = new ArrayList<>();
-		for (JsonNode value : values) {
-			List<Double> vector = new ArrayList<>();
-			value.forEach(number -> vector.add(number.asDouble()));
-			if (vector.isEmpty()) throw new IllegalStateException("Embedding service returned an empty vector");
-			result.add(vector);
-		}
-		return result;
+		return aiProviderClient.embeddings(texts);
 	}
 
 	private String mentorText(MentorProfileResponse mentor) {

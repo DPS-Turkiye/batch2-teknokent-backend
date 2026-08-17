@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.entity.ProfileAnalysis;
@@ -15,6 +16,7 @@ import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProfileAnalysisRepository;
+import com.dps.teknokent.util.JsonUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,12 +28,20 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ProfileAnalysisServiceTest {
 	private final ObjectMapper objectMapper = new ObjectMapper();
+	@Spy
+	private JsonUtils jsonUtils = new JsonUtils(objectMapper);
 
 	@Mock
 	private ProfileAnalysisRepository profileAnalysisRepository;
 
 	@Mock
 	private OrganizationRepository organizationRepository;
+	@Mock
+	private TechnologyInferenceService technologyInferenceService;
+	@Mock
+	private NativeProfileParserService nativeProfileParserService;
+	@Mock
+	private MentorRecommendationService mentorRecommendationService;
 
 	@InjectMocks
 	private ProfileAnalysisService profileAnalysisService;
