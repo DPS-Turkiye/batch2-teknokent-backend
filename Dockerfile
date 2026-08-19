@@ -16,7 +16,11 @@ ENV APP_VERSION=$APP_VERSION
 
 WORKDIR /app
 
-RUN groupadd -r spring && useradd -r -g spring spring
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r spring \
+    && useradd -r -g spring spring
 
 COPY --from=build /build/target/*.jar app.jar
 

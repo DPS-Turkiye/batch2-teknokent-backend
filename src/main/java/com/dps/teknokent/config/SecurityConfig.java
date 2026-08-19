@@ -24,7 +24,12 @@ public class SecurityConfig {
 
 	private static final String[] PUBLIC_PATHS = {
 			"/api/health",
-			"/api/assistant/**", 
+			"/api/assistant/**",
+			"/api/docs",
+			"/api/docs/**",
+			"/api/swagger-ui/**",
+			"/api/v3/api-docs",
+			"/api/v3/api-docs/**"
 	};
 
 	@Bean

@@ -1,9 +1,11 @@
+name: teamtnt
+
 services:
   app:
     build: .
     image: teknokent-app:local
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8080}:8080"
     env_file:
       - .env
     environment:
@@ -13,7 +15,7 @@ services:
       - postgres
 
   postgres:
-    image: postgres:17
+    image: pgvector/pgvector:0.8.6-pg17
     restart: unless-stopped
     command: ["postgres", "-c", "log_min_messages=warning"]
     ports:

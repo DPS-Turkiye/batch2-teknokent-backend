@@ -36,3 +36,14 @@ build/
 # Commit shared formatter settings; ignore local launch/tasks overrides
 .vscode/launch.json
 .vscode/tasks.json
+
+### Local/generated artifacts ###
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+
+# Prototype tools and generated reports are maintained outside the product repository.
+/tools/
+/docs/

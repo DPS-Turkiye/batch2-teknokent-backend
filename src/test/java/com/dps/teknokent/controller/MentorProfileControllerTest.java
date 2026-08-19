@@ -1,0 +1,68 @@
+package com.dps.teknokent.controller;
+
+import java.util.List;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.service.MentorProfileService;
+
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@WebMvcTest(MentorProfileController.class)
+@Import(SecurityConfig.class)
+class MentorProfileControllerTest {
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@MockitoBean
+	private MentorProfileService mentorProfileService;
+
+	@Test
+	void requiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/mentors"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void returnsMentorProfiles() throws Exception {
+		UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+		when(mentorProfileService.findAll()).thenReturn(List.of(new MentorProfileResponse(
+				mentorId,
+				"Dr. Kemal Arslan",
+				"kemal.arslan@teknokent.demo",
+				"DK",
+				"Ürün & Araştırma Direktörü",
+				"Trendyol",
+				"Bu hafta müsait",
+				"~24 saat",
+				"Online",
+				"Mesajlaşma açık",
+				"Yapılandırılmış & Uygulamalı",
+				"Çok yüksek",
+				"Kullanıcı testi, UX",
+				"E-ticaret, SaaS",
+				"Seed & MVP",
+				List.of("Kullanıcı araştırması"),
+				List.of("Kullanıcı testi süreçlerinde deneyimli"),
+				List.of())));
+
+		mockMvc.perform(get("/api/mentors").with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].id").value(mentorId.toString()))
+				.andExpect(jsonPath("$[0].fullName").value("Dr. Kemal Arslan"))
+				.andExpect(jsonPath("$[0].specialties[0]").value("Kullanıcı araştırması"));
+	}
+}

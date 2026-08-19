@@ -8,6 +8,11 @@ spring:
   application:
     name: backend
 
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 52MB
+
   datasource:
     url: jdbc:postgresql://${DATABASE_HOST:localhost}:${DATABASE_PORT:5432}/${DATABASE_NAME:db}
     username: ${DATABASE_USERNAME:teknokent}
@@ -62,7 +67,33 @@ springdoc:
   swagger-ui:
     path: /api/docs
 
+ai:
+  provider: ${AI_PROVIDER:openai}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    profile-model: ${OPENAI_MODEL:gpt-4o-mini}
+    embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+  openrouter:
+    api-key: ${OPENROUTER_API_KEY:}
+    base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+    profile-model: ${OPENROUTER_MODEL:openai/gpt-4o-mini}
+    embedding-model: ${OPENROUTER_EMBEDDING_MODEL:openai/text-embedding-3-small}
+    app-name: ${OPENROUTER_APP_NAME:TeamTNT Spring Backend}
+
+profile-parsing:
+  ocr:
+    executable: ${TESSERACT_EXECUTABLE:tesseract}
+    languages: ${TESSERACT_LANGUAGES:tur+eng}
+    timeout-seconds: ${TESSERACT_TIMEOUT_SECONDS:45}
+
+matching:
+  pgvector:
+    enabled: ${MATCHING_PGVECTOR_ENABLED:true}
+
 meeting:
   provider:
-    base-url: ${MEETING_PROVIDER_BASE_URL}
-    api-key: ${MEETING_PROVIDER_API_KEY}
+    # The meeting assistant is optional for local MVP work. Supplying no
+    # provider configuration must not prevent the rest of the API from starting.
+    base-url: ${MEETING_PROVIDER_BASE_URL:http://localhost}
+    api-key: ${MEETING_PROVIDER_API_KEY:}
