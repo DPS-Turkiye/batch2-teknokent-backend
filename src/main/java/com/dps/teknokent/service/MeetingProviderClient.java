@@ -46,4 +46,11 @@ public class MeetingProviderClient {
         .retrieve()
         .body(ProviderTranscriptResponse.class);
   }
+
+  public void stopBot(String platform, String nativeMeetingId) {
+    client.delete()
+        .uri("/bots/{platform}/{nativeId}", platform, nativeMeetingId)
+        .retrieve()
+        .toBodilessEntity();
+  }
 }

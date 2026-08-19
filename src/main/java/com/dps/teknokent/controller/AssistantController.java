@@ -2,6 +2,7 @@ package com.dps.teknokent.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -52,6 +53,22 @@ public class AssistantController {
     } catch (Exception ex) {
       return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
           .body(new ErrorResponse("Failed to fetch transcript: " + ex.getMessage()));
+    }
+  }
+
+  @DeleteMapping("/api/assistant/bots/{platform}/{nativeMeetingId}")
+  public ResponseEntity<?> stopBot(
+      @PathVariable String platform,
+      @PathVariable String nativeMeetingId) {
+    try {
+      assistantService.stopBot(platform, nativeMeetingId);
+      return ResponseEntity.noContent().build();
+    } catch (RestClientResponseException ex) {
+      return ResponseEntity.status(ex.getStatusCode())
+          .body(new ErrorResponse(ex.getResponseBodyAsString()));
+    } catch (Exception ex) {
+      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+          .body(new ErrorResponse("Failed to stop bot: " + ex.getMessage()));
     }
   }
 }

@@ -56,4 +56,8 @@ public class AssistantService {
     return new TranscriptResponse(segments);
   }
 
+  public void stopBot(String platform, String nativeMeetingId) {
+    providerClient.stopBot(platform, nativeMeetingId);
+  }
+
 }
