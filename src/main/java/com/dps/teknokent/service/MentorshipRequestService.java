@@ -171,7 +171,7 @@ public class MentorshipRequestService {
 				.stream()
 				.filter(slot -> !meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 						request.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED))
-				.map(slot -> new MentorAvailabilitySlotResponse(slot.getId(), slot.getStartsAt(), slot.getDurationMinutes()))
+				.map(slot -> new MentorAvailabilitySlotResponse(slot.getId(), slot.getStartsAt(), slot.getDurationMinutes(), false))
 				.toList();
 	}
 

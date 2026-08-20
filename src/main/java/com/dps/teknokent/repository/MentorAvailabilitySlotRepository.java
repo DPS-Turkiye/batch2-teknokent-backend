@@ -11,4 +11,6 @@ import com.dps.teknokent.entity.MentorAvailabilitySlot;
 public interface MentorAvailabilitySlotRepository extends JpaRepository<MentorAvailabilitySlot, UUID> {
 
 	List<MentorAvailabilitySlot> findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(UUID mentorId, Instant startsAt);
+
+	boolean existsByMentorIdAndStartsAt(UUID mentorId, Instant startsAt);
 }
