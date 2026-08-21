@@ -23,6 +23,7 @@ import com.dps.teknokent.service.AssistantService;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -118,5 +119,36 @@ class AssistantControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"\"}"))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void stopBotReturnsNoContent() throws Exception {
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void stopBotReturnsProviderStatusOnRestClientError() throws Exception {
+    org.mockito.Mockito.doThrow(HttpClientErrorException.create(
+        HttpStatus.CONFLICT,
+        "Conflict",
+        HttpHeaders.EMPTY,
+        "provider conflict".getBytes(StandardCharsets.UTF_8),
+        StandardCharsets.UTF_8
+    )).when(assistantService).stopBot("google_meet", "abc-defg-hij");
+
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail").value("provider conflict"));
+  }
+
+  @Test
+  void stopBotReturnsBadGatewayOnFailure() throws Exception {
+    org.mockito.Mockito.doThrow(new RuntimeException("provider down"))
+        .when(assistantService).stopBot("google_meet", "abc-defg-hij");
+
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.detail").value("Failed to stop bot: provider down"));
   }
 }
