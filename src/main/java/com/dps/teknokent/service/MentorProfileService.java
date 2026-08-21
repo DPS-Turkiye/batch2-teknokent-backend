@@ -10,10 +10,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
+import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
+import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -84,6 +86,29 @@ public class MentorProfileService {
 		slot.setDurationMinutes(request.durationMinutes() != null ? request.durationMinutes() : 60);
 		MentorAvailabilitySlot saved = mentorAvailabilitySlotRepository.saveAndFlush(slot);
 		return new MentorAvailabilitySlotResponse(saved.getId(), saved.getStartsAt(), saved.getDurationMinutes(), false);
+	}
+
+	@Transactional
+	public MentorProfileResponse updateProfile(UUID mentorId, UpdateMentorProfileRequest request) {
+		requireMentor(mentorId);
+		MentorProfile profile = mentorProfileRepository.findOneById(mentorId)
+				.orElseThrow(() -> new ResourceNotFoundException("Mentor profile not found: " + mentorId));
+
+		profile.setProfessionalTitle(request.professionalTitle());
+		profile.setCompany(request.company());
+		profile.setAvailabilityLabel(request.availabilityLabel());
+		profile.setResponseTimeLabel(request.responseTimeLabel());
+		profile.setMeetingMode(request.meetingMode());
+		profile.setCommunicationPreference(request.communicationPreference());
+		profile.setMentoringStyle(request.mentoringStyle());
+		profile.setFitLabel(request.fitLabel());
+		profile.setExperienceLevel(request.experienceLevel());
+		profile.setSectorExperience(request.sectorExperience());
+		profile.setStartupStages(request.startupStages());
+		profile.getSpecialties().clear();
+		profile.getSpecialties().addAll(request.specialties());
+
+		return MentorProfileResponse.fromEntity(mentorProfileRepository.saveAndFlush(profile));
 	}
 
 	@Transactional
