@@ -74,7 +74,7 @@ class MentorshipRequestServiceTest {
         when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
         when(recommendationRunRepository.findByRequestId(any())).thenReturn(Optional.empty());
 
-        var result = mentorshipRequestService.findAll(requesterId);
+        var result = mentorshipRequestService.findAll(requesterId, null);
 
         assertThat(result).hasSize(2);
         assertThat(result.getFirst().requesterId()).isEqualTo(requesterId);

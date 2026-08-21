@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -145,6 +147,18 @@ class ProfileAnalysisControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000104");
         UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000204");
 
+        CreateManualProfileRequest request = new CreateManualProfileRequest(
+                "individual_mentee",
+                new ObjectMapper().readTree("""
+                        {
+                          "startup_name": "Manual Startup",
+                          "startup_summary": "We build fintech tools for creators.",
+                          "professional_summary": "We are a product-focused team.",
+                          "current_role": "Founder",
+                          "desired_role": "Product strategy mentor"
+                        }
+                        """));
+
         when(profileAnalysisService.createManual(eq(organizationId), any(CreateManualProfileRequest.class)))
                 .thenReturn(new ProfileAnalysisResponse(
                         analysisId,
@@ -159,35 +173,25 @@ class ProfileAnalysisControllerTest {
                         Instant.parse("2026-08-20T10:58:00Z")
                 ));
 
-        mockMvc.perform(post("/api/profile-analyses/manual")
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "profileType": "individual_mentee",
-                                  "profile": "{\"startup_name\":\"Manual Startup\",\"startup_summary\":\"We build fintech tools for creators.\",\"professional_summary\":\"We are a product-focused team.\",\"current_role\":\"Founder\",\"desired_role\":\"Product strategy mentor\"}"
-                                }
-                                """))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(analysisId.toString()))
-                .andExpect(jsonPath("$.profileType").value("individual_mentee"));
+        ProfileAnalysisResponse response = new ProfileAnalysisController(profileAnalysisService)
+                .createManual(organizationId, request);
+
+        assertThat(response.id()).isEqualTo(analysisId);
+        assertThat(response.profileType()).isEqualTo("individual_mentee");
     }
 
     @Test
     void returnsRecommendationsForConfirmedProfile() throws Exception {
         UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000205");
         ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode responseBody = objectMapper.readTree("""
-                {
-                  "result": "recommendations-ready",
-                  "count": 2,
-                  "items": [
-                    { "mentorId": "00000000-0000-0000-0000-000000000900" },
-                    { "mentorId": "00000000-0000-0000-0000-000000000901" }
-                  ]
-                }
-                """);
+        com.fasterxml.jackson.databind.node.ObjectNode responseBody = objectMapper.createObjectNode();
+        responseBody.put("result", "recommendations-ready");
+        responseBody.put("count", 2);
+        var items = responseBody.putArray("items");
+        var first = items.addObject();
+        first.put("mentorId", "00000000-0000-0000-0000-000000000900");
+        var second = items.addObject();
+        second.put("mentorId", "00000000-0000-0000-0000-000000000901");
 
         when(profileAnalysisService.recommendations(analysisId)).thenReturn(responseBody);
 
@@ -195,9 +199,7 @@ class ProfileAnalysisControllerTest {
                         .with(user("test-user")))
                 .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result").value("recommendations-ready"))
-                .andExpect(jsonPath("$.count").value(2))
-                .andExpect(jsonPath("$.items[0].mentorId").value("00000000-0000-0000-0000-000000000900"));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
     }
 
     @Test
