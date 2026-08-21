@@ -14,4 +14,10 @@ class TextUtilsTest {
 		assertThat(TextUtils.normalizeForComparison(" Next.js ")).isEqualTo("nextjs");
 		assertThat(TextUtils.normalizeForComparison("İş Modeli")).isEqualTo("işmodeli");
 	}
+
+	@Test
+	void convertsNullToEmptyString() {
+		assertThat(TextUtils.nullToEmpty(null)).isEmpty();
+		assertThat(TextUtils.nullToEmpty("value")).isEqualTo("value");
+	}
 }

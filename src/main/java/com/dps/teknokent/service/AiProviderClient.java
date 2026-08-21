@@ -170,7 +170,7 @@ public class AiProviderClient {
 			throw new InvalidRequestException("The AI provider returned an empty meeting report.");
 		}
 		try {
-			return jsonUtils.readTree(unwrapJsonContent(content));
+			return jsonUtils.readTree(jsonUtils.unwrapJsonContent(content));
 		} catch (IllegalStateException error) {
 			throw new InvalidRequestException("The AI provider returned an invalid meeting report.");
 		}
@@ -193,27 +193,6 @@ public class AiProviderClient {
 			return joined.toString();
 		}
 		return "";
-	}
-
-	private String unwrapJsonContent(String content) {
-		String trimmed = content.trim();
-		if (trimmed.startsWith("```")) {
-			int firstNewline = trimmed.indexOf('\n');
-			if (firstNewline > 0) {
-				trimmed = trimmed.substring(firstNewline + 1);
-			}
-			int fence = trimmed.lastIndexOf("```");
-			if (fence >= 0) {
-				trimmed = trimmed.substring(0, fence);
-			}
-			trimmed = trimmed.trim();
-		}
-		int start = trimmed.indexOf('{');
-		int end = trimmed.lastIndexOf('}');
-		if (start >= 0 && end > start) {
-			return trimmed.substring(start, end + 1);
-		}
-		return trimmed;
 	}
 
 	public String resolveReportModel(String modelOverride) {

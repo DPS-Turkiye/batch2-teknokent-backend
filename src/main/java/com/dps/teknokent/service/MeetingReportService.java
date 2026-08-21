@@ -10,10 +10,10 @@ import com.dps.teknokent.dto.responses.MeetingReportActionItem;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.JsonSchemaUtils;
 import com.dps.teknokent.util.JsonUtils;
+import com.dps.teknokent.util.TextUtils;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,7 +22,9 @@ import lombok.RequiredArgsConstructor;
 public class MeetingReportService {
 
   private final AiProviderClient aiProviderClient;
+  private final LocalPiiRedactionService piiRedactionService;
   private final JsonUtils jsonUtils;
+  private final JsonSchemaUtils jsonSchemaUtils;
 
   public MeetingReportResponse generate(
       List<TranscriptSegmentResponse> segments,
@@ -32,44 +34,47 @@ public class MeetingReportService {
     }
 
     String transcriptText = segments.stream()
-        .map(seg -> "[" + nullToEmpty(seg.at()) + "] "
-            + nullToEmpty(seg.speaker()) + ": "
-            + nullToEmpty(seg.text()))
+        .map(seg -> "[" + TextUtils.nullToEmpty(seg.at()) + "] "
+            + TextUtils.nullToEmpty(seg.speaker()) + ": "
+            + TextUtils.nullToEmpty(seg.text()))
         .collect(Collectors.joining("\n"));
+
+    String redactedTranscript = piiRedactionService.redact(transcriptText).text();
 
     String model = aiProviderClient.resolveReportModel(modelOverride);
     JsonNode raw = aiProviderClient.generateMeetingReport(
-        transcriptText,
+        redactedTranscript,
         reportSchema(),
         modelOverride);
 
     return new MeetingReportResponse(
-        textOrEmpty(raw, "title"),
-        nullableText(raw, "meetingDate"),
-        nullableText(raw, "topic"),
-        textOrEmpty(raw, "summary"),
-        stringList(raw.path("topicsDiscussed")),
-        stringList(raw.path("decisions")),
+        jsonUtils.textOrEmpty(raw, "title"),
+        jsonUtils.nullableText(raw, "meetingDate"),
+        jsonUtils.nullableText(raw, "topic"),
+        jsonUtils.textOrEmpty(raw, "summary"),
+        jsonUtils.stringList(raw.path("topicsDiscussed")),
+        jsonUtils.stringList(raw.path("decisions")),
         actionItems(raw.path("actionItems")),
-        stringList(raw.path("risksOrBlockers")),
-        stringList(raw.path("nextSteps")),
+        jsonUtils.stringList(raw.path("risksOrBlockers")),
+        jsonUtils.stringList(raw.path("nextSteps")),
         model);
   }
 
   private JsonNode reportSchema() {
-    return objectSchema(List.of(
-        field("title", string()),
-        field("meetingDate", nullableString()),
-        field("topic", nullableString()),
-        field("summary", string()),
-        field("topicsDiscussed", stringArray()),
-        field("decisions", stringArray()),
-        field("actionItems", arrayOf(objectSchema(List.of(
-            field("owner", nullableString()),
-            field("task", string()),
-            field("due", nullableString()))))),
-        field("risksOrBlockers", stringArray()),
-        field("nextSteps", stringArray())));
+    return jsonSchemaUtils.object()
+        .string("title")
+        .nullableString("meetingDate")
+        .nullableString("topic")
+        .string("summary")
+        .stringArray("topicsDiscussed")
+        .stringArray("decisions")
+        .objectArray("actionItems", item -> item
+            .nullableString("owner")
+            .string("task")
+            .nullableString("due"))
+        .stringArray("risksOrBlockers")
+        .stringArray("nextSteps")
+        .build();
   }
 
   private List<MeetingReportActionItem> actionItems(JsonNode node) {
@@ -79,88 +84,10 @@ public class MeetingReportService {
     }
     for (JsonNode item : node) {
       items.add(new MeetingReportActionItem(
-          nullableText(item, "owner"),
-          textOrEmpty(item, "task"),
-          nullableText(item, "due")));
+          jsonUtils.nullableText(item, "owner"),
+          jsonUtils.textOrEmpty(item, "task"),
+          jsonUtils.nullableText(item, "due")));
     }
     return items;
-  }
-
-  private List<String> stringList(JsonNode node) {
-    List<String> values = new ArrayList<>();
-    if (!node.isArray()) {
-      return values;
-    }
-    for (JsonNode item : node) {
-      String value = item.asText("");
-      if (!value.isBlank()) {
-        values.add(value);
-      }
-    }
-    return values;
-  }
-
-  private String textOrEmpty(JsonNode node, String field) {
-    String value = node.path(field).asText("");
-    return value == null ? "" : value;
-  }
-
-  private String nullableText(JsonNode node, String field) {
-    JsonNode value = node.path(field);
-    if (value.isNull() || value.isMissingNode()) {
-      return null;
-    }
-    String text = value.asText(null);
-    return text != null && text.isBlank() ? null : text;
-  }
-
-  private String nullToEmpty(String value) {
-    return value == null ? "" : value;
-  }
-
-  private record Field(String name, JsonNode schema) {}
-
-  private Field field(String name, JsonNode schema) {
-    return new Field(name, schema);
-  }
-
-  private JsonNode objectSchema(List<Field> fields) {
-    ObjectNode schema = jsonUtils.createObjectNode();
-    schema.put("type", "object");
-    schema.put("additionalProperties", false);
-    ObjectNode properties = schema.putObject("properties");
-    ArrayNode required = schema.putArray("required");
-    fields.forEach(field -> {
-      properties.set(field.name(), field.schema());
-      required.add(field.name());
-    });
-    return schema;
-  }
-
-  private JsonNode string() {
-    return jsonUtils.createObjectNode().put("type", "string");
-  }
-
-  private JsonNode nullableString() {
-    return typeUnion("string", "null");
-  }
-
-  private JsonNode stringArray() {
-    return arrayOf(string());
-  }
-
-  private JsonNode arrayOf(JsonNode itemSchema) {
-    ObjectNode schema = jsonUtils.createObjectNode().put("type", "array");
-    schema.set("items", itemSchema);
-    return schema;
-  }
-
-  private JsonNode typeUnion(String... types) {
-    ObjectNode schema = jsonUtils.createObjectNode();
-    ArrayNode type = schema.putArray("type");
-    for (String value : types) {
-      type.add(value);
-    }
-    return schema;
   }
 }
