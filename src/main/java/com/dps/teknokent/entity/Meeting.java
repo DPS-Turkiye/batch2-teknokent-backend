@@ -46,6 +46,26 @@ public class Meeting {
 		return meeting;
 	}
 
+	public static Meeting forLoggedEntry(
+			MentorshipRequest request,
+			Instant scheduledAt,
+			Integer durationMinutes,
+			String agenda,
+			String notes,
+			String outcomes,
+			MeetingStatus status) {
+		Meeting meeting = new Meeting();
+		meeting.organization = request.getOrganization();
+		meeting.mentor = request.getMentor();
+		meeting.scheduledAt = scheduledAt;
+		meeting.durationMinutes = durationMinutes;
+		meeting.agenda = TextUtils.normalizeOptional(agenda);
+		meeting.notes = TextUtils.normalizeOptional(notes);
+		meeting.outcomes = TextUtils.normalizeOptional(outcomes);
+		meeting.status = status;
+		return meeting;
+	}
+
 	public static Meeting forMentorshipRequest(MentorshipRequest request, MentorAvailabilitySlot slot) {
 		Meeting meeting = new Meeting();
 		meeting.mentorshipRequest = request;

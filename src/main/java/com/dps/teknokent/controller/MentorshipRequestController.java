@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
+import com.dps.teknokent.dto.requests.LogMeetingRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 
 import com.dps.teknokent.dto.requests.ScheduleMentorshipRequest;
@@ -24,6 +25,7 @@ import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
+import com.dps.teknokent.service.MeetingService;
 import com.dps.teknokent.service.MentorshipRequestService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +39,7 @@ import lombok.RequiredArgsConstructor;
 public class MentorshipRequestController {
 
 	private final MentorshipRequestService mentorshipRequestService;
+	private final MeetingService meetingService;
 
 	@GetMapping
 	public List<MentorshipRequestResponse> findAll(
@@ -93,5 +96,18 @@ public class MentorshipRequestController {
 	@GetMapping("/{id}/alternatives")
 	public List<MentorProfileResponse> findAlternatives(@PathVariable UUID id) {
 		return mentorshipRequestService.findAlternatives(id);
+	}
+
+	@GetMapping("/{id}/meetings")
+	public List<MeetingResponse> findMeetings(@PathVariable UUID id) {
+		return meetingService.findTimelineForRequest(id);
+	}
+
+	@PostMapping("/{id}/meetings")
+	@ResponseStatus(HttpStatus.CREATED)
+	public MeetingResponse logMeeting(
+			@PathVariable UUID id,
+			@Valid @RequestBody LogMeetingRequest request) {
+		return meetingService.logMeeting(id, request);
 	}
 }
