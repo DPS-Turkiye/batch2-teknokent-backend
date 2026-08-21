@@ -1,133 +1,198 @@
 package com.dps.teknokent.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.when;
-
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.entity.AppUser;
-import com.dps.teknokent.entity.MentorProfile;
+import com.dps.teknokent.entity.MentorAvailabilitySlot;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MentorProfileServiceTest {
 
-    @Mock
-    private MentorProfileRepository mentorProfileRepository;
+	@Mock
+	private MentorProfileRepository mentorProfileRepository;
+	@Mock
+	private MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
+	@Mock
+	private MeetingRepository meetingRepository;
+	@Mock
+	private DomainLookupService domainLookupService;
 
-    @InjectMocks
-    private MentorProfileService mentorProfileService;
+	private MentorProfileService mentorProfileService;
 
-    @Test
-    void findAll_returnsMappedProfiles() {
-        UUID firstId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        UUID secondId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+	private final UUID mentorId = UUID.randomUUID();
 
-        MentorProfile first = mentorProfile(firstId, "Ada Çalışkan", "ada@tekno.com", "AC", "Senior Product Mentor");
-        MentorProfile second = mentorProfile(secondId, "Bora Demir", "bora@tekno.com", "BD", "Growth Mentor");
+	@BeforeEach
+	void setUp() {
+		mentorProfileService = new MentorProfileService(
+				mentorProfileRepository, mentorAvailabilitySlotRepository, meetingRepository, domainLookupService);
+	}
 
-        when(mentorProfileRepository.findAllByOrderBySortOrderAsc()).thenReturn(List.of(first, second));
+	private AppUser mentor() {
+		AppUser user = new AppUser();
+		user.setId(mentorId);
+		user.setRole(UserRole.MENTOR);
+		return user;
+	}
 
-        var result = mentorProfileService.findAll();
+	@Test
+	void createAvailabilitySlotRejectsPastStartTime() {
+		lenient().when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		CreateMentorAvailabilitySlotRequest request =
+				new CreateMentorAvailabilitySlotRequest(Instant.now().minus(1, ChronoUnit.DAYS), 60);
 
-        assertThat(result).hasSize(2);
-        assertThat(result).extracting(profile -> profile.id())
-                .containsExactly(firstId, secondId);
-        assertThat(result.getFirst().fullName()).isEqualTo("Ada Çalışkan");
-        assertThat(result.get(1).professionalTitle()).isEqualTo("Growth Mentor");
-    }
+		assertThatThrownBy(() -> mentorProfileService.createAvailabilitySlot(mentorId, request))
+				.isInstanceOf(InvalidRequestException.class);
+	}
 
-    @Test
-    void findAllExcept_excludesTheGivenMentor() {
-        UUID keptId = UUID.fromString("00000000-0000-0000-0000-000000000201");
-        UUID excludedId = UUID.fromString("00000000-0000-0000-0000-000000000202");
+	@Test
+	void createAvailabilitySlotRejectsNonMentorUser() {
+		AppUser mentee = new AppUser();
+		mentee.setId(mentorId);
+		mentee.setRole(UserRole.MENTEE);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentee);
+		CreateMentorAvailabilitySlotRequest request =
+				new CreateMentorAvailabilitySlotRequest(Instant.now().plus(1, ChronoUnit.DAYS), 60);
 
-        MentorProfile kept = mentorProfile(keptId, "Cem Yılmaz", "cem@tekno.com", "CY", "Technical Mentor");
-        MentorProfile excluded = mentorProfile(excludedId, "Defne Aras", "defne@tekno.com", "DA", "UX Mentor");
+		assertThatThrownBy(() -> mentorProfileService.createAvailabilitySlot(mentorId, request))
+				.isInstanceOf(InvalidRequestException.class);
+	}
 
-        when(mentorProfileRepository.findAllByOrderBySortOrderAsc()).thenReturn(List.of(kept, excluded));
+	@Test
+	void createAvailabilitySlotRejectsDuplicateStartTime() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		Instant startsAt = Instant.now().plus(1, ChronoUnit.DAYS);
+		when(mentorAvailabilitySlotRepository.existsByMentorIdAndStartsAt(mentorId, startsAt)).thenReturn(true);
+		CreateMentorAvailabilitySlotRequest request = new CreateMentorAvailabilitySlotRequest(startsAt, 60);
 
-        var result = mentorProfileService.findAllExcept(excludedId);
+		assertThatThrownBy(() -> mentorProfileService.createAvailabilitySlot(mentorId, request))
+				.isInstanceOf(InvalidRequestException.class);
+	}
 
-        assertThat(result).hasSize(1);
-        assertThat(result.getFirst().id()).isEqualTo(keptId);
-        assertThat(result.getFirst().fullName()).isEqualTo("Cem Yılmaz");
-    }
+	@Test
+	void createAvailabilitySlotDefaultsDurationTo60Minutes() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		Instant startsAt = Instant.now().plus(1, ChronoUnit.DAYS);
+		when(mentorAvailabilitySlotRepository.existsByMentorIdAndStartsAt(mentorId, startsAt)).thenReturn(false);
+		when(mentorAvailabilitySlotRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+			MentorAvailabilitySlot slot = invocation.getArgument(0);
+			slot.setId(UUID.randomUUID());
+			return slot;
+		});
 
-    @Test
-    void findById_returnsMappedProfileWhenFound() {
-        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000301");
-        MentorProfile profile = mentorProfile(id, "Efe Güneş", "efe@tekno.com", "EG", "Platform Mentor");
-        profile.setCompany("Teknokent");
-        profile.setAvailabilityLabel("Hafta içi");
-        profile.setResponseTimeLabel("24 saat");
-        profile.setMeetingMode("Uzaktan");
-        profile.setCommunicationPreference("E-posta");
-        profile.setMentoringStyle("Yapılandırılmış");
-        profile.setFitLabel("İyi Uyum");
-        profile.setExperienceLevel("10+ yıl");
-        profile.setSectorExperience("Fintech");
-        profile.setStartupStages("Seed, Series A");
-        profile.setSpecialties(List.of("Product", "AI"));
-        profile.setRecommendationReasons(List.of("İyi mentor", "Düzenli geri bildirim"));
+		MentorAvailabilitySlotResponse response = mentorProfileService.createAvailabilitySlot(
+				mentorId, new CreateMentorAvailabilitySlotRequest(startsAt, null));
 
-        when(mentorProfileRepository.findOneById(id)).thenReturn(Optional.of(profile));
+		assertThat(response.durationMinutes()).isEqualTo(60);
+		assertThat(response.booked()).isFalse();
+	}
 
-        var result = mentorProfileService.findById(id);
+	@Test
+	void deleteAvailabilitySlotRejectsSlotBelongingToAnotherMentor() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		UUID slotId = UUID.randomUUID();
+		MentorAvailabilitySlot slot = new MentorAvailabilitySlot();
+		slot.setId(slotId);
+		AppUser otherMentor = new AppUser();
+		otherMentor.setId(UUID.randomUUID());
+		slot.setMentor(otherMentor);
+		when(mentorAvailabilitySlotRepository.findById(slotId)).thenReturn(Optional.of(slot));
 
-        assertThat(result.id()).isEqualTo(id);
-        assertThat(result.fullName()).isEqualTo("Efe Güneş");
-        assertThat(result.email()).isEqualTo("efe@tekno.com");
-        assertThat(result.company()).isEqualTo("Teknokent");
-        assertThat(result.specialties()).containsExactly("Product", "AI");
-        assertThat(result.recommendationReasons()).containsExactly("İyi mentor", "Düzenli geri bildirim");
-    }
+		assertThatThrownBy(() -> mentorProfileService.deleteAvailabilitySlot(mentorId, slotId))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(mentorAvailabilitySlotRepository, never()).delete(any());
+	}
 
-    @Test
-    void findById_throwsWhenProfileDoesNotExist() {
-        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000999");
+	@Test
+	void deleteAvailabilitySlotRejectsAlreadyBookedSlot() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		UUID slotId = UUID.randomUUID();
+		Instant startsAt = Instant.now().plus(1, ChronoUnit.DAYS);
+		MentorAvailabilitySlot slot = new MentorAvailabilitySlot();
+		slot.setId(slotId);
+		slot.setMentor(mentor());
+		slot.setStartsAt(startsAt);
+		when(mentorAvailabilitySlotRepository.findById(slotId)).thenReturn(Optional.of(slot));
+		when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentorId, startsAt, MeetingStatus.SCHEDULED))
+				.thenReturn(true);
 
-        when(mentorProfileRepository.findOneById(id)).thenReturn(Optional.empty());
+		assertThatThrownBy(() -> mentorProfileService.deleteAvailabilitySlot(mentorId, slotId))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(mentorAvailabilitySlotRepository, never()).delete(any());
+	}
 
-        assertThatThrownBy(() -> mentorProfileService.findById(id))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Mentor not found: " + id);
-    }
+	@Test
+	void deleteAvailabilitySlotRemovesUnbookedSlot() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		UUID slotId = UUID.randomUUID();
+		Instant startsAt = Instant.now().plus(1, ChronoUnit.DAYS);
+		MentorAvailabilitySlot slot = new MentorAvailabilitySlot();
+		slot.setId(slotId);
+		slot.setMentor(mentor());
+		slot.setStartsAt(startsAt);
+		when(mentorAvailabilitySlotRepository.findById(slotId)).thenReturn(Optional.of(slot));
+		when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentorId, startsAt, MeetingStatus.SCHEDULED))
+				.thenReturn(false);
 
-    private static MentorProfile mentorProfile(UUID id, String fullName, String email, String initials, String title) {
-        AppUser user = new AppUser();
-        user.setId(id);
-        user.setEmail(email);
-        user.setFullName(fullName);
+		mentorProfileService.deleteAvailabilitySlot(mentorId, slotId);
 
-        MentorProfile profile = new MentorProfile();
-        profile.setId(id);
-        profile.setUser(user);
-        profile.setInitials(initials);
-        profile.setProfessionalTitle(title);
-        profile.setCompany("Teknokent");
-        profile.setAvailabilityLabel("Hafta içi");
-        profile.setResponseTimeLabel("24 saat");
-        profile.setMeetingMode("Uzaktan");
-        profile.setCommunicationPreference("E-posta");
-        profile.setMentoringStyle("Yapılandırılmış");
-        profile.setFitLabel("İyi Uyum");
-        profile.setExperienceLevel("5+ yıl");
-        profile.setSectorExperience("Siber güvenlik");
-        profile.setStartupStages("Seed");
-        profile.setSpecialties(List.of("Mentorluk"));
-        profile.setRecommendationReasons(List.of("Uygun profil"));
-        profile.setConfirmedEvidence(List.of());
-        return profile;
-    }
+		verify(mentorAvailabilitySlotRepository).delete(slot);
+	}
+
+	@Test
+	void deleteAvailabilitySlotRejectsUnknownSlot() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		UUID slotId = UUID.randomUUID();
+		when(mentorAvailabilitySlotRepository.findById(slotId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> mentorProfileService.deleteAvailabilitySlot(mentorId, slotId))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	void findAvailabilityMarksSlotsWithExistingMeetingsAsBooked() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		Instant startsAt = Instant.now().plus(1, ChronoUnit.DAYS);
+		MentorAvailabilitySlot slot = new MentorAvailabilitySlot();
+		slot.setId(UUID.randomUUID());
+		slot.setMentor(mentor());
+		slot.setStartsAt(startsAt);
+		slot.setDurationMinutes(60);
+		when(mentorAvailabilitySlotRepository.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(eq(mentorId), any()))
+				.thenReturn(List.of(slot));
+		when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentorId, startsAt, MeetingStatus.SCHEDULED))
+				.thenReturn(true);
+
+		List<MentorAvailabilitySlotResponse> result = mentorProfileService.findAvailability(mentorId);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).booked()).isTrue();
+	}
 }

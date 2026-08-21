@@ -12,4 +12,6 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 	List<MentorshipRequest> findAllByOrderByCreatedAtDesc();
 
 	List<MentorshipRequest> findByRequesterIdOrderByCreatedAtDesc(UUID requesterId);
+
+	List<MentorshipRequest> findByMentorIdOrderByCreatedAtDesc(UUID mentorId);
 }

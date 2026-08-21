@@ -61,10 +61,15 @@ public class MentorshipRequestService {
 	private final MentorProfileService mentorProfileService;
 
 	@Transactional(readOnly = true)
-	public List<MentorshipRequestResponse> findAll(UUID requesterId) {
-		List<MentorshipRequest> requests = requesterId == null
-				? mentorshipRequestRepository.findAllByOrderByCreatedAtDesc()
-				: mentorshipRequestRepository.findByRequesterIdOrderByCreatedAtDesc(requesterId);
+	public List<MentorshipRequestResponse> findAll(UUID requesterId, UUID mentorId) {
+		List<MentorshipRequest> requests;
+		if (mentorId != null) {
+			requests = mentorshipRequestRepository.findByMentorIdOrderByCreatedAtDesc(mentorId);
+		} else if (requesterId != null) {
+			requests = mentorshipRequestRepository.findByRequesterIdOrderByCreatedAtDesc(requesterId);
+		} else {
+			requests = mentorshipRequestRepository.findAllByOrderByCreatedAtDesc();
+		}
 		return requests.stream()
 				.map(this::toResponse)
 				.toList();
@@ -166,7 +171,7 @@ public class MentorshipRequestService {
 				.stream()
 				.filter(slot -> !meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 						request.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED))
-				.map(slot -> new MentorAvailabilitySlotResponse(slot.getId(), slot.getStartsAt(), slot.getDurationMinutes()))
+				.map(slot -> new MentorAvailabilitySlotResponse(slot.getId(), slot.getStartsAt(), slot.getDurationMinutes(), false))
 				.toList();
 	}
 
