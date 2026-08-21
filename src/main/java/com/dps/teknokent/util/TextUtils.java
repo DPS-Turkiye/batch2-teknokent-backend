@@ -11,6 +11,10 @@ public final class TextUtils {
 		return value == null ? null : value.trim();
 	}
 
+	public static String nullToEmpty(String value) {
+		return value == null ? "" : value;
+	}
+
 	public static String normalizeOptional(String value) {
 		return value == null || value.isBlank() ? null : value.trim();
 	}

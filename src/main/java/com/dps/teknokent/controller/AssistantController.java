@@ -11,8 +11,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClientResponseException;
 
 import com.dps.teknokent.dto.requests.AddBotRequest;
+import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.ErrorResponse;
+import com.dps.teknokent.dto.responses.MeetingReportResponse;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.AssistantService;
 
 import jakarta.validation.Valid;
@@ -69,6 +72,27 @@ public class AssistantController {
     } catch (Exception ex) {
       return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
           .body(new ErrorResponse("Failed to stop bot: " + ex.getMessage()));
+    }
+  }
+
+  @PostMapping("/api/assistant/bots/{platform}/{nativeMeetingId}/report")
+  public ResponseEntity<?> generateMeetingReport(
+      @PathVariable String platform,
+      @PathVariable String nativeMeetingId,
+      @RequestBody(required = false) GenerateMeetingReportRequest request) {
+    try {
+      String model = request != null ? request.model() : null;
+      MeetingReportResponse response =
+          assistantService.generateMeetingReport(platform, nativeMeetingId, model);
+      return ResponseEntity.ok(response);
+    } catch (InvalidRequestException ex) {
+      return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
+    } catch (RestClientResponseException ex) {
+      return ResponseEntity.status(ex.getStatusCode())
+          .body(new ErrorResponse(ex.getResponseBodyAsString()));
+    } catch (Exception ex) {
+      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+          .body(new ErrorResponse("Failed to generate meeting report: " + ex.getMessage()));
     }
   }
 }

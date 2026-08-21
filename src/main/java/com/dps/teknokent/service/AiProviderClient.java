@@ -40,6 +40,8 @@ public class AiProviderClient {
 	private String openRouterBaseUrl;
 	@Value("${ai.openrouter.profile-model:openai/gpt-4o-mini}")
 	private String openRouterProfileModel;
+	@Value("${ai.openrouter.report-model:openai/gpt-4o-mini}")
+	private String openRouterReportModel;
 	@Value("${ai.openrouter.embedding-model:openai/text-embedding-3-small}")
 	private String openRouterEmbeddingModel;
 	@Value("${ai.openrouter.app-name:TeamTNT Spring Backend}")
@@ -86,6 +88,127 @@ public class AiProviderClient {
 		}
 	}
 
+	public JsonNode generateMeetingReport(
+			String transcriptText,
+			JsonNode schema,
+			String modelOverride) {
+		String model = (modelOverride != null && !modelOverride.isBlank())
+				? modelOverride.trim()
+				: reportModel();
+		String schemaJson = jsonUtils.writeValue(schema);
+		String instructions = """
+			You are a mentorship meeting assistant that writes structured meeting reports.
+			- Base every field only on the supplied transcript. Never invent facts.
+			- Always fill "summary" with a clear meeting overview in Turkish.
+			- Fill meeting metadata: title, meetingDate (if mentioned, else null), topic.
+			- topicsDiscussed: main subjects that were talked about.
+			- decisions: concrete decisions made in the meeting.
+			- actionItems: follow-ups with owner/task/due when available (due may be null).
+			- risksOrBlockers and nextSteps: use [] when not present.
+			- Prefer Turkish for narrative fields when the transcript is Turkish.
+			- Return ONLY a single JSON object. No markdown fences, no commentary.
+			- The JSON must match this schema:
+			""" + schemaJson;
+
+		boolean preferStrictSchema =
+				model.startsWith("openai/") || model.startsWith("google/");
+		try {
+			return completeMeetingReport(model, instructions, transcriptText, schema, preferStrictSchema);
+		} catch (InvalidRequestException firstError) {
+			if (!preferStrictSchema) {
+				throw firstError;
+			}
+			return completeMeetingReport(model, instructions, transcriptText, schema, false);
+		}
+	}
+
+	private JsonNode completeMeetingReport(
+			String model,
+			String instructions,
+			String transcriptText,
+			JsonNode schema,
+			boolean strictSchema) {
+		Map<String, Object> payload = new java.util.LinkedHashMap<>();
+		payload.put("model", model);
+		payload.put("messages", List.of(
+				Map.of("role", "system", "content", instructions),
+				Map.of("role", "user", "content", transcriptText)));
+		if (strictSchema) {
+			payload.put("response_format", Map.of(
+					"type", "json_schema",
+					"json_schema", Map.of(
+							"name", "meeting_report",
+							"strict", true,
+							"schema", schema)));
+		} else {
+			payload.put("response_format", Map.of("type", "json_object"));
+		}
+		if (model.startsWith("google/")) {
+			payload.put("reasoning", Map.of("effort", "none"));
+		}
+
+		JsonNode response;
+		try {
+			response = post(baseUrl() + "/chat/completions", payload);
+		} catch (InvalidRequestException error) {
+			if (strictSchema) {
+				throw error;
+			}
+			Map<String, Object> plain = new java.util.LinkedHashMap<>();
+			plain.put("model", model);
+			plain.put("messages", List.of(
+					Map.of("role", "system", "content", instructions),
+					Map.of("role", "user", "content", transcriptText)));
+			if (model.startsWith("google/")) {
+				plain.put("reasoning", Map.of("effort", "none"));
+			}
+			response = post(baseUrl() + "/chat/completions", plain);
+		}
+
+		String content = extractMessageContent(response.path("choices").path(0).path("message"));
+		if (content.isBlank()) {
+			throw new InvalidRequestException("The AI provider returned an empty meeting report.");
+		}
+		try {
+			return jsonUtils.readTree(jsonUtils.unwrapJsonContent(content));
+		} catch (IllegalStateException error) {
+			throw new InvalidRequestException("The AI provider returned an invalid meeting report.");
+		}
+	}
+
+	private String extractMessageContent(JsonNode message) {
+		JsonNode content = message.path("content");
+		if (content.isTextual()) {
+			return content.asText("");
+		}
+		if (content.isArray()) {
+			StringBuilder joined = new StringBuilder();
+			for (JsonNode part : content) {
+				if (part.isTextual()) {
+					joined.append(part.asText());
+				} else if (part.has("text")) {
+					joined.append(part.path("text").asText(""));
+				}
+			}
+			return joined.toString();
+		}
+		return "";
+	}
+
+	public String resolveReportModel(String modelOverride) {
+		if (modelOverride != null && !modelOverride.isBlank()) {
+			return modelOverride.trim();
+		}
+		return reportModel();
+	}
+
+	public String resolveProfileModel(String modelOverride) {
+		if (modelOverride != null && !modelOverride.isBlank()) {
+			return modelOverride.trim();
+		}
+		return profileModel();
+	}
+
 	public List<List<Double>> embeddings(List<String> texts) {
 		if (texts.isEmpty()) return List.of();
 		JsonNode response = post(baseUrl() + "/embeddings", Map.of("model", embeddingModel(), "input", texts));
@@ -113,6 +236,15 @@ public class AiProviderClient {
 
 	private String profileModel() {
 		return "openrouter".equals(providerName()) ? openRouterProfileModel : openAiProfileModel;
+	}
+
+	private String reportModel() {
+		if ("openrouter".equals(providerName())) {
+			return openRouterReportModel != null && !openRouterReportModel.isBlank()
+					? openRouterReportModel
+					: openRouterProfileModel;
+		}
+		return openAiProfileModel;
 	}
 
 	private String baseUrl() {
