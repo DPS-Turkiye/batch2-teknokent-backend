@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,7 +26,7 @@ public class LocalPiiRedactionService {
 			StringBuffer output = new StringBuffer();
 			while (matcher.find()) {
 				count++;
-				matcher.appendReplacement(output, "[REDACTED_" + entry.getKey().toUpperCase() + "]");
+				matcher.appendReplacement(output, "[REDACTED_" + entry.getKey().toUpperCase(Locale.ROOT) + "]");
 			}
 			matcher.appendTail(output);
 			redacted = output.toString();

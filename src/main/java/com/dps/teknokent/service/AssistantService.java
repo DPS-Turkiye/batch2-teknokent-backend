@@ -9,6 +9,7 @@ import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
+import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 public class AssistantService {
 
   private final MeetingProviderClient providerClient;
+  private final MeetingReportService meetingReportService;
 
   public AddBotResponse addBot(AddBotRequest request) {
     var parsed = MeetingUrlParser.parse(request.meetingUrl());
@@ -58,6 +60,14 @@ public class AssistantService {
 
   public void stopBot(String platform, String nativeMeetingId) {
     providerClient.stopBot(platform, nativeMeetingId);
+  }
+
+  public MeetingReportResponse generateMeetingReport(
+      String platform,
+      String nativeMeetingId,
+      String model) {
+    TranscriptResponse transcript = getTranscript(platform, nativeMeetingId);
+    return meetingReportService.generate(transcript.segments(), model);
   }
 
 }
