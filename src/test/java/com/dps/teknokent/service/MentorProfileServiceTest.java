@@ -15,9 +15,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
+import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
+import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -194,5 +196,49 @@ class MentorProfileServiceTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).booked()).isTrue();
+	}
+
+	private UpdateMentorProfileRequest updateRequest() {
+		return new UpdateMentorProfileRequest(
+				"Ürün Danışmanı", "Acme", "Bu hafta müsait", "~24 saat", "Online",
+				"Mesajlaşma açık", "Yapılandırılmış", "Yüksek", "Kıdemli", "SaaS", "Seed",
+				List.of("Büyüme", "Ürün Stratejisi"));
+	}
+
+	@Test
+	void updateProfileAppliesAllFieldsAndReplacesSpecialties() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		profile.getSpecialties().add("Eski Uzmanlık");
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		mentorProfileService.updateProfile(mentorId, updateRequest());
+
+		assertThat(profile.getProfessionalTitle()).isEqualTo("Ürün Danışmanı");
+		assertThat(profile.getCompany()).isEqualTo("Acme");
+		assertThat(profile.getSpecialties()).containsExactly("Büyüme", "Ürün Stratejisi");
+	}
+
+	@Test
+	void updateProfileRejectsNonMentorUser() {
+		AppUser mentee = new AppUser();
+		mentee.setId(mentorId);
+		mentee.setRole(UserRole.MENTEE);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentee);
+
+		assertThatThrownBy(() -> mentorProfileService.updateProfile(mentorId, updateRequest()))
+				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	@Test
+	void updateProfileRejectsMissingProfile() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> mentorProfileService.updateProfile(mentorId, updateRequest()))
+				.isInstanceOf(ResourceNotFoundException.class);
 	}
 }

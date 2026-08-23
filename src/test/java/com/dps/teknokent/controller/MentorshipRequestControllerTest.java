@@ -31,6 +31,7 @@ import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
+import com.dps.teknokent.service.MeetingService;
 import com.dps.teknokent.service.MentorshipRequestService;
 
 @WebMvcTest(MentorshipRequestController.class)
@@ -42,6 +43,9 @@ class MentorshipRequestControllerTest {
 
     @MockitoBean
     private MentorshipRequestService mentorshipRequestService;
+
+    @MockitoBean
+    private MeetingService meetingService;
 
     @Test
     void requiresAuthenticationForList() throws Exception {
