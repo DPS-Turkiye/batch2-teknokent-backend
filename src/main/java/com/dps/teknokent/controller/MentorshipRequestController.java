@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.LogMeetingRequest;
+import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 
 import com.dps.teknokent.dto.requests.ScheduleMentorshipRequest;
@@ -71,6 +72,13 @@ public class MentorshipRequestController {
 			@PathVariable UUID id,
 			@Valid @RequestBody ReplyToMentorshipRequest reply) {
 		return mentorshipRequestService.reply(id, reply);
+	}
+
+	@PostMapping("/{id}/mentor-messages")
+	public MentorshipRequestResponse postMentorMessage(
+			@PathVariable UUID id,
+			@Valid @RequestBody PostMentorMessageRequest request) {
+		return mentorshipRequestService.postMentorMessage(id, request);
 	}
 
 	@PatchMapping("/{id}/withdrawal")

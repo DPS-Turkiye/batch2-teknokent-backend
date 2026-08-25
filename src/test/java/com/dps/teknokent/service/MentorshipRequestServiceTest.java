@@ -3,6 +3,8 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -21,10 +23,14 @@ import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
+import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
+import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorshipRequest;
+import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
@@ -176,6 +182,128 @@ class MentorshipRequestServiceTest {
         assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
         assertThat(result.mentorMessage()).isEqualTo("Let's meet");
         assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+    }
+
+    @Test
+    void reply_savesMenteeReplyAndMarksRepliedWhenMoreInfoRequested() {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        AppUser requester = user(requesterId, "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+        AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"), "Teknokent");
+        MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor, "Roadmap help",
+                MentorshipRequestStatus.MORE_INFO_REQUESTED);
+
+        when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+        when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId)).thenReturn(List.of());
+        when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+        var result = mentorshipRequestService.reply(requestId, new ReplyToMentorshipRequest(requesterId, "Bütçemiz 50.000 TL"));
+
+        assertThat(result.status()).isEqualTo(MentorshipRequestStatus.PENDING);
+        assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.PENDING);
+        verify(mentorshipRequestMessageRepository).saveAndFlush(
+                argThat((MentorshipRequestMessage message) -> message.getMessageType() == MentorshipRequestMessageType.MENTEE_REPLY
+                        && message.getBody().equals("Bütçemiz 50.000 TL")));
+    }
+
+    @Test
+    void reply_savesMenteeMessageWithoutChangingStatusWhenAccepted() {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        AppUser requester = user(requesterId, "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+        AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"), "Teknokent");
+        MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor, "Roadmap help",
+                MentorshipRequestStatus.ACCEPTED);
+
+        when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+        when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId)).thenReturn(List.of());
+        when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+        var result = mentorshipRequestService.reply(requestId, new ReplyToMentorshipRequest(requesterId, "Salı uygun mu?"));
+
+        assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+        assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+        verify(mentorshipRequestMessageRepository).saveAndFlush(
+                argThat((MentorshipRequestMessage message) -> message.getMessageType() == MentorshipRequestMessageType.MENTEE_MESSAGE
+                        && message.getBody().equals("Salı uygun mu?")));
+    }
+
+    @Test
+    void reply_rejectsWhenRequestIsStillPending() {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        AppUser requester = user(requesterId, "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+        AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"), "Teknokent");
+        MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor, "Roadmap help",
+                MentorshipRequestStatus.PENDING);
+
+        when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+
+        assertThatThrownBy(() -> mentorshipRequestService.reply(requestId, new ReplyToMentorshipRequest(requesterId, "Merhaba")))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("more information was requested or the request was accepted");
+    }
+
+    @Test
+    void postMentorMessage_savesMentorMessageWhenAccepted() {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+        AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"), "Teknokent");
+        MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor, "Roadmap help",
+                MentorshipRequestStatus.ACCEPTED);
+
+        when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId)).thenReturn(List.of());
+        when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+        var result = mentorshipRequestService.postMentorMessage(requestId, new PostMentorMessageRequest(mentorId, "Yarın 14:00 uygun mu?"));
+
+        assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+        verify(mentorshipRequestMessageRepository).saveAndFlush(
+                argThat((MentorshipRequestMessage message) -> message.getMessageType() == MentorshipRequestMessageType.MENTOR_MESSAGE
+                        && message.getBody().equals("Yarın 14:00 uygun mu?")));
+    }
+
+    @Test
+    void postMentorMessage_rejectsWhenMentorIsNotAssignedToRequest() {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        UUID otherMentorId = UUID.fromString("00000000-0000-0000-0000-000000000999");
+        AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+        AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"), "Teknokent");
+        MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor, "Roadmap help",
+                MentorshipRequestStatus.ACCEPTED);
+
+        when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+
+        assertThatThrownBy(() -> mentorshipRequestService.postMentorMessage(requestId, new PostMentorMessageRequest(otherMentorId, "Merhaba")))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("assigned mentor");
+    }
+
+    @Test
+    void postMentorMessage_rejectsWhenRequestIsNotAccepted() {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+        AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"), "Teknokent");
+        MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor, "Roadmap help",
+                MentorshipRequestStatus.PENDING);
+
+        when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+
+        assertThatThrownBy(() -> mentorshipRequestService.postMentorMessage(requestId, new PostMentorMessageRequest(mentorId, "Merhaba")))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("accepted");
     }
 
     private static MentorshipRequest mentorshipRequest(UUID id, AppUser requester, Organization organization, AppUser mentor,
