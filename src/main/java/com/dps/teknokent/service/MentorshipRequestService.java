@@ -18,6 +18,7 @@ import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.RecommendationEvidenceSubmission;
 import com.dps.teknokent.dto.requests.RecommendationSnapshotSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
+import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 import com.dps.teknokent.dto.requests.ScheduleMentorshipRequest;
 import com.dps.teknokent.dto.requests.WithdrawMentorshipRequest;
@@ -137,13 +138,34 @@ public class MentorshipRequestService {
 		if (!request.getRequester().getId().equals(reply.requesterId())) {
 			throw new InvalidRequestException("Only the requester can reply to this request");
 		}
-		if (request.getStatus() != MentorshipRequestStatus.MORE_INFO_REQUESTED) {
-			throw new InvalidRequestException("A reply can only be sent when more information was requested");
+		if (request.getStatus() != MentorshipRequestStatus.MORE_INFO_REQUESTED
+				&& request.getStatus() != MentorshipRequestStatus.ACCEPTED) {
+			throw new InvalidRequestException(
+					"A message can only be sent when more information was requested or the request was accepted");
 		}
-		saveMessage(request, request.getRequester(), MentorshipRequestMessageType.MENTEE_REPLY,
+		boolean isReplyingToInfoRequest = request.getStatus() == MentorshipRequestStatus.MORE_INFO_REQUESTED;
+		saveMessage(request, request.getRequester(),
+				isReplyingToInfoRequest ? MentorshipRequestMessageType.MENTEE_REPLY
+						: MentorshipRequestMessageType.MENTEE_MESSAGE,
 				TextUtils.trim(reply.message()));
-		request.markReplied();
+		if (isReplyingToInfoRequest) {
+			request.markReplied();
+		}
 		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
+	}
+
+	@Transactional
+	public MentorshipRequestResponse postMentorMessage(UUID id, PostMentorMessageRequest postMessage) {
+		MentorshipRequest request = requireRequest(id);
+		if (!request.getMentor().getId().equals(postMessage.mentorId())) {
+			throw new InvalidRequestException("Only the assigned mentor can message this request");
+		}
+		if (request.getStatus() != MentorshipRequestStatus.ACCEPTED) {
+			throw new InvalidRequestException("Messages can only be sent after the request is accepted");
+		}
+		saveMessage(request, request.getMentor(), MentorshipRequestMessageType.MENTOR_MESSAGE,
+				TextUtils.trim(postMessage.message()));
+		return toResponse(request);
 	}
 
 	@Transactional
