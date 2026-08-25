@@ -19,3 +19,7 @@ meeting:
   provider:
     base-url: http://localhost
     api-key: test-key
+app:
+  realtime:
+    token-secret: test-secret
+    allowed-origins: http://localhost:3000

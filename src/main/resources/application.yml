@@ -82,6 +82,12 @@ ai:
     embedding-model: ${OPENROUTER_EMBEDDING_MODEL:openai/text-embedding-3-small}
     app-name: ${OPENROUTER_APP_NAME:TeamTNT Spring Backend}
 
+app:
+  realtime:
+    token-secret: ${REALTIME_TOKEN_SECRET:}
+    token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}
+    allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
+
 profile-parsing:
   ocr:
     executable: ${TESSERACT_EXECUTABLE:tesseract}
