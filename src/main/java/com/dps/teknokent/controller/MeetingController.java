@@ -32,8 +32,10 @@ public class MeetingController {
 	private final MeetingService meetingService;
 
 	@GetMapping
-	public List<MeetingResponse> findAll(@RequestParam(required = false) UUID organizationId) {
-		return meetingService.findAll(organizationId);
+	public List<MeetingResponse> findAll(
+			@RequestParam(required = false) UUID organizationId,
+			@RequestParam(required = false) UUID mentorId) {
+		return meetingService.findAll(organizationId, mentorId);
 	}
 
 	@PostMapping
