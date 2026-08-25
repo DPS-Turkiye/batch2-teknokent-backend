@@ -86,7 +86,7 @@ app:
   realtime:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}
-    allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
+    allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://main.dxcmjf7esever.amplifyapp.com}
 
 profile-parsing:
   ocr:
