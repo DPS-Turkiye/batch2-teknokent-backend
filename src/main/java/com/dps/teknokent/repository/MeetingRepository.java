@@ -23,4 +23,6 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 	Optional<Meeting> findByMentorshipRequestId(UUID mentorshipRequestId);
 
 	boolean existsByMentorIdAndScheduledAtAndStatus(UUID mentorId, Instant scheduledAt, MeetingStatus status);
+
+	boolean existsByIdAndOrganizationId(UUID id, UUID organizationId);
 }

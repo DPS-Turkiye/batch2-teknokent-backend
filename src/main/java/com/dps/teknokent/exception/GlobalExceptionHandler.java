@@ -30,6 +30,12 @@ public class GlobalExceptionHandler {
 		return response(HttpStatus.BAD_REQUEST, exception.getMessage(), request, Map.of());
 	}
 
+	@ExceptionHandler(ConflictException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiErrorResponse handleConflict(ConflictException exception, HttpServletRequest request) {
+		return response(HttpStatus.CONFLICT, exception.getMessage(), request, Map.of());
+	}
+
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiErrorResponse handleValidation(MethodArgumentNotValidException exception, HttpServletRequest request) {
