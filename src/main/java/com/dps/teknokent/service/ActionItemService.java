@@ -26,8 +26,8 @@ public class ActionItemService {
 	private final DomainLookupService domainLookupService;
 
 	@Transactional(readOnly = true)
-	public List<ActionItemResponse> findAll() {
-		return actionItemRepository.findAllByOrderByCreatedAtDesc().stream()
+	public List<ActionItemResponse> findByOrganization(UUID organizationId) {
+		return actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId).stream()
 				.map(ActionItemResponse::fromEntity)
 				.toList();
 	}
@@ -46,8 +46,8 @@ public class ActionItemService {
 	}
 
 	@Transactional
-	public ActionItemResponse update(UUID id, UpdateActionItemRequest request) {
-		ActionItem actionItem = actionItemRepository.findById(id)
+	public ActionItemResponse update(UUID id, UUID organizationId, UpdateActionItemRequest request) {
+		ActionItem actionItem = actionItemRepository.findByIdAndOrganizationId(id, organizationId)
 				.orElseThrow(() -> new ResourceNotFoundException("Action item not found: " + id));
 
 		actionItem.apply(request,

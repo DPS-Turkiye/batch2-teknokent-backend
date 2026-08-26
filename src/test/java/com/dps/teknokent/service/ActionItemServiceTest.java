@@ -25,6 +25,7 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,8 +41,9 @@ class ActionItemServiceTest {
     private ActionItemService actionItemService;
 
     @Test
-    void findAll_returnsMappedResponsesInReverseChronologicalOrder() {
-        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "Teknokent");
+    void findByOrganization_returnsMappedResponsesInReverseChronologicalOrder() {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        Organization organization = organization(organizationId, "Teknokent");
         AppUser owner = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "Ayşe Yılmaz");
         ActionItem actionItem = new ActionItem();
         actionItem.setId(UUID.fromString("00000000-0000-0000-0000-000000000301"));
@@ -55,9 +57,10 @@ class ActionItemServiceTest {
         actionItem.setCreatedAt(Instant.parse("2026-08-20T10:00:00Z"));
         actionItem.setUpdatedAt(Instant.parse("2026-08-20T10:05:00Z"));
 
-        when(actionItemRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(actionItem));
+        when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
+                .thenReturn(List.of(actionItem));
 
-        var result = actionItemService.findAll();
+        var result = actionItemService.findByOrganization(organizationId);
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().id()).isEqualTo(actionItem.getId());
@@ -165,16 +168,43 @@ class ActionItemServiceTest {
                 LocalDate.of(2026, 9, 20),
                 "Completed after stakeholder review");
 
-        when(actionItemRepository.findById(actionItemId)).thenReturn(Optional.of(actionItem));
+        when(actionItemRepository.findByIdAndOrganizationId(actionItemId, organizationId))
+                .thenReturn(Optional.of(actionItem));
         when(domainLookupService.requireUser(ownerId)).thenReturn(newOwner);
         when(actionItemRepository.saveAndFlush(actionItem)).thenReturn(actionItem);
 
-        var result = actionItemService.update(actionItemId, request);
+        var result = actionItemService.update(actionItemId, organizationId, request);
 
         assertThat(result.title()).isEqualTo("Finalize onboarding");
         assertThat(result.status()).isEqualTo(ActionItemStatus.COMPLETED);
         assertThat(result.ownerId()).isEqualTo(ownerId);
         assertThat(result.completionNotes()).isEqualTo("Completed after stakeholder review");
+    }
+
+    @Test
+    void findByOrganization_neverReturnsAnotherOrganizationsActionItems() {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+
+        when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
+                .thenReturn(List.of());
+
+        assertThat(actionItemService.findByOrganization(organizationId)).isEmpty();
+    }
+
+    @Test
+    void update_throwsWhenActionItemBelongsToAnotherOrganization() {
+        UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+        UUID otherOrganizationId = UUID.fromString("00000000-0000-0000-0000-000000000999");
+
+        UpdateActionItemRequest request = new UpdateActionItemRequest(
+                null, "Hijacked title", null, ActionItemStatus.COMPLETED, null, null);
+
+        when(actionItemRepository.findByIdAndOrganizationId(actionItemId, otherOrganizationId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> actionItemService.update(actionItemId, otherOrganizationId, request))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Action item not found");
     }
 
     private static Organization organization(UUID id, String name) {

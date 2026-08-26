@@ -53,7 +53,7 @@ class ActionItemControllerTest {
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(actionItemService.findAll()).thenReturn(List.of(new ActionItemResponse(
+        when(actionItemService.findByOrganization(organizationId)).thenReturn(List.of(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -69,11 +69,19 @@ class ActionItemControllerTest {
                 Instant.parse("2026-08-20T10:00:00Z")
         )));
 
-        mockMvc.perform(get("/api/actions").with(user("test-user")))
+        mockMvc.perform(get("/api/actions")
+                        .param("organizationId", organizationId.toString())
+                        .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(actionItemId.toString()))
                 .andExpect(jsonPath("$[0].title").value("Prepare onboarding checklist"))
                 .andExpect(jsonPath("$[0].status").value("OPEN"));
+    }
+
+    @Test
+    void rejectsListWithoutOrganizationId() throws Exception {
+        mockMvc.perform(get("/api/actions").with(user("test-user")))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -140,7 +148,7 @@ class ActionItemControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-        when(actionItemService.update(eq(actionItemId), any(UpdateActionItemRequest.class))).thenReturn(new ActionItemResponse(
+        when(actionItemService.update(eq(actionItemId), eq(organizationId), any(UpdateActionItemRequest.class))).thenReturn(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -157,6 +165,7 @@ class ActionItemControllerTest {
         ));
 
         mockMvc.perform(patch("/api/actions/{id}", actionItemId)
+                        .param("organizationId", organizationId.toString())
                         .with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
