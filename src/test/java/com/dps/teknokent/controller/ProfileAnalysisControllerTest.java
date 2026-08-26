@@ -55,9 +55,10 @@ class ProfileAnalysisControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
         UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000201");
 
-        when(profileAnalysisService.findLatest(organizationId)).thenReturn(new ProfileAnalysisResponse(
+        when(profileAnalysisService.findLatest(organizationId, null)).thenReturn(new ProfileAnalysisResponse(
                 analysisId,
                 organizationId,
+                null,
                 "pitch.pdf",
                 "mentee",
                 "{\"startup_name\":\"Acme Labs\"}",
@@ -85,6 +86,7 @@ class ProfileAnalysisControllerTest {
         when(profileAnalysisService.findLatestConfirmedStartup(organizationId)).thenReturn(new ProfileAnalysisResponse(
                 analysisId,
                 organizationId,
+                null,
                 "confirmed.pdf",
                 "mentee",
                 "{\"startup_name\":\"Confirmed Startup\"}",
@@ -110,12 +112,14 @@ class ProfileAnalysisControllerTest {
 
         when(profileAnalysisService.parse(
                 eq(organizationId),
+                eq((UUID) null),
                 eq("mentee"),
                 eq(true),
                 eq("auto"),
                 any())).thenReturn(new ProfileAnalysisResponse(
                 analysisId,
                 organizationId,
+                null,
                 "sample.pdf",
                 "mentee",
                 "{\"startup_name\":\"Sample Startup\"}",
@@ -159,10 +163,11 @@ class ProfileAnalysisControllerTest {
                         }
                         """));
 
-        when(profileAnalysisService.createManual(eq(organizationId), any(CreateManualProfileRequest.class)))
+        when(profileAnalysisService.createManual(eq(organizationId), eq((UUID) null), any(CreateManualProfileRequest.class)))
                 .thenReturn(new ProfileAnalysisResponse(
                         analysisId,
                         organizationId,
+                        null,
                         "manual-entry",
                         "individual_mentee",
                         "{\"startup_name\":\"Manual Startup\"}",
@@ -174,7 +179,7 @@ class ProfileAnalysisControllerTest {
                 ));
 
         ProfileAnalysisResponse response = new ProfileAnalysisController(profileAnalysisService)
-                .createManual(organizationId, request);
+                .createManual(organizationId, null, request);
 
         assertThat(response.id()).isEqualTo(analysisId);
         assertThat(response.profileType()).isEqualTo("individual_mentee");
@@ -209,6 +214,7 @@ class ProfileAnalysisControllerTest {
         when(profileAnalysisService.confirm(eq(analysisId), anyString())).thenReturn(new ProfileAnalysisResponse(
                 analysisId,
                 UUID.fromString("00000000-0000-0000-0000-000000000103"),
+                null,
                 "confirmed.pdf",
                 "mentee",
                 "{\"startup_name\":\"Confirmed Startup\"}",

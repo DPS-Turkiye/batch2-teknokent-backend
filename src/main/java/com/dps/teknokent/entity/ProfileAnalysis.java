@@ -24,11 +24,12 @@ import lombok.Setter;
 public class ProfileAnalysis {
 
 	public static ProfileAnalysis fromParsedProfile(
-			UUID organizationId, String sourceFilename, String profileType, String parsedProfile,
+			UUID organizationId, UUID appUserId, String sourceFilename, String profileType, String parsedProfile,
 			String redactionSummary, String ocrSummary, Instant now) {
 		ProfileAnalysis analysis = new ProfileAnalysis();
 		analysis.id = UUID.randomUUID();
 		analysis.organizationId = organizationId;
+		analysis.appUserId = appUserId;
 		analysis.sourceFilename = sourceFilename;
 		analysis.profileType = profileType;
 		analysis.parsedProfile = parsedProfile;
@@ -40,10 +41,12 @@ public class ProfileAnalysis {
 	}
 
 	public static ProfileAnalysis fromManualProfile(
-			UUID organizationId, CreateManualProfileRequest request, String serializedProfile, Instant now) {
+			UUID organizationId, UUID appUserId, CreateManualProfileRequest request, String serializedProfile,
+			Instant now) {
 		ProfileAnalysis analysis = new ProfileAnalysis();
 		analysis.id = UUID.randomUUID();
 		analysis.organizationId = organizationId;
+		analysis.appUserId = appUserId;
 		analysis.sourceFilename = "manual-entry";
 		analysis.profileType = request.profileType();
 		analysis.parsedProfile = serializedProfile;
@@ -65,6 +68,9 @@ public class ProfileAnalysis {
 
 	@Column(name = "organization_id", nullable = false)
 	private UUID organizationId;
+
+	@Column(name = "app_user_id")
+	private UUID appUserId;
 
 	@Column(name = "source_filename", nullable = false)
 	private String sourceFilename;

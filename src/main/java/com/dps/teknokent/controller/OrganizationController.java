@@ -12,8 +12,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
+import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 public class OrganizationController {
 
 	private final OrganizationService organizationService;
+	private final AppUserService appUserService;
 
 	@GetMapping
 	public List<OrganizationResponse> findAll() {
@@ -42,5 +46,16 @@ public class OrganizationController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public OrganizationResponse create(@Valid @RequestBody CreateOrganizationRequest request) {
 		return organizationService.create(request);
+	}
+
+	@GetMapping("/{id}/members")
+	public List<UserResponse> members(@PathVariable UUID id) {
+		return appUserService.findByOrganization(id);
+	}
+
+	@PostMapping("/{id}/members")
+	@ResponseStatus(HttpStatus.CREATED)
+	public UserResponse addMember(@PathVariable UUID id, @Valid @RequestBody CreateOrganizationMemberRequest request) {
+		return appUserService.addOrganizationMember(id, request);
 	}
 }

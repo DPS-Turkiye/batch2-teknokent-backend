@@ -12,9 +12,11 @@ import org.springframework.web.multipart.MultipartFile;
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.ProfileAnalysis;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProfileAnalysisRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -30,13 +32,15 @@ public class ProfileAnalysisService {
 
 	private final ProfileAnalysisRepository profileAnalysisRepository;
 	private final OrganizationRepository organizationRepository;
+	private final AppUserRepository appUserRepository;
 	private final TechnologyInferenceService technologyInferenceService;
 	private final NativeProfileParserService nativeProfileParserService;
 	private final MentorRecommendationService mentorRecommendationService;
 	private final JsonUtils jsonUtils;
 
 	public ProfileAnalysisResponse parse(
-			UUID organizationId, String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
+			UUID organizationId, UUID appUserId, String profileType, boolean consentAccepted, String ocrMode,
+			MultipartFile file) {
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		validateProfileType(profileType);
 		if (!java.util.Set.of("off", "auto", "force").contains(ocrMode)) {
@@ -48,6 +52,7 @@ public class ProfileAnalysisService {
 		if (!organizationRepository.existsById(resolvedOrganizationId)) {
 			throw new ResourceNotFoundException("Organization not found.");
 		}
+		requireMemberOfOrganization(appUserId, resolvedOrganizationId);
 		if (file == null || file.isEmpty() || file.getOriginalFilename() == null
 				|| !file.getOriginalFilename().toLowerCase().endsWith(".pdf")) {
 			throw new InvalidRequestException("Please upload a PDF pitch deck or company profile.");
@@ -66,18 +71,19 @@ public class ProfileAnalysisService {
 		JsonNode redactionSummary = parseResult.redactionSummary();
 		JsonNode ocrSummary = parseResult.ocrSummary();
 		ProfileAnalysis analysis = ProfileAnalysis.fromParsedProfile(
-				resolvedOrganizationId, file.getOriginalFilename(), profileType, jsonUtils.writeValue(profile),
+				resolvedOrganizationId, appUserId, file.getOriginalFilename(), profileType, jsonUtils.writeValue(profile),
 				redactionSummary.isObject() ? jsonUtils.writeValue(redactionSummary) : "{}",
 				ocrSummary.isObject() ? jsonUtils.writeValue(ocrSummary) : "{}", Instant.now());
 		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
 	}
 
-	public ProfileAnalysisResponse createManual(UUID organizationId, CreateManualProfileRequest request) {
+	public ProfileAnalysisResponse createManual(UUID organizationId, UUID appUserId, CreateManualProfileRequest request) {
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		validateProfileType(request.profileType());
 		if (!organizationRepository.existsById(resolvedOrganizationId)) {
 			throw new ResourceNotFoundException("Organization not found.");
 		}
+		requireMemberOfOrganization(appUserId, resolvedOrganizationId);
 		if (!request.profile().isObject()) {
 			throw new InvalidRequestException("A profile object is required.");
 		}
@@ -90,21 +96,36 @@ public class ProfileAnalysisService {
 
 		Instant now = Instant.now();
 		ProfileAnalysis analysis = ProfileAnalysis.fromManualProfile(
-				resolvedOrganizationId, request, jsonUtils.writeValue(request.profile()), now);
+				resolvedOrganizationId, appUserId, request, jsonUtils.writeValue(request.profile()), now);
 		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
 	}
 
-	public ProfileAnalysisResponse findLatest(UUID organizationId) {
+	public ProfileAnalysisResponse findLatest(UUID organizationId, UUID appUserId) {
+		if (appUserId != null) {
+			return profileAnalysisRepository.findFirstByAppUserIdOrderByCreatedAtDesc(appUserId)
+					.map(ProfileAnalysisResponse::fromEntity)
+					.orElseThrow(() -> new ResourceNotFoundException("No parsed profile was found."));
+		}
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
-		return profileAnalysisRepository.findFirstByOrganizationIdOrderByCreatedAtDesc(resolvedOrganizationId)
+		return profileAnalysisRepository
+				.findFirstByOrganizationIdAndAppUserIdIsNullOrderByCreatedAtDesc(resolvedOrganizationId)
 				.map(ProfileAnalysisResponse::fromEntity)
 				.orElseThrow(() -> new ResourceNotFoundException("No parsed startup profile was found."));
+	}
+
+	private void requireMemberOfOrganization(UUID appUserId, UUID organizationId) {
+		if (appUserId == null) return;
+		AppUser user = appUserRepository.findById(appUserId)
+				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + appUserId));
+		if (user.getOrganization() == null || !user.getOrganization().getId().equals(organizationId)) {
+			throw new InvalidRequestException("The selected user is not a member of this organization.");
+		}
 	}
 
 	public ProfileAnalysisResponse findLatestConfirmedStartup(UUID organizationId) {
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		return profileAnalysisRepository
-				.findFirstByOrganizationIdAndProfileTypeAndStatusOrderByCreatedAtDesc(
+				.findFirstByOrganizationIdAndAppUserIdIsNullAndProfileTypeAndStatusOrderByCreatedAtDesc(
 						resolvedOrganizationId, "mentee", "CONFIRMED")
 				.map(ProfileAnalysisResponse::fromEntity)
 				.orElseThrow(() -> new ResourceNotFoundException("No confirmed startup profile was found."));
