@@ -33,8 +33,10 @@ public class ProfileAnalysisController {
 	private final ProfileAnalysisService profileAnalysisService;
 
 	@GetMapping("/latest")
-	public ProfileAnalysisResponse latest(@RequestParam(required = false) UUID organizationId) {
-		return profileAnalysisService.findLatest(organizationId);
+	public ProfileAnalysisResponse latest(
+			@RequestParam(required = false) UUID organizationId,
+			@RequestParam(required = false) UUID appUserId) {
+		return profileAnalysisService.findLatest(organizationId, appUserId);
 	}
 
 	@GetMapping("/latest/confirmed")
@@ -46,19 +48,21 @@ public class ProfileAnalysisController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public ProfileAnalysisResponse parse(
 			@RequestParam(required = false) UUID organizationId,
+			@RequestParam(required = false) UUID appUserId,
 			@RequestParam(defaultValue = "mentee") String profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
 			@RequestParam(defaultValue = "auto") String ocrMode,
 			@RequestPart("file") MultipartFile file) {
-		return profileAnalysisService.parse(organizationId, profileType, consentAccepted, ocrMode, file);
+		return profileAnalysisService.parse(organizationId, appUserId, profileType, consentAccepted, ocrMode, file);
 	}
 
 	@PostMapping("/manual")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ProfileAnalysisResponse createManual(
 			@RequestParam(required = false) UUID organizationId,
+			@RequestParam(required = false) UUID appUserId,
 			@jakarta.validation.Valid @RequestBody CreateManualProfileRequest request) {
-		return profileAnalysisService.createManual(organizationId, request);
+		return profileAnalysisService.createManual(organizationId, appUserId, request);
 	}
 
 	@PostMapping("/{id}/recommendations")

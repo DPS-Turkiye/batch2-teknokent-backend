@@ -8,6 +8,7 @@ import com.dps.teknokent.entity.ProfileAnalysis;
 public record ProfileAnalysisResponse(
 		UUID id,
 		UUID organizationId,
+		UUID appUserId,
 		String sourceFilename,
 		String profileType,
 		String profile,
@@ -21,8 +22,8 @@ public record ProfileAnalysisResponse(
 		String displayedProfile = analysis.getConfirmedProfile() == null
 				? analysis.getParsedProfile() : analysis.getConfirmedProfile();
 		return new ProfileAnalysisResponse(
-				analysis.getId(), analysis.getOrganizationId(), analysis.getSourceFilename(), analysis.getProfileType(),
-				displayedProfile, analysis.getStatus(), analysis.getConsentAcceptedAt(), analysis.getRedactionSummary(),
-				analysis.getOcrSummary(), analysis.getCreatedAt());
+				analysis.getId(), analysis.getOrganizationId(), analysis.getAppUserId(), analysis.getSourceFilename(),
+				analysis.getProfileType(), displayedProfile, analysis.getStatus(), analysis.getConsentAcceptedAt(),
+				analysis.getRedactionSummary(), analysis.getOcrSummary(), analysis.getCreatedAt());
 	}
 }

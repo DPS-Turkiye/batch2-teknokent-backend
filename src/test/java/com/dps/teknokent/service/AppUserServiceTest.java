@@ -15,8 +15,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 
@@ -25,6 +27,9 @@ class AppUserServiceTest {
 
     @Mock
     private AppUserRepository appUserRepository;
+
+    @Mock
+    private DomainLookupService domainLookupService;
 
     @InjectMocks
     private AppUserService appUserService;
@@ -85,6 +90,56 @@ class AppUserServiceTest {
         assertThatThrownBy(() -> appUserService.findById(id))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("User not found: " + id);
+    }
+
+    @Test
+    void findByOrganization_returnsMembersSortedByFullName() {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+        Organization organization = organization(organizationId, "GreenLoop");
+        AppUser member = user(
+                UUID.fromString("00000000-0000-0000-0000-000000000502"), "ekip@greenloop.demo", "Ekip Üyesi",
+                UserRole.MENTEE, organization, "Ürün Müdürü");
+
+        when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(organizationId)).thenReturn(List.of(member));
+
+        var result = appUserService.findByOrganization(organizationId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).fullName()).isEqualTo("Ekip Üyesi");
+        assertThat(result.get(0).organizationId()).isEqualTo(organizationId);
+    }
+
+    @Test
+    void addOrganizationMember_createsMentaeTiedToTheOrganization() {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000601");
+        Organization organization = organization(organizationId, "GreenLoop");
+        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+        when(appUserRepository.existsByEmailIgnoreCase("yeni.uye@greenloop.demo")).thenReturn(false);
+        when(appUserRepository.save(org.mockito.ArgumentMatchers.any(AppUser.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = appUserService.addOrganizationMember(
+                organizationId,
+                new CreateOrganizationMemberRequest("Yeni Üye", "yeni.uye@greenloop.demo", "Ürün Yöneticisi"));
+
+        assertThat(result.fullName()).isEqualTo("Yeni Üye");
+        assertThat(result.email()).isEqualTo("yeni.uye@greenloop.demo");
+        assertThat(result.role()).isEqualTo(UserRole.MENTEE);
+        assertThat(result.organizationId()).isEqualTo(organizationId);
+    }
+
+    @Test
+    void addOrganizationMember_rejectsDuplicateEmail() {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000701");
+        Organization organization = organization(organizationId, "GreenLoop");
+        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+        when(appUserRepository.existsByEmailIgnoreCase("mevcut@greenloop.demo")).thenReturn(true);
+
+        assertThatThrownBy(() -> appUserService.addOrganizationMember(
+                organizationId,
+                new CreateOrganizationMemberRequest("Tekrar", "mevcut@greenloop.demo", null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("already exists");
     }
 
     private static AppUser user(UUID id, String email, String fullName, UserRole role) {

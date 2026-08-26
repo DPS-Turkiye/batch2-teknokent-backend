@@ -1,6 +1,7 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -21,8 +22,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
+import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
 
 @WebMvcTest(OrganizationController.class)
@@ -34,6 +39,9 @@ class OrganizationControllerTest {
 
     @MockitoBean
     private OrganizationService organizationService;
+
+    @MockitoBean
+    private AppUserService appUserService;
 
     @Test
     void requiresAuthenticationForOrganizations() throws Exception {
@@ -115,6 +123,75 @@ class OrganizationControllerTest {
                                 {
                                   "name": "",
                                   "description": "Geçersiz isim"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returnsOrganizationMembers() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000444");
+        UUID memberId = UUID.fromString("00000000-0000-0000-0000-000000000555");
+
+        when(appUserService.findByOrganization(organizationId)).thenReturn(List.of(new UserResponse(
+                memberId,
+                "ekip@greenloop.demo",
+                "Ekip Üyesi",
+                UserRole.MENTEE,
+                organizationId,
+                "GreenLoop",
+                "Ürün Müdürü"
+        )));
+
+        mockMvc.perform(get("/api/organizations/{id}/members", organizationId).with(user("test-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(memberId.toString()))
+                .andExpect(jsonPath("$[0].fullName").value("Ekip Üyesi"));
+    }
+
+    @Test
+    void addsOrganizationMember() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000666");
+        UUID memberId = UUID.fromString("00000000-0000-0000-0000-000000000777");
+
+        when(appUserService.addOrganizationMember(eq(organizationId), any(CreateOrganizationMemberRequest.class)))
+                .thenReturn(new UserResponse(
+                        memberId,
+                        "yeni.uye@greenloop.demo",
+                        "Yeni Üye",
+                        UserRole.MENTEE,
+                        organizationId,
+                        "GreenLoop",
+                        "Ürün Yöneticisi"
+                ));
+
+        mockMvc.perform(post("/api/organizations/{id}/members", organizationId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Yeni Üye",
+                                  "email": "yeni.uye@greenloop.demo",
+                                  "jobTitle": "Ürün Yöneticisi"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(memberId.toString()))
+                .andExpect(jsonPath("$.fullName").value("Yeni Üye"));
+    }
+
+    @Test
+    void rejectsAddingMemberWithBlankEmail() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000888");
+
+        mockMvc.perform(post("/api/organizations/{id}/members", organizationId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Yeni Üye",
+                                  "email": "",
+                                  "jobTitle": "Ürün Yöneticisi"
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
