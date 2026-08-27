@@ -23,6 +23,7 @@ import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -60,7 +61,7 @@ class ActionItemServiceTest {
         when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
                 .thenReturn(List.of(actionItem));
 
-        var result = actionItemService.findByOrganization(organizationId);
+        var result = actionItemService.findByScope(organizationId, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().id()).isEqualTo(actionItem.getId());
@@ -82,6 +83,7 @@ class ActionItemServiceTest {
 
         CreateActionItemRequest request = new CreateActionItemRequest(
                 organizationId,
+                null,
                 meetingId,
                 ownerId,
                 "Prepare onboarding checklist",
@@ -124,6 +126,7 @@ class ActionItemServiceTest {
 
         CreateActionItemRequest request = new CreateActionItemRequest(
                 organizationId,
+                null,
                 meetingId,
                 ownerId,
                 "Prepare onboarding checklist",
@@ -173,7 +176,7 @@ class ActionItemServiceTest {
         when(domainLookupService.requireUser(ownerId)).thenReturn(newOwner);
         when(actionItemRepository.saveAndFlush(actionItem)).thenReturn(actionItem);
 
-        var result = actionItemService.update(actionItemId, organizationId, request);
+        var result = actionItemService.update(actionItemId, organizationId, null, request);
 
         assertThat(result.title()).isEqualTo("Finalize onboarding");
         assertThat(result.status()).isEqualTo(ActionItemStatus.COMPLETED);
@@ -188,7 +191,7 @@ class ActionItemServiceTest {
         when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
                 .thenReturn(List.of());
 
-        assertThat(actionItemService.findByOrganization(organizationId)).isEmpty();
+        assertThat(actionItemService.findByScope(organizationId, null)).isEmpty();
     }
 
     @Test
@@ -202,9 +205,54 @@ class ActionItemServiceTest {
         when(actionItemRepository.findByIdAndOrganizationId(actionItemId, otherOrganizationId))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> actionItemService.update(actionItemId, otherOrganizationId, request))
+        assertThatThrownBy(() -> actionItemService.update(actionItemId, otherOrganizationId, null, request))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Action item not found");
+    }
+
+    @Test
+    void resolveOrganizationId_derivesOrganizationFromMentorshipRequest() {
+        UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+
+        MentorshipRequest mentorshipRequest = new MentorshipRequest();
+        mentorshipRequest.setId(mentorshipRequestId);
+        mentorshipRequest.setOrganization(organization(organizationId, "GreenLoop"));
+
+        when(domainLookupService.requireMentorshipRequest(mentorshipRequestId)).thenReturn(mentorshipRequest);
+
+        assertThat(actionItemService.resolveOrganizationId(null, mentorshipRequestId)).isEqualTo(organizationId);
+    }
+
+    @Test
+    void findByScope_scopesToTheMentorshipRequestsOrganization() {
+        UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+
+        MentorshipRequest mentorshipRequest = new MentorshipRequest();
+        mentorshipRequest.setId(mentorshipRequestId);
+        mentorshipRequest.setOrganization(organization(organizationId, "GreenLoop"));
+
+        when(domainLookupService.requireMentorshipRequest(mentorshipRequestId)).thenReturn(mentorshipRequest);
+        when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId)).thenReturn(List.of());
+
+        assertThat(actionItemService.findByScope(null, mentorshipRequestId)).isEmpty();
+    }
+
+    @Test
+    void resolveOrganizationId_throwsWhenNeitherScopeIsGiven() {
+        assertThatThrownBy(() -> actionItemService.resolveOrganizationId(null, null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("exactly one");
+    }
+
+    @Test
+    void resolveOrganizationId_throwsWhenBothScopesAreGiven() {
+        assertThatThrownBy(() -> actionItemService.resolveOrganizationId(
+                UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                UUID.fromString("00000000-0000-0000-0000-000000000401")))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("exactly one");
     }
 
     private static Organization organization(UUID id, String name) {

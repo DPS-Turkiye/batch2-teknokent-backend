@@ -32,8 +32,10 @@ public class ActionItemController {
 	private final ActionItemService actionItemService;
 
 	@GetMapping
-	public List<ActionItemResponse> findByOrganization(@RequestParam UUID organizationId) {
-		return actionItemService.findByOrganization(organizationId);
+	public List<ActionItemResponse> findByScope(
+			@RequestParam(required = false) UUID organizationId,
+			@RequestParam(required = false) UUID mentorshipRequestId) {
+		return actionItemService.findByScope(organizationId, mentorshipRequestId);
 	}
 
 	@PostMapping
@@ -45,8 +47,9 @@ public class ActionItemController {
 	@PatchMapping("/{id}")
 	public ActionItemResponse update(
 			@PathVariable UUID id,
-			@RequestParam UUID organizationId,
+			@RequestParam(required = false) UUID organizationId,
+			@RequestParam(required = false) UUID mentorshipRequestId,
 			@Valid @RequestBody UpdateActionItemRequest request) {
-		return actionItemService.update(id, organizationId, request);
+		return actionItemService.update(id, organizationId, mentorshipRequestId, request);
 	}
 }
