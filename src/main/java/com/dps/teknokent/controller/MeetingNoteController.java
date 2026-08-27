@@ -17,8 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.dto.requests.CreateMeetingTodoRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingTodoRequest;
+import com.dps.teknokent.dto.responses.MeetingNoteDocumentResponse;
 import com.dps.teknokent.dto.responses.MeetingNoteResponse;
 import com.dps.teknokent.dto.responses.MeetingTodoResponse;
+import com.dps.teknokent.service.MeetingNoteDocumentService;
 import com.dps.teknokent.service.MeetingNoteService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,12 +34,20 @@ import lombok.RequiredArgsConstructor;
 public class MeetingNoteController {
 
 	private final MeetingNoteService meetingNoteService;
+	private final MeetingNoteDocumentService meetingNoteDocumentService;
 
 	@GetMapping("/note")
 	public MeetingNoteResponse findNote(
 			@PathVariable UUID meetingId,
 			@RequestParam UUID organizationId) {
 		return meetingNoteService.findNote(meetingId, organizationId);
+	}
+
+	@GetMapping("/note/document")
+	public MeetingNoteDocumentResponse findNoteDocument(
+			@PathVariable UUID meetingId,
+			@RequestParam UUID organizationId) {
+		return meetingNoteDocumentService.findDocument(meetingId, organizationId);
 	}
 
 	@PutMapping("/note")

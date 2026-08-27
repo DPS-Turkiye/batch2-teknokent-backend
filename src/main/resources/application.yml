@@ -42,6 +42,12 @@ spring:
     enabled: ${FLYWAY_ENABLED:true}
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
 logging:
   level:
     root: WARN
@@ -87,6 +93,8 @@ app:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}
     allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://main.dxcmjf7esever.amplifyapp.com}
+    document-ttl-hours: ${REALTIME_DOCUMENT_TTL_HOURS:12}
+    seed-lock-seconds: ${REALTIME_SEED_LOCK_SECONDS:30}
 
 profile-parsing:
   ocr:
