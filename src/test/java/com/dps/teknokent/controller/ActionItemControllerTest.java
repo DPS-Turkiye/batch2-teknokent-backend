@@ -28,6 +28,7 @@ import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.dto.requests.CreateActionItemRequest;
 import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
 import com.dps.teknokent.dto.responses.ActionItemResponse;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.ActionItemService;
 
 @WebMvcTest(ActionItemController.class)
@@ -53,7 +54,7 @@ class ActionItemControllerTest {
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(actionItemService.findAll()).thenReturn(List.of(new ActionItemResponse(
+        when(actionItemService.findByScope(organizationId, null)).thenReturn(List.of(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -69,11 +70,34 @@ class ActionItemControllerTest {
                 Instant.parse("2026-08-20T10:00:00Z")
         )));
 
-        mockMvc.perform(get("/api/actions").with(user("test-user")))
+        mockMvc.perform(get("/api/actions")
+                        .param("organizationId", organizationId.toString())
+                        .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(actionItemId.toString()))
                 .andExpect(jsonPath("$[0].title").value("Prepare onboarding checklist"))
                 .andExpect(jsonPath("$[0].status").value("OPEN"));
+    }
+
+    @Test
+    void returnsActionItemsScopedToAMentorshipRequest() throws Exception {
+        UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+
+        when(actionItemService.findByScope(null, mentorshipRequestId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/actions")
+                        .param("mentorshipRequestId", mentorshipRequestId.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void rejectsListWithoutAScope() throws Exception {
+        when(actionItemService.findByScope(null, null))
+                .thenThrow(new InvalidRequestException("Provide exactly one of organizationId or mentorshipRequestId"));
+
+        mockMvc.perform(get("/api/actions").with(user("test-user")))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -140,7 +164,7 @@ class ActionItemControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-        when(actionItemService.update(eq(actionItemId), any(UpdateActionItemRequest.class))).thenReturn(new ActionItemResponse(
+        when(actionItemService.update(eq(actionItemId), eq(organizationId), eq(null), any(UpdateActionItemRequest.class))).thenReturn(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -157,6 +181,7 @@ class ActionItemControllerTest {
         ));
 
         mockMvc.perform(patch("/api/actions/{id}", actionItemId)
+                        .param("organizationId", organizationId.toString())
                         .with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

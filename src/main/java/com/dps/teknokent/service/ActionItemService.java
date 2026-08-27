@@ -25,16 +25,37 @@ public class ActionItemService {
 	private final ActionItemRepository actionItemRepository;
 	private final DomainLookupService domainLookupService;
 
+	/**
+	 * Action items are organization-scoped, but a mentor has no single startup
+	 * organization — the relevant one belongs to the mentorship request being
+	 * viewed. Callers may therefore identify the scope either way, and the
+	 * mentorship request is resolved to its organization here rather than by the
+	 * caller, so the organization is never chosen client-side.
+	 */
 	@Transactional(readOnly = true)
-	public List<ActionItemResponse> findAll() {
-		return actionItemRepository.findAllByOrderByCreatedAtDesc().stream()
+	public UUID resolveOrganizationId(UUID organizationId, UUID mentorshipRequestId) {
+		if ((organizationId == null) == (mentorshipRequestId == null)) {
+			throw new InvalidRequestException(
+					"Provide exactly one of organizationId or mentorshipRequestId");
+		}
+		return organizationId != null
+				? organizationId
+				: domainLookupService.requireMentorshipRequest(mentorshipRequestId).getOrganization().getId();
+	}
+
+	@Transactional(readOnly = true)
+	public List<ActionItemResponse> findByScope(UUID organizationId, UUID mentorshipRequestId) {
+		return actionItemRepository
+				.findByOrganizationIdOrderByCreatedAtDesc(resolveOrganizationId(organizationId, mentorshipRequestId))
+				.stream()
 				.map(ActionItemResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional
 	public ActionItemResponse create(CreateActionItemRequest request) {
-		Organization organization = domainLookupService.requireOrganization(request.organizationId());
+		Organization organization = domainLookupService.requireOrganization(
+				resolveOrganizationId(request.organizationId(), request.mentorshipRequestId()));
 		Meeting meeting = request.meetingId() == null ? null : domainLookupService.requireMeeting(request.meetingId());
 		if (meeting != null && !meeting.getOrganization().getId().equals(organization.getId())) {
 			throw new InvalidRequestException("Meeting and action item must belong to the same organization");
@@ -46,8 +67,10 @@ public class ActionItemService {
 	}
 
 	@Transactional
-	public ActionItemResponse update(UUID id, UpdateActionItemRequest request) {
-		ActionItem actionItem = actionItemRepository.findById(id)
+	public ActionItemResponse update(
+			UUID id, UUID organizationId, UUID mentorshipRequestId, UpdateActionItemRequest request) {
+		ActionItem actionItem = actionItemRepository
+				.findByIdAndOrganizationId(id, resolveOrganizationId(organizationId, mentorshipRequestId))
 				.orElseThrow(() -> new ResourceNotFoundException("Action item not found: " + id));
 
 		actionItem.apply(request,
