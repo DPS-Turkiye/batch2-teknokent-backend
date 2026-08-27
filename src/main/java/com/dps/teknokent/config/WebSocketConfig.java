@@ -8,6 +8,7 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+import com.dps.teknokent.domain.MeetingRoomDestinations;
 import com.dps.teknokent.service.MeetingRoomAccessService;
 import com.dps.teknokent.service.RealtimeTokenService;
 
@@ -33,11 +34,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
 	@Override
 	public void configureMessageBroker(MessageBrokerRegistry registry) {
-		registry.enableSimpleBroker("/topic");
+		registry.enableSimpleBroker(MeetingRoomDestinations.BROKER_PREFIX);
+		registry.setApplicationDestinationPrefixes(MeetingRoomDestinations.APPLICATION_PREFIX);
 	}
 
 	@Override
 	public void configureClientInboundChannel(ChannelRegistration registration) {
-		registration.interceptors(new MeetingRoomSubscriptionInterceptor(meetingRoomAccessService));
+		registration.interceptors(new MeetingRoomAccessInterceptor(meetingRoomAccessService));
 	}
 }

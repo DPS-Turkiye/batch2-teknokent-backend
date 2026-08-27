@@ -19,7 +19,7 @@ public class HealthController {
 
 	private final HealthService healthService;
 
-	@Operation(summary = "Check application health", description = "Returns application status and database connectivity")
+	@Operation(summary = "Check application health", description = "Returns application status, database connectivity, and Redis connectivity")
 	@GetMapping("/api/health")
 	public ResponseEntity<HealthResponse> health() {
 		HealthResponse response = healthService.checkHealth();

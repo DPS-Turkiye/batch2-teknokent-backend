@@ -6,14 +6,14 @@ import com.dps.teknokent.domain.MeetingRoomEventType;
 
 public record MeetingRoomEvent(
 		MeetingRoomEventType type,
-		MeetingNoteResponse note,
-		List<MeetingTodoResponse> todos) {
+		List<MeetingTodoResponse> todos,
+		String update) {
 
-	public static MeetingRoomEvent noteUpdated(MeetingNoteResponse note) {
-		return new MeetingRoomEvent(MeetingRoomEventType.NOTE_UPDATED, note, null);
+	public static MeetingRoomEvent documentUpdated(String update) {
+		return new MeetingRoomEvent(MeetingRoomEventType.DOCUMENT_UPDATED, null, update);
 	}
 
 	public static MeetingRoomEvent todosUpdated(List<MeetingTodoResponse> todos) {
-		return new MeetingRoomEvent(MeetingRoomEventType.TODOS_UPDATED, null, todos);
+		return new MeetingRoomEvent(MeetingRoomEventType.TODOS_UPDATED, todos, null);
 	}
 }
