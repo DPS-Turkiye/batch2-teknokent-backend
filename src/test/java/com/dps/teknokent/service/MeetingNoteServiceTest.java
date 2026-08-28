@@ -22,7 +22,6 @@ import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingNote;
 import com.dps.teknokent.entity.MeetingTodo;
 import com.dps.teknokent.entity.Organization;
-import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingTodoRepository;
@@ -60,15 +59,15 @@ class MeetingNoteServiceTest {
 	}
 
 	@Test
-	void createsAnEmptyNoteTheFirstTimeAMeetingIsOpened() {
+	void returnsAnEmptyNoteWithoutPersistingTheFirstTimeAMeetingIsOpened() {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
 		when(meetingNoteRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
-		when(meetingNoteRepository.saveAndFlush(any(MeetingNote.class))).thenAnswer(returnsArgument());
 
 		MeetingNoteResponse response = service().findNote(meetingId, organizationId);
 
 		assertThat(response.content()).isEmpty();
 		assertThat(response.version()).isZero();
+		verify(meetingNoteRepository, never()).saveAndFlush(any(MeetingNote.class));
 	}
 
 	@Test
@@ -80,7 +79,7 @@ class MeetingNoteServiceTest {
 	}
 
 	@Test
-	void savesTheNoteAndBroadcastsTheNewVersion() {
+	void storesTheLatestSnapshotWithoutBroadcastingTheWholeNote() {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
 		when(domainLookupService.requireUser(userId)).thenReturn(user());
 		when(meetingNoteRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(note(3L, "old")));
@@ -88,30 +87,28 @@ class MeetingNoteServiceTest {
 
 		MeetingNoteResponse response = service().updateNote(
 				meetingId,
-				new UpdateMeetingNoteRequest(organizationId, userId, "<p>new</p>", 3L));
+				new UpdateMeetingNoteRequest(organizationId, userId, "<p>new</p>"));
 
 		assertThat(response.content()).isEqualTo("<p>new</p>");
 		assertThat(response.version()).isEqualTo(4L);
 		assertThat(response.updatedByName()).isEqualTo("Elif Demir");
 
-		ArgumentCaptor<MeetingRoomEvent> event = ArgumentCaptor.forClass(MeetingRoomEvent.class);
-		verify(realtimePublisher).publish(eq(meetingId), event.capture());
-		assertThat(event.getValue().type()).isEqualTo(MeetingRoomEventType.NOTE_UPDATED);
-		assertThat(event.getValue().note().version()).isEqualTo(4L);
+		verify(realtimePublisher, never()).publish(any(), any());
 	}
 
 	@Test
-	void rejectsSavesBasedOnAnOutdatedVersionWithoutBroadcasting() {
+	void keepsTheNewestSnapshotWhenTwoClientsSaveInAnyOrder() {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(domainLookupService.requireUser(userId)).thenReturn(user());
 		when(meetingNoteRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(note(5L, "current")));
+		when(meetingNoteRepository.saveAndFlush(any(MeetingNote.class))).thenAnswer(returnsArgument());
 
-		assertThatThrownBy(() -> service().updateNote(
+		MeetingNoteResponse response = service().updateNote(
 				meetingId,
-				new UpdateMeetingNoteRequest(organizationId, userId, "stale edit", 4L)))
-				.isInstanceOf(ConflictException.class);
+				new UpdateMeetingNoteRequest(organizationId, userId, "<p>merged</p>"));
 
-		verify(meetingNoteRepository, never()).saveAndFlush(any(MeetingNote.class));
-		verify(realtimePublisher, never()).publish(any(), any());
+		assertThat(response.content()).isEqualTo("<p>merged</p>");
+		assertThat(response.version()).isEqualTo(6L);
 	}
 
 	@Test

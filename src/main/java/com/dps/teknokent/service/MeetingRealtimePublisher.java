@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import com.dps.teknokent.domain.MeetingRoomDestinations;
 import com.dps.teknokent.dto.responses.MeetingRoomEvent;
 
 import lombok.RequiredArgsConstructor;
@@ -13,11 +14,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class MeetingRealtimePublisher {
 
-	public static final String MEETING_TOPIC_PREFIX = "/topic/meetings/";
-
 	private final SimpMessagingTemplate messagingTemplate;
 
 	public void publish(UUID meetingId, MeetingRoomEvent event) {
-		messagingTemplate.convertAndSend(MEETING_TOPIC_PREFIX + meetingId, event);
+		messagingTemplate.convertAndSend(MeetingRoomDestinations.TOPIC_PREFIX + meetingId, event);
 	}
 }

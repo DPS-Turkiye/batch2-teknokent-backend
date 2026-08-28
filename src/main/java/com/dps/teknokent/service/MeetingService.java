@@ -31,10 +31,15 @@ public class MeetingService {
 	private final DomainLookupService domainLookupService;
 
 	@Transactional(readOnly = true)
-	public List<MeetingResponse> findAll(UUID organizationId) {
-		List<Meeting> meetings = organizationId == null
-				? meetingRepository.findAllByOrderByScheduledAtDesc()
-				: meetingRepository.findByOrganizationIdOrderByScheduledAtDesc(organizationId);
+	public List<MeetingResponse> findAll(UUID organizationId, UUID mentorId) {
+		List<Meeting> meetings;
+		if (mentorId != null) {
+			meetings = meetingRepository.findByMentorIdOrderByScheduledAtDesc(mentorId);
+		} else if (organizationId != null) {
+			meetings = meetingRepository.findByOrganizationIdOrderByScheduledAtDesc(organizationId);
+		} else {
+			meetings = meetingRepository.findAllByOrderByScheduledAtDesc();
+		}
 		return meetings.stream()
 				.map(MeetingResponse::fromEntity)
 				.toList();

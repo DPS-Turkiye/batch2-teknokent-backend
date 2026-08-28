@@ -22,8 +22,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
+import com.dps.teknokent.dto.responses.MeetingNoteDocumentResponse;
 import com.dps.teknokent.dto.responses.MeetingNoteResponse;
-import com.dps.teknokent.exception.ConflictException;
+import com.dps.teknokent.service.MeetingNoteDocumentService;
 import com.dps.teknokent.service.MeetingNoteService;
 
 @WebMvcTest(MeetingNoteController.class)
@@ -39,6 +40,9 @@ class MeetingNoteControllerTest {
 
 	@MockitoBean
 	private MeetingNoteService meetingNoteService;
+
+	@MockitoBean
+	private MeetingNoteDocumentService meetingNoteDocumentService;
 
 	@Test
 	void requiresAuthenticationForNotes() throws Exception {
@@ -66,26 +70,16 @@ class MeetingNoteControllerTest {
 	}
 
 	@Test
-	void returnsConflictWhenTheNoteWasChangedBySomeoneElse() throws Exception {
+	void storesTheSnapshotSentByTheEditor() throws Exception {
 		when(meetingNoteService.updateNote(eq(MEETING_ID), any(UpdateMeetingNoteRequest.class)))
-				.thenThrow(new ConflictException("The note was changed by someone else."));
+				.thenReturn(new MeetingNoteResponse(
+						MEETING_ID,
+						"<p>Yeni not</p>",
+						8L,
+						USER_ID,
+						"Elif Demir",
+						Instant.parse("2026-09-15T16:05:00Z")));
 
-		mockMvc.perform(put("/api/meetings/{meetingId}/note", MEETING_ID)
-				.with(user("test-user"))
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "organizationId": "00000000-0000-0000-0000-000000000101",
-						  "userId": "00000000-0000-0000-0000-000000000201",
-						  "content": "<p>Yeni not</p>",
-						  "version": 4
-						}
-						"""))
-				.andExpect(status().isConflict());
-	}
-
-	@Test
-	void rejectsSaveRequestsWithoutAVersion() throws Exception {
 		mockMvc.perform(put("/api/meetings/{meetingId}/note", MEETING_ID)
 				.with(user("test-user"))
 				.contentType(MediaType.APPLICATION_JSON)
@@ -96,6 +90,34 @@ class MeetingNoteControllerTest {
 						  "content": "<p>Yeni not</p>"
 						}
 						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.version").value(8));
+	}
+
+	@Test
+	void rejectsSaveRequestsWithoutContent() throws Exception {
+		mockMvc.perform(put("/api/meetings/{meetingId}/note", MEETING_ID)
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "organizationId": "00000000-0000-0000-0000-000000000101",
+						  "userId": "00000000-0000-0000-0000-000000000201"
+						}
+						"""))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void returnsTheLiveDocumentStateForTheRoom() throws Exception {
+		when(meetingNoteDocumentService.findDocument(MEETING_ID, ORGANIZATION_ID))
+				.thenReturn(new MeetingNoteDocumentResponse("AQID", false));
+
+		mockMvc.perform(get("/api/meetings/{meetingId}/note/document", MEETING_ID)
+				.param("organizationId", ORGANIZATION_ID.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("AQID"))
+				.andExpect(jsonPath("$.seedFromSnapshot").value(false));
 	}
 }

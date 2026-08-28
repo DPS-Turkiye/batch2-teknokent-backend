@@ -15,7 +15,6 @@ import com.dps.teknokent.dto.responses.MeetingTodoResponse;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingNote;
 import com.dps.teknokent.entity.MeetingTodo;
-import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingTodoRepository;
@@ -32,28 +31,23 @@ public class MeetingNoteService {
 	private final MeetingTodoRepository meetingTodoRepository;
 	private final MeetingRealtimePublisher realtimePublisher;
 
-	@Transactional
+	@Transactional(readOnly = true)
 	public MeetingNoteResponse findNote(UUID meetingId, UUID organizationId) {
 		Meeting meeting = requireMeetingInOrganization(meetingId, organizationId);
-		return MeetingNoteResponse.fromEntity(requireNote(meeting));
+		return MeetingNoteResponse.fromEntity(meetingNoteRepository.findByMeetingId(meeting.getId())
+				.orElseGet(() -> MeetingNote.emptyFor(meeting)));
 	}
 
 	@Transactional
 	public MeetingNoteResponse updateNote(UUID meetingId, UpdateMeetingNoteRequest request) {
 		Meeting meeting = requireMeetingInOrganization(meetingId, request.organizationId());
 		MeetingNote note = requireNote(meeting);
-		if (!note.getVersion().equals(request.version())) {
-			throw new ConflictException(
-					"The note was changed by someone else. Reload the latest version before saving.");
-		}
 
 		note.setContent(request.content());
 		note.setVersion(note.getVersion() + 1);
 		note.setUpdatedBy(domainLookupService.requireUser(request.userId()));
 
-		MeetingNoteResponse response = MeetingNoteResponse.fromEntity(meetingNoteRepository.saveAndFlush(note));
-		realtimePublisher.publish(meetingId, MeetingRoomEvent.noteUpdated(response));
-		return response;
+		return MeetingNoteResponse.fromEntity(meetingNoteRepository.saveAndFlush(note));
 	}
 
 	@Transactional(readOnly = true)

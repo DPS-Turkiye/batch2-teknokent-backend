@@ -31,6 +31,8 @@ import com.dps.teknokent.repository.MentorshipRequestRepository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -176,7 +178,7 @@ class MeetingServiceTest {
 
 		when(meetingRepository.findAllByOrderByScheduledAtDesc()).thenReturn(List.of(meeting));
 
-		List<MeetingResponse> result = meetingService.findAll(null);
+		List<MeetingResponse> result = meetingService.findAll(null, null);
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).id()).isEqualTo(meeting.getId());
@@ -195,11 +197,46 @@ class MeetingServiceTest {
 		when(meetingRepository.findByOrganizationIdOrderByScheduledAtDesc(demoOrganizationId))
 				.thenReturn(List.of(meeting));
 
-		List<MeetingResponse> result = meetingService.findAll(demoOrganizationId);
+		List<MeetingResponse> result = meetingService.findAll(demoOrganizationId, null);
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).organizationId()).isEqualTo(demoOrganizationId);
 		assertThat(result.get(0).mentorId()).isEqualTo(demoMentorId);
+	}
+
+	@Test
+	void findAllWithMentorIdReturnsThatMentorsMeetingsAcrossOrganizations() {
+		UUID otherOrganizationId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+		UUID demoMentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		Meeting meeting = namedMeeting(
+				UUID.fromString("00000000-0000-0000-0000-000000000303"), otherOrganizationId, demoMentorId,
+				"GreenLoop check-in", MeetingStatus.SCHEDULED, 60);
+
+		when(meetingRepository.findByMentorIdOrderByScheduledAtDesc(demoMentorId))
+				.thenReturn(List.of(meeting));
+
+		List<MeetingResponse> result = meetingService.findAll(null, demoMentorId);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).mentorId()).isEqualTo(demoMentorId);
+		assertThat(result.get(0).organizationId()).isEqualTo(otherOrganizationId);
+	}
+
+	@Test
+	void findAllPrefersMentorIdOverOrganizationIdWhenBothProvided() {
+		UUID demoOrganizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID demoMentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		Meeting meeting = namedMeeting(
+				UUID.fromString("00000000-0000-0000-0000-000000000304"), demoOrganizationId, demoMentorId,
+				"Mentor-scoped view", MeetingStatus.SCHEDULED, 60);
+
+		when(meetingRepository.findByMentorIdOrderByScheduledAtDesc(demoMentorId))
+				.thenReturn(List.of(meeting));
+
+		List<MeetingResponse> result = meetingService.findAll(demoOrganizationId, demoMentorId);
+
+		assertThat(result).hasSize(1);
+		verify(meetingRepository, never()).findByOrganizationIdOrderByScheduledAtDesc(any());
 	}
 
 	@Test

@@ -48,7 +48,7 @@ class MeetingControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-        when(meetingService.findAll(null)).thenReturn(List.of(new MeetingResponse(
+        when(meetingService.findAll(null, null)).thenReturn(List.of(new MeetingResponse(
                 UUID.fromString("00000000-0000-0000-0000-000000000011"),
                 null,
                 organizationId,
@@ -76,7 +76,7 @@ class MeetingControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(meetingService.findAll(organizationId)).thenReturn(List.of(new MeetingResponse(
+        when(meetingService.findAll(organizationId, null)).thenReturn(List.of(new MeetingResponse(
                 UUID.fromString("00000000-0000-0000-0000-000000000022"),
                 null,
                 organizationId,
@@ -98,6 +98,35 @@ class MeetingControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("00000000-0000-0000-0000-000000000022"))
                 .andExpect(jsonPath("$[0].status").value("SCHEDULED"));
+    }
+
+    @Test
+    void returnsMeetingsForSpecificMentorAcrossOrganizations() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000004");
+
+        when(meetingService.findAll(null, mentorId)).thenReturn(List.of(new MeetingResponse(
+                UUID.fromString("00000000-0000-0000-0000-000000000044"),
+                null,
+                organizationId,
+                "GreenLoop",
+                mentorId,
+                "Leyla Aksoy",
+                Instant.parse("2026-09-12T09:00:00Z"),
+                60,
+                "Mentorship check-in",
+                null,
+                null,
+                "https://meet.google.com/mno-pqr-stu",
+                MeetingStatus.SCHEDULED
+        )));
+
+        mockMvc.perform(get("/api/meetings")
+                        .param("mentorId", mentorId.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("00000000-0000-0000-0000-000000000044"))
+                .andExpect(jsonPath("$[0].mentorName").value("Leyla Aksoy"));
     }
 
     @Test

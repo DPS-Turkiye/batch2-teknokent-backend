@@ -8,12 +8,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.dps.teknokent.entity.ProfileAnalysis;
 
 public interface ProfileAnalysisRepository extends JpaRepository<ProfileAnalysis, UUID> {
-	Optional<ProfileAnalysis> findFirstByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
+	Optional<ProfileAnalysis> findFirstByOrganizationIdAndAppUserIdIsNullOrderByCreatedAtDesc(UUID organizationId);
+
+	Optional<ProfileAnalysis> findFirstByAppUserIdOrderByCreatedAtDesc(UUID appUserId);
 
 	/**
-	 * Loads the startup profile used to initialize the mentor-request flow. PostgreSQL serves this
-	 * query through the partial {@code idx_profile_analysis_confirmed_startup_latest} index.
+	 * Loads the organization's own confirmed startup profile used to initialize the mentor-request
+	 * flow - excludes per-person team-member CVs, which are never the org's own startup profile.
 	 */
-	Optional<ProfileAnalysis> findFirstByOrganizationIdAndProfileTypeAndStatusOrderByCreatedAtDesc(
+	Optional<ProfileAnalysis> findFirstByOrganizationIdAndAppUserIdIsNullAndProfileTypeAndStatusOrderByCreatedAtDesc(
 			UUID organizationId, String profileType, String status);
 }
