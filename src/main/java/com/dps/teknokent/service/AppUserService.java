@@ -8,13 +8,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
+import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.responses.AccountDecisionResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -24,12 +29,20 @@ import lombok.RequiredArgsConstructor;
 public class AppUserService {
 
 	private final AppUserRepository appUserRepository;
+	private final OrganizationRepository organizationRepository;
 	private final DomainLookupService domainLookupService;
+	private final InviteCodeGenerator inviteCodeGenerator;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
+		return findAll(role, null);
+	}
+
+	@Transactional(readOnly = true)
+	public List<UserResponse> findAll(UserRole role, UserAccountStatus status) {
 		return appUserRepository.findAll().stream()
 				.filter(user -> role == null || user.getRole() == role)
+				.filter(user -> status == null || user.getStatus() == status)
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
 				.map(UserResponse::fromEntity)
 				.toList();
@@ -61,8 +74,46 @@ public class AppUserService {
 		member.setFullName(TextUtils.trim(request.fullName()));
 		member.setEmail(email);
 		member.setRole(UserRole.MENTEE);
+		member.setStatus(UserAccountStatus.APPROVED);
 		member.setOrganization(organization);
 		member.setJobTitle(TextUtils.normalizeOptional(request.jobTitle()));
 		return UserResponse.fromEntity(appUserRepository.save(member));
+	}
+
+	@Transactional
+	public AccountDecisionResponse decideStatus(UUID userId, DecideAccountStatusRequest request) {
+		AppUser actor = domainLookupService.requireUser(request.actorId());
+		if (actor.getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin can decide account status");
+		}
+		if (request.status() != UserAccountStatus.APPROVED && request.status() != UserAccountStatus.REJECTED) {
+			throw new InvalidRequestException("Account status can only be set to APPROVED or REJECTED");
+		}
+
+		AppUser target = domainLookupService.requireUser(userId);
+		if (target.getStatus() != UserAccountStatus.PENDING) {
+			throw new InvalidRequestException("Only pending accounts can be decided");
+		}
+
+		target.setStatus(request.status());
+		appUserRepository.save(target);
+
+		String inviteCode = null;
+		if (request.status() == UserAccountStatus.APPROVED) {
+			inviteCode = organizationRepository.findByFounderId(target.getId())
+					.map(this::ensureInviteCode)
+					.orElse(null);
+		}
+		return new AccountDecisionResponse(UserResponse.fromEntity(target), inviteCode);
+	}
+
+	private String ensureInviteCode(Organization organization) {
+		if (organization.getInviteCode() != null) {
+			return organization.getInviteCode();
+		}
+		String inviteCode = inviteCodeGenerator.nextUnique(organizationRepository::existsByInviteCode);
+		organization.setInviteCode(inviteCode);
+		organizationRepository.save(organization);
+		return inviteCode;
 	}
 }

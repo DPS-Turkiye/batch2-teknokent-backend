@@ -25,13 +25,6 @@ public class ActionItemService {
 	private final ActionItemRepository actionItemRepository;
 	private final DomainLookupService domainLookupService;
 
-	/**
-	 * Action items are organization-scoped, but a mentor has no single startup
-	 * organization — the relevant one belongs to the mentorship request being
-	 * viewed. Callers may therefore identify the scope either way, and the
-	 * mentorship request is resolved to its organization here rather than by the
-	 * caller, so the organization is never chosen client-side.
-	 */
 	@Transactional(readOnly = true)
 	public UUID resolveOrganizationId(UUID organizationId, UUID mentorshipRequestId) {
 		if ((organizationId == null) == (mentorshipRequestId == null)) {

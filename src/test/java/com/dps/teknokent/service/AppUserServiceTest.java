@@ -2,6 +2,9 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -14,13 +17,17 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
+import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.util.InviteCodeGenerator;
 
 @ExtendWith(MockitoExtension.class)
 class AppUserServiceTest {
@@ -29,7 +36,13 @@ class AppUserServiceTest {
     private AppUserRepository appUserRepository;
 
     @Mock
+    private OrganizationRepository organizationRepository;
+
+    @Mock
     private DomainLookupService domainLookupService;
+
+    @Mock
+    private InviteCodeGenerator inviteCodeGenerator;
 
     @InjectMocks
     private AppUserService appUserService;
@@ -125,6 +138,7 @@ class AppUserServiceTest {
         assertThat(result.fullName()).isEqualTo("Yeni Üye");
         assertThat(result.email()).isEqualTo("yeni.uye@greenloop.demo");
         assertThat(result.role()).isEqualTo(UserRole.MENTEE);
+        assertThat(result.status()).isEqualTo(UserAccountStatus.APPROVED);
         assertThat(result.organizationId()).isEqualTo(organizationId);
     }
 
@@ -140,6 +154,131 @@ class AppUserServiceTest {
                 new CreateOrganizationMemberRequest("Tekrar", "mevcut@greenloop.demo", null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("already exists");
+    }
+
+    @Test
+    void findAll_filtersByAccountStatus() {
+        AppUser pending = user(UUID.fromString("00000000-0000-0000-0000-000000000801"), "pending", "Ayşe Demir", UserRole.MENTEE);
+        pending.setStatus(UserAccountStatus.PENDING);
+        AppUser approved = user(UUID.fromString("00000000-0000-0000-0000-000000000802"), "approved", "Elif Demir", UserRole.MENTEE);
+
+        when(appUserRepository.findAll()).thenReturn(List.of(pending, approved));
+
+        var result = appUserService.findAll(null, UserAccountStatus.PENDING);
+
+        assertThat(result).extracting(user -> user.fullName()).containsExactly("Ayşe Demir");
+        assertThat(result.getFirst().status()).isEqualTo(UserAccountStatus.PENDING);
+    }
+
+    @Test
+    void decideStatus_approvesFounderAndCreatesInviteCode() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID founderId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
+
+        AppUser admin = user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN);
+        AppUser founder = user(founderId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
+        founder.setStatus(UserAccountStatus.PENDING);
+        Organization organization = organization(organizationId, "GreenLoop");
+        organization.setFounder(founder);
+
+        when(domainLookupService.requireUser(adminId)).thenReturn(admin);
+        when(domainLookupService.requireUser(founderId)).thenReturn(founder);
+        when(appUserRepository.save(founder)).thenReturn(founder);
+        when(organizationRepository.findByFounderId(founderId)).thenReturn(Optional.of(organization));
+        when(inviteCodeGenerator.nextUnique(any())).thenReturn("ABCD2345");
+        when(organizationRepository.save(organization)).thenReturn(organization);
+
+        var result = appUserService.decideStatus(founderId, new DecideAccountStatusRequest(adminId, UserAccountStatus.APPROVED));
+
+        assertThat(result.user().status()).isEqualTo(UserAccountStatus.APPROVED);
+        assertThat(result.inviteCode()).isEqualTo("ABCD2345");
+        assertThat(organization.getInviteCode()).isEqualTo("ABCD2345");
+    }
+
+    @Test
+    void decideStatus_approvesMentorWithoutInviteCode() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000812");
+
+        AppUser admin = user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN);
+        AppUser mentor = user(mentorId, "kemal@mentor.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        mentor.setStatus(UserAccountStatus.PENDING);
+
+        when(domainLookupService.requireUser(adminId)).thenReturn(admin);
+        when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+        when(appUserRepository.save(mentor)).thenReturn(mentor);
+        when(organizationRepository.findByFounderId(mentorId)).thenReturn(Optional.empty());
+
+        var result = appUserService.decideStatus(mentorId, new DecideAccountStatusRequest(adminId, UserAccountStatus.APPROVED));
+
+        assertThat(result.user().status()).isEqualTo(UserAccountStatus.APPROVED);
+        assertThat(result.inviteCode()).isNull();
+        verify(inviteCodeGenerator, never()).nextUnique(any());
+    }
+
+    @Test
+    void decideStatus_rejectsPendingAccount() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000812");
+
+        AppUser admin = user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN);
+        AppUser mentor = user(mentorId, "kemal@mentor.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+        mentor.setStatus(UserAccountStatus.PENDING);
+
+        when(domainLookupService.requireUser(adminId)).thenReturn(admin);
+        when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+        when(appUserRepository.save(mentor)).thenReturn(mentor);
+
+        var result = appUserService.decideStatus(mentorId, new DecideAccountStatusRequest(adminId, UserAccountStatus.REJECTED));
+
+        assertThat(result.user().status()).isEqualTo(UserAccountStatus.REJECTED);
+        assertThat(result.inviteCode()).isNull();
+        verify(organizationRepository, never()).findByFounderId(any());
+    }
+
+    @Test
+    void decideStatus_rejectsNonAdminActor() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser mentor = user(actorId, "kemal@mentor.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+
+        when(domainLookupService.requireUser(actorId)).thenReturn(mentor);
+
+        assertThatThrownBy(() -> appUserService.decideStatus(
+                targetId, new DecideAccountStatusRequest(actorId, UserAccountStatus.APPROVED)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Only an admin");
+    }
+
+    @Test
+    void decideStatus_rejectsNonPendingTarget() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser admin = user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN);
+        AppUser target = user(targetId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
+
+        when(domainLookupService.requireUser(adminId)).thenReturn(admin);
+        when(domainLookupService.requireUser(targetId)).thenReturn(target);
+
+        assertThatThrownBy(() -> appUserService.decideStatus(
+                targetId, new DecideAccountStatusRequest(adminId, UserAccountStatus.APPROVED)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Only pending accounts");
+    }
+
+    @Test
+    void decideStatus_rejectsPendingAsDecisionValue() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser admin = user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN);
+
+        when(domainLookupService.requireUser(adminId)).thenReturn(admin);
+
+        assertThatThrownBy(() -> appUserService.decideStatus(
+                targetId, new DecideAccountStatusRequest(adminId, UserAccountStatus.PENDING)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("APPROVED or REJECTED");
     }
 
     private static AppUser user(UUID id, String email, String fullName, UserRole role) {

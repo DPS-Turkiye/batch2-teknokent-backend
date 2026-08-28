@@ -47,3 +47,7 @@ __pycache__/
 # Prototype tools and generated reports are maintained outside the product repository.
 /tools/
 /docs/
+
+# Firebase Admin SDK private keys. Never commit these.
+*firebase-adminsdk*.json
+*-firebase-adminsdk-*.json

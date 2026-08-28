@@ -7,10 +7,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-/**
- * Exactly one of {@code organizationId} or {@code mentorshipRequestId} identifies
- * the owning organization; see {@code ActionItemService#resolveOrganizationId}.
- */
 public record CreateActionItemRequest(
 		UUID organizationId,
 		UUID mentorshipRequestId,

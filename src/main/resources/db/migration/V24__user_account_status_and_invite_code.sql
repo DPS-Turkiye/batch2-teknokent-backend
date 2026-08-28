@@ -1,0 +1,16 @@
+ALTER TABLE app_user
+    ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'APPROVED',
+    ADD COLUMN firebase_uid VARCHAR(128) UNIQUE;
+
+ALTER TABLE app_user
+    ADD CONSTRAINT chk_app_user_status
+        CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'));
+
+ALTER TABLE organization
+    ADD COLUMN founder_id UUID REFERENCES app_user(id),
+    ADD COLUMN invite_code VARCHAR(32) UNIQUE;
+
+UPDATE organization
+SET founder_id = '00000000-0000-0000-0000-000000000003'
+WHERE id = '10000000-0000-0000-0000-000000000001'
+  AND founder_id IS NULL;

@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 
 import jakarta.persistence.Column;
@@ -49,6 +50,16 @@ public class AppUser {
 
 	@Column(name = "job_title")
 	private String jobTitle;
+
+	@Column(length = 32)
+	private String phone;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
+	private UserAccountStatus status = UserAccountStatus.APPROVED;
+
+	@Column(name = "firebase_uid", unique = true)
+	private String firebaseUid;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

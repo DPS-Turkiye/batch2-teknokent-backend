@@ -9,11 +9,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.dto.requests.ActorRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
+import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
@@ -57,5 +60,17 @@ public class OrganizationController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public UserResponse addMember(@PathVariable UUID id, @Valid @RequestBody CreateOrganizationMemberRequest request) {
 		return appUserService.addOrganizationMember(id, request);
+	}
+
+	@GetMapping("/{id}/invite-code")
+	public OrganizationInviteResponse inviteCode(@PathVariable UUID id, @RequestParam UUID actorId) {
+		return organizationService.getInviteCode(id, actorId);
+	}
+
+	@PostMapping("/{id}/invite-code")
+	public OrganizationInviteResponse regenerateInviteCode(
+			@PathVariable UUID id,
+			@Valid @RequestBody ActorRequest request) {
+		return organizationService.regenerateInviteCode(id, request.actorId());
 	}
 }

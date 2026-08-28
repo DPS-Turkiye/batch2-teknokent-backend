@@ -1,11 +1,10 @@
 package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -13,14 +12,22 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Sort;
 
-import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.util.InviteCodeGenerator;
 
 @ExtendWith(MockitoExtension.class)
 class OrganizationServiceTest {
+
+    private static final UUID ORGANIZATION_ID = UUID.fromString("10000000-0000-0000-0000-000000000011");
+    private static final UUID FOUNDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000811");
+    private static final UUID ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_ID = UUID.fromString("00000000-0000-0000-0000-000000000201");
 
     @Mock
     private OrganizationRepository organizationRepository;
@@ -28,64 +35,102 @@ class OrganizationServiceTest {
     @Mock
     private DomainLookupService domainLookupService;
 
+    @Mock
+    private InviteCodeGenerator inviteCodeGenerator;
+
     @InjectMocks
     private OrganizationService organizationService;
 
     @Test
-    void findAll_returnsOrganizationsSortedByNameAscending() {
-        Organization a = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "Acme", "Startup");
-        Organization b = organization(UUID.fromString("00000000-0000-0000-0000-000000000102"), "Bora Labs", "Scale-up");
+    void getInviteCode_allowsFounderAndAdmin() {
+        Organization organization = organizationWithFounder("OLDCODE12");
+        AppUser founder = organization.getFounder();
+        AppUser admin = user(ADMIN_ID, UserRole.ADMIN, UserAccountStatus.APPROVED);
 
-        when(organizationRepository.findAll(Sort.by(Sort.Direction.ASC, "name"))).thenReturn(List.of(a, b));
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(founder);
 
-        var result = organizationService.findAll();
+        var founderView = organizationService.getInviteCode(ORGANIZATION_ID, FOUNDER_ID);
+        assertThat(founderView.inviteCode()).isEqualTo("OLDCODE12");
 
-        assertThat(result).hasSize(2);
-        assertThat(result.getFirst().name()).isEqualTo("Acme");
-        assertThat(result.get(1).name()).isEqualTo("Bora Labs");
+        when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(admin);
+        var adminView = organizationService.getInviteCode(ORGANIZATION_ID, ADMIN_ID);
+        assertThat(adminView.organizationId()).isEqualTo(ORGANIZATION_ID);
+        assertThat(adminView.inviteCode()).isEqualTo("OLDCODE12");
     }
 
     @Test
-    void findById_returnsOrganizationFromDomainLookup() {
-        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000201");
-        Organization organization = organization(id, "Teknokent", "Eğitim ve girişim destek merkezi");
+    void getInviteCode_rejectsOutsider() {
+        Organization organization = organizationWithFounder("OLDCODE12");
+        AppUser outsider = user(OTHER_ID, UserRole.MENTOR, UserAccountStatus.APPROVED);
 
-        when(domainLookupService.requireOrganization(id)).thenReturn(organization);
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(OTHER_ID)).thenReturn(outsider);
 
-        var result = organizationService.findById(id);
-
-        assertThat(result.id()).isEqualTo(id);
-        assertThat(result.name()).isEqualTo("Teknokent");
-        assertThat(result.description()).isEqualTo("Eğitim ve girişim destek merkezi");
+        assertThatThrownBy(() -> organizationService.getInviteCode(ORGANIZATION_ID, OTHER_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("admin or the organization founder");
     }
 
     @Test
-    void create_savesAndMapsOrganization() {
-        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000301");
-        CreateOrganizationRequest request = new CreateOrganizationRequest("İnovasyon Merkezi", "Girişimci ekosistemine destek");
+    void regenerateInviteCode_replacesCodeForApprovedFounder() {
+        Organization organization = organizationWithFounder("OLDCODE12");
+        AppUser founder = organization.getFounder();
 
-        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
-            Organization saved = invocation.getArgument(0);
-            saved.setId(id);
-            saved.setCreatedAt(Instant.parse("2026-08-21T08:00:00Z"));
-            saved.setUpdatedAt(Instant.parse("2026-08-21T08:05:00Z"));
-            return saved;
-        });
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(founder);
+        when(inviteCodeGenerator.nextUnique(any())).thenReturn("NEWCODE8");
+        when(organizationRepository.save(organization)).thenReturn(organization);
 
-        var result = organizationService.create(request);
+        var result = organizationService.regenerateInviteCode(ORGANIZATION_ID, FOUNDER_ID);
 
-        assertThat(result.id()).isEqualTo(id);
-        assertThat(result.name()).isEqualTo("İnovasyon Merkezi");
-        assertThat(result.description()).isEqualTo("Girişimci ekosistemine destek");
+        assertThat(result.inviteCode()).isEqualTo("NEWCODE8");
+        assertThat(organization.getInviteCode()).isEqualTo("NEWCODE8");
     }
 
-    private static Organization organization(UUID id, String name, String description) {
+    @Test
+    void regenerateInviteCode_rejectsPendingFounder() {
+        Organization organization = organizationWithFounder("OLDCODE12");
+        organization.getFounder().setStatus(UserAccountStatus.PENDING);
+
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+
+        assertThatThrownBy(() -> organizationService.regenerateInviteCode(ORGANIZATION_ID, FOUNDER_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("approved founder");
+    }
+
+    @Test
+    void regenerateInviteCode_rejectsAdmin() {
+        Organization organization = organizationWithFounder("OLDCODE12");
+        AppUser admin = user(ADMIN_ID, UserRole.ADMIN, UserAccountStatus.APPROVED);
+
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(admin);
+
+        assertThatThrownBy(() -> organizationService.regenerateInviteCode(ORGANIZATION_ID, ADMIN_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("approved founder");
+    }
+
+    private static Organization organizationWithFounder(String inviteCode) {
+        AppUser founder = user(FOUNDER_ID, UserRole.MENTEE, UserAccountStatus.APPROVED);
         Organization organization = new Organization();
-        organization.setId(id);
-        organization.setName(name);
-        organization.setDescription(description);
-        organization.setCreatedAt(Instant.parse("2026-08-21T09:00:00Z"));
-        organization.setUpdatedAt(Instant.parse("2026-08-21T09:05:00Z"));
+        organization.setId(ORGANIZATION_ID);
+        organization.setName("GreenLoop");
+        organization.setFounder(founder);
+        organization.setInviteCode(inviteCode);
         return organization;
+    }
+
+    private static AppUser user(UUID id, UserRole role, UserAccountStatus status) {
+        AppUser user = new AppUser();
+        user.setId(id);
+        user.setEmail(id + "@demo.com");
+        user.setFullName("Demo");
+        user.setRole(role);
+        user.setStatus(status);
+        return user;
     }
 }

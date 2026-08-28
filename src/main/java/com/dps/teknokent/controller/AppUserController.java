@@ -4,16 +4,22 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -25,12 +31,21 @@ public class AppUserController {
 	private final AppUserService appUserService;
 
 	@GetMapping
-	public List<UserResponse> findAll(@RequestParam(required = false) UserRole role) {
-		return appUserService.findAll(role);
+	public List<UserResponse> findAll(
+			@RequestParam(required = false) UserRole role,
+			@RequestParam(required = false) UserAccountStatus status) {
+		return appUserService.findAll(role, status);
 	}
 
 	@GetMapping("/{id}")
 	public UserResponse findById(@PathVariable UUID id) {
 		return appUserService.findById(id);
+	}
+
+	@PatchMapping("/{id}/status")
+	public AccountDecisionResponse decideStatus(
+			@PathVariable UUID id,
+			@Valid @RequestBody DecideAccountStatusRequest request) {
+		return appUserService.decideStatus(id, request);
 	}
 }

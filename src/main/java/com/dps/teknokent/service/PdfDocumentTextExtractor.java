@@ -105,7 +105,6 @@ public class PdfDocumentTextExtractor {
 				try {
 					Files.deleteIfExists(imagePath);
 				} catch (IOException ignored) {
-					// The operating system will eventually clear its temporary directory.
 				}
 			}
 		}
