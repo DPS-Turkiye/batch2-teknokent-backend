@@ -77,11 +77,10 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 		if (destination.startsWith(MeetingRoomDestinations.TOPIC_PREFIX)) {
 			meetingId = destination.substring(MeetingRoomDestinations.TOPIC_PREFIX.length());
 		} else if (destination.startsWith(MeetingRoomDestinations.INBOUND_PREFIX)) {
-			String path = destination.substring(MeetingRoomDestinations.INBOUND_PREFIX.length());
-			if (!path.endsWith(MeetingRoomDestinations.DOCUMENT_SUFFIX)) {
+			meetingId = inboundMeetingId(destination.substring(MeetingRoomDestinations.INBOUND_PREFIX.length()));
+			if (meetingId == null) {
 				return null;
 			}
-			meetingId = path.substring(0, path.length() - MeetingRoomDestinations.DOCUMENT_SUFFIX.length());
 		} else {
 			return null;
 		}
@@ -91,6 +90,15 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 		} catch (IllegalArgumentException error) {
 			return null;
 		}
+	}
+
+	private String inboundMeetingId(String path) {
+		for (String suffix : MeetingRoomDestinations.INBOUND_SUFFIXES) {
+			if (path.endsWith(suffix)) {
+				return path.substring(0, path.length() - suffix.length());
+			}
+		}
+		return null;
 	}
 
 	private RealtimeIdentity identityOf(Map<String, Object> sessionAttributes) {

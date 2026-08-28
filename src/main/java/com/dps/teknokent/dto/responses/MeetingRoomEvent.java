@@ -13,6 +13,10 @@ public record MeetingRoomEvent(
 		return new MeetingRoomEvent(MeetingRoomEventType.DOCUMENT_UPDATED, null, update);
 	}
 
+	public static MeetingRoomEvent presenceUpdated(String update) {
+		return new MeetingRoomEvent(MeetingRoomEventType.PRESENCE_UPDATED, null, update);
+	}
+
 	public static MeetingRoomEvent todosUpdated(List<MeetingTodoResponse> todos) {
 		return new MeetingRoomEvent(MeetingRoomEventType.TODOS_UPDATED, todos, null);
 	}

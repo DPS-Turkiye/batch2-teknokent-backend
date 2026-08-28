@@ -78,6 +78,27 @@ class MeetingRoomAccessInterceptorTest {
 	}
 
 	@Test
+	void acceptsPresenceUpdatesForAVisibleMeeting() {
+		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId)).thenReturn(true);
+		MeetingRoomAccessInterceptor interceptor = new MeetingRoomAccessInterceptor(meetingRoomAccessService);
+
+		Message<?> message = presenceUpdate(sessionAttributes());
+
+		assertThat(interceptor.preSend(message, null)).isSameAs(message);
+	}
+
+	@Test
+	void rejectsPresenceUpdatesForMeetingsOfAnotherOrganization() {
+		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId)).thenReturn(false);
+		MeetingRoomAccessInterceptor interceptor = new MeetingRoomAccessInterceptor(meetingRoomAccessService);
+
+		Message<?> message = presenceUpdate(sessionAttributes());
+
+		assertThatThrownBy(() -> interceptor.preSend(message, null))
+				.isInstanceOf(MessagingException.class);
+	}
+
+	@Test
 	void rejectsDestinationsOutsideTheMeetingRoom() {
 		MeetingRoomAccessInterceptor interceptor = new MeetingRoomAccessInterceptor(meetingRoomAccessService);
 
@@ -101,6 +122,10 @@ class MeetingRoomAccessInterceptorTest {
 
 	private Message<?> documentUpdate(Map<String, Object> sessionAttributes) {
 		return message(StompCommand.SEND, "/app/meetings/" + meetingId + "/document", sessionAttributes);
+	}
+
+	private Message<?> presenceUpdate(Map<String, Object> sessionAttributes) {
+		return message(StompCommand.SEND, "/app/meetings/" + meetingId + "/presence", sessionAttributes);
 	}
 
 	private Message<?> message(StompCommand command, String destination, Map<String, Object> sessionAttributes) {
