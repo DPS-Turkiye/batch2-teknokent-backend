@@ -30,6 +30,6 @@ USER spring:spring
 
 EXPOSE 8080
 
-ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC"
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC --enable-native-access=ALL-UNNAMED"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

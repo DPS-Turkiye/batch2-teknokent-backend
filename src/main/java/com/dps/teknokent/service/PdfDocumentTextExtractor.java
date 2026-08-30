@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -49,7 +48,8 @@ public class PdfDocumentTextExtractor {
 				PDFRenderer renderer = new PDFRenderer(document);
 				for (int pageIndex : ocrPages) {
 					String ocrText = runTesseract(renderer.renderImageWithDPI(pageIndex, 200));
-					if (!ocrText.isBlank()) pages.set(pageIndex, ocrText.trim());
+					if (!ocrText.isBlank())
+						pages.set(pageIndex, ocrText.trim());
 				}
 			}
 			StringBuilder output = new StringBuilder();
@@ -67,11 +67,13 @@ public class PdfDocumentTextExtractor {
 	}
 
 	private List<Integer> selectOcrPages(List<String> pages, String mode) {
-		if ("off".equals(mode)) return List.of();
+		if ("off".equals(mode))
+			return List.of();
 		List<Integer> selected = new ArrayList<>();
 		for (int index = 0; index < pages.size(); index++) {
 			int usefulCharacters = pages.get(index).replaceAll("\\s", "").length();
-			if ("force".equals(mode) || usefulCharacters < 40) selected.add(index);
+			if ("force".equals(mode) || usefulCharacters < 40)
+				selected.add(index);
 		}
 		return selected;
 	}
@@ -92,7 +94,8 @@ public class PdfDocumentTextExtractor {
 			}
 			String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 			if (process.exitValue() != 0) {
-				throw new InvalidRequestException("Local OCR failed. Verify that Turkish and English Tesseract data are installed.");
+				throw new InvalidRequestException(
+						"Local OCR failed. Verify that Turkish and English Tesseract data are installed.");
 			}
 			return output;
 		} catch (InterruptedException error) {
@@ -110,5 +113,6 @@ public class PdfDocumentTextExtractor {
 		}
 	}
 
-	public record ExtractionResult(String text, int pageCount, List<Integer> ocrPages, boolean ocrUsed) {}
+	public record ExtractionResult(String text, int pageCount, List<Integer> ocrPages, boolean ocrUsed) {
+	}
 }

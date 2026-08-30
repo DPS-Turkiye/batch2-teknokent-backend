@@ -122,7 +122,6 @@ class ActionItemServiceTest {
         Meeting meeting = new Meeting();
         meeting.setId(meetingId);
         meeting.setOrganization(otherOrganization);
-        AppUser owner = user(ownerId, "Ayşe Yılmaz");
 
         CreateActionItemRequest request = new CreateActionItemRequest(
                 organizationId,

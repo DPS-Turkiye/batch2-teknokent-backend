@@ -18,29 +18,23 @@ spring:
     username: ${DATABASE_USERNAME:teknokent}
     password: ${DATABASE_PASSWORD:change-me}
     hikari:
-      maximum-pool-size: ${HIKARI_MAXIMUM_POOL_SIZE:10}
-      minimum-idle: ${HIKARI_MINIMUM_IDLE:2}
-      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT:30000}
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
 
   jpa:
     hibernate:
-      ddl-auto: ${JPA_HIBERNATE_DDL_AUTO:validate}
-    show-sql: ${JPA_SHOW_SQL:false}
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
         jdbc:
           time_zone: UTC
-        format_sql: ${JPA_SHOW_SQL:false}
 
   security:
     user:
       name: ${SECURITY_USERNAME}
       password: ${SECURITY_PASSWORD}
-
-  flyway:
-    enabled: ${FLYWAY_ENABLED:true}
-    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
 
   data:
     redis:

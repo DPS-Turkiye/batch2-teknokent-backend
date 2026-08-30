@@ -7,7 +7,6 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -16,9 +15,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.dps.teknokent.domain.ActionItemStatus;
-import com.dps.teknokent.domain.BottleneckSeverity;
-import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.repository.ActionItemRepository;
@@ -48,7 +44,8 @@ class DashboardServiceTest {
     void getSummary_forOrganization_returnsCountsForThatOrganization() {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
 
-        when(mentorshipRepository.countByOrganizationIdAndStatus(organizationId, MentorshipStatus.ACTIVE)).thenReturn(3L);
+        when(mentorshipRepository.countByOrganizationIdAndStatus(organizationId, MentorshipStatus.ACTIVE))
+                .thenReturn(3L);
         when(bottleneckRepository.countByOrganizationIdAndStatusIn(eq(organizationId), any())).thenReturn(2L);
         when(bottleneckRepository.countByOrganizationIdAndSeverityInAndStatusIn(
                 eq(organizationId), any(), any())).thenReturn(1L);
@@ -72,7 +69,8 @@ class DashboardServiceTest {
         when(bottleneckRepository.countByStatusIn(any())).thenReturn(7L);
         when(bottleneckRepository.countBySeverityInAndStatusIn(any(), any())).thenReturn(3L);
         when(actionItemRepository.countByStatusNotInAndDueDateBefore(any(), any(LocalDate.class))).thenReturn(11L);
-        when(meetingRepository.countByStatusAndScheduledAtAfter(eq(MeetingStatus.SCHEDULED), any(Instant.class))).thenReturn(13L);
+        when(meetingRepository.countByStatusAndScheduledAtAfter(eq(MeetingStatus.SCHEDULED), any(Instant.class)))
+                .thenReturn(13L);
 
         var result = dashboardService.getSummary(null);
 

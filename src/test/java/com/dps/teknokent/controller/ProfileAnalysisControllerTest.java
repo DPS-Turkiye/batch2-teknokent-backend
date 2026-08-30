@@ -31,213 +31,210 @@ import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.dps.teknokent.service.ProfileAnalysisService;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @WebMvcTest(ProfileAnalysisController.class)
 @Import(SecurityConfig.class)
 class ProfileAnalysisControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+        @Autowired
+        private MockMvc mockMvc;
 
-    @MockitoBean
-    private ProfileAnalysisService profileAnalysisService;
+        @MockitoBean
+        private ProfileAnalysisService profileAnalysisService;
 
-    @Test
-    void requiresAuthenticationForLatest() throws Exception {
-        mockMvc.perform(get("/api/profile-analyses/latest"))
-                .andExpect(status().isUnauthorized());
-    }
+        @Test
+        void requiresAuthenticationForLatest() throws Exception {
+                mockMvc.perform(get("/api/profile-analyses/latest"))
+                                .andExpect(status().isUnauthorized());
+        }
 
-    @Test
-    void returnsLatestProfileAnalysis() throws Exception {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        @Test
+        void returnsLatestProfileAnalysis() throws Exception {
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+                UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000201");
 
-        when(profileAnalysisService.findLatest(organizationId, null)).thenReturn(new ProfileAnalysisResponse(
-                analysisId,
-                organizationId,
-                null,
-                "pitch.pdf",
-                "mentee",
-                "{\"startup_name\":\"Acme Labs\"}",
-                "PARSED",
-                Instant.parse("2026-08-20T09:00:00Z"),
-                "Redacted legal data",
-                "OCR summary",
-                Instant.parse("2026-08-20T08:55:00Z")
-        ));
+                when(profileAnalysisService.findLatest(organizationId, null)).thenReturn(new ProfileAnalysisResponse(
+                                analysisId,
+                                organizationId,
+                                null,
+                                "pitch.pdf",
+                                "mentee",
+                                "{\"startup_name\":\"Acme Labs\"}",
+                                "PARSED",
+                                Instant.parse("2026-08-20T09:00:00Z"),
+                                "Redacted legal data",
+                                "OCR summary",
+                                Instant.parse("2026-08-20T08:55:00Z")));
 
-        mockMvc.perform(get("/api/profile-analyses/latest")
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(analysisId.toString()))
-                .andExpect(jsonPath("$.sourceFilename").value("pitch.pdf"))
-                .andExpect(jsonPath("$.status").value("PARSED"));
-    }
+                mockMvc.perform(get("/api/profile-analyses/latest")
+                                .param("organizationId", organizationId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(analysisId.toString()))
+                                .andExpect(jsonPath("$.sourceFilename").value("pitch.pdf"))
+                                .andExpect(jsonPath("$.status").value("PARSED"));
+        }
 
-    @Test
-    void returnsLatestConfirmedStartup() throws Exception {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000102");
-        UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000202");
+        @Test
+        void returnsLatestConfirmedStartup() throws Exception {
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+                UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000202");
 
-        when(profileAnalysisService.findLatestConfirmedStartup(organizationId)).thenReturn(new ProfileAnalysisResponse(
-                analysisId,
-                organizationId,
-                null,
-                "confirmed.pdf",
-                "mentee",
-                "{\"startup_name\":\"Confirmed Startup\"}",
-                "CONFIRMED",
-                Instant.parse("2026-08-20T09:10:00Z"),
-                "No sensitive fields",
-                "OCR summary",
-                Instant.parse("2026-08-20T09:05:00Z")
-        ));
+                when(profileAnalysisService.findLatestConfirmedStartup(organizationId))
+                                .thenReturn(new ProfileAnalysisResponse(
+                                                analysisId,
+                                                organizationId,
+                                                null,
+                                                "confirmed.pdf",
+                                                "mentee",
+                                                "{\"startup_name\":\"Confirmed Startup\"}",
+                                                "CONFIRMED",
+                                                Instant.parse("2026-08-20T09:10:00Z"),
+                                                "No sensitive fields",
+                                                "OCR summary",
+                                                Instant.parse("2026-08-20T09:05:00Z")));
 
-        mockMvc.perform(get("/api/profile-analyses/latest/confirmed")
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(analysisId.toString()))
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
-    }
+                mockMvc.perform(get("/api/profile-analyses/latest/confirmed")
+                                .param("organizationId", organizationId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(analysisId.toString()))
+                                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+        }
 
-    @Test
-    void parsesProfileAnalysisFromPdf() throws Exception {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000103");
-        UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000203");
+        @Test
+        void parsesProfileAnalysisFromPdf() throws Exception {
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000103");
+                UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000203");
 
-        when(profileAnalysisService.parse(
-                eq(organizationId),
-                eq((UUID) null),
-                eq("mentee"),
-                eq(true),
-                eq("auto"),
-                any())).thenReturn(new ProfileAnalysisResponse(
-                analysisId,
-                organizationId,
-                null,
-                "sample.pdf",
-                "mentee",
-                "{\"startup_name\":\"Sample Startup\"}",
-                "PARSED",
-                Instant.parse("2026-08-20T10:00:00Z"),
-                "Summary",
-                "OCR summary",
-                Instant.parse("2026-08-20T09:58:00Z")
-        ));
+                when(profileAnalysisService.parse(
+                                eq(organizationId),
+                                eq((UUID) null),
+                                eq("mentee"),
+                                eq(true),
+                                eq("auto"),
+                                any())).thenReturn(new ProfileAnalysisResponse(
+                                                analysisId,
+                                                organizationId,
+                                                null,
+                                                "sample.pdf",
+                                                "mentee",
+                                                "{\"startup_name\":\"Sample Startup\"}",
+                                                "PARSED",
+                                                Instant.parse("2026-08-20T10:00:00Z"),
+                                                "Summary",
+                                                "OCR summary",
+                                                Instant.parse("2026-08-20T09:58:00Z")));
 
-        mockMvc.perform(multipart("/api/profile-analyses")
-                        .file(new MockMultipartFile(
-                                "file",
-                                "sample.pdf",
-                                "application/pdf",
-                                "dummy pdf bytes".getBytes(StandardCharsets.UTF_8)))
-                        .param("organizationId", organizationId.toString())
-                        .param("profileType", "mentee")
-                        .param("consentAccepted", "true")
-                        .param("ocrMode", "auto")
-                        .with(user("test-user")))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(analysisId.toString()))
-                .andExpect(jsonPath("$.sourceFilename").value("sample.pdf"));
-    }
+                mockMvc.perform(multipart("/api/profile-analyses")
+                                .file(new MockMultipartFile(
+                                                "file",
+                                                "sample.pdf",
+                                                "application/pdf",
+                                                "dummy pdf bytes".getBytes(StandardCharsets.UTF_8)))
+                                .param("organizationId", organizationId.toString())
+                                .param("profileType", "mentee")
+                                .param("consentAccepted", "true")
+                                .param("ocrMode", "auto")
+                                .with(user("test-user")))
+                                .andExpect(status().isCreated())
+                                .andExpect(jsonPath("$.id").value(analysisId.toString()))
+                                .andExpect(jsonPath("$.sourceFilename").value("sample.pdf"));
+        }
 
-    @Test
-    void createsManualProfileAnalysis() throws Exception {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000104");
-        UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000204");
+        @Test
+        void createsManualProfileAnalysis() throws Exception {
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000104");
+                UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000204");
 
-        CreateManualProfileRequest request = new CreateManualProfileRequest(
-                "individual_mentee",
-                new ObjectMapper().readTree("""
-                        {
-                          "startup_name": "Manual Startup",
-                          "startup_summary": "We build fintech tools for creators.",
-                          "professional_summary": "We are a product-focused team.",
-                          "current_role": "Founder",
-                          "desired_role": "Product strategy mentor"
-                        }
-                        """));
+                CreateManualProfileRequest request = new CreateManualProfileRequest(
+                                "individual_mentee",
+                                new ObjectMapper().readTree("""
+                                                {
+                                                  "startup_name": "Manual Startup",
+                                                  "startup_summary": "We build fintech tools for creators.",
+                                                  "professional_summary": "We are a product-focused team.",
+                                                  "current_role": "Founder",
+                                                  "desired_role": "Product strategy mentor"
+                                                }
+                                                """));
 
-        when(profileAnalysisService.createManual(eq(organizationId), eq((UUID) null), any(CreateManualProfileRequest.class)))
-                .thenReturn(new ProfileAnalysisResponse(
-                        analysisId,
-                        organizationId,
-                        null,
-                        "manual-entry",
-                        "individual_mentee",
-                        "{\"startup_name\":\"Manual Startup\"}",
-                        "MANUAL",
-                        Instant.parse("2026-08-20T11:00:00Z"),
-                        "Manual profile created",
-                        "No OCR",
-                        Instant.parse("2026-08-20T10:58:00Z")
-                ));
+                when(profileAnalysisService.createManual(eq(organizationId), eq((UUID) null),
+                                any(CreateManualProfileRequest.class)))
+                                .thenReturn(new ProfileAnalysisResponse(
+                                                analysisId,
+                                                organizationId,
+                                                null,
+                                                "manual-entry",
+                                                "individual_mentee",
+                                                "{\"startup_name\":\"Manual Startup\"}",
+                                                "MANUAL",
+                                                Instant.parse("2026-08-20T11:00:00Z"),
+                                                "Manual profile created",
+                                                "No OCR",
+                                                Instant.parse("2026-08-20T10:58:00Z")));
 
-        ProfileAnalysisResponse response = new ProfileAnalysisController(profileAnalysisService)
-                .createManual(organizationId, null, request);
+                ProfileAnalysisResponse response = new ProfileAnalysisController(profileAnalysisService)
+                                .createManual(organizationId, null, request);
 
-        assertThat(response.id()).isEqualTo(analysisId);
-        assertThat(response.profileType()).isEqualTo("individual_mentee");
-    }
+                assertThat(response.id()).isEqualTo(analysisId);
+                assertThat(response.profileType()).isEqualTo("individual_mentee");
+        }
 
-    @Test
-    void returnsRecommendationsForConfirmedProfile() throws Exception {
-        UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000205");
-        ObjectMapper objectMapper = new ObjectMapper();
-        com.fasterxml.jackson.databind.node.ObjectNode responseBody = objectMapper.createObjectNode();
-        responseBody.put("result", "recommendations-ready");
-        responseBody.put("count", 2);
-        var items = responseBody.putArray("items");
-        var first = items.addObject();
-        first.put("mentorId", "00000000-0000-0000-0000-000000000900");
-        var second = items.addObject();
-        second.put("mentorId", "00000000-0000-0000-0000-000000000901");
+        @Test
+        void returnsRecommendationsForConfirmedProfile() throws Exception {
+                UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000205");
+                ObjectMapper objectMapper = new ObjectMapper();
+                com.fasterxml.jackson.databind.node.ObjectNode responseBody = objectMapper.createObjectNode();
+                responseBody.put("result", "recommendations-ready");
+                responseBody.put("count", 2);
+                var items = responseBody.putArray("items");
+                var first = items.addObject();
+                first.put("mentorId", "00000000-0000-0000-0000-000000000900");
+                var second = items.addObject();
+                second.put("mentorId", "00000000-0000-0000-0000-000000000901");
 
-        when(profileAnalysisService.recommendations(analysisId)).thenReturn(responseBody);
+                when(profileAnalysisService.recommendations(analysisId)).thenReturn(responseBody);
 
-        mockMvc.perform(post("/api/profile-analyses/{id}/recommendations", analysisId)
-                        .with(user("test-user")))
-                .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
-    }
+                mockMvc.perform(post("/api/profile-analyses/{id}/recommendations", analysisId)
+                                .with(user("test-user")))
+                                .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
+                                .andExpect(status().isOk())
+                                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+        }
 
-    @Test
-    void confirmsProfileAnalysis() throws Exception {
-        UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000206");
+        @Test
+        void confirmsProfileAnalysis() throws Exception {
+                UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000206");
 
-        when(profileAnalysisService.confirm(eq(analysisId), anyString())).thenReturn(new ProfileAnalysisResponse(
-                analysisId,
-                UUID.fromString("00000000-0000-0000-0000-000000000103"),
-                null,
-                "confirmed.pdf",
-                "mentee",
-                "{\"startup_name\":\"Confirmed Startup\"}",
-                "CONFIRMED",
-                Instant.parse("2026-08-20T12:00:00Z"),
-                "Confirmed by user",
-                "OCR summary",
-                Instant.parse("2026-08-20T11:55:00Z")
-        ));
+                when(profileAnalysisService.confirm(eq(analysisId), anyString()))
+                                .thenReturn(new ProfileAnalysisResponse(
+                                                analysisId,
+                                                UUID.fromString("00000000-0000-0000-0000-000000000103"),
+                                                null,
+                                                "confirmed.pdf",
+                                                "mentee",
+                                                "{\"startup_name\":\"Confirmed Startup\"}",
+                                                "CONFIRMED",
+                                                Instant.parse("2026-08-20T12:00:00Z"),
+                                                "Confirmed by user",
+                                                "OCR summary",
+                                                Instant.parse("2026-08-20T11:55:00Z")));
 
-        mockMvc.perform(patch("/api/profile-analyses/{id}/confirmation", analysisId)
-                        .with(user("test-user"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "profile": {
-                                    "startup_name": "Confirmed Startup",
-                                    "startup_summary": "We are building a B2B SaaS analytics platform."
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(analysisId.toString()))
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
-    }
+                mockMvc.perform(patch("/api/profile-analyses/{id}/confirmation", analysisId)
+                                .with(user("test-user"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                                {
+                                                  "profile": {
+                                                    "startup_name": "Confirmed Startup",
+                                                    "startup_summary": "We are building a B2B SaaS analytics platform."
+                                                  }
+                                                }
+                                                """))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(analysisId.toString()))
+                                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+        }
 }

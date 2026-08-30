@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -79,7 +78,8 @@ public class MentorRecommendationService {
 		if (vectorRetrieved) {
 			return new MentorRecommendationResult("PGVECTOR_SEMANTIC",
 					normalizedProvider() + ":" + embeddingModel(), Instant.now(), candidates.stream()
-							.limit(5).map(mentor -> withReasons(request, mentor, fallbackReasons(request, mentor))).toList());
+							.limit(5).map(mentor -> withReasons(request, mentor, fallbackReasons(request, mentor)))
+							.toList());
 		}
 		return new MentorRecommendationResult(
 				"DETERMINISTIC", "keyword-overlap-v1", Instant.now(), deterministicRank(request, mentors));
@@ -113,14 +113,16 @@ public class MentorRecommendationService {
 		String confirmedEvidence = mentor.recommendationEvidence().stream()
 				.map(item -> item.category() + " " + item.claim() + " " + item.quote())
 				.collect(Collectors.joining(" "));
-		Set<String> mentorTokens = meaningfulTokens(String.join(" ", mentor.specialties()) + " " + mentor.sectorExperience()
-				+ " " + mentor.professionalTitle() + " " + confirmedEvidence);
+		Set<String> mentorTokens = meaningfulTokens(
+				String.join(" ", mentor.specialties()) + " " + mentor.sectorExperience()
+						+ " " + mentor.professionalTitle() + " " + confirmedEvidence);
 		return (int) query.stream().filter(mentorTokens::contains).count();
 	}
 
 	private List<String> fallbackReasons(RecommendMentorsRequest request, MentorProfileResponse mentor) {
 		List<String> reasons = new ArrayList<>(requestSpecificReasons(request, mentor));
-		if (reasons.isEmpty()) reasons.add(request.supportArea() + " talebiyle uzmanlık yakınlığı");
+		if (reasons.isEmpty())
+			reasons.add(request.supportArea() + " talebiyle uzmanlık yakınlığı");
 		return reasons.stream().limit(3).toList();
 	}
 
@@ -206,7 +208,8 @@ public class MentorRecommendationService {
 		return new MentorProfileResponse(mentor.id(), mentor.fullName(), mentor.email(), mentor.initials(),
 				mentor.professionalTitle(), mentor.company(), mentor.availabilityLabel(), mentor.responseTimeLabel(),
 				mentor.meetingMode(), mentor.communicationPreference(), mentor.mentoringStyle(), mentor.fitLabel(),
-				mentor.experienceLevel(), mentor.sectorExperience(), mentor.startupStages(), mentor.specialties(), reasons,
+				mentor.experienceLevel(), mentor.sectorExperience(), mentor.startupStages(), mentor.specialties(),
+				reasons,
 				selectEvidence(request, mentor.recommendationEvidence()));
 	}
 
@@ -232,7 +235,8 @@ public class MentorRecommendationService {
 
 	private String normalizedProvider() {
 		return Set.of("openai", "openrouter", "ollama").contains(provider.toLowerCase(Locale.ROOT))
-				? provider.toLowerCase(Locale.ROOT) : "openrouter";
+				? provider.toLowerCase(Locale.ROOT)
+				: "openrouter";
 	}
 
 	private String embeddingModel() {
