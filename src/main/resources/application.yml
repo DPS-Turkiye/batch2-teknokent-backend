@@ -89,6 +89,14 @@ ai:
     app-name: ${OPENROUTER_APP_NAME:TeamTNT Spring Backend}
 
 app:
+  firebase:
+    project-id: ${FIREBASE_PROJECT_ID:}
+    credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
+  s3:
+    region: ${AWS_REGION:}
+    bucket: ${AWS_S3_BUCKET:}
+    access-key-id: ${AWS_ACCESS_KEY_ID:}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
   realtime:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}

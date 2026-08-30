@@ -1,9 +1,12 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -14,11 +17,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.responses.AccountDecisionResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
 
@@ -43,11 +50,12 @@ class AppUserControllerTest {
         UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000101");
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-        when(appUserService.findAll(UserRole.MENTOR)).thenReturn(List.of(new UserResponse(
+        when(appUserService.findAll(UserRole.MENTOR, null)).thenReturn(List.of(new UserResponse(
                 userId,
                 "mentor@teknokent.demo",
                 "Dr. Kemal Arslan",
                 UserRole.MENTOR,
+                UserAccountStatus.APPROVED,
                 organizationId,
                 "Teknokent",
                 "Ürün & Araştırma Direktörü"
@@ -70,6 +78,7 @@ class AppUserControllerTest {
                 "mentee@teknokent.demo",
                 "Elif Demir",
                 UserRole.MENTEE,
+                UserAccountStatus.APPROVED,
                 organizationId,
                 "Teknokent",
                 "Product Designer"
@@ -87,12 +96,13 @@ class AppUserControllerTest {
         UUID firstUserId = UUID.fromString("00000000-0000-0000-0000-000000000103");
         UUID secondUserId = UUID.fromString("00000000-0000-0000-0000-000000000104");
 
-        when(appUserService.findAll(any())).thenReturn(List.of(
+        when(appUserService.findAll(isNull(), isNull())).thenReturn(List.of(
                 new UserResponse(
                         firstUserId,
                         "admin@teknokent.demo",
                         "Admin User",
                         UserRole.ADMIN,
+                        UserAccountStatus.APPROVED,
                         null,
                         null,
                         "Platform Admin"
@@ -102,6 +112,7 @@ class AppUserControllerTest {
                         "mentor@teknokent.demo",
                         "Mentor User",
                         UserRole.MENTOR,
+                        UserAccountStatus.APPROVED,
                         null,
                         null,
                         "Mentor"
@@ -112,5 +123,56 @@ class AppUserControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].email").value("admin@teknokent.demo"))
                 .andExpect(jsonPath("$[1].role").value("MENTOR"));
+    }
+
+    @Test
+    void requiresAuthenticationToDecideStatus() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+
+        mockMvc.perform(patch("/api/users/{id}/status", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actorId": "00000000-0000-0000-0000-000000000001",
+                                  "status": "APPROVED"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void decidesAccountStatus() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+        when(appUserService.decideStatus(eq(userId), any(DecideAccountStatusRequest.class)))
+                .thenReturn(new AccountDecisionResponse(
+                        new UserResponse(
+                                userId,
+                                "ayse@startup.com",
+                                "Ayşe Demir",
+                                UserRole.MENTEE,
+                                UserAccountStatus.APPROVED,
+                                organizationId,
+                                "GreenLoop",
+                                "Kurucu"
+                        ),
+                        "ABCD2345"
+                ));
+
+        mockMvc.perform(patch("/api/users/{id}/status", userId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actorId": "%s",
+                                  "status": "APPROVED"
+                                }
+                                """.formatted(adminId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.id").value(userId.toString()))
+                .andExpect(jsonPath("$.user.status").value("APPROVED"))
+                .andExpect(jsonPath("$.inviteCode").value("ABCD2345"));
     }
 }

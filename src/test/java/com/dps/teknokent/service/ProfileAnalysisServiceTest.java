@@ -20,13 +20,14 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProfileAnalysisRepository;
 import com.dps.teknokent.util.JsonUtils;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.util.Optional;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,8 @@ class ProfileAnalysisServiceTest {
 	private NativeProfileParserService nativeProfileParserService;
 	@Mock
 	private MentorRecommendationService mentorRecommendationService;
+	@Mock
+	private DocumentService documentService;
 
 	@InjectMocks
 	private ProfileAnalysisService profileAnalysisService;
@@ -85,6 +88,32 @@ class ProfileAnalysisServiceTest {
 				UUID.randomUUID(), null, "mentee", false, "auto", null))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("consent");
+	}
+
+	@Test
+	void parseStoresThePdfBeforeParsing() throws Exception {
+		UUID organizationId = UUID.randomUUID();
+		when(organizationRepository.existsById(organizationId)).thenReturn(true);
+		JsonNode profile = objectMapper.readTree("{\"startup_name\":\"Acme\"}");
+		JsonNode empty = objectMapper.readTree("{}");
+		when(nativeProfileParserService.parse(any(), eq("mentee"), eq("auto")))
+				.thenReturn(new NativeProfileParserService.ParseResult(profile, empty, empty));
+		when(technologyInferenceService.enrich(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		when(profileAnalysisRepository.save(any(ProfileAnalysis.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		MockMultipartFile file = new MockMultipartFile(
+				"file", "pitch.pdf", "application/pdf", "%PDF-1.4 acme".getBytes());
+		profileAnalysisService.parse(organizationId, null, "mentee", true, "auto", file);
+
+		verify(documentService).store(
+				eq(null),
+				eq(organizationId),
+				eq("profile-pdf"),
+				eq("pitch.pdf"),
+				eq("application/pdf"),
+				eq(file.getBytes()));
+		verify(nativeProfileParserService).parse(eq(file.getBytes()), eq("mentee"), eq("auto"));
 	}
 
 	@Test

@@ -36,6 +36,7 @@ public class ProfileAnalysisService {
 	private final TechnologyInferenceService technologyInferenceService;
 	private final NativeProfileParserService nativeProfileParserService;
 	private final MentorRecommendationService mentorRecommendationService;
+	private final DocumentService documentService;
 	private final JsonUtils jsonUtils;
 
 	public ProfileAnalysisResponse parse(
@@ -58,12 +59,22 @@ public class ProfileAnalysisService {
 			throw new InvalidRequestException("Please upload a PDF pitch deck or company profile.");
 		}
 
-		NativeProfileParserService.ParseResult parseResult;
+		byte[] pdfBytes;
 		try {
-			parseResult = nativeProfileParserService.parse(file.getBytes(), profileType, ocrMode);
+			pdfBytes = file.getBytes();
 		} catch (IOException error) {
 			throw new InvalidRequestException("The uploaded PDF could not be read.");
 		}
+		documentService.store(
+				appUserId,
+				resolvedOrganizationId,
+				"profile-pdf",
+				file.getOriginalFilename(),
+				file.getContentType(),
+				pdfBytes);
+
+		NativeProfileParserService.ParseResult parseResult = nativeProfileParserService.parse(
+				pdfBytes, profileType, ocrMode);
 		JsonNode profile = parseResult.profile();
 		if (!profile.isObject()) throw new InvalidRequestException("The parser did not return a usable profile.");
 		profile = technologyInferenceService.enrich(((com.fasterxml.jackson.databind.node.ObjectNode) profile).deepCopy());

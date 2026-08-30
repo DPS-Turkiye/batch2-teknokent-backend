@@ -1,6 +1,7 @@
 package com.dps.teknokent.repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,4 +12,8 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	List<AppUser> findByOrganizationIdOrderByFullNameAsc(UUID organizationId);
 
 	boolean existsByEmailIgnoreCase(String email);
+
+	Optional<AppUser> findByEmailIgnoreCase(String email);
+
+	Optional<AppUser> findByFirebaseUid(String firebaseUid);
 }

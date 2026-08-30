@@ -22,9 +22,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
+import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
@@ -138,6 +140,7 @@ class OrganizationControllerTest {
                 "ekip@greenloop.demo",
                 "Ekip Üyesi",
                 UserRole.MENTEE,
+                UserAccountStatus.APPROVED,
                 organizationId,
                 "GreenLoop",
                 "Ürün Müdürü"
@@ -160,6 +163,7 @@ class OrganizationControllerTest {
                         "yeni.uye@greenloop.demo",
                         "Yeni Üye",
                         UserRole.MENTEE,
+                        UserAccountStatus.APPROVED,
                         organizationId,
                         "GreenLoop",
                         "Ürün Yöneticisi"
@@ -195,5 +199,51 @@ class OrganizationControllerTest {
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void requiresAuthenticationForInviteCode() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000111");
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+        mockMvc.perform(get("/api/organizations/{id}/invite-code", organizationId)
+                        .param("actorId", actorId.toString()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void returnsInviteCode() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000111");
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+
+        when(organizationService.getInviteCode(organizationId, actorId))
+                .thenReturn(new OrganizationInviteResponse(organizationId, "ABCD2345"));
+
+        mockMvc.perform(get("/api/organizations/{id}/invite-code", organizationId)
+                        .param("actorId", actorId.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organizationId").value(organizationId.toString()))
+                .andExpect(jsonPath("$.inviteCode").value("ABCD2345"));
+    }
+
+    @Test
+    void regeneratesInviteCode() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000111");
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+
+        when(organizationService.regenerateInviteCode(eq(organizationId), eq(actorId)))
+                .thenReturn(new OrganizationInviteResponse(organizationId, "NEWCODE8"));
+
+        mockMvc.perform(post("/api/organizations/{id}/invite-code", organizationId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actorId": "%s"
+                                }
+                                """.formatted(actorId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inviteCode").value("NEWCODE8"));
     }
 }

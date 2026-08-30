@@ -2,6 +2,7 @@ package com.dps.teknokent.config;
 
 import java.util.List;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -10,9 +11,12 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import com.dps.teknokent.security.FirebaseBearerFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -50,7 +54,10 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	SecurityFilterChain securityFilterChain(HttpSecurity http, Environment environment) throws Exception {
+	SecurityFilterChain securityFilterChain(
+			HttpSecurity http,
+			Environment environment,
+			ObjectProvider<FirebaseBearerFilter> firebaseBearerFilter) throws Exception {
 		http
 				.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -58,6 +65,11 @@ public class SecurityConfig {
 						.requestMatchers(PUBLIC_PATHS).permitAll()
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults());
+
+		FirebaseBearerFilter bearerFilter = firebaseBearerFilter.getIfAvailable();
+		if (bearerFilter != null) {
+			http.addFilterBefore(bearerFilter, BasicAuthenticationFilter.class);
+		}
 
 		if (environment.matchesProfiles("dev | local")) {
 			http.cors(Customizer.withDefaults());
