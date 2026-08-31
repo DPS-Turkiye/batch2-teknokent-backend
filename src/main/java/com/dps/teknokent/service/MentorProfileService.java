@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
@@ -35,17 +36,21 @@ public class MentorProfileService {
 
 	@Transactional(readOnly = true)
 	public List<MentorProfileResponse> findAll() {
-		return mentorProfileRepository.findAllByOrderBySortOrderAsc().stream()
+		return approvedMentors().stream()
 				.map(MentorProfileResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public List<MentorProfileResponse> findAllExcept(UUID excludedMentorId) {
-		return mentorProfileRepository.findAllByOrderBySortOrderAsc().stream()
+		return approvedMentors().stream()
 				.filter(profile -> !profile.getId().equals(excludedMentorId))
 				.map(MentorProfileResponse::fromEntity)
 				.toList();
+	}
+
+	private List<MentorProfile> approvedMentors() {
+		return mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
 	}
 
 	@Transactional(readOnly = true)

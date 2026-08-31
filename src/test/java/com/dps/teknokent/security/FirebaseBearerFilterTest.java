@@ -32,6 +32,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 class FirebaseBearerFilterTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000811");
+    private static final UUID OTHER_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000822");
 
     @Mock
     private FirebaseTokenVerifier firebaseTokenVerifier;
@@ -198,6 +199,73 @@ class FirebaseBearerFilterTest {
         assertThat(principal).isInstanceOf(AppUserPrincipal.class);
     }
 
+    @Test
+    void letsPendingMentorUpdateItsOwnProfile() throws Exception {
+        AppUser mentor = mentor(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("PUT", "/api/mentors/" + USER_ID, "Bearer good"), response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+    }
+
+    @Test
+    void forbidsPendingMentorUpdatingSomebodyElsesProfile() throws Exception {
+        AppUser mentor = mentor(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("PUT", "/api/mentors/" + OTHER_USER_ID, "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(chain.getRequest()).isNull();
+    }
+
+    @Test
+    void carveOutIsLimitedToWrites() throws Exception {
+        AppUser mentor = mentor(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("GET", "/api/mentors/" + USER_ID, "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(chain.getRequest()).isNull();
+    }
+
+    @Test
+    void carveOutDoesNotApplyToMentees() throws Exception {
+        AppUser mentee = user(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentee));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("PUT", "/api/mentors/" + USER_ID, "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(chain.getRequest()).isNull();
+    }
+
     private static MockHttpServletRequest request(String uri, String authorization) {
         return request("GET", uri, authorization);
     }
@@ -209,6 +277,12 @@ class FirebaseBearerFilterTest {
             request.addHeader("Authorization", authorization);
         }
         return request;
+    }
+
+    private static AppUser mentor(UserAccountStatus status) {
+        AppUser mentor = user(status);
+        mentor.setRole(UserRole.MENTOR);
+        return mentor;
     }
 
     private static AppUser user(UserAccountStatus status) {

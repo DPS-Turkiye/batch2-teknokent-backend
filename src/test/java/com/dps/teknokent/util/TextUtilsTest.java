@@ -20,4 +20,18 @@ class TextUtilsTest {
 		assertThat(TextUtils.nullToEmpty(null)).isEmpty();
 		assertThat(TextUtils.nullToEmpty("value")).isEqualTo("value");
 	}
+
+    @Test
+    void initials_takesTheFirstLetterOfTheFirstTwoWords() {
+        assertThat(TextUtils.initials("Dr. Kemal Arslan")).isEqualTo("DK");
+        assertThat(TextUtils.initials("leyla aksoy")).isEqualTo("LA");
+        assertThat(TextUtils.initials("Cher")).isEqualTo("C");
+        assertThat(TextUtils.initials("  Ece   Demir  ")).isEqualTo("ED");
+    }
+
+    @Test
+    void initials_fallsBackWhenThereIsNoUsableName() {
+        assertThat(TextUtils.initials(null)).isEqualTo("?");
+        assertThat(TextUtils.initials("   ")).isEqualTo("?");
+    }
 }

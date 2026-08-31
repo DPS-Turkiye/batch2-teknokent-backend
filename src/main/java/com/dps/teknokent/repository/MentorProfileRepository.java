@@ -6,7 +6,9 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.entity.MentorProfile;
 
 public interface MentorProfileRepository extends JpaRepository<MentorProfile, UUID> {
@@ -15,5 +17,11 @@ public interface MentorProfileRepository extends JpaRepository<MentorProfile, UU
 	List<MentorProfile> findAllByOrderBySortOrderAsc();
 
 	@EntityGraph(attributePaths = "user")
+	List<MentorProfile> findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus status);
+
+	@EntityGraph(attributePaths = "user")
 	Optional<MentorProfile> findOneById(UUID id);
+
+	@Query("select coalesce(max(profile.sortOrder), 0) from MentorProfile profile")
+	int findMaxSortOrder();
 }

@@ -13,6 +13,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.repository.AppUserRepository;
 
@@ -28,6 +29,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final String BEARER_PREFIX = "Bearer ";
 	private static final String REGISTER_PATH_PREFIX = "/api/auth/register";
 	private static final String STATUS_PATH = "/api/auth/me";
+	private static final String MENTOR_PROFILE_PATH_PREFIX = "/api/mentors/";
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
@@ -71,7 +73,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		AppUser user = account.get();
 		if (user.getStatus() != UserAccountStatus.APPROVED
 				&& !STATUS_PATH.equals(request.getRequestURI())
-				&& !isDocumentUpload(request)) {
+				&& !isDocumentUpload(request)
+				&& !isOwnMentorProfileUpdate(request, user)) {
 			write(response, HttpServletResponse.SC_FORBIDDEN, "This account is awaiting approval");
 			return;
 		}
@@ -84,6 +87,18 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getFirebaseUid());
 		authenticate(principal, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
 		filterChain.doFilter(request, response);
+	}
+
+	/**
+	 * A mentor is PENDING for the whole of onboarding, so the profile it produces
+	 * could not otherwise be saved. Deliberately narrow: a PUT to this mentor's own
+	 * profile path and nothing else. Unapproved mentors stay out of listings and
+	 * matching regardless, because MentorProfileService filters to APPROVED.
+	 */
+	private static boolean isOwnMentorProfileUpdate(HttpServletRequest request, AppUser user) {
+		return "PUT".equalsIgnoreCase(request.getMethod())
+				&& user.getRole() == UserRole.MENTOR
+				&& (MENTOR_PROFILE_PATH_PREFIX + user.getId()).equals(request.getRequestURI());
 	}
 
 	private static boolean isDocumentUpload(HttpServletRequest request) {
