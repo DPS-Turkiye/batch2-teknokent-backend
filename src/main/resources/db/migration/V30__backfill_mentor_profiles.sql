@@ -1,5 +1,5 @@
--- Mentor profiles are created at registration as of V27's accompanying change,
--- but every mentor who registered before it has no row. For them
+-- Mentor profiles are created at registration since the profile-on-registration
+-- change, but every mentor who registered before it has no row. For them
 -- PUT /api/mentors/{id} returns 404 and the profile screen cannot load, so the
 -- gap is closed once here rather than left to accumulate.
 INSERT INTO mentor_profile (
