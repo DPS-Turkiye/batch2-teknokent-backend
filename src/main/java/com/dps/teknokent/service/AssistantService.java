@@ -8,6 +8,7 @@ import com.dps.teknokent.dto.provider.ProviderBotResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.requests.AddBotRequest;
+import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
@@ -65,9 +66,14 @@ public class AssistantService {
   public MeetingReportResponse generateMeetingReport(
       String platform,
       String nativeMeetingId,
-      String model) {
-    TranscriptResponse transcript = getTranscript(platform, nativeMeetingId);
-    return meetingReportService.generate(transcript.segments(), model);
+      GenerateMeetingReportRequest request) {
+    String model = request != null ? request.model() : null;
+    List<TranscriptSegmentResponse> provided =
+        request != null && request.segments() != null ? request.segments() : List.of();
+    List<TranscriptSegmentResponse> segments = provided.isEmpty()
+        ? getTranscript(platform, nativeMeetingId).segments()
+        : provided;
+    return meetingReportService.generate(segments, model);
   }
 
 }
