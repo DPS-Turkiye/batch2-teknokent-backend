@@ -14,8 +14,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.service.MentorProfileService;
@@ -47,6 +49,25 @@ public class MentorProfileController {
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateMentorProfileRequest request) {
 		return mentorProfileService.updateProfile(id, request);
+	}
+
+	@GetMapping("/{id}/availability-rules")
+	public List<MentorAvailabilityRuleResponse> findAvailabilityRules(@PathVariable UUID id) {
+		return mentorProfileService.findAvailabilityRules(id);
+	}
+
+	@PostMapping("/{id}/availability-rules")
+	@ResponseStatus(HttpStatus.CREATED)
+	public MentorAvailabilityRuleResponse createAvailabilityRule(
+			@PathVariable UUID id,
+			@Valid @RequestBody CreateMentorAvailabilityRuleRequest request) {
+		return mentorProfileService.createAvailabilityRule(id, request);
+	}
+
+	@DeleteMapping("/{id}/availability-rules/{ruleId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteAvailabilityRule(@PathVariable UUID id, @PathVariable UUID ruleId) {
+		mentorProfileService.deleteAvailabilityRule(id, ruleId);
 	}
 
 	@GetMapping("/{id}/availability")

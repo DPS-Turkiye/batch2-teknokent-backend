@@ -39,6 +39,10 @@ public class MentorAvailabilitySlot {
 	@Column(name = "duration_minutes", nullable = false)
 	private int durationMinutes;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "rule_id")
+	private MentorAvailabilityRule rule;
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
