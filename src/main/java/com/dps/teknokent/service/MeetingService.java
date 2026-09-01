@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,10 +14,15 @@ import com.dps.teknokent.dto.requests.LogMeetingRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
+import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 
@@ -29,6 +35,7 @@ public class MeetingService {
 	private final MeetingRepository meetingRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final DomainLookupService domainLookupService;
+	private final MeetingFeedbackRepository meetingFeedbackRepository;
 
 	@Transactional(readOnly = true)
 	public List<MeetingResponse> findAll(UUID organizationId, UUID mentorId) {
@@ -104,6 +111,58 @@ public class MeetingService {
 			meeting.setStatus(request.status());
 		}
 		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
+	}
+
+	/**
+	 * One feedback per person per meeting; submitting again replaces the earlier
+	 * answers rather than accumulating duplicates the UI could not show.
+	 */
+	@Transactional
+	public MeetingFeedbackResponse submitFeedback(
+			UUID meetingId, UUID authorId, SubmitMeetingFeedbackRequest request) {
+		Meeting meeting = domainLookupService.requireMeeting(meetingId);
+		AppUser author = domainLookupService.requireUser(authorId);
+		requireMeetingParticipant(meeting, author);
+
+		MeetingFeedback feedback = meetingFeedbackRepository
+				.findByMeetingIdAndAuthorId(meetingId, authorId)
+				.orElseGet(() -> {
+					MeetingFeedback created = new MeetingFeedback();
+					created.setMeeting(meeting);
+					created.setAuthor(author);
+					created.setCreatedAt(Instant.now());
+					return created;
+				});
+
+		feedback.getRatings().clear();
+		feedback.getRatings().addAll(request.ratings());
+		feedback.getBenefits().clear();
+		feedback.getBenefits().addAll(request.benefits());
+
+		return MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
+	}
+
+	@Transactional(readOnly = true)
+	public MeetingFeedbackResponse findFeedback(UUID meetingId, UUID authorId) {
+		return meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, authorId)
+				.map(MeetingFeedbackResponse::fromEntity)
+				.orElseThrow(() -> new ResourceNotFoundException(
+						"Feedback not found for meeting: " + meetingId));
+	}
+
+	/**
+	 * Feedback is about a conversation, so only the two sides of it may leave any:
+	 * the assigned mentor, or a member of the startup the meeting belongs to.
+	 */
+	private void requireMeetingParticipant(Meeting meeting, AppUser author) {
+		boolean isMentor = meeting.getMentor() != null
+				&& meeting.getMentor().getId().equals(author.getId());
+		boolean isOrganizationMember = author.getOrganization() != null
+				&& meeting.getOrganization() != null
+				&& author.getOrganization().getId().equals(meeting.getOrganization().getId());
+		if (!isMentor && !isOrganizationMember) {
+			throw new InvalidRequestException("Only a meeting participant can leave feedback.");
+		}
 	}
 
 	private MentorshipRequest requireMentorshipRequest(UUID mentorshipRequestId) {

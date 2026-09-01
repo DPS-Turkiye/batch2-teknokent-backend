@@ -2,6 +2,13 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.time.DayOfWeek;
+import java.time.ZonedDateTime;
+import java.time.ZoneId;
+import java.time.LocalTime;
+import org.mockito.ArgumentCaptor;
+import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
+import com.dps.teknokent.entity.MentorAvailabilityRule;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,6 +32,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
+import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +42,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.anyShort;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,6 +50,8 @@ class MentorProfileServiceTest {
 
 	@Mock
 	private MentorProfileRepository mentorProfileRepository;
+	@Mock
+	private MentorAvailabilityRuleRepository mentorAvailabilityRuleRepository;
 	@Mock
 	private MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 	@Mock
@@ -55,7 +66,8 @@ class MentorProfileServiceTest {
 	@BeforeEach
 	void setUp() {
 		mentorProfileService = new MentorProfileService(
-				mentorProfileRepository, mentorAvailabilitySlotRepository, meetingRepository, domainLookupService);
+				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilitySlotRepository,
+				meetingRepository, domainLookupService);
 	}
 
 	private AppUser mentor() {
@@ -261,5 +273,97 @@ class MentorProfileServiceTest {
 		assertThat(mentorProfileService.findAllExcept(mentorId)).isEmpty();
 
 		verify(mentorProfileRepository).findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
+	}
+
+	@Test
+	void createAvailabilityRule_materialisesWeeklySlotsAcrossTheHorizon() {
+		AppUser mentorUser = mentor();
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentorUser);
+		when(mentorAvailabilityRuleRepository.existsByMentorIdAndDayOfWeekAndStartTime(
+				eq(mentorId), anyShort(), any(LocalTime.class))).thenReturn(false);
+		when(mentorAvailabilityRuleRepository.saveAndFlush(any(MentorAvailabilityRule.class)))
+				.thenAnswer(invocation -> {
+					MentorAvailabilityRule saved = invocation.getArgument(0);
+					saved.setId(UUID.randomUUID());
+					return saved;
+				});
+		when(mentorAvailabilitySlotRepository.existsByMentorIdAndStartsAt(eq(mentorId), any(Instant.class)))
+				.thenReturn(false);
+
+		mentorProfileService.createAvailabilityRule(mentorId,
+				new CreateMentorAvailabilityRuleRequest(DayOfWeek.TUESDAY,
+						LocalTime.of(14, 0), LocalTime.of(17, 0), 60));
+
+		ArgumentCaptor<List<MentorAvailabilitySlot>> captor = ArgumentCaptor.forClass(List.class);
+		verify(mentorAvailabilitySlotRepository).saveAll(captor.capture());
+		List<MentorAvailabilitySlot> slots = captor.getValue();
+
+		// Asserted by shape rather than by count: the generator skips slots that
+		// have already passed, so running this on a Tuesday afternoon legitimately
+		// produces fewer slots in the current week than in later ones.
+		ZoneId zone = ZoneId.of("Europe/Istanbul");
+		assertThat(slots).isNotEmpty();
+		assertThat(slots).allSatisfy(slot -> {
+			ZonedDateTime local = slot.getStartsAt().atZone(zone);
+			assertThat(local.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
+			assertThat(local.getHour()).isBetween(14, 16);
+			assertThat(local.getMinute()).isZero();
+			assertThat(slot.getDurationMinutes()).isEqualTo(60);
+			assertThat(slot.getRule()).isNotNull();
+			assertThat(slot.getStartsAt()).isAfter(Instant.now());
+		});
+		// Every Tuesday inside the horizon is covered, the current one possibly
+		// only partly.
+		assertThat(slots.stream().map(slot -> slot.getStartsAt().atZone(zone).toLocalDate()).distinct())
+				.hasSizeGreaterThanOrEqualTo(8);
+	}
+
+	@Test
+	void createAvailabilityRule_rejectsAWindowThatEndsBeforeItStarts() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+
+		assertThatThrownBy(() -> mentorProfileService.createAvailabilityRule(mentorId,
+				new CreateMentorAvailabilityRuleRequest(DayOfWeek.TUESDAY,
+						LocalTime.of(17, 0), LocalTime.of(14, 0), 60)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("end after");
+	}
+
+	@Test
+	void deleteAvailabilityRule_keepsSlotsAMenteeAlreadyBooked() {
+		UUID ruleId = UUID.randomUUID();
+		AppUser mentorUser = mentor();
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentorUser);
+
+		MentorAvailabilityRule rule = new MentorAvailabilityRule();
+		rule.setId(ruleId);
+		rule.setMentor(mentorUser);
+		when(mentorAvailabilityRuleRepository.findByIdAndMentorId(ruleId, mentorId))
+				.thenReturn(Optional.of(rule));
+
+		MentorAvailabilitySlot free = slotAt(mentorUser, Instant.now().plusSeconds(7200));
+		MentorAvailabilitySlot booked = slotAt(mentorUser, Instant.now().plusSeconds(10800));
+		when(mentorAvailabilitySlotRepository.findByRuleIdAndStartsAtAfter(eq(ruleId), any(Instant.class)))
+				.thenReturn(List.of(free, booked));
+		when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
+				mentorId, free.getStartsAt(), MeetingStatus.SCHEDULED)).thenReturn(false);
+		when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
+				mentorId, booked.getStartsAt(), MeetingStatus.SCHEDULED)).thenReturn(true);
+
+		mentorProfileService.deleteAvailabilityRule(mentorId, ruleId);
+
+		ArgumentCaptor<List<MentorAvailabilitySlot>> captor = ArgumentCaptor.forClass(List.class);
+		verify(mentorAvailabilitySlotRepository).deleteAll(captor.capture());
+		assertThat(captor.getValue()).containsExactly(free);
+		verify(mentorAvailabilityRuleRepository).delete(rule);
+	}
+
+	private MentorAvailabilitySlot slotAt(AppUser mentorUser, Instant startsAt) {
+		MentorAvailabilitySlot slot = new MentorAvailabilitySlot();
+		slot.setId(UUID.randomUUID());
+		slot.setMentor(mentorUser);
+		slot.setStartsAt(startsAt);
+		slot.setDurationMinutes(60);
+		return slot;
 	}
 }
