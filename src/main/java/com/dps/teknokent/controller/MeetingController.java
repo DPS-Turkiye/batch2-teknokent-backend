@@ -15,8 +15,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
+import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingResponse;
+import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
 import com.dps.teknokent.service.MeetingService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,6 +44,21 @@ public class MeetingController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public MeetingResponse create(@Valid @RequestBody CreateMeetingRequest request) {
 		return meetingService.create(request);
+	}
+
+	@PostMapping("/{id}/feedback")
+	@ResponseStatus(HttpStatus.CREATED)
+	public MeetingFeedbackResponse submitFeedback(
+			@PathVariable UUID id,
+			@RequestParam UUID authorId,
+			@Valid @RequestBody SubmitMeetingFeedbackRequest request) {
+		return meetingService.submitFeedback(id, authorId, request);
+	}
+
+	@GetMapping("/{id}/feedback")
+	public MeetingFeedbackResponse findFeedback(
+			@PathVariable UUID id, @RequestParam UUID authorId) {
+		return meetingService.findFeedback(id, authorId);
 	}
 
 	@PatchMapping("/{id}")

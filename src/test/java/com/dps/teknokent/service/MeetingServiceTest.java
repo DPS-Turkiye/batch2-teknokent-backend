@@ -20,11 +20,14 @@ import com.dps.teknokent.dto.requests.LogMeetingRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.MeetingFeedback;
+import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 
@@ -44,6 +47,8 @@ class MeetingServiceTest {
 	private MentorshipRequestRepository mentorshipRequestRepository;
 	@Mock
 	private DomainLookupService domainLookupService;
+	@Mock
+	private MeetingFeedbackRepository meetingFeedbackRepository;
 
 	private MeetingService meetingService;
 
@@ -54,7 +59,8 @@ class MeetingServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		meetingService = new MeetingService(meetingRepository, mentorshipRequestRepository, domainLookupService);
+		meetingService = new MeetingService(meetingRepository, mentorshipRequestRepository, domainLookupService,
+				meetingFeedbackRepository);
 	}
 
 	private AppUser mentor(UUID id) {
@@ -324,5 +330,77 @@ class MeetingServiceTest {
 		user.setFullName(fullName);
 		user.setRole(role);
 		return user;
+	}
+
+	@Test
+	void submitFeedback_storesRatingsAndBenefitsForTheMentor() {
+		UUID meetingId = UUID.randomUUID();
+		AppUser author = mentor(mentorId);
+		Meeting meeting = new Meeting();
+		meeting.setId(meetingId);
+		meeting.setMentor(author);
+
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(author);
+		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, mentorId))
+				.thenReturn(Optional.empty());
+		when(meetingFeedbackRepository.saveAndFlush(any(MeetingFeedback.class)))
+				.thenAnswer(invocation -> {
+					MeetingFeedback saved = invocation.getArgument(0);
+					saved.setId(UUID.randomUUID());
+					return saved;
+				});
+
+		var response = meetingService.submitFeedback(meetingId, mentorId,
+				new SubmitMeetingFeedbackRequest(List.of(5, 4, 5), List.of("Finansal modeli anlamak")));
+
+		assertThat(response.ratings()).containsExactly(5, 4, 5);
+		assertThat(response.benefits()).containsExactly("Finansal modeli anlamak");
+	}
+
+	@Test
+	void submitFeedback_replacesEarlierAnswersRatherThanDuplicating() {
+		UUID meetingId = UUID.randomUUID();
+		AppUser author = mentor(mentorId);
+		Meeting meeting = new Meeting();
+		meeting.setId(meetingId);
+		meeting.setMentor(author);
+
+		MeetingFeedback existing = new MeetingFeedback();
+		existing.setId(UUID.randomUUID());
+		existing.setMeeting(meeting);
+		existing.setAuthor(author);
+		existing.setCreatedAt(Instant.now());
+		existing.getRatings().addAll(List.of(1, 1, 1));
+
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(author);
+		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, mentorId))
+				.thenReturn(Optional.of(existing));
+		when(meetingFeedbackRepository.saveAndFlush(any(MeetingFeedback.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		var response = meetingService.submitFeedback(meetingId, mentorId,
+				new SubmitMeetingFeedbackRequest(List.of(5, 5, 5), List.of()));
+
+		assertThat(response.ratings()).containsExactly(5, 5, 5);
+		verify(meetingFeedbackRepository, never()).save(any(MeetingFeedback.class));
+	}
+
+	@Test
+	void submitFeedback_rejectsSomebodyWhoWasNotInTheMeeting() {
+		UUID meetingId = UUID.randomUUID();
+		AppUser outsider = mentor(otherMentorId);
+		Meeting meeting = new Meeting();
+		meeting.setId(meetingId);
+		meeting.setMentor(mentor(mentorId));
+
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(otherMentorId)).thenReturn(outsider);
+
+		assertThatThrownBy(() -> meetingService.submitFeedback(meetingId, otherMentorId,
+				new SubmitMeetingFeedbackRequest(List.of(5, 5, 5), List.of())))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("participant");
 	}
 }
