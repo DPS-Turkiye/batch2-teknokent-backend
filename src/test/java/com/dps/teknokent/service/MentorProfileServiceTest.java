@@ -3,6 +3,8 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.time.DayOfWeek;
+import java.time.ZonedDateTime;
+import java.time.ZoneId;
 import java.time.LocalTime;
 import org.mockito.ArgumentCaptor;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
@@ -296,14 +298,24 @@ class MentorProfileServiceTest {
 		verify(mentorAvailabilitySlotRepository).saveAll(captor.capture());
 		List<MentorAvailabilitySlot> slots = captor.getValue();
 
-		// Three one-hour slots per Tuesday, repeated over the horizon.
+		// Asserted by shape rather than by count: the generator skips slots that
+		// have already passed, so running this on a Tuesday afternoon legitimately
+		// produces fewer slots in the current week than in later ones.
+		ZoneId zone = ZoneId.of("Europe/Istanbul");
 		assertThat(slots).isNotEmpty();
-		assertThat(slots.size() % 3).isZero();
 		assertThat(slots).allSatisfy(slot -> {
+			ZonedDateTime local = slot.getStartsAt().atZone(zone);
+			assertThat(local.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
+			assertThat(local.getHour()).isBetween(14, 16);
+			assertThat(local.getMinute()).isZero();
 			assertThat(slot.getDurationMinutes()).isEqualTo(60);
 			assertThat(slot.getRule()).isNotNull();
 			assertThat(slot.getStartsAt()).isAfter(Instant.now());
 		});
+		// Every Tuesday inside the horizon is covered, the current one possibly
+		// only partly.
+		assertThat(slots.stream().map(slot -> slot.getStartsAt().atZone(zone).toLocalDate()).distinct())
+				.hasSizeGreaterThanOrEqualTo(8);
 	}
 
 	@Test
