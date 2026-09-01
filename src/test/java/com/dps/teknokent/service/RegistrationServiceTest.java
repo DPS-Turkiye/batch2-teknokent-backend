@@ -13,6 +13,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -25,9 +26,11 @@ import com.dps.teknokent.dto.requests.RegisterFounderRequest;
 import com.dps.teknokent.dto.requests.RegisterMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 
@@ -42,6 +45,9 @@ class RegistrationServiceTest {
 
     @Mock
     private OrganizationRepository organizationRepository;
+
+    @Mock
+    private MentorProfileRepository mentorProfileRepository;
 
     @InjectMocks
     private RegistrationService registrationService;
@@ -88,11 +94,12 @@ class RegistrationServiceTest {
     @Test
     void registerMentor_createsPendingMentorWithoutOrganization() {
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
-        when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> {
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
             AppUser user = invocation.getArgument(0);
             user.setId(USER_ID);
             return user;
         });
+        when(mentorProfileRepository.findMaxSortOrder()).thenReturn(9);
 
         var result = registrationService.registerMentor(new RegisterMentorRequest(
                 "Dr. Kemal Arslan",
@@ -105,6 +112,33 @@ class RegistrationServiceTest {
         assertThat(result.status()).isEqualTo(UserAccountStatus.PENDING);
         assertThat(result.organizationId()).isNull();
         assertThat(result.jobTitle()).isEqualTo("Ürün direktörü");
+    }
+
+    @Test
+    void registerMentor_createsTheProfileRowThatOnboardingLaterUpdates() {
+        when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+        when(mentorProfileRepository.findMaxSortOrder()).thenReturn(9);
+
+        registrationService.registerMentor(new RegisterMentorRequest(
+                "Dr. Kemal Arslan",
+                "kemal@mentor.com",
+                "Ürün direktörü",
+                null));
+
+        ArgumentCaptor<MentorProfile> captor = ArgumentCaptor.forClass(MentorProfile.class);
+        verify(mentorProfileRepository).save(captor.capture());
+        MentorProfile profile = captor.getValue();
+        assertThat(profile.getUser().getId()).isEqualTo(USER_ID);
+        assertThat(profile.getInitials()).isEqualTo("DK");
+        assertThat(profile.getProfessionalTitle()).isEqualTo("Ürün direktörü");
+        assertThat(profile.getSortOrder()).isEqualTo(10);
+        assertThat(profile.getCompany()).isEmpty();
+        assertThat(profile.getMentoringStyle()).isEmpty();
     }
 
     @Test
@@ -156,7 +190,7 @@ class RegistrationServiceTest {
 
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
-        when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> {
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
             AppUser user = invocation.getArgument(0);
             user.setId(USER_ID);
             return user;
@@ -169,14 +203,14 @@ class RegistrationServiceTest {
                 null));
 
         var saved = org.mockito.ArgumentCaptor.forClass(AppUser.class);
-        verify(appUserRepository).save(saved.capture());
+        verify(appUserRepository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getFirebaseUid()).isEqualTo("uid-1");
     }
 
     @Test
     void registerMentor_storesPhoneNumber() {
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
-        when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         registrationService.registerMentor(new RegisterMentorRequest(
                 "Dr. Kemal Arslan",
@@ -185,7 +219,7 @@ class RegistrationServiceTest {
                 "  +90 555 111 22 33  "));
 
         var saved = org.mockito.ArgumentCaptor.forClass(AppUser.class);
-        verify(appUserRepository).save(saved.capture());
+        verify(appUserRepository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getPhone()).isEqualTo("+90 555 111 22 33");
     }
 

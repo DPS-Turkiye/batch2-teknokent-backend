@@ -12,9 +12,11 @@ import com.dps.teknokent.dto.requests.RegisterMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.util.TextUtils;
@@ -27,6 +29,7 @@ public class RegistrationService {
 
 	private final AppUserRepository appUserRepository;
 	private final OrganizationRepository organizationRepository;
+	private final MentorProfileRepository mentorProfileRepository;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
@@ -54,7 +57,33 @@ public class RegistrationService {
 		AppUser mentor = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTOR,
 				UserAccountStatus.PENDING, null);
 		applyFirebaseIdentity(mentor, email);
-		return UserResponse.fromEntity(appUserRepository.save(mentor));
+		appUserRepository.saveAndFlush(mentor);
+		mentorProfileRepository.save(newMentorProfile(mentor));
+		return UserResponse.fromEntity(mentor);
+	}
+
+	/**
+	 * Onboarding updates a profile rather than creating one, so the row has to exist
+	 * from registration. The presentation labels it does not collect start empty and
+	 * are filled in later from the mentor profile screen.
+	 */
+	private MentorProfile newMentorProfile(AppUser mentor) {
+		MentorProfile profile = new MentorProfile();
+		profile.setUser(mentor);
+		profile.setInitials(TextUtils.initials(mentor.getFullName()));
+		profile.setProfessionalTitle(TextUtils.nullToEmpty(mentor.getJobTitle()));
+		profile.setCompany("");
+		profile.setAvailabilityLabel("");
+		profile.setResponseTimeLabel("");
+		profile.setMeetingMode("");
+		profile.setCommunicationPreference("");
+		profile.setMentoringStyle("");
+		profile.setFitLabel("");
+		profile.setExperienceLevel("");
+		profile.setSectorExperience("");
+		profile.setStartupStages("");
+		profile.setSortOrder(mentorProfileRepository.findMaxSortOrder() + 1);
+		return profile;
 	}
 
 	@Transactional

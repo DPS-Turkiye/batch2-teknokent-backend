@@ -17,6 +17,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorProfile;
@@ -240,5 +241,25 @@ class MentorProfileServiceTest {
 
 		assertThatThrownBy(() -> mentorProfileService.updateProfile(mentorId, updateRequest()))
 				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	void findAll_onlyAsksForApprovedMentors() {
+		when(mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED))
+				.thenReturn(List.of());
+
+		assertThat(mentorProfileService.findAll()).isEmpty();
+
+		verify(mentorProfileRepository).findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
+	}
+
+	@Test
+	void findAllExcept_alsoStaysWithinApprovedMentors() {
+		when(mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED))
+				.thenReturn(List.of());
+
+		assertThat(mentorProfileService.findAllExcept(mentorId)).isEmpty();
+
+		verify(mentorProfileRepository).findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
 	}
 }
