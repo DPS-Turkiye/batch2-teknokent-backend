@@ -15,11 +15,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateMeetingTodoRequest;
+import com.dps.teknokent.dto.requests.PublishMeetingAssistantShareRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingTodoRequest;
+import com.dps.teknokent.dto.responses.MeetingAssistantShareResponse;
 import com.dps.teknokent.dto.responses.MeetingNoteDocumentResponse;
 import com.dps.teknokent.dto.responses.MeetingNoteResponse;
 import com.dps.teknokent.dto.responses.MeetingTodoResponse;
+import com.dps.teknokent.service.MeetingAssistantShareService;
 import com.dps.teknokent.service.MeetingNoteDocumentService;
 import com.dps.teknokent.service.MeetingNoteService;
 
@@ -35,6 +38,7 @@ public class MeetingNoteController {
 
 	private final MeetingNoteService meetingNoteService;
 	private final MeetingNoteDocumentService meetingNoteDocumentService;
+	private final MeetingAssistantShareService meetingAssistantShareService;
 
 	@GetMapping("/note")
 	public MeetingNoteResponse findNote(
@@ -85,5 +89,19 @@ public class MeetingNoteController {
 			@PathVariable UUID todoId,
 			@RequestParam UUID organizationId) {
 		return meetingNoteService.deleteTodo(meetingId, todoId, organizationId);
+	}
+
+	@GetMapping("/assistant-share")
+	public MeetingAssistantShareResponse findShare(
+			@PathVariable UUID meetingId,
+			@RequestParam UUID organizationId) {
+		return meetingAssistantShareService.find(meetingId, organizationId);
+	}
+
+	@PostMapping("/assistant-share")
+	public MeetingAssistantShareResponse publishShare(
+			@PathVariable UUID meetingId,
+			@Valid @RequestBody PublishMeetingAssistantShareRequest request) {
+		return meetingAssistantShareService.publish(meetingId, request);
 	}
 }

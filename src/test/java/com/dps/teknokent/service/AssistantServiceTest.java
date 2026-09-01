@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,12 +19,18 @@ import com.dps.teknokent.dto.provider.ProviderBotResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.requests.AddBotRequest;
+import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
+import com.dps.teknokent.dto.responses.MeetingReportResponse;
+import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 
 @ExtendWith(MockitoExtension.class)
 class AssistantServiceTest {
 
   @Mock
   private MeetingProviderClient providerClient;
+
+  @Mock
+  private MeetingReportService meetingReportService;
 
   @InjectMocks
   private AssistantService assistantService;
@@ -76,5 +83,51 @@ class AssistantServiceTest {
     var response = assistantService.getTranscript("google_meet", "abc-defg-hij");
 
     assertThat(response.segments()).isEmpty();
+  }
+
+  @Test
+  void generateMeetingReportUsesProvidedSegmentsWithoutFetchingTheProviderTranscript() {
+    when(meetingReportService.generate(any(), eq(null)))
+        .thenReturn(report("Edited"));
+
+    var edited = new TranscriptSegmentResponse("s1", "Ayse Kaya", "Duzeltilmis metin", "00:10");
+    assistantService.generateMeetingReport(
+        "google_meet",
+        "abc-defg-hij",
+        new GenerateMeetingReportRequest(null, List.of(edited)));
+
+    verify(providerClient, never()).getTranscript(any(), any());
+    verify(meetingReportService).generate(List.of(edited), null);
+  }
+
+  @Test
+  void generateMeetingReportFallsBackToProviderTranscriptWhenSegmentsAreMissing() {
+    when(providerClient.getTranscript("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderTranscriptResponse(List.of(
+            new ProviderTranscriptSegment("s1", "Ayşe", "Merhaba", 65.0)
+        )));
+    when(meetingReportService.generate(any(), eq(null)))
+        .thenReturn(report("Original"));
+
+    assistantService.generateMeetingReport(
+        "google_meet",
+        "abc-defg-hij",
+        new GenerateMeetingReportRequest(null, List.of()));
+
+    verify(providerClient).getTranscript("google_meet", "abc-defg-hij");
+  }
+
+  private static MeetingReportResponse report(String title) {
+    return new MeetingReportResponse(
+        title,
+        null,
+        null,
+        "Ozet",
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        "gpt-4o-mini");
   }
 }
