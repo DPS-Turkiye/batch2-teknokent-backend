@@ -81,9 +81,8 @@ public class AssistantController {
       @PathVariable String nativeMeetingId,
       @RequestBody(required = false) GenerateMeetingReportRequest request) {
     try {
-      String model = request != null ? request.model() : null;
       MeetingReportResponse response =
-          assistantService.generateMeetingReport(platform, nativeMeetingId, model);
+          assistantService.generateMeetingReport(platform, nativeMeetingId, request);
       return ResponseEntity.ok(response);
     } catch (InvalidRequestException ex) {
       return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));

@@ -24,6 +24,7 @@ import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
 import com.dps.teknokent.dto.responses.MeetingNoteDocumentResponse;
 import com.dps.teknokent.dto.responses.MeetingNoteResponse;
+import com.dps.teknokent.service.MeetingAssistantShareService;
 import com.dps.teknokent.service.MeetingNoteDocumentService;
 import com.dps.teknokent.service.MeetingNoteService;
 
@@ -43,6 +44,9 @@ class MeetingNoteControllerTest {
 
 	@MockitoBean
 	private MeetingNoteDocumentService meetingNoteDocumentService;
+
+	@MockitoBean
+	private MeetingAssistantShareService meetingAssistantShareService;
 
 	@Test
 	void requiresAuthenticationForNotes() throws Exception {
