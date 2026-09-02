@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,6 +21,8 @@ import com.dps.teknokent.dto.requests.AddProgramMentorRequest;
 import com.dps.teknokent.dto.requests.AddProgramStartupRequest;
 import com.dps.teknokent.dto.requests.CreateProgramRequest;
 import com.dps.teknokent.dto.requests.DecideProgramMembershipRequest;
+import com.dps.teknokent.dto.requests.SetActiveProgramRequest;
+import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
@@ -40,6 +43,21 @@ public class ProgramController {
 	@GetMapping
 	public List<ProgramResponse> list(@RequestParam(required = false) UUID actorId) {
 		return programService.list(resolveActorId(actorId));
+	}
+
+	/**
+	 * The caller's own organization's programs. Separate from {@link #list}, which
+	 * serves coordinators and mentors the global list; a startup sees only its own
+	 * assignments and never the roster of a program it belongs to.
+	 */
+	@GetMapping("/mine")
+	public OrganizationProgramsResponse mine(@RequestParam(required = false) UUID actorId) {
+		return programService.listForOrganization(resolveActorId(actorId));
+	}
+
+	@PutMapping("/mine/active")
+	public OrganizationProgramsResponse setActiveProgram(@RequestBody SetActiveProgramRequest request) {
+		return programService.setActiveProgram(resolveActorId(request.actorId()), request.programId());
 	}
 
 	@GetMapping("/invitations")

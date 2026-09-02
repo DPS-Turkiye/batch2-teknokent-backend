@@ -11,17 +11,21 @@ import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
+import com.dps.teknokent.dto.responses.OrganizationProgramsResponse.OrganizationProgramResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramMentorResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
@@ -36,6 +40,7 @@ public class ProgramService {
 	private final ProgramRepository programRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final OrganizationRepository organizationRepository;
 	private final DomainLookupService domainLookupService;
 
 	@Transactional
@@ -65,6 +70,42 @@ public class ProgramService {
 			throw new InvalidRequestException("Only a coordinator or mentor can view programs.");
 		}
 		return programs.stream().map(this::toResponse).toList();
+	}
+
+	/**
+	 * The programs the caller's own organization has been assigned to. Scoped to
+	 * that organization rather than the global list, which {@link #list} exposes
+	 * to coordinators and mentors only.
+	 */
+	@Transactional(readOnly = true)
+	public OrganizationProgramsResponse listForOrganization(UUID actorId) {
+		Organization organization = requireOrganizationOf(actorId);
+		List<OrganizationProgramResponse> programs = programStartupRepository
+				.findByOrganizationIdOrderByCreatedAtAsc(organization.getId())
+				.stream()
+				.map(assignment -> requireProgram(assignment.getProgramId()))
+				.map(this::toOrganizationProgram)
+				.toList();
+		return new OrganizationProgramsResponse(programs, organization.getActiveProgramId());
+	}
+
+	/**
+	 * Chooses which assigned program is active, or clears the choice when
+	 * {@code programId} is null. Refuses a program the organization was never
+	 * assigned to, so the picker cannot be used to self-enrol.
+	 */
+	@Transactional
+	public OrganizationProgramsResponse setActiveProgram(UUID actorId, UUID programId) {
+		Organization organization = requireOrganizationOf(actorId);
+		if (programId != null
+				&& programStartupRepository
+						.findByProgramIdAndOrganizationId(programId, organization.getId())
+						.isEmpty()) {
+			throw new InvalidRequestException("Your startup has not been added to this program.");
+		}
+		organization.setActiveProgramId(programId);
+		organizationRepository.save(organization);
+		return listForOrganization(actorId);
 	}
 
 	@Transactional(readOnly = true)
@@ -227,6 +268,20 @@ public class ProgramService {
 			throw new InvalidRequestException("Only the program coordinator can change this program.");
 		}
 		return program;
+	}
+
+	private Organization requireOrganizationOf(UUID actorId) {
+		AppUser actor = requireActor(actorId);
+		Organization organization = actor.getOrganization();
+		if (organization == null) {
+			throw new InvalidRequestException("Only a startup member can view their programs.");
+		}
+		return organization;
+	}
+
+	private OrganizationProgramResponse toOrganizationProgram(Program program) {
+		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
+		return new OrganizationProgramResponse(program.getId(), program.getName(), coordinator.getFullName());
 	}
 
 	private ProgramResponse toResponse(Program program) {

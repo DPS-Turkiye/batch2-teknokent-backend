@@ -12,4 +12,6 @@ public interface ProgramStartupRepository extends JpaRepository<ProgramStartup, 
 	List<ProgramStartup> findByProgramIdOrderByCreatedAtAsc(UUID programId);
 
 	Optional<ProgramStartup> findByProgramIdAndOrganizationId(UUID programId, UUID organizationId);
+
+	List<ProgramStartup> findByOrganizationIdOrderByCreatedAtAsc(UUID organizationId);
 }

@@ -28,6 +28,7 @@ import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
@@ -42,6 +43,8 @@ class ProgramServiceTest {
 	@Mock
 	private ProgramMentorRepository programMentorRepository;
 	@Mock
+	private OrganizationRepository organizationRepository;
+	@Mock
 	private DomainLookupService domainLookupService;
 	@InjectMocks
 	private ProgramService programService;
@@ -50,6 +53,8 @@ class ProgramServiceTest {
 	private static final UUID MENTOR_ID = UUID.fromString("00000000-0000-0000-0000-000000000006");
 	private static final UUID PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
 	private static final UUID ORG_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
+	private static final UUID MENTEE_ID = UUID.fromString("00000000-0000-0000-0000-000000000007");
+	private static final UUID OTHER_PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
 
 	@Test
 	void createPersistsAProgramForTheCoordinator() {
@@ -141,6 +146,113 @@ class ProgramServiceTest {
 
 		assertThat(result.id()).isEqualTo(PROGRAM_ID);
 		verify(programStartupRepository).save(any());
+	}
+
+	@Test
+	void listForOrganizationReturnsOnlyTheStartupsOwnAssignments() {
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(mentee(null));
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID))
+				.thenReturn(List.of(assignment(PROGRAM_ID)));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+
+		var result = programService.listForOrganization(MENTEE_ID);
+
+		assertThat(result.programs()).singleElement()
+				.satisfies(entry -> {
+					assertThat(entry.id()).isEqualTo(PROGRAM_ID);
+					assertThat(entry.name()).isEqualTo("Seed 2026");
+					assertThat(entry.coordinatorName()).isEqualTo("Demo Coordinator");
+				});
+		assertThat(result.activeProgramId()).isNull();
+	}
+
+	@Test
+	void listForOrganizationReportsTheActiveChoice() {
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(mentee(PROGRAM_ID));
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID))
+				.thenReturn(List.of(assignment(PROGRAM_ID)));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+
+		assertThat(programService.listForOrganization(MENTEE_ID).activeProgramId()).isEqualTo(PROGRAM_ID);
+	}
+
+	@Test
+	void listForOrganizationRejectsAUserWithNoOrganization() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+
+		assertThatThrownBy(() -> programService.listForOrganization(MENTOR_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("startup member");
+	}
+
+	@Test
+	void setActiveProgramStoresAnAssignedProgram() {
+		AppUser actor = mentee(null);
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(actor);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.of(assignment(PROGRAM_ID)));
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID))
+				.thenReturn(List.of(assignment(PROGRAM_ID)));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+
+		var result = programService.setActiveProgram(MENTEE_ID, PROGRAM_ID);
+
+		assertThat(actor.getOrganization().getActiveProgramId()).isEqualTo(PROGRAM_ID);
+		assertThat(result.activeProgramId()).isEqualTo(PROGRAM_ID);
+		verify(organizationRepository).save(actor.getOrganization());
+	}
+
+	@Test
+	void setActiveProgramRefusesAProgramTheStartupWasNeverAddedTo() {
+		AppUser actor = mentee(null);
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(actor);
+		when(programStartupRepository.findByProgramIdAndOrganizationId(OTHER_PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> programService.setActiveProgram(MENTEE_ID, OTHER_PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("has not been added to this program");
+		assertThat(actor.getOrganization().getActiveProgramId()).isNull();
+	}
+
+	@Test
+	void setActiveProgramClearsTheChoiceOnNull() {
+		AppUser actor = mentee(PROGRAM_ID);
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(actor);
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID)).thenReturn(List.of());
+
+		var result = programService.setActiveProgram(MENTEE_ID, null);
+
+		assertThat(actor.getOrganization().getActiveProgramId()).isNull();
+		assertThat(result.activeProgramId()).isNull();
+		assertThat(result.programs()).isEmpty();
+	}
+
+	private static AppUser mentee(UUID activeProgramId) {
+		Organization organization = new Organization();
+		organization.setId(ORG_ID);
+		organization.setName("NovaMed AI");
+		organization.setActiveProgramId(activeProgramId);
+		AppUser user = new AppUser();
+		user.setId(MENTEE_ID);
+		user.setEmail("founder@novamed.demo");
+		user.setFullName("Ayşe Kaya");
+		user.setRole(UserRole.MENTEE);
+		user.setStatus(UserAccountStatus.APPROVED);
+		user.setOrganization(organization);
+		return user;
+	}
+
+	private static com.dps.teknokent.entity.ProgramStartup assignment(UUID programId) {
+		var row = new com.dps.teknokent.entity.ProgramStartup();
+		row.setId(UUID.randomUUID());
+		row.setProgramId(programId);
+		row.setOrganizationId(ORG_ID);
+		row.setCreatedAt(Instant.parse("2026-09-01T08:00:00Z"));
+		return row;
 	}
 
 	private static AppUser coordinator() {
