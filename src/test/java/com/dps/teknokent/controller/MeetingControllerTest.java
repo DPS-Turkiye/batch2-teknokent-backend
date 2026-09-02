@@ -60,13 +60,16 @@ class MeetingControllerTest {
                                 "Bring questions",
                                 "Action items will be shared",
                                 "https://meet.google.com/xyz-abc-def",
-                                MeetingStatus.SCHEDULED)));
+                                MeetingStatus.SCHEDULED,
+                                false,
+                                null)));
 
                 mockMvc.perform(get("/api/meetings").with(user("test-user")))
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$[0].organizationId").value(organizationId.toString()))
                                 .andExpect(jsonPath("$[0].mentorName").value("Dr. Kemal Arslan"))
-                                .andExpect(jsonPath("$[0].status").value("SCHEDULED"));
+                                .andExpect(jsonPath("$[0].status").value("SCHEDULED"))
+                                .andExpect(jsonPath("$[0].transcribeRequested").value(false));
         }
 
         @Test
@@ -87,7 +90,9 @@ class MeetingControllerTest {
                                 "Focus on adoption metrics",
                                 "Follow-up after the meeting",
                                 "https://meet.google.com/abc-defg-hij",
-                                MeetingStatus.SCHEDULED)));
+                                MeetingStatus.SCHEDULED,
+                                false,
+                                null)));
 
                 mockMvc.perform(get("/api/meetings")
                                 .param("organizationId", organizationId.toString())
@@ -115,7 +120,9 @@ class MeetingControllerTest {
                                 null,
                                 null,
                                 "https://meet.google.com/mno-pqr-stu",
-                                MeetingStatus.SCHEDULED)));
+                                MeetingStatus.SCHEDULED,
+                                false,
+                                null)));
 
                 mockMvc.perform(get("/api/meetings")
                                 .param("mentorId", mentorId.toString())
@@ -144,7 +151,9 @@ class MeetingControllerTest {
                                 "Discuss next milestone",
                                 "Share the final plan after meeting",
                                 "https://meet.google.com/alpha-beta-gamma",
-                                MeetingStatus.SCHEDULED));
+                                MeetingStatus.SCHEDULED,
+                                false,
+                                null));
 
                 mockMvc.perform(post("/api/meetings")
                                 .with(user("test-user"))
@@ -159,7 +168,8 @@ class MeetingControllerTest {
                                                   "notes": "Discuss next milestone",
                                                   "outcomes": "Share the final plan after meeting",
                                                   "meetLink": "https://meet.google.com/alpha-beta-gamma",
-                                                  "status": "SCHEDULED"
+                                                  "status": "SCHEDULED",
+                                                  "transcribeRequested": true
                                                 }
                                                 """))
                                 .andExpect(status().isCreated())

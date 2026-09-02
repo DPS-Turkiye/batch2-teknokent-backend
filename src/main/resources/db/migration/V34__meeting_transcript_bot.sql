@@ -1,0 +1,5 @@
+ALTER TABLE meeting
+    ADD COLUMN IF NOT EXISTS transcribe_requested BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE meeting
+    ADD COLUMN IF NOT EXISTS bot_dispatched_at TIMESTAMPTZ;

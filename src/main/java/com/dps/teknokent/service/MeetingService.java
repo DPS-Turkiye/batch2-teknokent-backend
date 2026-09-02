@@ -110,6 +110,9 @@ public class MeetingService {
 		if (request.status() != null) {
 			meeting.setStatus(request.status());
 		}
+		if (Boolean.TRUE.equals(request.transcriptBotDispatched()) && meeting.getBotDispatchedAt() == null) {
+			meeting.setBotDispatchedAt(Instant.now());
+		}
 		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
 	}
 

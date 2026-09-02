@@ -158,7 +158,7 @@ class MeetingServiceTest {
 		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
 
 		MeetingResponse response = meetingService.update(
-				meetingId, new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED));
+				meetingId, new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED, null));
 
 		assertThat(response.notes()).isEqualTo("Yeni not");
 		assertThat(response.status()).isEqualTo(MeetingStatus.COMPLETED);
@@ -170,7 +170,7 @@ class MeetingServiceTest {
 		UUID meetingId = UUID.randomUUID();
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> meetingService.update(meetingId, new UpdateMeetingRequest("Not", null, null)))
+		assertThatThrownBy(() -> meetingService.update(meetingId, new UpdateMeetingRequest("Not", null, null, null)))
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 
@@ -262,7 +262,8 @@ class MeetingServiceTest {
 				"Discuss next milestone",
 				"Share final plan after review",
 				"https://meet.google.com/demo-link",
-				MeetingStatus.SCHEDULED);
+				MeetingStatus.SCHEDULED,
+				null);
 
 		when(domainLookupService.requireUser(demoMentorId)).thenReturn(mentor);
 		when(domainLookupService.requireOrganization(demoOrganizationId)).thenReturn(organization);
@@ -278,6 +279,40 @@ class MeetingServiceTest {
 		assertThat(result.organizationId()).isEqualTo(demoOrganizationId);
 		assertThat(result.mentorId()).isEqualTo(demoMentorId);
 		assertThat(result.status()).isEqualTo(MeetingStatus.SCHEDULED);
+		assertThat(result.transcribeRequested()).isFalse();
+	}
+
+	@Test
+	void createPersistsTranscriptRequest() {
+		UUID demoOrganizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID demoMentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+
+		Organization organization = namedOrganization(demoOrganizationId, "Teknokent");
+		AppUser mentor = namedUser(demoMentorId, "Dr. Kemal Arslan", UserRole.MENTOR);
+		CreateMeetingRequest request = new CreateMeetingRequest(
+				demoOrganizationId,
+				demoMentorId,
+				Instant.parse("2026-09-15T16:00:00Z"),
+				45,
+				"Growth roadmap session",
+				null,
+				null,
+				"https://meet.google.com/demo-link",
+				MeetingStatus.SCHEDULED,
+				true);
+
+		when(domainLookupService.requireUser(demoMentorId)).thenReturn(mentor);
+		when(domainLookupService.requireOrganization(demoOrganizationId)).thenReturn(organization);
+		when(meetingRepository.save(any(Meeting.class))).thenAnswer(invocation -> {
+			Meeting saved = invocation.getArgument(0);
+			saved.setId(meetingId);
+			return saved;
+		});
+
+		MeetingResponse result = meetingService.create(request);
+
+		assertThat(result.transcribeRequested()).isTrue();
 	}
 
 	@Test
@@ -295,7 +330,8 @@ class MeetingServiceTest {
 				null,
 				null,
 				null,
-				MeetingStatus.SCHEDULED);
+				MeetingStatus.SCHEDULED,
+				null);
 
 		when(domainLookupService.requireUser(userId)).thenReturn(nonMentor);
 

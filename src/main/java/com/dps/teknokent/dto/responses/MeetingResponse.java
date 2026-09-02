@@ -19,7 +19,9 @@ public record MeetingResponse(
 		String notes,
 		String outcomes,
 		String meetLink,
-		MeetingStatus status) {
+		MeetingStatus status,
+		boolean transcribeRequested,
+		Instant botDispatchedAt) {
 
 	public static MeetingResponse fromEntity(Meeting meeting) {
 		return new MeetingResponse(
@@ -29,6 +31,7 @@ public record MeetingResponse(
 				meeting.getMentor() == null ? null : meeting.getMentor().getId(),
 				meeting.getMentor() == null ? null : meeting.getMentor().getFullName(),
 				meeting.getScheduledAt(), meeting.getDurationMinutes(), meeting.getAgenda(), meeting.getNotes(),
-				meeting.getOutcomes(), meeting.getMeetLink(), meeting.getStatus());
+				meeting.getOutcomes(), meeting.getMeetLink(), meeting.getStatus(),
+				meeting.isTranscribeRequested(), meeting.getBotDispatchedAt());
 	}
 }
