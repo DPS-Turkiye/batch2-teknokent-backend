@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.service.ProfileAnalysisService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -54,6 +55,19 @@ public class ProfileAnalysisController {
 			@RequestParam(defaultValue = "auto") String ocrMode,
 			@RequestPart("file") MultipartFile file) {
 		return profileAnalysisService.parse(organizationId, appUserId, profileType, consentAccepted, ocrMode, file);
+	}
+
+	/**
+	 * Parse only — returns the structured profile and stores nothing. Used by the
+	 * signup CV step, where the caller has no organization to scope a write to.
+	 */
+	@PostMapping(path = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	public JsonNode parsePreview(
+			@RequestParam(defaultValue = "individual_mentee") String profileType,
+			@RequestParam(defaultValue = "false") boolean consentAccepted,
+			@RequestParam(defaultValue = "auto") String ocrMode,
+			@RequestPart("file") MultipartFile file) {
+		return profileAnalysisService.parsePreview(profileType, consentAccepted, ocrMode, file);
 	}
 
 	@PostMapping("/manual")

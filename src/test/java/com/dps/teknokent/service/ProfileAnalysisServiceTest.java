@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,6 +56,74 @@ class ProfileAnalysisServiceTest {
 
 	@InjectMocks
 	private ProfileAnalysisService profileAnalysisService;
+
+	private static MockMultipartFile cvPdf() {
+		return new MockMultipartFile("file", "cv.pdf", "application/pdf", "%PDF-1.4".getBytes());
+	}
+
+	private void stubParser(String json) {
+		JsonNode parsed = jsonUtils.readTree(json);
+		when(nativeProfileParserService.parse(any(), eq("individual_mentee"), eq("auto")))
+				.thenReturn(new NativeProfileParserService.ParseResult(
+						parsed, objectMapper.createObjectNode(), objectMapper.createObjectNode()));
+		when(technologyInferenceService.enrich(any())).thenAnswer(call -> call.getArgument(0));
+	}
+
+	// The entire reason this method exists: parse() scopes its two writes to an
+	// organization and falls back to a real seeded one, so a signup-time parse
+	// would file a stranger's CV under someone else's startup.
+	@Test
+	void parsePreviewPersistsNothing() {
+		stubParser("{\"current_role\":\"Ürün Yöneticisi\"}");
+
+		profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf());
+
+		verifyNoInteractions(profileAnalysisRepository, documentService, organizationRepository, appUserRepository);
+	}
+
+	@Test
+	void parsePreviewReturnsTheStructuredProfile() {
+		stubParser("{\"current_role\":\"Ürün Yöneticisi\",\"professional_functions\":[\"Ürün\",\"Analitik\"]}");
+
+		JsonNode profile = profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf());
+
+		assertThat(profile.path("current_role").asText()).isEqualTo("Ürün Yöneticisi");
+		assertThat(profile.path("professional_functions")).hasSize(2);
+	}
+
+	@Test
+	void parsePreviewRequiresConsent() {
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", false, "auto", cvPdf()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("consent");
+		verifyNoInteractions(nativeProfileParserService);
+	}
+
+	@Test
+	void parsePreviewRejectsANonPdf() {
+		MockMultipartFile notPdf = new MockMultipartFile("file", "cv.docx", "application/msword", "x".getBytes());
+
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", true, "auto", notPdf))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("PDF");
+		verifyNoInteractions(nativeProfileParserService);
+	}
+
+	@Test
+	void parsePreviewRejectsAnUnknownProfileType() {
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("mentor", true, "auto", cvPdf()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("mentee");
+		verifyNoInteractions(nativeProfileParserService);
+	}
+
+	@Test
+	void parsePreviewRejectsAnUnknownOcrMode() {
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", true, "sometimes", cvPdf()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("OCR mode");
+		verifyNoInteractions(nativeProfileParserService);
+	}
 
 	@Test
 	void latestConfirmedStartupUsesOnlyConfirmedMenteeProfiles() {

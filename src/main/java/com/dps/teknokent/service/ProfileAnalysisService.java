@@ -20,6 +20,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProfileAnalysisRepository;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.dps.teknokent.util.JsonUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -44,27 +45,13 @@ public class ProfileAnalysisService {
 			MultipartFile file) {
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		validateProfileType(profileType);
-		if (!java.util.Set.of("off", "auto", "force").contains(ocrMode)) {
-			throw new InvalidRequestException("OCR mode must be off, auto, or force.");
-		}
-		if (!consentAccepted) {
-			throw new InvalidRequestException("Document processing consent is required.");
-		}
+		validateOcrMode(ocrMode);
+		requireConsent(consentAccepted);
 		if (!organizationRepository.existsById(resolvedOrganizationId)) {
 			throw new ResourceNotFoundException("Organization not found.");
 		}
 		requireMemberOfOrganization(appUserId, resolvedOrganizationId);
-		if (file == null || file.isEmpty() || file.getOriginalFilename() == null
-				|| !file.getOriginalFilename().toLowerCase().endsWith(".pdf")) {
-			throw new InvalidRequestException("Please upload a PDF pitch deck or company profile.");
-		}
-
-		byte[] pdfBytes;
-		try {
-			pdfBytes = file.getBytes();
-		} catch (IOException error) {
-			throw new InvalidRequestException("The uploaded PDF could not be read.");
-		}
+		byte[] pdfBytes = readPdf(file);
 		documentService.store(
 				appUserId,
 				resolvedOrganizationId,
@@ -77,7 +64,7 @@ public class ProfileAnalysisService {
 				pdfBytes, profileType, ocrMode);
 		JsonNode profile = parseResult.profile();
 		if (!profile.isObject()) throw new InvalidRequestException("The parser did not return a usable profile.");
-		profile = technologyInferenceService.enrich(((com.fasterxml.jackson.databind.node.ObjectNode) profile).deepCopy());
+		profile = technologyInferenceService.enrich(((ObjectNode) profile).deepCopy());
 
 		JsonNode redactionSummary = parseResult.redactionSummary();
 		JsonNode ocrSummary = parseResult.ocrSummary();
@@ -86,6 +73,57 @@ public class ProfileAnalysisService {
 				redactionSummary.isObject() ? jsonUtils.writeValue(redactionSummary) : "{}",
 				ocrSummary.isObject() ? jsonUtils.writeValue(ocrSummary) : "{}", Instant.now());
 		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
+	}
+
+	/**
+	 * Parses a CV and returns the structured profile <strong>without persisting
+	 * anything</strong> — no stored document, no profile_analysis row.
+	 *
+	 * <p>That is the point rather than an optimisation. {@link #parse} scopes both
+	 * writes to an organization and falls back to {@code DEFAULT_ORGANIZATION_ID},
+	 * which is a real seeded organization: calling it during signup would file a
+	 * stranger's CV under someone else's startup and feed it into matching. A
+	 * signing-up founder has no organization yet, and neither does a mentor, so
+	 * the only safe answer is to persist nothing and let the caller decide what
+	 * to keep. The CV itself is uploaded separately through POST /api/documents.
+	 */
+	public JsonNode parsePreview(String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
+		validateProfileType(profileType);
+		validateOcrMode(ocrMode);
+		requireConsent(consentAccepted);
+		byte[] pdfBytes = readPdf(file);
+
+		NativeProfileParserService.ParseResult parseResult = nativeProfileParserService.parse(
+				pdfBytes, profileType, ocrMode);
+		JsonNode profile = parseResult.profile();
+		if (!profile.isObject()) {
+			throw new InvalidRequestException("The parser did not return a usable profile.");
+		}
+		return technologyInferenceService.enrich(((ObjectNode) profile).deepCopy());
+	}
+
+	private void validateOcrMode(String ocrMode) {
+		if (!java.util.Set.of("off", "auto", "force").contains(ocrMode)) {
+			throw new InvalidRequestException("OCR mode must be off, auto, or force.");
+		}
+	}
+
+	private void requireConsent(boolean consentAccepted) {
+		if (!consentAccepted) {
+			throw new InvalidRequestException("Document processing consent is required.");
+		}
+	}
+
+	private byte[] readPdf(MultipartFile file) {
+		if (file == null || file.isEmpty() || file.getOriginalFilename() == null
+				|| !file.getOriginalFilename().toLowerCase().endsWith(".pdf")) {
+			throw new InvalidRequestException("Please upload a PDF pitch deck or company profile.");
+		}
+		try {
+			return file.getBytes();
+		} catch (IOException error) {
+			throw new InvalidRequestException("The uploaded PDF could not be read.");
+		}
 	}
 
 	public ProfileAnalysisResponse createManual(UUID organizationId, UUID appUserId, CreateManualProfileRequest request) {
