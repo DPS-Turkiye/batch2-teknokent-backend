@@ -53,6 +53,11 @@ public class Organization {
 	@Column(name = "invite_code", unique = true)
 	private String inviteCode;
 
+	// The startup's own choice among the programs a coordinator assigned it.
+	// Null means no assignment yet, or none chosen.
+	@Column(name = "active_program_id")
+	private UUID activeProgramId;
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
