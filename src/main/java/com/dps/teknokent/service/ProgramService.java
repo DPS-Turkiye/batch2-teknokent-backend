@@ -16,6 +16,7 @@ import com.dps.teknokent.dto.responses.OrganizationProgramsResponse.Organization
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramMentorResponse;
+import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
@@ -70,6 +71,20 @@ public class ProgramService {
 			throw new InvalidRequestException("Only a coordinator or mentor can view programs.");
 		}
 		return programs.stream().map(this::toResponse).toList();
+	}
+
+	/**
+	 * Program names only, for the signup picker. Deliberately ungated by role: a
+	 * founder choosing their program has no account yet, so there is no role to
+	 * check, and a program's name is not sensitive. Nothing else is exposed —
+	 * no coordinator, no roster, no startups.
+	 */
+	@Transactional(readOnly = true)
+	public List<ProgramNameResponse> listNames() {
+		return programRepository.findAllByOrderByCreatedAtDesc()
+				.stream()
+				.map(program -> new ProgramNameResponse(program.getId(), program.getName()))
+				.toList();
 	}
 
 	/**

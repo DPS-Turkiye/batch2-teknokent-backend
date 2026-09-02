@@ -3,7 +3,9 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -28,10 +30,13 @@ import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,6 +44,7 @@ class RegistrationServiceTest {
 
     private static final UUID ORGANIZATION_ID = UUID.fromString("10000000-0000-0000-0000-000000000011");
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000811");
+    private static final UUID PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
 
     @Mock
     private AppUserRepository appUserRepository;
@@ -48,6 +54,12 @@ class RegistrationServiceTest {
 
     @Mock
     private MentorProfileRepository mentorProfileRepository;
+
+    @Mock
+    private ProgramRepository programRepository;
+
+    @Mock
+    private ProgramStartupRepository programStartupRepository;
 
     @InjectMocks
     private RegistrationService registrationService;
@@ -79,7 +91,8 @@ class RegistrationServiceTest {
                 "GreenLoop",
                 "Climate tech",
                 "Kurucu",
-                "+905551112233"));
+                "+905551112233",
+                null));
 
         assertThat(result.id()).isEqualTo(USER_ID);
         assertThat(result.email()).isEqualTo("ayse@startup.com");
@@ -89,6 +102,90 @@ class RegistrationServiceTest {
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.organizationName()).isEqualTo("GreenLoop");
         assertThat(result.jobTitle()).isEqualTo("Kurucu");
+    }
+
+    @Test
+    void registerFounder_joinsAndActivatesTheProgramChosenAtSignup() {
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir",
+                "ayse@startup.com",
+                "GreenLoop",
+                "Climate tech",
+                "Kurucu",
+                "+905551112233",
+                PROGRAM_ID));
+
+        ArgumentCaptor<ProgramStartup> membership = ArgumentCaptor.forClass(ProgramStartup.class);
+        verify(programStartupRepository).save(membership.capture());
+        assertThat(membership.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
+        assertThat(membership.getValue().getOrganizationId()).isEqualTo(ORGANIZATION_ID);
+
+        ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
+        verify(organizationRepository, atLeastOnce()).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getActiveProgramId()).isEqualTo(PROGRAM_ID);
+    }
+
+    // "No program" is a real answer, not a missing field.
+    @Test
+    void registerFounder_leavesTheProgramUnsetWhenNoneIsChosen() {
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null));
+
+        verifyNoInteractions(programStartupRepository);
+    }
+
+    @Test
+    void registerFounder_rejectsAProgramThatDoesNotExist() {
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233",
+                PROGRAM_ID)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("does not exist");
+        verifyNoInteractions(programStartupRepository);
     }
 
     @Test
@@ -246,6 +343,7 @@ class RegistrationServiceTest {
                 "Ayşe Demir",
                 "ayse@startup.com",
                 "GreenLoop",
+                null,
                 null,
                 null,
                 null)))

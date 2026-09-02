@@ -1,5 +1,8 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
+import java.util.UUID;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -14,10 +17,13 @@ import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.util.TextUtils;
 
@@ -30,6 +36,8 @@ public class RegistrationService {
 	private final AppUserRepository appUserRepository;
 	private final OrganizationRepository organizationRepository;
 	private final MentorProfileRepository mentorProfileRepository;
+	private final ProgramRepository programRepository;
+	private final ProgramStartupRepository programStartupRepository;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
@@ -46,9 +54,35 @@ public class RegistrationService {
 		appUserRepository.saveAndFlush(founder);
 
 		organization.setFounder(founder);
+		attachDeclaredProgram(organization, request.programId());
 		organizationRepository.saveAndFlush(organization);
 
 		return UserResponse.fromEntity(founder);
+	}
+
+	/**
+	 * The program the founder chose during signup. This is a declaration made
+	 * with the application, not a self-assignment behind the coordinator's back:
+	 * the account stays PENDING until a coordinator approves it, and the
+	 * coordinator can remove the startup from the program at any point.
+	 *
+	 * <p>A null programId is a real answer — "no program" — and leaves both the
+	 * membership and the active choice unset.
+	 */
+	private void attachDeclaredProgram(Organization organization, UUID programId) {
+		if (programId == null) {
+			return;
+		}
+		if (!programRepository.existsById(programId)) {
+			throw new InvalidRequestException("The selected program does not exist.");
+		}
+		ProgramStartup membership = new ProgramStartup();
+		membership.setId(UUID.randomUUID());
+		membership.setProgramId(programId);
+		membership.setOrganizationId(organization.getId());
+		membership.setCreatedAt(Instant.now());
+		programStartupRepository.save(membership);
+		organization.setActiveProgramId(programId);
 	}
 
 	@Transactional

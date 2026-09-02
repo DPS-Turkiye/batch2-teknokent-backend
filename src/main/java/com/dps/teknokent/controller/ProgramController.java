@@ -24,6 +24,7 @@ import com.dps.teknokent.dto.requests.DecideProgramMembershipRequest;
 import com.dps.teknokent.dto.requests.SetActiveProgramRequest;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
+import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.ProgramService;
@@ -43,6 +44,15 @@ public class ProgramController {
 	@GetMapping
 	public List<ProgramResponse> list(@RequestParam(required = false) UUID actorId) {
 		return programService.list(resolveActorId(actorId));
+	}
+
+	/**
+	 * Names only, for the signup picker — a founder choosing their program has no
+	 * account yet, so this cannot be gated on a role. See ProgramService#listNames.
+	 */
+	@GetMapping("/names")
+	public List<ProgramNameResponse> names() {
+		return programService.listNames();
 	}
 
 	/**
