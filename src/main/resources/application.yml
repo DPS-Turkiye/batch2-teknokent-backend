@@ -114,3 +114,6 @@ meeting:
     # provider configuration must not prevent the rest of the API from starting.
     base-url: ${MEETING_PROVIDER_BASE_URL:http://localhost}
     api-key: ${MEETING_PROVIDER_API_KEY:}
+  transcript-bot:
+    enabled: ${MEETING_TRANSCRIPT_BOT_ENABLED:true}
+    interval-ms: ${MEETING_TRANSCRIPT_BOT_INTERVAL_MS:30000}

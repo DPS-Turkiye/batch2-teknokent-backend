@@ -19,6 +19,8 @@ meeting:
   provider:
     base-url: http://localhost
     api-key: test-key
+  transcript-bot:
+    enabled: false
 app:
   realtime:
     token-secret: test-secret

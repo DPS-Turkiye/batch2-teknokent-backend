@@ -42,6 +42,7 @@ public class Meeting {
 		meeting.notes = TextUtils.normalizeOptional(request.notes());
 		meeting.outcomes = TextUtils.normalizeOptional(request.outcomes());
 		meeting.meetLink = TextUtils.normalizeOptional(request.meetLink());
+		meeting.transcribeRequested = Boolean.TRUE.equals(request.transcribeRequested());
 		meeting.status = request.status();
 		return meeting;
 	}
@@ -111,6 +112,12 @@ public class Meeting {
 
 	@Column(name = "meet_link", length = 2048)
 	private String meetLink;
+
+	@Column(name = "transcribe_requested", nullable = false)
+	private boolean transcribeRequested;
+
+	@Column(name = "bot_dispatched_at")
+	private Instant botDispatchedAt;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
