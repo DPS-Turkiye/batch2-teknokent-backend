@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -20,7 +21,6 @@ import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.service.ProfileAnalysisService;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +62,7 @@ public class ProfileAnalysisController {
 	 * signup CV step, where the caller has no organization to scope a write to.
 	 */
 	@PostMapping(path = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-	public JsonNode parsePreview(
+	public Map<String, Object> parsePreview(
 			@RequestParam(defaultValue = "individual_mentee") String profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
 			@RequestParam(defaultValue = "auto") String ocrMode,

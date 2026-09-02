@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -87,7 +88,7 @@ public class ProfileAnalysisService {
 	 * the only safe answer is to persist nothing and let the caller decide what
 	 * to keep. The CV itself is uploaded separately through POST /api/documents.
 	 */
-	public JsonNode parsePreview(String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
+	public Map<String, Object> parsePreview(String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
 		validateProfileType(profileType);
 		validateOcrMode(ocrMode);
 		requireConsent(consentAccepted);
@@ -99,7 +100,7 @@ public class ProfileAnalysisService {
 		if (!profile.isObject()) {
 			throw new InvalidRequestException("The parser did not return a usable profile.");
 		}
-		return technologyInferenceService.enrich(((ObjectNode) profile).deepCopy());
+		return jsonUtils.toMap(technologyInferenceService.enrich(((ObjectNode) profile).deepCopy()));
 	}
 
 	private void validateOcrMode(String ocrMode) {

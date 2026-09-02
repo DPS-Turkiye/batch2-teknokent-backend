@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -85,10 +86,12 @@ class ProfileAnalysisServiceTest {
 	void parsePreviewReturnsTheStructuredProfile() {
 		stubParser("{\"current_role\":\"Ürün Yöneticisi\",\"professional_functions\":[\"Ürün\",\"Analitik\"]}");
 
-		JsonNode profile = profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf());
+		Map<String, Object> profile = profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf());
 
-		assertThat(profile.path("current_role").asText()).isEqualTo("Ürün Yöneticisi");
-		assertThat(profile.path("professional_functions")).hasSize(2);
+		assertThat(profile).containsEntry("current_role", "Ürün Yöneticisi");
+		assertThat(profile.get("professional_functions"))
+				.asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(String.class))
+				.containsExactly("Ürün", "Analitik");
 	}
 
 	@Test
