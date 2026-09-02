@@ -2,11 +2,13 @@ package com.dps.teknokent.util;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -65,6 +67,15 @@ public class JsonUtils {
 			return trimmed.substring(start, end + 1);
 		}
 		return trimmed;
+	}
+
+	/**
+	 * Converts a node to a plain map. Returning a JsonNode straight from a
+	 * controller serialises its bean getters ({@code isArray}, {@code isBigDecimal},
+	 * …) rather than its content, so anything crossing the wire goes through this.
+	 */
+	public Map<String, Object> toMap(JsonNode node) {
+		return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {});
 	}
 
 	public ObjectNode createObjectNode() {

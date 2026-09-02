@@ -50,6 +50,7 @@ public class RegistrationService {
 
 		AppUser founder = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
 				UserAccountStatus.PENDING, organization);
+		applyProfileFields(founder, request);
 		applyFirebaseIdentity(founder, email);
 		appUserRepository.saveAndFlush(founder);
 
@@ -58,6 +59,26 @@ public class RegistrationService {
 		organizationRepository.saveAndFlush(organization);
 
 		return UserResponse.fromEntity(founder);
+	}
+
+	/**
+	 * The bio, LinkedIn and expertise collected on the wizard's first step, which
+	 * the CV parser also fills. Until V33 there was nowhere to put them and they
+	 * were dropped on submit.
+	 *
+	 * <p>Blank entries are discarded rather than stored: a free-form chip list can
+	 * arrive with empties, and an empty expertise row helps nobody.
+	 */
+	private void applyProfileFields(AppUser founder, RegisterFounderRequest request) {
+		founder.setBio(TextUtils.normalizeOptional(request.bio()));
+		founder.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
+		if (request.expertise() != null) {
+			founder.setExpertise(request.expertise().stream()
+					.map(TextUtils::normalizeOptional)
+					.filter(java.util.Objects::nonNull)
+					.distinct()
+					.toList());
+		}
 	}
 
 	/**
