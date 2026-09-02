@@ -1,12 +1,18 @@
 package com.dps.teknokent.entity;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
+import org.hibernate.annotations.BatchSize;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -18,6 +24,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -53,6 +60,19 @@ public class AppUser {
 
 	@Column(length = 32)
 	private String phone;
+
+	@Column(columnDefinition = "TEXT")
+	private String bio;
+
+	@Column(name = "linkedin_url")
+	private String linkedinUrl;
+
+	@ElementCollection
+	@CollectionTable(name = "app_user_expertise", joinColumns = @JoinColumn(name = "user_id"))
+	@OrderColumn(name = "display_order")
+	@Column(name = "expertise", nullable = false)
+	@BatchSize(size = 50)
+	private List<String> expertise = new ArrayList<>();
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
