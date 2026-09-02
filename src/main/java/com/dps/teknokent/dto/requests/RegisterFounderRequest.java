@@ -1,5 +1,6 @@
 package com.dps.teknokent.dto.requests;
 
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.validation.constraints.Email;
@@ -14,5 +15,8 @@ public record RegisterFounderRequest(
 		@Size(max = 255) String jobTitle,
 		@Size(max = 32) String phone,
 		// Optional: null is "no program", which is a real answer, not a missing one.
-		UUID programId) {
+		UUID programId,
+		@Size(max = 5000) String bio,
+		@Size(max = 255) String linkedinUrl,
+		List<@Size(max = 255) String> expertise) {
 }

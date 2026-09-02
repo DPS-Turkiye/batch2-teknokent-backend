@@ -92,7 +92,7 @@ class RegistrationServiceTest {
                 "Climate tech",
                 "Kurucu",
                 "+905551112233",
-                null));
+                null, null, null, null));
 
         assertThat(result.id()).isEqualTo(USER_ID);
         assertThat(result.email()).isEqualTo("ayse@startup.com");
@@ -128,7 +128,7 @@ class RegistrationServiceTest {
                 "Climate tech",
                 "Kurucu",
                 "+905551112233",
-                PROGRAM_ID));
+                PROGRAM_ID, null, null, null));
 
         ArgumentCaptor<ProgramStartup> membership = ArgumentCaptor.forClass(ProgramStartup.class);
         verify(programStartupRepository).save(membership.capture());
@@ -158,7 +158,8 @@ class RegistrationServiceTest {
         });
 
         registrationService.registerFounder(new RegisterFounderRequest(
-                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null));
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null,
+                null, null, null));
 
         verifyNoInteractions(programStartupRepository);
     }
@@ -182,10 +183,72 @@ class RegistrationServiceTest {
 
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233",
-                PROGRAM_ID)))
+                PROGRAM_ID, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("does not exist");
         verifyNoInteractions(programStartupRepository);
+    }
+
+    @Test
+    void registerFounder_keepsTheBioLinkedInAndExpertiseFromSignup() {
+        stubFounderSaves();
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null,
+                "Ürün odaklı kurucu", "linkedin.com/in/ayse",
+                java.util.List.of("Ürün Yönetimi", "PyTorch")));
+
+        ArgumentCaptor<AppUser> saved = ArgumentCaptor.forClass(AppUser.class);
+        verify(appUserRepository, atLeastOnce()).saveAndFlush(saved.capture());
+        AppUser founder = saved.getValue();
+        assertThat(founder.getBio()).isEqualTo("Ürün odaklı kurucu");
+        assertThat(founder.getLinkedinUrl()).isEqualTo("linkedin.com/in/ayse");
+        assertThat(founder.getExpertise()).containsExactly("Ürün Yönetimi", "PyTorch");
+    }
+
+    // A free-form chip list can arrive with blanks and repeats; neither belongs
+    // in the database.
+    @Test
+    void registerFounder_dropsBlankAndDuplicateExpertise() {
+        stubFounderSaves();
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null,
+                java.util.Arrays.asList("Ürün", "   ", "Ürün", null, "Analitik")));
+
+        ArgumentCaptor<AppUser> saved = ArgumentCaptor.forClass(AppUser.class);
+        verify(appUserRepository, atLeastOnce()).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getExpertise()).containsExactly("Ürün", "Analitik");
+    }
+
+    @Test
+    void registerFounder_leavesProfileFieldsEmptyWhenNotSupplied() {
+        stubFounderSaves();
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null, null));
+
+        ArgumentCaptor<AppUser> saved = ArgumentCaptor.forClass(AppUser.class);
+        verify(appUserRepository, atLeastOnce()).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getBio()).isNull();
+        assertThat(saved.getValue().getLinkedinUrl()).isNull();
+        assertThat(saved.getValue().getExpertise()).isEmpty();
+    }
+
+    private void stubFounderSaves() {
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
     }
 
     @Test
@@ -346,7 +409,7 @@ class RegistrationServiceTest {
                 null,
                 null,
                 null,
-                null)))
+                null, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("already exists");
     }
