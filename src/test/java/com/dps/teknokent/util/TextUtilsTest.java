@@ -13,10 +13,7 @@ class TextUtilsTest {
 		assertThat(TextUtils.normalizedList(null)).isEmpty();
 	}
 
-	// Regression: the result is assigned to JPA @ElementCollection fields, and
-	// Hibernate calls clear() on the collection when merging a managed entity. An
-	// immutable list threw UnsupportedOperationException at flush time — a 500 on
-	// PUT /api/organizations/{id}, invisible to tests that mock the repository.
+	// Regression: Hibernate's clear() on merge threw on an immutable list.
 	@Test
 	void normalizedListIsMutableForHibernate() {
 		var areas = TextUtils.normalizedList(java.util.List.of("Finans"));

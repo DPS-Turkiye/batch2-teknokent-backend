@@ -61,15 +61,8 @@ public class AppUserService {
 		return UserProfileResponse.fromEntity(domainLookupService.requireUser(id));
 	}
 
-	/**
-	 * A person editing their own profile. Self only: an account's bio and expertise
-	 * describe that person and nobody else — not a teammate, and not an admin, who
-	 * decides status rather than authoring someone's profile.
-	 *
-	 * <p>
-	 * Not gated on {@code APPROVED}: a pending account waiting on coordinator
-	 * review is exactly who may need to correct what they submitted.
-	 */
+	// Self only, and not gated on APPROVED: a pending account waiting on review
+	// still needs to be able to correct what they submitted.
 	@Transactional
 	public UserProfileResponse updateProfile(UUID id, UpdateUserProfileRequest request) {
 		AppUser user = domainLookupService.requireUser(id);
@@ -82,8 +75,6 @@ public class AppUserService {
 		user.setPhone(TextUtils.normalizeOptional(request.phone()));
 		user.setBio(TextUtils.normalizeOptional(request.bio()));
 		user.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
-		// Mutated in place rather than replaced: Hibernate tracks the collection it
-		// loaded, and swapping it on a managed entity makes it clear() the old one.
 		user.getExpertise().clear();
 		user.getExpertise().addAll(TextUtils.normalizedList(request.expertise()));
 

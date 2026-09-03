@@ -25,8 +25,10 @@ public record OrganizationResponse(
 	public static OrganizationResponse fromEntity(Organization organization) {
 		return new OrganizationResponse(organization.getId(), organization.getName(), organization.getDescription(),
 				organization.getWebsite(), organization.getProblem(), organization.getSolution(),
-				organization.getCurrentSolution(), organization.getTargetUser(), organization.getSector(),
-				organization.getMaturity(), organization.getProgramLevel(),
+				organization.getCurrentSolution(), organization.getTargetUser(),
+				organization.getSector() == null ? null : organization.getSector().value(),
+				organization.getMaturity() == null ? null : organization.getMaturity().value(),
+				organization.getProgramLevel() == null ? null : organization.getProgramLevel().value(),
 				List.copyOf(organization.getSupportAreas()),
 				organization.getCreatedAt(), organization.getUpdatedAt());
 	}

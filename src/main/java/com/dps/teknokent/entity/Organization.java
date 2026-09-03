@@ -9,11 +9,18 @@ import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.dps.teknokent.domain.StartupMaturity;
+import com.dps.teknokent.domain.StartupMaturityConverter;
+import com.dps.teknokent.domain.StartupProgramLevel;
+import com.dps.teknokent.domain.StartupProgramLevelConverter;
+import com.dps.teknokent.domain.StartupSector;
+import com.dps.teknokent.domain.StartupSectorConverter;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -52,8 +59,6 @@ public class Organization {
 	@Column(columnDefinition = "TEXT")
 	private String description;
 
-	// The rest of the signup wizard's startup step. Collected and shown back on the
-	// review page since the wizard was built; stored only from V35 onwards.
 	@Column
 	private String website;
 
@@ -69,14 +74,17 @@ public class Organization {
 	@Column(name = "target_user", columnDefinition = "TEXT")
 	private String targetUser;
 
+	@Convert(converter = StartupSectorConverter.class)
 	@Column
-	private String sector;
+	private StartupSector sector;
 
+	@Convert(converter = StartupMaturityConverter.class)
 	@Column
-	private String maturity;
+	private StartupMaturity maturity;
 
+	@Convert(converter = StartupProgramLevelConverter.class)
 	@Column(name = "program_level")
-	private String programLevel;
+	private StartupProgramLevel programLevel;
 
 	@ElementCollection
 	@CollectionTable(name = "organization_support_area", joinColumns = @JoinColumn(name = "organization_id"))

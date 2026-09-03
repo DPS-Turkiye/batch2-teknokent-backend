@@ -36,10 +36,6 @@ import com.dps.teknokent.service.OrganizationService;
 @Import(SecurityConfig.class)
 class OrganizationControllerTest {
 
-    /**
-     * The startup profile fields added in V35 are not what these tests assert on,
-     * so they are left unset here; the identity and timestamps are what matter.
-     */
     private static OrganizationResponse organizationResponse(UUID id, String name, String description,
             Instant createdAt, Instant updatedAt) {
         return new OrganizationResponse(id, name, description, null, null, null, null, null, null, null, null,

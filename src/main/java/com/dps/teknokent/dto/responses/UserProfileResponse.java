@@ -5,17 +5,8 @@ import java.util.UUID;
 
 import com.dps.teknokent.entity.AppUser;
 
-/**
- * A person's own profile — the wizard's first step, read back.
- *
- * <p>
- * Separate from {@link UserResponse} on purpose. That shape is returned by
- * {@code /api/auth/me}, the organization member list and the admin account list,
- * and it backs the session cookie; widening it would put a bio and a LinkedIn
- * URL into every one of those responses. The bio, LinkedIn and expertise added
- * in V33 have been write-only since: collected at signup, stored, and never
- * shown again.
- */
+// Separate from UserResponse, which backs /api/auth/me and the session cookie;
+// widening that would put a bio and LinkedIn URL into every response using it.
 public record UserProfileResponse(
 		UUID id,
 		String fullName,

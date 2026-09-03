@@ -19,8 +19,6 @@ public record RegisterFounderRequest(
 		@Size(max = 5000) String bio,
 		@Size(max = 255) String linkedinUrl,
 		List<@Size(max = 255) String> expertise,
-		// The rest of the wizard's startup step. All optional: a founder can submit
-		// with them blank, and the review page shows whatever was filled in.
 		@Size(max = 255) String website,
 		@Size(max = 5000) String problem,
 		@Size(max = 5000) String solution,

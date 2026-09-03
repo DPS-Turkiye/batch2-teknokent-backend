@@ -11,19 +11,8 @@ public final class TextUtils {
 	private TextUtils() {
 	}
 
-	/**
-	 * Normalizes a list of user-entered chips: blanks dropped, duplicates collapsed,
-	 * order preserved. Both {@code app_user_expertise} and
-	 * {@code organization_support_area} are {@code @OrderColumn} collections, so the
-	 * order the user arranged them in is meaningful and must survive.
-	 *
-	 * <p>
-	 * Returns a <em>mutable</em> list on purpose. These values are assigned to JPA
-	 * {@code @ElementCollection} fields, and Hibernate calls {@code clear()} on the
-	 * collection when merging a managed entity — handing it {@code Stream.toList()}
-	 * or {@code List.of()} throws {@link UnsupportedOperationException} at flush
-	 * time, not at assignment, so it surfaces as a 500 rather than a compile error.
-	 */
+	// Mutable on purpose: assigned to @ElementCollection fields, and Hibernate's
+	// clear() on merge throws on an immutable list.
 	public static List<String> normalizedList(List<String> values) {
 		return values == null ? new ArrayList<>()
 				: values.stream()

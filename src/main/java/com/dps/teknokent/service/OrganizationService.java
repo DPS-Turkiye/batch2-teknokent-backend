@@ -7,6 +7,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.StartupMaturity;
+import com.dps.teknokent.domain.StartupProgramLevel;
+import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
@@ -47,16 +50,8 @@ public class OrganizationService {
 		return OrganizationResponse.fromEntity(organizationRepository.saveAndFlush(Organization.fromRequest(request)));
 	}
 
-	/**
-	 * The founder editing their own startup profile after signup. Only the founder
-	 * may write it — an admin can read the organization, but rewriting a startup's
-	 * own description is not theirs to do.
-	 *
-	 * <p>
-	 * Deliberately not gated on {@code APPROVED}, unlike
-	 * {@link #regenerateInviteCode}: a founder waiting on coordinator review is
-	 * exactly who needs to fix a typo or add the detail the coordinator asked for.
-	 */
+	// Not gated on APPROVED, unlike regenerateInviteCode: a founder waiting on
+	// coordinator review still needs to fix a typo or add a missing detail.
 	@Transactional
 	public OrganizationResponse update(UUID organizationId, UpdateOrganizationRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
@@ -72,12 +67,11 @@ public class OrganizationService {
 		organization.setSolution(TextUtils.normalizeOptional(request.solution()));
 		organization.setCurrentSolution(TextUtils.normalizeOptional(request.currentSolution()));
 		organization.setTargetUser(TextUtils.normalizeOptional(request.targetUser()));
-		organization.setSector(TextUtils.normalizeOptional(request.sector()));
-		organization.setMaturity(TextUtils.normalizeOptional(request.maturity()));
-		organization.setProgramLevel(TextUtils.normalizeOptional(request.programLevel()));
-		// Mutated in place rather than replaced: Hibernate tracks the collection
-		// instance it loaded, and swapping it for a fresh list on a managed entity
-		// makes it clear() the old one during merge.
+		organization.setSector(StartupSector.requireValidOrNull(request.sector()));
+		organization.setMaturity(StartupMaturity.requireValidOrNull(request.maturity()));
+		organization.setProgramLevel(StartupProgramLevel.requireValidOrNull(request.programLevel()));
+		// Mutated in place: replacing the list on a managed entity makes Hibernate
+		// clear() the old instance during merge, which threw on an immutable list.
 		organization.getSupportAreas().clear();
 		organization.getSupportAreas().addAll(TextUtils.normalizedList(request.supportAreas()));
 

@@ -16,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
@@ -118,8 +119,6 @@ class OrganizationServiceTest {
                 .hasMessageContaining("approved founder");
     }
 
-    // The startup fields the wizard collects were shown back on the review page and
-    // then dropped on submit until V35; this is the read-write half of that fix.
     @Test
     void update_storesTheStartupProfileForTheFounder() {
         Organization organization = organizationWithFounder("CODE1234");
@@ -130,18 +129,30 @@ class OrganizationServiceTest {
         var response = organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
                 FOUNDER_ID, "Döngü", "Gönüllülük platformu", "dongu.co", "Gönüllüler bulunamıyor",
                 "Beceri bazlı eşleştirme", "Elle tutulan listeler", "STK'lar", "SaaS", "MVP geliştiriliyor",
-                "Build", List.of("Finans", "Pazarlama")));
+                "MVP", List.of("Finans", "Pazarlama")));
 
         assertThat(response.website()).isEqualTo("dongu.co");
         assertThat(response.sector()).isEqualTo("SaaS");
         assertThat(response.supportAreas()).containsExactly("Finans", "Pazarlama");
         assertThat(organization.getProblem()).isEqualTo("Gönüllüler bulunamıyor");
         assertThat(organization.getTargetUser()).isEqualTo("STK'lar");
-        assertThat(organization.getProgramLevel()).isEqualTo("Build");
+        assertThat(organization.getProgramLevel()).isEqualTo(StartupProgramLevel.MVP);
     }
 
-    // Editing a startup's own profile is the founder's, not another member's and
-    // not an admin's, even though an admin may read the organization.
+    @Test
+    void update_rejectsAnUnknownMaturity() {
+        Organization organization = organizationWithFounder("CODE1234");
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+
+        assertThatThrownBy(() -> organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
+                FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, "Roket aşaması", null, List.of())))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Roket aşaması");
+
+        verify(organizationRepository, never()).save(any(Organization.class));
+    }
+
     @Test
     void update_rejectsAnyoneButTheFounder() {
         Organization organization = organizationWithFounder("CODE1234");
@@ -157,8 +168,6 @@ class OrganizationServiceTest {
         verify(organizationRepository, never()).save(any(Organization.class));
     }
 
-    // A free-form chip list can arrive with blanks and repeats; neither belongs in
-    // the database, and the order the founder arranged them in must survive.
     @Test
     void update_dropsBlankAndDuplicateSupportAreas() {
         Organization organization = organizationWithFounder("CODE1234");

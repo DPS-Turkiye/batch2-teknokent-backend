@@ -8,6 +8,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.StartupMaturity;
+import com.dps.teknokent.domain.StartupProgramLevel;
+import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.RegisterFounderRequest;
@@ -62,14 +65,6 @@ public class RegistrationService {
 		return UserResponse.fromEntity(founder);
 	}
 
-	/**
-	 * The bio, LinkedIn and expertise collected on the wizard's first step, which
-	 * the CV parser also fills. Until V33 there was nowhere to put them and they
-	 * were dropped on submit.
-	 *
-	 * <p>Blank entries are discarded rather than stored: a free-form chip list can
-	 * arrive with empties, and an empty expertise row helps nobody.
-	 */
 	private void applyProfileFields(AppUser founder, RegisterFounderRequest request) {
 		founder.setBio(TextUtils.normalizeOptional(request.bio()));
 		founder.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
@@ -78,26 +73,15 @@ public class RegistrationService {
 		}
 	}
 
-	/**
-	 * The startup fields collected on the wizard's second step. Until V35 the
-	 * organization carried only a name and a description, so the website, problem,
-	 * solution, target user, sector, maturity, program level and support areas were
-	 * shown back on the review page and then dropped on submit.
-	 *
-	 * <p>
-	 * A null list means "not supplied" and leaves the collection untouched, the same
-	 * way {@link #applyProfileFields} treats expertise: a founder who never reached
-	 * the field should not have an empty row written for them.
-	 */
 	private void applyStartupFields(Organization organization, RegisterFounderRequest request) {
 		organization.setWebsite(TextUtils.normalizeOptional(request.website()));
 		organization.setProblem(TextUtils.normalizeOptional(request.problem()));
 		organization.setSolution(TextUtils.normalizeOptional(request.solution()));
 		organization.setCurrentSolution(TextUtils.normalizeOptional(request.currentSolution()));
 		organization.setTargetUser(TextUtils.normalizeOptional(request.targetUser()));
-		organization.setSector(TextUtils.normalizeOptional(request.sector()));
-		organization.setMaturity(TextUtils.normalizeOptional(request.maturity()));
-		organization.setProgramLevel(TextUtils.normalizeOptional(request.programLevel()));
+		organization.setSector(StartupSector.requireValidOrNull(request.sector()));
+		organization.setMaturity(StartupMaturity.requireValidOrNull(request.maturity()));
+		organization.setProgramLevel(StartupProgramLevel.requireValidOrNull(request.programLevel()));
 		if (request.supportAreas() != null) {
 			organization.setSupportAreas(TextUtils.normalizedList(request.supportAreas()));
 		}

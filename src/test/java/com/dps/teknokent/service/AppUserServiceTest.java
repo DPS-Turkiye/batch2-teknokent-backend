@@ -286,8 +286,6 @@ class AppUserServiceTest {
         return user(id, email, fullName, role, null, null);
     }
 
-    // V33 stored bio, LinkedIn and expertise but nothing ever read them back;
-    // this is the read-write half of that fix.
     @Test
     void updateProfile_storesTheOwnersOwnFields() {
         UUID id = UUID.fromString("00000000-0000-0000-0000-000000000811");
@@ -305,7 +303,6 @@ class AppUserServiceTest {
         assertThat(owner.getJobTitle()).isEqualTo("Designer");
     }
 
-    // A bio describes one person; nobody else gets to write it, admin included.
     @Test
     void updateProfile_rejectsEditingSomeoneElse() {
         UUID id = UUID.fromString("00000000-0000-0000-0000-000000000811");

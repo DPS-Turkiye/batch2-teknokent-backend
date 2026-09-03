@@ -7,16 +7,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-/**
- * A person editing their own profile after signup — the wizard's first step,
- * reopened.
- *
- * <p>
- * Email and role are deliberately absent. Email is the key
- * {@code FirebaseBearerFilter} falls back to when matching a token to an
- * account, so changing it here would silently break sign-in; role and status are
- * the coordinator's to decide.
- */
+// Email is absent: FirebaseBearerFilter matches accounts by it, so changing it
+// here would break sign-in. Role/status are the coordinator's, not the owner's.
 public record UpdateUserProfileRequest(
 		@NotNull UUID actorId,
 		@NotBlank @Size(max = 255) String fullName,

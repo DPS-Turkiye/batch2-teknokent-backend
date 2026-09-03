@@ -7,16 +7,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-/**
- * The startup profile as the founder can edit it after signup. Mirrors the
- * wizard's second step field for field, so the edit screen and the wizard stay
- * the same shape; the invite code, founder and active program are deliberately
- * absent, since those are not the founder's to change here.
- *
- * <p>
- * {@code actorId} identifies the caller, matching the invite-code endpoints on
- * the same controller rather than inventing a second convention.
- */
+/** The startup profile a founder can edit after signup. */
 public record UpdateOrganizationRequest(
 		@NotNull UUID actorId,
 		@NotBlank @Size(max = 255) String name,
