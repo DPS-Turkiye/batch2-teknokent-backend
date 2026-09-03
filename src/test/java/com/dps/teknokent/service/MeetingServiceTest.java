@@ -16,6 +16,7 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
+import com.dps.teknokent.dto.requests.InviteMeetingGuestRequest;
 import com.dps.teknokent.dto.requests.LogMeetingRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingResponse;
@@ -338,6 +339,71 @@ class MeetingServiceTest {
 		assertThatThrownBy(() -> meetingService.create(request))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("MENTOR role");
+	}
+
+	@Test
+	void inviteGuestCopiesTheMeetingOntoAnotherStartup() {
+		UUID sourceId = UUID.randomUUID();
+		UUID guestOrgId = UUID.randomUUID();
+		Instant at = Instant.parse("2026-09-15T16:00:00Z");
+		Meeting source = namedMeeting(sourceId, organizationId, mentorId, "Gündem", MeetingStatus.SCHEDULED, 60);
+		source.setMeetLink("https://meet.google.com/abc-defg-hij");
+		source.setScheduledAt(at);
+		Organization guestOrg = namedOrganization(guestOrgId, "NovaMed");
+
+		when(meetingRepository.findById(sourceId)).thenReturn(Optional.of(source));
+		when(domainLookupService.requireOrganization(guestOrgId)).thenReturn(guestOrg);
+		when(meetingRepository.findByMentorIdAndOrganizationIdAndScheduledAt(mentorId, guestOrgId, at))
+				.thenReturn(Optional.empty());
+		when(meetingRepository.save(any(Meeting.class))).thenAnswer(invocation -> {
+			Meeting saved = invocation.getArgument(0);
+			saved.setId(UUID.randomUUID());
+			return saved;
+		});
+
+		MeetingResponse result = meetingService.inviteGuest(sourceId, new InviteMeetingGuestRequest(guestOrgId, null));
+
+		assertThat(result.organizationId()).isEqualTo(guestOrgId);
+		assertThat(result.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
+		assertThat(result.mentorId()).isEqualTo(mentorId);
+	}
+
+	@Test
+	void inviteGuestReturnsTheExistingCopyInsteadOfDuplicating() {
+		UUID sourceId = UUID.randomUUID();
+		Meeting source = namedMeeting(sourceId, organizationId, mentorId, "Gündem", MeetingStatus.SCHEDULED, 60);
+		Meeting existing = namedMeeting(UUID.randomUUID(), organizationId, otherMentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+
+		when(meetingRepository.findById(sourceId)).thenReturn(Optional.of(source));
+		when(domainLookupService.requireUser(otherMentorId))
+				.thenReturn(namedUser(otherMentorId, "Ayşe Kaya", UserRole.MENTOR));
+		when(meetingRepository.findByMentorIdAndOrganizationIdAndScheduledAt(
+				otherMentorId, organizationId, source.getScheduledAt())).thenReturn(Optional.of(existing));
+
+		MeetingResponse result = meetingService.inviteGuest(sourceId, new InviteMeetingGuestRequest(null, otherMentorId));
+
+		assertThat(result.id()).isEqualTo(existing.getId());
+		verify(meetingRepository, never()).save(any(Meeting.class));
+	}
+
+	@Test
+	void deleteRoomRemovesEveryCopyWithTheSameMeetLink() {
+		Meeting first = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem", MeetingStatus.SCHEDULED,
+				60);
+		first.setMeetLink("https://meet.google.com/abc-defg-hij");
+		Meeting second = namedMeeting(UUID.randomUUID(), UUID.randomUUID(), otherMentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		second.setMeetLink("https://meet.google.com/abc-defg-hij");
+		second.setScheduledAt(first.getScheduledAt());
+
+		when(meetingRepository.findById(first.getId())).thenReturn(Optional.of(first));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(first.getMeetLink(), first.getScheduledAt()))
+				.thenReturn(List.of(first, second));
+
+		meetingService.deleteRoom(first.getId());
+
+		verify(meetingRepository).deleteAll(List.of(first, second));
 	}
 
 	private static Meeting namedMeeting(

@@ -26,6 +26,13 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
 	boolean existsByIdAndOrganizationId(UUID id, UUID organizationId);
 
+	List<Meeting> findByMeetLinkAndScheduledAt(String meetLink, Instant scheduledAt);
+
+	Optional<Meeting> findFirstByMeetLinkAndBotDispatchedAtIsNotNull(String meetLink);
+
+	Optional<Meeting> findByMentorIdAndOrganizationIdAndScheduledAt(
+			UUID mentorId, UUID organizationId, Instant scheduledAt);
+
 	List<Meeting> findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
 			MeetingStatus status, Instant from, Instant until);
 }

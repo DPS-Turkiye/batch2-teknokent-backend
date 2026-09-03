@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -10,14 +11,15 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
+import com.dps.teknokent.dto.requests.InviteMeetingGuestRequest;
 import com.dps.teknokent.dto.requests.LogMeetingRequest;
+import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
+import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
-import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
-import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
-import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -63,7 +65,45 @@ public class MeetingService {
 		}
 		Meeting meeting = Meeting.fromRequest(request,
 				domainLookupService.requireOrganization(request.organizationId()), mentor);
+		copyBotDispatchIfSameLink(meeting);
 		return MeetingResponse.fromEntity(meetingRepository.save(meeting));
+	}
+
+	@Transactional(readOnly = true)
+	public List<MeetingResponse> findRoom(UUID meetingId) {
+		return roommates(requireMeeting(meetingId)).stream()
+				.map(MeetingResponse::fromEntity)
+				.toList();
+	}
+
+	@Transactional
+	public MeetingResponse inviteGuest(UUID meetingId, InviteMeetingGuestRequest request) {
+		if (request.organizationId() == null && request.mentorId() == null) {
+			throw new InvalidRequestException("A startup or mentor is required.");
+		}
+		Meeting source = requireMeeting(meetingId);
+		Organization organization = request.organizationId() == null
+				? source.getOrganization()
+				: domainLookupService.requireOrganization(request.organizationId());
+		AppUser mentor = request.mentorId() == null
+				? source.getMentor()
+				: requireMentor(request.mentorId());
+		if (mentor != null) {
+			Optional<Meeting> existing = meetingRepository.findByMentorIdAndOrganizationIdAndScheduledAt(
+					mentor.getId(), organization.getId(), source.getScheduledAt());
+			if (existing.isPresent()) {
+				return MeetingResponse.fromEntity(existing.get());
+			}
+		}
+		Meeting copy = source.copyFor(organization, mentor);
+		copyBotDispatchIfSameLink(copy);
+		return MeetingResponse.fromEntity(meetingRepository.save(copy));
+	}
+
+	@Transactional
+	public void deleteRoom(UUID meetingId) {
+		List<Meeting> room = roommates(requireMeeting(meetingId));
+		meetingRepository.deleteAll(room);
 	}
 
 	@Transactional(readOnly = true)
@@ -172,5 +212,36 @@ public class MeetingService {
 		return mentorshipRequestRepository.findById(mentorshipRequestId)
 				.orElseThrow(() -> new ResourceNotFoundException(
 						"Mentorship request not found: " + mentorshipRequestId));
+	}
+
+	private Meeting requireMeeting(UUID meetingId) {
+		return meetingRepository.findById(meetingId)
+				.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
+	}
+
+	private AppUser requireMentor(UUID mentorId) {
+		AppUser mentor = domainLookupService.requireUser(mentorId);
+		if (mentor.getRole() != UserRole.MENTOR) {
+			throw new InvalidRequestException("Selected user does not have the MENTOR role");
+		}
+		return mentor;
+	}
+
+	private List<Meeting> roommates(Meeting meeting) {
+		String meetLink = meeting.getMeetLink();
+		if (meetLink == null || meetLink.isBlank()) {
+			return List.of(meeting);
+		}
+		List<Meeting> room = meetingRepository.findByMeetLinkAndScheduledAt(meetLink, meeting.getScheduledAt());
+		return room.isEmpty() ? List.of(meeting) : room;
+	}
+
+	private void copyBotDispatchIfSameLink(Meeting meeting) {
+		String meetLink = meeting.getMeetLink();
+		if (meetLink == null || meetLink.isBlank() || meeting.getBotDispatchedAt() != null) {
+			return;
+		}
+		meetingRepository.findFirstByMeetLinkAndBotDispatchedAtIsNotNull(meetLink)
+				.ifPresent(existing -> meeting.setBotDispatchedAt(existing.getBotDispatchedAt()));
 	}
 }

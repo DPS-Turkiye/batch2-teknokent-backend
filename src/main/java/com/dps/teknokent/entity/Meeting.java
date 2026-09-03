@@ -47,6 +47,22 @@ public class Meeting {
 		return meeting;
 	}
 
+	public Meeting copyFor(Organization guestOrganization, AppUser guestMentor) {
+		Meeting copy = new Meeting();
+		copy.organization = guestOrganization;
+		copy.mentor = guestMentor;
+		copy.scheduledAt = scheduledAt;
+		copy.durationMinutes = durationMinutes;
+		copy.agenda = agenda;
+		copy.notes = notes;
+		copy.outcomes = outcomes;
+		copy.meetLink = meetLink;
+		copy.transcribeRequested = transcribeRequested;
+		copy.botDispatchedAt = botDispatchedAt;
+		copy.status = status;
+		return copy;
+	}
+
 	public static Meeting forLoggedEntry(
 			MentorshipRequest request,
 			Instant scheduledAt,
