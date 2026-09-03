@@ -21,6 +21,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -283,6 +284,55 @@ class AppUserServiceTest {
 
     private static AppUser user(UUID id, String email, String fullName, UserRole role) {
         return user(id, email, fullName, role, null, null);
+    }
+
+    // V33 stored bio, LinkedIn and expertise but nothing ever read them back;
+    // this is the read-write half of that fix.
+    @Test
+    void updateProfile_storesTheOwnersOwnFields() {
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser owner = user(id, "gulse@dongu.co", "Gülse Buran", UserRole.MENTEE);
+        when(domainLookupService.requireUser(id)).thenReturn(owner);
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(call -> call.getArgument(0));
+
+        var response = appUserService.updateProfile(id, new UpdateUserProfileRequest(
+                id, "Gülse Buran", "Designer", "+905551112233", "Ürün odaklı kurucu",
+                "linkedin.com/in/gulse", List.of("UI/UX", "Figma")));
+
+        assertThat(response.bio()).isEqualTo("Ürün odaklı kurucu");
+        assertThat(response.linkedinUrl()).isEqualTo("linkedin.com/in/gulse");
+        assertThat(response.expertise()).containsExactly("UI/UX", "Figma");
+        assertThat(owner.getJobTitle()).isEqualTo("Designer");
+    }
+
+    // A bio describes one person; nobody else gets to write it, admin included.
+    @Test
+    void updateProfile_rejectsEditingSomeoneElse() {
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        UUID other = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        when(domainLookupService.requireUser(id))
+                .thenReturn(user(id, "gulse@dongu.co", "Gülse Buran", UserRole.MENTEE));
+
+        assertThatThrownBy(() -> appUserService.updateProfile(id, new UpdateUserProfileRequest(
+                other, "Gülse Buran", null, null, null, null, List.of())))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("your own profile");
+
+        verify(appUserRepository, never()).save(any(AppUser.class));
+    }
+
+    @Test
+    void updateProfile_dropsBlankAndDuplicateExpertise() {
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser owner = user(id, "gulse@dongu.co", "Gülse Buran", UserRole.MENTEE);
+        when(domainLookupService.requireUser(id)).thenReturn(owner);
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(call -> call.getArgument(0));
+
+        var response = appUserService.updateProfile(id, new UpdateUserProfileRequest(
+                id, "Gülse Buran", null, null, null, null,
+                java.util.Arrays.asList("UI/UX", "   ", "UI/UX", null, "Figma")));
+
+        assertThat(response.expertise()).containsExactly("UI/UX", "Figma");
     }
 
     private static AppUser user(UUID id, String email, String fullName, UserRole role, Organization organization, String jobTitle) {

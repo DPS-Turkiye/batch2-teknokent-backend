@@ -9,7 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.UserProfileResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -52,6 +54,40 @@ public class AppUserService {
 	public UserResponse findById(UUID id) {
 		return appUserRepository.findById(id).map(UserResponse::fromEntity)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
+	}
+
+	@Transactional(readOnly = true)
+	public UserProfileResponse findProfile(UUID id) {
+		return UserProfileResponse.fromEntity(domainLookupService.requireUser(id));
+	}
+
+	/**
+	 * A person editing their own profile. Self only: an account's bio and expertise
+	 * describe that person and nobody else — not a teammate, and not an admin, who
+	 * decides status rather than authoring someone's profile.
+	 *
+	 * <p>
+	 * Not gated on {@code APPROVED}: a pending account waiting on coordinator
+	 * review is exactly who may need to correct what they submitted.
+	 */
+	@Transactional
+	public UserProfileResponse updateProfile(UUID id, UpdateUserProfileRequest request) {
+		AppUser user = domainLookupService.requireUser(id);
+		if (!id.equals(request.actorId())) {
+			throw new InvalidRequestException("You can only edit your own profile");
+		}
+
+		user.setFullName(TextUtils.trim(request.fullName()));
+		user.setJobTitle(TextUtils.normalizeOptional(request.jobTitle()));
+		user.setPhone(TextUtils.normalizeOptional(request.phone()));
+		user.setBio(TextUtils.normalizeOptional(request.bio()));
+		user.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
+		// Mutated in place rather than replaced: Hibernate tracks the collection it
+		// loaded, and swapping it on a managed entity makes it clear() the old one.
+		user.getExpertise().clear();
+		user.getExpertise().addAll(TextUtils.normalizedList(request.expertise()));
+
+		return UserProfileResponse.fromEntity(appUserRepository.save(user));
 	}
 
 	@Transactional(readOnly = true)
