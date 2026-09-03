@@ -46,6 +46,62 @@ class RegistrationServiceTest {
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000811");
     private static final UUID PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
 
+    // The wizard's startup step collected these, the review page showed them back,
+    // and registerFounder dropped them all until V35.
+    @Test
+    void registerFounder_keepsTheStartupProfileFromSignup() {
+        stubFounderSaves();
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "Döngü", "Gönüllülük platformu", "Kurucu", "+905551112233",
+                null, null, null, null,
+                "dongu.co", "Gönüllüler bulunamıyor", "Beceri bazlı eşleştirme", "Elle tutulan listeler",
+                "STK'lar", "SaaS", "MVP geliştiriliyor", "Build",
+                java.util.List.of("Finans", "Pazarlama")));
+
+        ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
+        verify(organizationRepository, atLeastOnce()).saveAndFlush(saved.capture());
+        Organization organization = saved.getValue();
+        assertThat(organization.getWebsite()).isEqualTo("dongu.co");
+        assertThat(organization.getProblem()).isEqualTo("Gönüllüler bulunamıyor");
+        assertThat(organization.getSolution()).isEqualTo("Beceri bazlı eşleştirme");
+        assertThat(organization.getCurrentSolution()).isEqualTo("Elle tutulan listeler");
+        assertThat(organization.getTargetUser()).isEqualTo("STK'lar");
+        assertThat(organization.getSector()).isEqualTo("SaaS");
+        assertThat(organization.getMaturity()).isEqualTo("MVP geliştiriliyor");
+        assertThat(organization.getProgramLevel()).isEqualTo("Build");
+        assertThat(organization.getSupportAreas()).containsExactly("Finans", "Pazarlama");
+    }
+
+    // A founder who leaves the optional startup fields blank should not have empty
+    // strings or an empty support-area row written for them.
+    @Test
+    void registerFounder_leavesStartupFieldsEmptyWhenNotSupplied() {
+        stubFounderSaves();
+
+        registrationService.registerFounder(founderRequest(
+                "Ayşe Demir", "ayse@startup.com", "Döngü", null, null, null, null, null, null, null));
+
+        ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
+        verify(organizationRepository, atLeastOnce()).saveAndFlush(saved.capture());
+        Organization organization = saved.getValue();
+        assertThat(organization.getWebsite()).isNull();
+        assertThat(organization.getSector()).isNull();
+        assertThat(organization.getSupportAreas()).isEmpty();
+    }
+
+    /**
+     * The personal half of the wizard, with the startup fields left unset. Keeps the
+     * tests that predate V35 readable, and means the next field added to the request
+     * touches one place rather than every call site.
+     */
+    private static RegisterFounderRequest founderRequest(String fullName, String email, String organizationName,
+            String description, String jobTitle, String phone, UUID programId, String bio, String linkedinUrl,
+            java.util.List<String> expertise) {
+        return new RegisterFounderRequest(fullName, email, organizationName, description, jobTitle, phone, programId,
+                bio, linkedinUrl, expertise, null, null, null, null, null, null, null, null, null);
+    }
+
     @Mock
     private AppUserRepository appUserRepository;
 
@@ -85,7 +141,7 @@ class RegistrationServiceTest {
             return user;
         });
 
-        var result = registrationService.registerFounder(new RegisterFounderRequest(
+        var result = registrationService.registerFounder(founderRequest(
                 "Ayşe Demir",
                 "ayse@startup.com",
                 "GreenLoop",
@@ -121,7 +177,7 @@ class RegistrationServiceTest {
         });
         when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
 
-        registrationService.registerFounder(new RegisterFounderRequest(
+        registrationService.registerFounder(founderRequest(
                 "Ayşe Demir",
                 "ayse@startup.com",
                 "GreenLoop",
@@ -157,7 +213,7 @@ class RegistrationServiceTest {
             return user;
         });
 
-        registrationService.registerFounder(new RegisterFounderRequest(
+        registrationService.registerFounder(founderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null,
                 null, null, null));
 
@@ -181,7 +237,7 @@ class RegistrationServiceTest {
         });
         when(programRepository.existsById(PROGRAM_ID)).thenReturn(false);
 
-        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233",
                 PROGRAM_ID, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
@@ -193,7 +249,7 @@ class RegistrationServiceTest {
     void registerFounder_keepsTheBioLinkedInAndExpertiseFromSignup() {
         stubFounderSaves();
 
-        registrationService.registerFounder(new RegisterFounderRequest(
+        registrationService.registerFounder(founderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null,
                 "Ürün odaklı kurucu", "linkedin.com/in/ayse",
                 java.util.List.of("Ürün Yönetimi", "PyTorch")));
@@ -212,7 +268,7 @@ class RegistrationServiceTest {
     void registerFounder_dropsBlankAndDuplicateExpertise() {
         stubFounderSaves();
 
-        registrationService.registerFounder(new RegisterFounderRequest(
+        registrationService.registerFounder(founderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null,
                 java.util.Arrays.asList("Ürün", "   ", "Ürün", null, "Analitik")));
 
@@ -225,7 +281,7 @@ class RegistrationServiceTest {
     void registerFounder_leavesProfileFieldsEmptyWhenNotSupplied() {
         stubFounderSaves();
 
-        registrationService.registerFounder(new RegisterFounderRequest(
+        registrationService.registerFounder(founderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null, null));
 
         ArgumentCaptor<AppUser> saved = ArgumentCaptor.forClass(AppUser.class);
@@ -402,7 +458,7 @@ class RegistrationServiceTest {
     void registerFounder_rejectsDuplicateEmail() {
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
                 "Ayşe Demir",
                 "ayse@startup.com",
                 "GreenLoop",

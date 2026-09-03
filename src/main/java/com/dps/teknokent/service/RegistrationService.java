@@ -46,6 +46,7 @@ public class RegistrationService {
 		Organization organization = new Organization();
 		organization.setName(TextUtils.trim(request.organizationName()));
 		organization.setDescription(TextUtils.normalizeOptional(request.description()));
+		applyStartupFields(organization, request);
 		organizationRepository.saveAndFlush(organization);
 
 		AppUser founder = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
@@ -73,11 +74,32 @@ public class RegistrationService {
 		founder.setBio(TextUtils.normalizeOptional(request.bio()));
 		founder.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
 		if (request.expertise() != null) {
-			founder.setExpertise(request.expertise().stream()
-					.map(TextUtils::normalizeOptional)
-					.filter(java.util.Objects::nonNull)
-					.distinct()
-					.toList());
+			founder.setExpertise(TextUtils.normalizedList(request.expertise()));
+		}
+	}
+
+	/**
+	 * The startup fields collected on the wizard's second step. Until V35 the
+	 * organization carried only a name and a description, so the website, problem,
+	 * solution, target user, sector, maturity, program level and support areas were
+	 * shown back on the review page and then dropped on submit.
+	 *
+	 * <p>
+	 * A null list means "not supplied" and leaves the collection untouched, the same
+	 * way {@link #applyProfileFields} treats expertise: a founder who never reached
+	 * the field should not have an empty row written for them.
+	 */
+	private void applyStartupFields(Organization organization, RegisterFounderRequest request) {
+		organization.setWebsite(TextUtils.normalizeOptional(request.website()));
+		organization.setProblem(TextUtils.normalizeOptional(request.problem()));
+		organization.setSolution(TextUtils.normalizeOptional(request.solution()));
+		organization.setCurrentSolution(TextUtils.normalizeOptional(request.currentSolution()));
+		organization.setTargetUser(TextUtils.normalizeOptional(request.targetUser()));
+		organization.setSector(TextUtils.normalizeOptional(request.sector()));
+		organization.setMaturity(TextUtils.normalizeOptional(request.maturity()));
+		organization.setProgramLevel(TextUtils.normalizeOptional(request.programLevel()));
+		if (request.supportAreas() != null) {
+			organization.setSupportAreas(TextUtils.normalizedList(request.supportAreas()));
 		}
 	}
 
