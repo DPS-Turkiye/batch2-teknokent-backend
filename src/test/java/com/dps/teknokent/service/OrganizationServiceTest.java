@@ -3,8 +3,11 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -13,8 +16,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -112,6 +117,69 @@ class OrganizationServiceTest {
         assertThatThrownBy(() -> organizationService.regenerateInviteCode(ORGANIZATION_ID, ADMIN_ID))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("approved founder");
+    }
+
+    @Test
+    void update_storesTheStartupProfileForTheFounder() {
+        Organization organization = organizationWithFounder("CODE1234");
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(organizationRepository.save(any(Organization.class))).thenAnswer(call -> call.getArgument(0));
+
+        var response = organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
+                FOUNDER_ID, "Döngü", "Gönüllülük platformu", "dongu.co", "Gönüllüler bulunamıyor",
+                "Beceri bazlı eşleştirme", "Elle tutulan listeler", "STK'lar", "SaaS", "MVP geliştiriliyor",
+                "MVP", List.of("Finans", "Pazarlama")));
+
+        assertThat(response.website()).isEqualTo("dongu.co");
+        assertThat(response.sector()).isEqualTo("SaaS");
+        assertThat(response.supportAreas()).containsExactly("Finans", "Pazarlama");
+        assertThat(organization.getProblem()).isEqualTo("Gönüllüler bulunamıyor");
+        assertThat(organization.getTargetUser()).isEqualTo("STK'lar");
+        assertThat(organization.getProgramLevel()).isEqualTo(StartupProgramLevel.MVP);
+    }
+
+    @Test
+    void update_rejectsAnUnknownMaturity() {
+        Organization organization = organizationWithFounder("CODE1234");
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+
+        assertThatThrownBy(() -> organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
+                FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, "Roket aşaması", null, List.of())))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Roket aşaması");
+
+        verify(organizationRepository, never()).save(any(Organization.class));
+    }
+
+    @Test
+    void update_rejectsAnyoneButTheFounder() {
+        Organization organization = organizationWithFounder("CODE1234");
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(OTHER_ID))
+                .thenReturn(user(OTHER_ID, UserRole.MENTEE, UserAccountStatus.APPROVED));
+
+        assertThatThrownBy(() -> organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
+                OTHER_ID, "Döngü", null, null, null, null, null, null, null, null, null, List.of())))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("founder");
+
+        verify(organizationRepository, never()).save(any(Organization.class));
+    }
+
+    @Test
+    void update_dropsBlankAndDuplicateSupportAreas() {
+        Organization organization = organizationWithFounder("CODE1234");
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(organizationRepository.save(any(Organization.class))).thenAnswer(call -> call.getArgument(0));
+
+        var response = organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
+                FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, null, null,
+                java.util.Arrays.asList("Finans", "   ", "Finans", null, "Pazarlama")));
+
+        assertThat(response.supportAreas()).containsExactly("Finans", "Pazarlama");
     }
 
     private static Organization organizationWithFounder(String inviteCode) {

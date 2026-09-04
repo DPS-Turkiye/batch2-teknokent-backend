@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.dto.requests.ActorRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
+import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
 import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
@@ -43,6 +45,11 @@ public class OrganizationController {
 	@GetMapping("/{id}")
 	public OrganizationResponse findById(@PathVariable UUID id) {
 		return organizationService.findById(id);
+	}
+
+	@PutMapping("/{id}")
+	public OrganizationResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateOrganizationRequest request) {
+		return organizationService.update(id, request);
 	}
 
 	@PostMapping

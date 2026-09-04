@@ -8,6 +8,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.StartupMaturity;
+import com.dps.teknokent.domain.StartupProgramLevel;
+import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.RegisterFounderRequest;
@@ -48,6 +51,7 @@ public class RegistrationService {
 		Organization organization = new Organization();
 		organization.setName(TextUtils.trim(request.organizationName()));
 		organization.setDescription(TextUtils.normalizeOptional(request.description()));
+		applyStartupFields(organization, request);
 		organizationRepository.saveAndFlush(organization);
 
 		AppUser founder = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
@@ -64,23 +68,25 @@ public class RegistrationService {
 		return UserResponse.fromEntity(founder);
 	}
 
-	/**
-	 * The bio, LinkedIn and expertise collected on the wizard's first step, which
-	 * the CV parser also fills. Until V33 there was nowhere to put them and they
-	 * were dropped on submit.
-	 *
-	 * <p>Blank entries are discarded rather than stored: a free-form chip list can
-	 * arrive with empties, and an empty expertise row helps nobody.
-	 */
 	private void applyProfileFields(AppUser founder, RegisterFounderRequest request) {
 		founder.setBio(TextUtils.normalizeOptional(request.bio()));
 		founder.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
 		if (request.expertise() != null) {
-			founder.setExpertise(request.expertise().stream()
-					.map(TextUtils::normalizeOptional)
-					.filter(java.util.Objects::nonNull)
-					.distinct()
-					.toList());
+			founder.setExpertise(TextUtils.normalizedList(request.expertise()));
+		}
+	}
+
+	private void applyStartupFields(Organization organization, RegisterFounderRequest request) {
+		organization.setWebsite(TextUtils.normalizeOptional(request.website()));
+		organization.setProblem(TextUtils.normalizeOptional(request.problem()));
+		organization.setSolution(TextUtils.normalizeOptional(request.solution()));
+		organization.setCurrentSolution(TextUtils.normalizeOptional(request.currentSolution()));
+		organization.setTargetUser(TextUtils.normalizeOptional(request.targetUser()));
+		organization.setSector(StartupSector.requireValidOrNull(request.sector()));
+		organization.setMaturity(StartupMaturity.requireValidOrNull(request.maturity()));
+		organization.setProgramLevel(StartupProgramLevel.requireValidOrNull(request.programLevel()));
+		if (request.supportAreas() != null) {
+			organization.setSupportAreas(TextUtils.normalizedList(request.supportAreas()));
 		}
 	}
 

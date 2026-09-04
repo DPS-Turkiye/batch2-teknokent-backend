@@ -18,5 +18,14 @@ public record RegisterFounderRequest(
 		UUID programId,
 		@Size(max = 5000) String bio,
 		@Size(max = 255) String linkedinUrl,
-		List<@Size(max = 255) String> expertise) {
+		List<@Size(max = 255) String> expertise,
+		@Size(max = 255) String website,
+		@Size(max = 5000) String problem,
+		@Size(max = 5000) String solution,
+		@Size(max = 5000) String currentSolution,
+		@Size(max = 5000) String targetUser,
+		@Size(max = 255) String sector,
+		@Size(max = 255) String maturity,
+		@Size(max = 255) String programLevel,
+		List<@Size(max = 255) String> supportAreas) {
 }
