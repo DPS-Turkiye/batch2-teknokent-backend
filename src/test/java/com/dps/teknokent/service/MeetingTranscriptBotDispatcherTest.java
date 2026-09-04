@@ -71,6 +71,31 @@ class MeetingTranscriptBotDispatcherTest {
 	}
 
 	@Test
+	void stillSendsTheBotWhenTheMeetingAlreadyStarted() {
+		Instant now = Instant.parse("2026-09-02T12:20:00Z");
+		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
+		meeting.setScheduledAt(Instant.parse("2026-09-02T12:00:00Z"));
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of(meeting));
+		when(assistantService.addBot(any())).thenReturn(
+				new AddBotResponse("bot-1", "google_meet", "aaa-bbbb-ccc", "joining", "Mentor Bot"));
+
+		assertThat(dispatcher.dispatchDueMeetings(now)).isEqualTo(1);
+		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
+	}
+
+	@Test
+	void skipsMeetingsThatHaveAlreadyEnded() {
+		Instant now = Instant.parse("2026-09-02T13:05:00Z");
+		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of(meeting));
+
+		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
+		verify(assistantService, never()).addBot(any());
+	}
+
+	@Test
 	void skipsMeetingsWithoutAMeetLink() {
 		Instant now = Instant.parse("2026-09-02T12:00:00Z");
 		Meeting meeting = meeting(null);
@@ -88,6 +113,7 @@ class MeetingTranscriptBotDispatcherTest {
 		meeting.setTranscribeRequested(true);
 		meeting.setStatus(MeetingStatus.SCHEDULED);
 		meeting.setScheduledAt(Instant.parse("2026-09-02T12:00:00Z"));
+		meeting.setDurationMinutes(60);
 		return meeting;
 	}
 }

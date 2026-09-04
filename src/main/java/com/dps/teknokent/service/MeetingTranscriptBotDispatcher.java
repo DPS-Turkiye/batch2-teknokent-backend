@@ -27,7 +27,9 @@ public class MeetingTranscriptBotDispatcher {
 
 	@Transactional
 	public int dispatchDueMeetings(Instant now) {
-		Instant from = now.minus(5, ChronoUnit.MINUTES);
+		// Look back far enough that a meeting created for the current hour
+		// (already started) still gets a bot; skip rows that have already ended.
+		Instant from = now.minus(2, ChronoUnit.HOURS);
 		Instant until = now.plus(2, ChronoUnit.MINUTES);
 		List<Meeting> due = meetingRepository
 				.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
@@ -37,6 +39,9 @@ public class MeetingTranscriptBotDispatcher {
 		for (Meeting meeting : due) {
 			String link = meeting.getMeetLink();
 			if (link == null || link.isBlank()) continue;
+			int duration = meeting.getDurationMinutes() == null ? 60 : meeting.getDurationMinutes();
+			Instant endsAt = meeting.getScheduledAt().plus(duration, ChronoUnit.MINUTES);
+			if (now.isAfter(endsAt)) continue;
 			byLink.computeIfAbsent(link.trim(), ignored -> new java.util.ArrayList<>()).add(meeting);
 		}
 

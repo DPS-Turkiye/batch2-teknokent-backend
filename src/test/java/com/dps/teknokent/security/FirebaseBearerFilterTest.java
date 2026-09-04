@@ -166,6 +166,22 @@ class FirebaseBearerFilterTest {
     }
 
     @Test
+    void allowsOnboardingDraftWithoutExistingAccount() throws Exception {
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com")));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("/api/onboarding/draft", "Bearer good"), response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        assertThat(principal).isEqualTo(new FirebaseIdentity("uid-1", "yeni@startup.com"));
+        verify(appUserRepository, never()).findByFirebaseUid(any());
+    }
+
+    @Test
     void allowsRegistrationWithoutExistingAccount() throws Exception {
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
         when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com")));

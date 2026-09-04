@@ -24,6 +24,7 @@ import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
+import com.dps.teknokent.repository.OnboardingDraftRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
@@ -41,6 +42,7 @@ public class RegistrationService {
 	private final MentorProfileRepository mentorProfileRepository;
 	private final ProgramRepository programRepository;
 	private final ProgramStartupRepository programStartupRepository;
+	private final OnboardingDraftRepository onboardingDraftRepository;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
@@ -61,6 +63,7 @@ public class RegistrationService {
 		organization.setFounder(founder);
 		attachDeclaredProgram(organization, request.programId());
 		organizationRepository.saveAndFlush(organization);
+		discardOnboardingDraft();
 
 		return UserResponse.fromEntity(founder);
 	}
@@ -172,6 +175,14 @@ public class RegistrationService {
 			throw new InvalidRequestException("This account is already registered.");
 		}
 		user.setFirebaseUid(identity.uid());
+	}
+
+	private void discardOnboardingDraft() {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication == null || !(authentication.getPrincipal() instanceof FirebaseIdentity identity)) {
+			return;
+		}
+		onboardingDraftRepository.deleteById(identity.uid());
 	}
 
 	private String requireUniqueEmail(String rawEmail) {

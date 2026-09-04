@@ -70,6 +70,25 @@ class MeetingAssistantShareServiceTest {
 	}
 
 	@Test
+	void returnsShareWhenViewerIsTheMeetingMentor() {
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+
+		var response = service().find(meetingId, null, mentorId);
+
+		assertThat(response.meetingId()).isEqualTo(meetingId);
+		assertThat(response.transcript()).isNull();
+	}
+
+	@Test
+	void hidesSharesFromAnUnrelatedViewer() {
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+
+		assertThatThrownBy(() -> service().find(meetingId, null, UUID.randomUUID()))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
 	void publishesTranscriptForTheMeetingsMentor() {
 		Meeting meeting = meeting();
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
