@@ -28,6 +28,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 
 	private static final String BEARER_PREFIX = "Bearer ";
 	private static final String REGISTER_PATH_PREFIX = "/api/auth/register";
+	private static final String ONBOARDING_PATH_PREFIX = "/api/onboarding/";
 	private static final String STATUS_PATH = "/api/auth/me";
 	private static final String MENTOR_PROFILE_PATH_PREFIX = "/api/mentors/";
 
@@ -57,7 +58,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 			return;
 		}
 
-		if (request.getRequestURI().startsWith(REGISTER_PATH_PREFIX)) {
+		if (isPreAccountPath(request.getRequestURI())) {
 			authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
 			filterChain.doFilter(request, response);
 			return;
@@ -99,6 +100,15 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		return "PUT".equalsIgnoreCase(request.getMethod())
 				&& user.getRole() == UserRole.MENTOR
 				&& (MENTOR_PROFILE_PATH_PREFIX + user.getId()).equals(request.getRequestURI());
+	}
+
+	/**
+	 * Founder onboarding runs after Firebase signup and before {@code app_user}
+	 * exists, so these paths authenticate the token alone — same carve-out as
+	 * {@code /api/auth/register}.
+	 */
+	private static boolean isPreAccountPath(String uri) {
+		return uri.startsWith(REGISTER_PATH_PREFIX) || uri.startsWith(ONBOARDING_PATH_PREFIX);
 	}
 
 	private static boolean isDocumentUpload(HttpServletRequest request) {

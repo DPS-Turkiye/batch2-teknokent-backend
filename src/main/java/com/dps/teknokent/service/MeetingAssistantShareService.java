@@ -31,7 +31,12 @@ public class MeetingAssistantShareService {
 
 	@Transactional(readOnly = true)
 	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId) {
-		Meeting meeting = requireMeetingInOrganization(meetingId, organizationId);
+		return find(meetingId, organizationId, null);
+	}
+
+	@Transactional(readOnly = true)
+	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId, UUID viewerId) {
+		Meeting meeting = requireVisibleMeeting(meetingId, organizationId, viewerId);
 		return shareRepository.findByMeetingId(meeting.getId())
 				.map(this::toResponse)
 				.orElseGet(() -> MeetingAssistantShareResponse.empty(meeting.getId()));
@@ -103,9 +108,14 @@ public class MeetingAssistantShareService {
 		return actor;
 	}
 
-	private Meeting requireMeetingInOrganization(UUID meetingId, UUID organizationId) {
+	private Meeting requireVisibleMeeting(UUID meetingId, UUID organizationId, UUID viewerId) {
 		Meeting meeting = domainLookupService.requireMeeting(meetingId);
-		if (!meeting.getOrganization().getId().equals(organizationId)) {
+		boolean inOrganization = organizationId != null
+				&& meeting.getOrganization().getId().equals(organizationId);
+		boolean meetingMentor = viewerId != null
+				&& meeting.getMentor() != null
+				&& meeting.getMentor().getId().equals(viewerId);
+		if (!inOrganization && !meetingMentor) {
 			throw new ResourceNotFoundException("Meeting not found: " + meetingId);
 		}
 		return meeting;

@@ -34,6 +34,7 @@ import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
+import com.dps.teknokent.repository.OnboardingDraftRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
@@ -60,6 +61,9 @@ class RegistrationServiceTest {
 
     @Mock
     private ProgramStartupRepository programStartupRepository;
+
+    @Mock
+    private OnboardingDraftRepository onboardingDraftRepository;
 
     @InjectMocks
     private RegistrationService registrationService;
@@ -102,6 +106,37 @@ class RegistrationServiceTest {
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.organizationName()).isEqualTo("GreenLoop");
         assertThat(result.jobTitle()).isEqualTo("Kurucu");
+        verifyNoInteractions(onboardingDraftRepository);
+    }
+
+    @Test
+    void registerFounder_discardsTheOnboardingDraftForTheSignedInFirebaseUser() {
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com"));
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir",
+                "ayse@startup.com",
+                "GreenLoop",
+                "Climate tech",
+                "Kurucu",
+                "+905551112233",
+                null, null, null, null));
+
+        verify(onboardingDraftRepository).deleteById("uid-1");
     }
 
     @Test

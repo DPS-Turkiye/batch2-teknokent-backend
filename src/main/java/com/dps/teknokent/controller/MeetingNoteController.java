@@ -94,8 +94,9 @@ public class MeetingNoteController {
 	@GetMapping("/assistant-share")
 	public MeetingAssistantShareResponse findShare(
 			@PathVariable UUID meetingId,
-			@RequestParam UUID organizationId) {
-		return meetingAssistantShareService.find(meetingId, organizationId);
+			@RequestParam(required = false) UUID organizationId,
+			@RequestParam(required = false) UUID viewerId) {
+		return meetingAssistantShareService.find(meetingId, organizationId, viewerId);
 	}
 
 	@PostMapping("/assistant-share")
