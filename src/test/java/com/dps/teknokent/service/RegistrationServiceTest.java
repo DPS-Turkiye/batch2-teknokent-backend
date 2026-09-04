@@ -186,7 +186,7 @@ class RegistrationServiceTest {
             return user;
         });
 
-        registrationService.registerFounder(new RegisterFounderRequest(
+        registrationService.registerFounder(founderRequest(
                 "Ayşe Demir",
                 "ayse@startup.com",
                 "GreenLoop",
