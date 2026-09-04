@@ -1,8 +1,10 @@
 package com.dps.teknokent.config;
 
+import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -37,6 +39,15 @@ public class SecurityConfig {
 			"/api/v3/api-docs/**"
 	};
 
+	/**
+	 * The Amplify-hosted frontend's own edge blocks any request body over ~8KB
+	 * on its proxy routes, so document uploads go straight from the browser to
+	 * this backend instead. Reuses the realtime origin list by default since
+	 * it is already the set of trusted frontend origins.
+	 */
+	@Value("${app.documents.allowed-origins}")
+	private String[] documentsAllowedOrigins;
+
 	@Bean
 	CorsConfigurationSource corsConfigurationSource(Environment environment) {
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -50,13 +61,19 @@ public class SecurityConfig {
 			source.registerCorsConfiguration("/**", configuration);
 		}
 
+		CorsConfiguration documentsConfig = new CorsConfiguration();
+		documentsConfig.setAllowedOrigins(Arrays.asList(documentsAllowedOrigins));
+		documentsConfig.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+		documentsConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+		documentsConfig.setAllowCredentials(false);
+		source.registerCorsConfiguration("/api/documents", documentsConfig);
+
 		return source;
 	}
 
 	@Bean
 	SecurityFilterChain securityFilterChain(
 			HttpSecurity http,
-			Environment environment,
 			ObjectProvider<FirebaseBearerFilter> firebaseBearerFilter) throws Exception {
 		http
 				.csrf(csrf -> csrf.disable())
@@ -64,15 +81,12 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(PUBLIC_PATHS).permitAll()
 						.anyRequest().authenticated())
-				.httpBasic(Customizer.withDefaults());
+				.httpBasic(Customizer.withDefaults())
+				.cors(Customizer.withDefaults());
 
 		FirebaseBearerFilter bearerFilter = firebaseBearerFilter.getIfAvailable();
 		if (bearerFilter != null) {
 			http.addFilterBefore(bearerFilter, BasicAuthenticationFilter.class);
-		}
-
-		if (environment.matchesProfiles("dev | local")) {
-			http.cors(Customizer.withDefaults());
 		}
 
 		return http.build();

@@ -97,6 +97,9 @@ app:
     allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://main.dxcmjf7esever.amplifyapp.com}
     document-ttl-hours: ${REALTIME_DOCUMENT_TTL_HOURS:12}
     seed-lock-seconds: ${REALTIME_SEED_LOCK_SECONDS:30}
+  documents:
+    # Same trusted frontend origins as app.realtime.allowed-origins by default.
+    allowed-origins: ${DOCUMENTS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://main.dxcmjf7esever.amplifyapp.com}
 
 profile-parsing:
   ocr:
