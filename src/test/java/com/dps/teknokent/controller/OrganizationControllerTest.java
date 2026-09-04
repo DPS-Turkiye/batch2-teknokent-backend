@@ -36,6 +36,12 @@ import com.dps.teknokent.service.OrganizationService;
 @Import(SecurityConfig.class)
 class OrganizationControllerTest {
 
+    private static OrganizationResponse organizationResponse(UUID id, String name, String description,
+            Instant createdAt, Instant updatedAt) {
+        return new OrganizationResponse(id, name, description, null, null, null, null, null, null, null, null,
+                List.of(), createdAt, updatedAt);
+    }
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -55,7 +61,7 @@ class OrganizationControllerTest {
     void returnsOrganizations() throws Exception {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000111");
 
-        when(organizationService.findAll()).thenReturn(List.of(new OrganizationResponse(
+        when(organizationService.findAll()).thenReturn(List.of(organizationResponse(
                 organizationId,
                 "Teknokent",
                 "Teknoloji girişimciliği için destek merkezi",
@@ -74,7 +80,7 @@ class OrganizationControllerTest {
     void returnsOrganizationById() throws Exception {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000222");
 
-        when(organizationService.findById(organizationId)).thenReturn(new OrganizationResponse(
+        when(organizationService.findById(organizationId)).thenReturn(organizationResponse(
                 organizationId,
                 "İnovasyon A.Ş.",
                 "Yazılım ve teknoloji girişimlerine destek veren kuruluş",
@@ -93,7 +99,7 @@ class OrganizationControllerTest {
     void createsOrganization() throws Exception {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000333");
 
-        when(organizationService.create(any(CreateOrganizationRequest.class))).thenReturn(new OrganizationResponse(
+        when(organizationService.create(any(CreateOrganizationRequest.class))).thenReturn(organizationResponse(
                 organizationId,
                 "Girişim Merkezi",
                 "İş fikirlerini hayata geçiren startup topluluğu",

@@ -1,10 +1,25 @@
 package com.dps.teknokent.util;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 public final class TextUtils {
 
 	private TextUtils() {
+	}
+
+	// Mutable on purpose: assigned to @ElementCollection fields, and Hibernate's
+	// clear() on merge throws on an immutable list.
+	public static List<String> normalizedList(List<String> values) {
+		return values == null ? new ArrayList<>()
+				: values.stream()
+						.map(TextUtils::normalizeOptional)
+						.filter(Objects::nonNull)
+						.distinct()
+						.collect(Collectors.toCollection(ArrayList::new));
 	}
 
 	public static String trim(String value) {

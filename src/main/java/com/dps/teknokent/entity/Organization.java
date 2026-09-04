@@ -1,15 +1,27 @@
 package com.dps.teknokent.entity;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.dps.teknokent.domain.StartupMaturity;
+import com.dps.teknokent.domain.StartupMaturityConverter;
+import com.dps.teknokent.domain.StartupProgramLevel;
+import com.dps.teknokent.domain.StartupProgramLevelConverter;
+import com.dps.teknokent.domain.StartupSector;
+import com.dps.teknokent.domain.StartupSectorConverter;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.util.TextUtils;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -17,6 +29,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -45,6 +58,40 @@ public class Organization {
 
 	@Column(columnDefinition = "TEXT")
 	private String description;
+
+	@Column
+	private String website;
+
+	@Column(columnDefinition = "TEXT")
+	private String problem;
+
+	@Column(columnDefinition = "TEXT")
+	private String solution;
+
+	@Column(name = "current_solution", columnDefinition = "TEXT")
+	private String currentSolution;
+
+	@Column(name = "target_user", columnDefinition = "TEXT")
+	private String targetUser;
+
+	@Convert(converter = StartupSectorConverter.class)
+	@Column
+	private StartupSector sector;
+
+	@Convert(converter = StartupMaturityConverter.class)
+	@Column
+	private StartupMaturity maturity;
+
+	@Convert(converter = StartupProgramLevelConverter.class)
+	@Column(name = "program_level")
+	private StartupProgramLevel programLevel;
+
+	@ElementCollection
+	@CollectionTable(name = "organization_support_area", joinColumns = @JoinColumn(name = "organization_id"))
+	@OrderColumn(name = "display_order")
+	@Column(name = "support_area", nullable = false)
+	@BatchSize(size = 50)
+	private List<String> supportAreas = new ArrayList<>();
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "founder_id")
