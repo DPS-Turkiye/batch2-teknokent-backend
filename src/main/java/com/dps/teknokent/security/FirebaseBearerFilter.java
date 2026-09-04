@@ -74,7 +74,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		AppUser user = account.get();
 		if (user.getStatus() != UserAccountStatus.APPROVED
 				&& !STATUS_PATH.equals(request.getRequestURI())
-				&& !isDocumentUpload(request)
+				&& !isDocumentAccess(request)
 				&& !isOwnMentorProfileUpdate(request, user)) {
 			write(response, HttpServletResponse.SC_FORBIDDEN, "This account is awaiting approval");
 			return;
@@ -111,8 +111,13 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		return uri.startsWith(REGISTER_PATH_PREFIX) || uri.startsWith(ONBOARDING_PATH_PREFIX);
 	}
 
-	private static boolean isDocumentUpload(HttpServletRequest request) {
-		return "POST".equalsIgnoreCase(request.getMethod())
+	/**
+	 * A founder is PENDING for the whole of signup, so both uploading a document
+	 * and listing what is already stored (to survive a resumed session) must work
+	 * before approval.
+	 */
+	private static boolean isDocumentAccess(HttpServletRequest request) {
+		return ("POST".equalsIgnoreCase(request.getMethod()) || "GET".equalsIgnoreCase(request.getMethod()))
 				&& "/api/documents".equals(request.getRequestURI());
 	}
 

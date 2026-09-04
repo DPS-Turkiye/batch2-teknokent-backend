@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -51,6 +52,15 @@ public class DocumentService {
 		} catch (IOException error) {
 			throw new InvalidRequestException("The uploaded file could not be read.");
 		}
+	}
+
+	public List<StoredDocumentResponse> listForUser(UUID userId) {
+		if (userId == null) {
+			throw new InvalidRequestException("A signed-in user is required.");
+		}
+		return storedDocumentRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+				.map(StoredDocumentResponse::fromEntity)
+				.toList();
 	}
 
 	public StoredDocumentResponse store(

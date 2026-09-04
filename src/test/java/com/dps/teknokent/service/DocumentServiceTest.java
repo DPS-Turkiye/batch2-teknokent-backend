@@ -67,6 +67,33 @@ class DocumentServiceTest {
 	}
 
 	@Test
+	void listsDocumentsForTheUserNewestFirst() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument cv = new StoredDocument();
+		cv.setId(UUID.randomUUID());
+		cv.setUserId(userId);
+		cv.setKind("cv");
+		cv.setOriginalFilename("cv.pdf");
+		cv.setContentType("application/pdf");
+		cv.setSizeBytes(10);
+		cv.setCreatedAt(java.time.Instant.parse("2026-08-28T12:00:00Z"));
+		when(storedDocumentRepository.findByUserIdOrderByCreatedAtDesc(userId))
+				.thenReturn(java.util.List.of(cv));
+
+		var documents = documentService.listForUser(userId);
+
+		assertThat(documents).hasSize(1);
+		assertThat(documents.get(0).kind()).isEqualTo("cv");
+		assertThat(documents.get(0).originalFilename()).isEqualTo("cv.pdf");
+	}
+
+	@Test
+	void rejectsListingWithoutAUser() {
+		assertThatThrownBy(() -> documentService.listForUser(null))
+				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	@Test
 	void rejectsUnknownKinds() {
 		assertThatThrownBy(() -> documentService.store(
 				UUID.randomUUID(), null, "photo", "cv.pdf", "application/pdf", "x".getBytes()))

@@ -216,6 +216,24 @@ class FirebaseBearerFilterTest {
     }
 
     @Test
+    void letsPendingAccountListItsOwnDocuments() throws Exception {
+        AppUser user = user(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("GET", "/api/documents", "Bearer good"), response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        assertThat(principal).isInstanceOf(AppUserPrincipal.class);
+    }
+
+    @Test
     void letsPendingMentorUpdateItsOwnProfile() throws Exception {
         AppUser mentor = mentor(UserAccountStatus.PENDING);
 
