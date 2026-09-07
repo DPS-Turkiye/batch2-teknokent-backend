@@ -1,5 +1,8 @@
 {
-  "recommendations": [
-    "redhat.java"
+  "recommendations": ["redhat.java"],
+  "unwantedRecommendations": [
+    "vmware.vscode-spring-boot",
+    "vmware.vscode-boot-dev-pack",
+    "vscjava.vscode-spring-boot-dashboard"
   ]
 }
