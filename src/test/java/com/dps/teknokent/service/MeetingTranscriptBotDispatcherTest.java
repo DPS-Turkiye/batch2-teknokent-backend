@@ -59,7 +59,23 @@ class MeetingTranscriptBotDispatcherTest {
 	}
 
 	@Test
-	void leavesMeetingsUndispatchedWhenTheProviderFails() {
+	void onlyLooksBackOneHourSoAStaleSlotStopsRetrying() {
+		Instant now = Instant.parse("2026-09-02T12:00:00Z");
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of());
+
+		dispatcher.dispatchDueMeetings(now);
+
+		ArgumentCaptor<Instant> from = ArgumentCaptor.forClass(Instant.class);
+		ArgumentCaptor<Instant> until = ArgumentCaptor.forClass(Instant.class);
+		verify(meetingRepository).findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), from.capture(), until.capture());
+		assertThat(from.getValue()).isEqualTo(Instant.parse("2026-09-02T11:00:00Z"));
+		assertThat(until.getValue()).isEqualTo(Instant.parse("2026-09-02T12:02:00Z"));
+	}
+
+	@Test
+	void leavesMeetingsUndispatchedWhenTheProviderFailsTemporarily() {
 		Instant now = Instant.parse("2026-09-02T12:00:00Z");
 		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
 		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
@@ -68,6 +84,19 @@ class MeetingTranscriptBotDispatcherTest {
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
 		assertThat(meeting.getBotDispatchedAt()).isNull();
+	}
+
+	@Test
+	void stopsRetryingWhenTheMeetingHasAlreadyEndedAtTheProvider() {
+		Instant now = Instant.parse("2026-09-02T12:00:00Z");
+		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of(meeting));
+		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("The meeting has ended"));
+
+		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
+		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
+		assertThat(meeting.getStatus()).isEqualTo(MeetingStatus.COMPLETED);
 	}
 
 	@Test

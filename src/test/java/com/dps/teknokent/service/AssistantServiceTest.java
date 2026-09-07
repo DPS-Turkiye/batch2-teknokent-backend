@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +17,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
+import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
+import com.dps.teknokent.dto.provider.ProviderRunningBot;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.requests.AddBotRequest;
@@ -49,6 +52,23 @@ class AssistantServiceTest {
     assertThat(response.status()).isEqualTo("joining");
     assertThat(response.title()).isEqualTo("Mentor Bot");
     verify(providerClient).sendBot("google_meet", "abc-defg-hij", url);
+  }
+
+  @Test
+  void runningBotKeysListsTheBotsStillInAMeeting() {
+    when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(List.of(
+        new ProviderRunningBot("google_meet", "abc-defg-hij", "running"),
+        new ProviderRunningBot("google_meet", null, "starting")
+    )));
+
+    assertThat(assistantService.runningBotKeys()).contains(Set.of("google_meet:abc-defg-hij"));
+  }
+
+  @Test
+  void runningBotKeysStaysUnknownWhenTheProviderAnswerHasNoBotList() {
+    when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(null));
+
+    assertThat(assistantService.runningBotKeys()).isEmpty();
   }
 
   @Test

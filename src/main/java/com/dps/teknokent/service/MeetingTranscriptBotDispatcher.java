@@ -27,9 +27,7 @@ public class MeetingTranscriptBotDispatcher {
 
 	@Transactional
 	public int dispatchDueMeetings(Instant now) {
-		// Look back far enough that a meeting created for the current hour
-		// (already started) still gets a bot; skip rows that have already ended.
-		Instant from = now.minus(2, ChronoUnit.HOURS);
+		Instant from = now.minus(1, ChronoUnit.HOURS);
 		Instant until = now.plus(2, ChronoUnit.MINUTES);
 		List<Meeting> due = meetingRepository
 				.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
@@ -56,8 +54,25 @@ public class MeetingTranscriptBotDispatcher {
 				sent++;
 			} catch (RuntimeException error) {
 				log.warn("Transcript bot could not join {}: {}", entry.getKey(), error.getMessage());
+				if (isUnrecoverableJoinFailure(error)) {
+					for (Meeting meeting : entry.getValue()) {
+						meeting.setBotDispatchedAt(dispatchedAt);
+						meeting.setStatus(MeetingStatus.COMPLETED);
+					}
+				}
 			}
 		}
 		return sent;
+	}
+
+	static boolean isUnrecoverableJoinFailure(Throwable error) {
+		String message = error.getMessage() == null ? "" : error.getMessage().toLowerCase();
+		return message.contains("ended")
+				|| message.contains("finished")
+				|| message.contains("not found")
+				|| message.contains("no longer")
+				|| message.contains("destroyed")
+				|| message.contains("does not exist")
+				|| message.contains("404");
 	}
 }

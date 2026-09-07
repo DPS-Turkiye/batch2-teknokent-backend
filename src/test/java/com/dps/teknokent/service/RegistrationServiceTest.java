@@ -186,14 +186,15 @@ class RegistrationServiceTest {
             return user;
         });
 
-        registrationService.registerFounder(founderRequest(
+        registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir",
                 "ayse@startup.com",
                 "GreenLoop",
                 "Climate tech",
                 "Kurucu",
                 "+905551112233",
-                null, null, null, null));
+                null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
 
         verify(onboardingDraftRepository).deleteById("uid-1");
     }

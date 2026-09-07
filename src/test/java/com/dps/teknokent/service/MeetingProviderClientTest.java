@@ -39,7 +39,12 @@ class MeetingProviderClientTest {
               "platform": "google_meet",
               "native_meeting_id": "abc-defg-hij",
               "meeting_url": "https://meet.google.com/abc-defg-hij",
-              "bot_name": "Mentor Bot"
+              "bot_name": "Mentor Bot",
+              "automatic_leave": {
+                "waiting_room_timeout": 300,
+                "noone_joined_timeout": 300,
+                "everyone_left_timeout": 90
+              }
             }
             """))
         .andRespond(withSuccess(

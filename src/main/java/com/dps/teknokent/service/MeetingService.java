@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -8,6 +9,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
@@ -38,6 +40,10 @@ public class MeetingService {
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final DomainLookupService domainLookupService;
 	private final MeetingFeedbackRepository meetingFeedbackRepository;
+
+	private static final int BOT_JOIN_LEAD_MINUTES = 5;
+	private static final int DISPATCH_GRACE_MINUTES = 60;
+	private static final int DEFAULT_DURATION_MINUTES = 60;
 
 	@Transactional(readOnly = true)
 	public List<MeetingResponse> findAll(UUID organizationId, UUID mentorId) {
@@ -150,10 +156,69 @@ public class MeetingService {
 		if (request.status() != null) {
 			meeting.setStatus(request.status());
 		}
-		if (Boolean.TRUE.equals(request.transcriptBotDispatched()) && meeting.getBotDispatchedAt() == null) {
-			meeting.setBotDispatchedAt(Instant.now());
+		if (Boolean.TRUE.equals(request.transcriptBotDispatched())
+				|| request.status() == MeetingStatus.COMPLETED) {
+			Instant dispatched = meeting.getBotDispatchedAt() == null
+					? Instant.now()
+					: meeting.getBotDispatchedAt();
+			List<Meeting> room = roommates(meeting);
+			for (Meeting mate : room) {
+				if (mate.getBotDispatchedAt() == null) {
+					mate.setBotDispatchedAt(dispatched);
+				}
+				if (request.status() != null) {
+					mate.setStatus(request.status());
+				}
+			}
+			meetingRepository.saveAll(room);
 		}
 		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
+	}
+
+	@Transactional
+	public List<UUID> markBotStopped(String nativeMeetingId) {
+		if (nativeMeetingId == null || nativeMeetingId.isBlank()) {
+			return List.of();
+		}
+		String id = nativeMeetingId.trim();
+		Instant now = Instant.now();
+		List<Meeting> stopped = meetingRepository
+				.findByStatusAndMeetLinkContainingIgnoreCase(MeetingStatus.SCHEDULED, id)
+				.stream()
+				.filter(meeting -> id.equalsIgnoreCase(nativeMeetingIdOf(meeting)))
+				.filter(meeting -> isRunningSlot(meeting, now))
+				.toList();
+		for (Meeting meeting : stopped) {
+			meeting.setStatus(MeetingStatus.COMPLETED);
+			if (meeting.getBotDispatchedAt() == null) {
+				meeting.setBotDispatchedAt(now);
+			}
+		}
+		meetingRepository.saveAll(stopped);
+		return stopped.stream().map(Meeting::getId).toList();
+	}
+
+	private static String nativeMeetingIdOf(Meeting meeting) {
+		String meetLink = meeting.getMeetLink();
+		if (meetLink == null || meetLink.isBlank()) {
+			return null;
+		}
+		try {
+			return MeetingUrlParser.parse(meetLink).nativeMeetingId();
+		} catch (RuntimeException unsupportedLink) {
+			return null;
+		}
+	}
+
+	private static boolean isRunningSlot(Meeting meeting, Instant now) {
+		Instant start = meeting.getScheduledAt();
+		if (start == null || start.isAfter(now.plus(BOT_JOIN_LEAD_MINUTES, ChronoUnit.MINUTES))) {
+			return false;
+		}
+		int duration = meeting.getDurationMinutes() == null
+				? DEFAULT_DURATION_MINUTES
+				: meeting.getDurationMinutes();
+		return !now.isAfter(start.plus(duration + DISPATCH_GRACE_MINUTES, ChronoUnit.MINUTES));
 	}
 
 	/**

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateMeetingTodoRequest;
+import com.dps.teknokent.dto.requests.CreateTranscriptUploadRequest;
 import com.dps.teknokent.dto.requests.PublishMeetingAssistantShareRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingTodoRequest;
@@ -22,6 +23,7 @@ import com.dps.teknokent.dto.responses.MeetingAssistantShareResponse;
 import com.dps.teknokent.dto.responses.MeetingNoteDocumentResponse;
 import com.dps.teknokent.dto.responses.MeetingNoteResponse;
 import com.dps.teknokent.dto.responses.MeetingTodoResponse;
+import com.dps.teknokent.dto.responses.TranscriptUploadUrlResponse;
 import com.dps.teknokent.service.MeetingAssistantShareService;
 import com.dps.teknokent.service.MeetingNoteDocumentService;
 import com.dps.teknokent.service.MeetingNoteService;
@@ -104,5 +106,19 @@ public class MeetingNoteController {
 			@PathVariable UUID meetingId,
 			@Valid @RequestBody PublishMeetingAssistantShareRequest request) {
 		return meetingAssistantShareService.publish(meetingId, request);
+	}
+
+	@PostMapping("/assistant-share/transcript-upload")
+	public TranscriptUploadUrlResponse createTranscriptUpload(
+			@PathVariable UUID meetingId,
+			@Valid @RequestBody CreateTranscriptUploadRequest request) {
+		return meetingAssistantShareService.createTranscriptUpload(meetingId, request.actorId());
+	}
+
+	@PostMapping("/assistant-share/report-upload")
+	public TranscriptUploadUrlResponse createReportUpload(
+			@PathVariable UUID meetingId,
+			@Valid @RequestBody CreateTranscriptUploadRequest request) {
+		return meetingAssistantShareService.createReportUpload(meetingId, request.actorId());
 	}
 }

@@ -30,9 +30,13 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
 	Optional<Meeting> findFirstByMeetLinkAndBotDispatchedAtIsNotNull(String meetLink);
 
+	List<Meeting> findByStatusAndMeetLinkContainingIgnoreCase(MeetingStatus status, String meetLinkFragment);
+
 	Optional<Meeting> findByMentorIdAndOrganizationIdAndScheduledAt(
 			UUID mentorId, UUID organizationId, Instant scheduledAt);
 
 	List<Meeting> findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
 			MeetingStatus status, Instant from, Instant until);
+
+	List<Meeting> findByTranscribeRequestedTrueAndBotDispatchedAtIsNotNullAndStatus(MeetingStatus status);
 }

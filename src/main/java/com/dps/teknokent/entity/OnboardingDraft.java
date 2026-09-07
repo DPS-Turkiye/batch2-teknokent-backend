@@ -39,7 +39,7 @@ public class OnboardingDraft {
 	private String step;
 
 	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(columnDefinition = "jsonb", nullable = false)
+	@Column(nullable = false)
 	private String payload;
 
 	@CreationTimestamp

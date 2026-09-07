@@ -8,6 +8,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration
 public class S3Config {
@@ -18,6 +19,19 @@ public class S3Config {
 			@Value("${app.s3.access-key-id:}") String accessKeyId,
 			@Value("${app.s3.secret-access-key:}") String secretAccessKey) {
 		var builder = S3Client.builder().region(Region.of(region));
+		if (!accessKeyId.isBlank() && !secretAccessKey.isBlank()) {
+			builder.credentialsProvider(StaticCredentialsProvider.create(
+					AwsBasicCredentials.create(accessKeyId, secretAccessKey)));
+		}
+		return builder.build();
+	}
+
+	@Bean
+	S3Presigner s3Presigner(
+			@Value("${app.s3.region:eu-central-1}") String region,
+			@Value("${app.s3.access-key-id:}") String accessKeyId,
+			@Value("${app.s3.secret-access-key:}") String secretAccessKey) {
+		var builder = S3Presigner.builder().region(Region.of(region));
 		if (!accessKeyId.isBlank() && !secretAccessKey.isBlank()) {
 			builder.credentialsProvider(StaticCredentialsProvider.create(
 					AwsBasicCredentials.create(accessKeyId, secretAccessKey)));
