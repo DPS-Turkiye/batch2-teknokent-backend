@@ -175,24 +175,31 @@ public class MeetingTranscriptBotWatchdog {
 	}
 
 	private void storeTranscriptAndReport(List<UUID> meetingIds, String platform, String nativeMeetingId) {
+		List<TranscriptSegmentResponse> segments = List.of();
 		try {
 			TranscriptResponse transcript = assistantService.getTranscript(platform, nativeMeetingId);
-			List<TranscriptSegmentResponse> segments = transcript == null || transcript.segments() == null
+			segments = transcript == null || transcript.segments() == null
 					? List.of()
 					: transcript.segments();
 			for (UUID meetingId : meetingIds) {
 				shareService.storeGeneratedTranscript(meetingId, segments);
 			}
-			GenerateMeetingReportRequest request = segments.isEmpty()
-					? null
-					: new GenerateMeetingReportRequest(null, segments);
-			MeetingReportResponse report =
-					assistantService.generateMeetingReport(platform, nativeMeetingId, request);
+		} catch (RuntimeException error) {
+			log.warn("Could not store the transcript for {}: {}", nativeMeetingId, error.getMessage());
+		}
+		if (segments.isEmpty()) {
+			return;
+		}
+		try {
+			MeetingReportResponse report = assistantService.generateMeetingReport(
+					platform,
+					nativeMeetingId,
+					new GenerateMeetingReportRequest(null, segments));
 			for (UUID meetingId : meetingIds) {
 				shareService.storeGeneratedReport(meetingId, report);
 			}
 		} catch (RuntimeException error) {
-			log.warn("Could not store the transcript or report for {}: {}", nativeMeetingId, error.getMessage());
+			log.warn("Could not store the report for {}: {}", nativeMeetingId, error.getMessage());
 		}
 	}
 }
