@@ -42,8 +42,9 @@ public class MeetingAssistantShareService {
 	@Transactional(readOnly = true)
 	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId, UUID viewerId) {
 		Meeting meeting = requireVisibleMeeting(meetingId, organizationId, viewerId);
+		boolean mentorViewer = isMeetingMentor(meeting, viewerId);
 		return shareRepository.findByMeetingId(meeting.getId())
-				.map(this::toResponse)
+				.map(share -> toResponse(share, mentorViewer))
 				.orElseGet(() -> MeetingAssistantShareResponse.empty(meeting.getId()));
 	}
 
@@ -86,7 +87,7 @@ public class MeetingAssistantShareService {
 			throw new InvalidRequestException("kind must be TRANSCRIPT, TRANSCRIPT_S3, REPORT or REPORT_S3.");
 		}
 
-		return toResponse(shareRepository.saveAndFlush(share));
+		return toResponse(shareRepository.saveAndFlush(share), true);
 	}
 
 	@Transactional(readOnly = true)
@@ -209,11 +210,13 @@ public class MeetingAssistantShareService {
 		return "meetings/" + meetingId + "/report.json";
 	}
 
-	private MeetingAssistantShareResponse toResponse(MeetingAssistantShare share) {
-		boolean published = share.getTranscriptPublishedAt() != null;
+	private MeetingAssistantShareResponse toResponse(
+			MeetingAssistantShare share,
+			boolean includeUnpublishedTranscript) {
+		boolean showTranscript = includeUnpublishedTranscript || share.getTranscriptPublishedAt() != null;
 		return new MeetingAssistantShareResponse(
 				share.getMeeting().getId(),
-				published ? readTranscript(share) : null,
+				showTranscript ? readTranscript(share) : null,
 				share.getTranscriptPublishedAt(),
 				readReport(share),
 				share.getReportPublishedAt());
@@ -241,9 +244,13 @@ public class MeetingAssistantShareService {
 
 	private JsonNode readJson(String s3Key, String jsonb) {
 		if (hasText(s3Key) && objectStorage.isConfigured()) {
-			byte[] bytes = objectStorage.get(s3Key);
-			if (bytes != null && bytes.length > 0) {
-				return jsonUtils.readTree(new String(bytes, StandardCharsets.UTF_8));
+			try {
+				byte[] bytes = objectStorage.get(s3Key);
+				if (bytes != null && bytes.length > 0) {
+					return jsonUtils.readTree(new String(bytes, StandardCharsets.UTF_8));
+				}
+			} catch (RuntimeException ignored) {
+				return parseOrNull(jsonb);
 			}
 		}
 		return parseOrNull(jsonb);
@@ -253,7 +260,17 @@ public class MeetingAssistantShareService {
 		if (json == null || json.isBlank()) {
 			return null;
 		}
-		return jsonUtils.readTree(json);
+		try {
+			return jsonUtils.readTree(json);
+		} catch (RuntimeException ignored) {
+			return null;
+		}
+	}
+
+	private boolean isMeetingMentor(Meeting meeting, UUID viewerId) {
+		return viewerId != null
+				&& meeting.getMentor() != null
+				&& meeting.getMentor().getId().equals(viewerId);
 	}
 
 	private AppUser requireApprovedMentor(UUID actorId) {
@@ -274,9 +291,7 @@ public class MeetingAssistantShareService {
 		Meeting meeting = domainLookupService.requireMeeting(meetingId);
 		boolean inOrganization = organizationId != null
 				&& meeting.getOrganization().getId().equals(organizationId);
-		boolean meetingMentor = viewerId != null
-				&& meeting.getMentor() != null
-				&& meeting.getMentor().getId().equals(viewerId);
+		boolean meetingMentor = isMeetingMentor(meeting, viewerId);
 		if (!inOrganization && !meetingMentor) {
 			throw new ResourceNotFoundException("Meeting not found: " + meetingId);
 		}

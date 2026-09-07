@@ -188,6 +188,23 @@ class MeetingAssistantShareServiceTest {
 	}
 
 	@Test
+	void showsUnpublishedTranscriptToTheMeetingMentor() {
+		Meeting meeting = meeting();
+		MeetingAssistantShare share = MeetingAssistantShare.emptyFor(meeting);
+		share.setTranscriptS3Key("meetings/" + meetingId + "/transcript.json");
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(share));
+		when(objectStorage.isConfigured()).thenReturn(true);
+		when(objectStorage.get("meetings/" + meetingId + "/transcript.json"))
+				.thenReturn("[{\"speaker\":\"Ayşe\"}]".getBytes(StandardCharsets.UTF_8));
+
+		var response = service().find(meetingId, null, mentorId);
+
+		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
+		assertThat(response.transcriptPublishedAt()).isNull();
+	}
+
+	@Test
 	void archivesGeneratedTranscriptWithoutPublishingToTheNotebook() {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
 		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
