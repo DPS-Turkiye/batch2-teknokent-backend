@@ -1,11 +1,13 @@
 package com.dps.teknokent.controller;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -36,6 +38,11 @@ public class DocumentController {
 			@RequestParam(required = false) UUID userId,
 			@RequestPart("file") MultipartFile file) {
 		return documentService.storeForUser(resolveUserId(userId), kind, file);
+	}
+
+	@GetMapping
+	public List<StoredDocumentResponse> list(@RequestParam(required = false) UUID userId) {
+		return documentService.listForUser(resolveUserId(userId));
 	}
 
 	private static UUID resolveUserId(UUID requestedUserId) {

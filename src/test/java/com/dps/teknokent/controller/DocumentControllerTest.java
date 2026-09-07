@@ -5,11 +5,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -66,6 +68,36 @@ class DocumentControllerTest {
 				.andExpect(jsonPath("$.kind").value("cv"));
 
 		verify(documentService).storeForUser(eq(userId), eq("cv"), any());
+	}
+
+	@Test
+	void requiresAuthenticationToList() throws Exception {
+		mockMvc.perform(get("/api/documents"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void listsDocumentsForTheRequestedUserWhenUsingMachineCredentials() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+		UUID documentId = UUID.fromString("00000000-0000-0000-0000-000000000912");
+		when(documentService.listForUser(userId)).thenReturn(List.of(new StoredDocumentResponse(
+				documentId,
+				userId,
+				null,
+				"cv",
+				"cv.pdf",
+				"application/pdf",
+				12,
+				Instant.parse("2026-08-28T12:00:00Z"))));
+
+		mockMvc.perform(get("/api/documents")
+						.param("userId", userId.toString())
+						.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].id").value(documentId.toString()))
+				.andExpect(jsonPath("$[0].kind").value("cv"));
+
+		verify(documentService).listForUser(userId);
 	}
 
 	private static MockMultipartFile pdf() {
