@@ -25,6 +25,7 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingAssistantShareRepository;
+import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.util.JsonUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -45,6 +46,8 @@ class MeetingAssistantShareServiceTest {
 	@Mock
 	private MeetingAssistantShareRepository shareRepository;
 	@Mock
+	private MeetingRepository meetingRepository;
+	@Mock
 	private ObjectStorage objectStorage;
 
 	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
@@ -53,7 +56,8 @@ class MeetingAssistantShareServiceTest {
 	private final UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000401");
 
 	private MeetingAssistantShareService service() {
-		return new MeetingAssistantShareService(domainLookupService, shareRepository, jsonUtils, objectStorage);
+		return new MeetingAssistantShareService(
+				domainLookupService, shareRepository, meetingRepository, jsonUtils, objectStorage);
 	}
 
 	@Test
@@ -170,6 +174,70 @@ class MeetingAssistantShareServiceTest {
 
 		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
 		assertThat(response.transcriptPublishedAt()).isEqualTo(Instant.parse("2026-09-01T10:00:00Z"));
+	}
+
+	@Test
+	void showsAPublishedRoommateShareToTheMenteeMeeting() {
+		UUID guestId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+		UUID guestOrgId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+		Meeting mentorMeeting = meeting();
+		mentorMeeting.setMeetLink("https://meet.google.com/aaa-bbbb-ccc");
+		Meeting guestMeeting = meeting();
+		guestMeeting.setId(guestId);
+		Organization guestOrg = new Organization();
+		guestOrg.setId(guestOrgId);
+		guestOrg.setName("GuestCo");
+		guestMeeting.setOrganization(guestOrg);
+		guestMeeting.setMeetLink(mentorMeeting.getMeetLink());
+
+		MeetingAssistantShare published = MeetingAssistantShare.emptyFor(mentorMeeting);
+		published.setTranscript("[{\"speaker\":\"Ayşe\",\"text\":\"Merhaba\"}]");
+		published.setTranscriptPublishedAt(Instant.parse("2026-09-01T10:00:00Z"));
+
+		when(domainLookupService.requireMeeting(guestId)).thenReturn(guestMeeting);
+		when(meetingRepository.findByMeetLinkAndScheduledAt(
+				mentorMeeting.getMeetLink(), mentorMeeting.getScheduledAt()))
+				.thenReturn(List.of(mentorMeeting, guestMeeting));
+		when(shareRepository.findByMeetingId(guestId)).thenReturn(Optional.empty());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(published));
+
+		var response = service().find(guestId, guestOrgId);
+
+		assertThat(response.meetingId()).isEqualTo(guestId);
+		assertThat(response.transcript().get(0).path("text").asText()).isEqualTo("Merhaba");
+	}
+
+	@Test
+	void copiesAPublishedTranscriptOntoRoommateMeetings() {
+		UUID guestId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+		Meeting mentorMeeting = meeting();
+		mentorMeeting.setMeetLink("https://meet.google.com/aaa-bbbb-ccc");
+		Meeting guestMeeting = meeting();
+		guestMeeting.setId(guestId);
+		guestMeeting.setMeetLink(mentorMeeting.getMeetLink());
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(mentorMeeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.findByMeetingId(guestId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(
+				mentorMeeting.getMeetLink(), mentorMeeting.getScheduledAt()))
+				.thenReturn(List.of(mentorMeeting, guestMeeting));
+
+		service().publish(meetingId, new PublishMeetingAssistantShareRequest(
+				mentorId,
+				"TRANSCRIPT",
+				jsonUtils.readTree("""
+						[{"id":"s1","speaker":"Ayşe","text":"Merhaba","at":"00:10"}]
+						"""),
+				null));
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository, org.mockito.Mockito.atLeast(2)).saveAndFlush(saved.capture());
+		assertThat(saved.getAllValues())
+				.anyMatch(share -> share.getMeeting().getId().equals(guestId)
+						&& share.getTranscriptPublishedAt() != null);
 	}
 
 	@Test

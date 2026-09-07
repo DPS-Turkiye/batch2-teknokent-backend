@@ -20,6 +20,7 @@ import com.dps.teknokent.entity.MeetingAssistantShare;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingAssistantShareRepository;
+import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.util.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -31,6 +32,7 @@ public class MeetingAssistantShareService {
 
 	private final DomainLookupService domainLookupService;
 	private final MeetingAssistantShareRepository shareRepository;
+	private final MeetingRepository meetingRepository;
 	private final JsonUtils jsonUtils;
 	private final ObjectStorage objectStorage;
 
@@ -43,9 +45,14 @@ public class MeetingAssistantShareService {
 	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId, UUID viewerId) {
 		Meeting meeting = requireVisibleMeeting(meetingId, organizationId, viewerId);
 		boolean mentorViewer = isMeetingMentor(meeting, viewerId);
-		return shareRepository.findByMeetingId(meeting.getId())
-				.map(share -> toResponse(share, mentorViewer))
-				.orElseGet(() -> MeetingAssistantShareResponse.empty(meeting.getId()));
+		MeetingAssistantShare share = shareRepository.findByMeetingId(meeting.getId()).orElse(null);
+		if (!hasVisibleShare(share, mentorViewer)) {
+			share = publishedShareFromRoommates(meeting, share);
+		}
+		if (share == null) {
+			return MeetingAssistantShareResponse.empty(meeting.getId());
+		}
+		return toResponse(meeting.getId(), share, mentorViewer);
 	}
 
 	@Transactional
@@ -87,7 +94,9 @@ public class MeetingAssistantShareService {
 			throw new InvalidRequestException("kind must be TRANSCRIPT, TRANSCRIPT_S3, REPORT or REPORT_S3.");
 		}
 
-		return toResponse(shareRepository.saveAndFlush(share), true);
+		MeetingAssistantShare saved = shareRepository.saveAndFlush(share);
+		copyPublishedShareToRoommates(meeting, saved, kind);
+		return toResponse(meeting.getId(), saved, true);
 	}
 
 	@Transactional(readOnly = true)
@@ -211,15 +220,76 @@ public class MeetingAssistantShareService {
 	}
 
 	private MeetingAssistantShareResponse toResponse(
+			UUID meetingId,
 			MeetingAssistantShare share,
 			boolean includeUnpublishedTranscript) {
 		boolean showTranscript = includeUnpublishedTranscript || share.getTranscriptPublishedAt() != null;
+		boolean showReport = includeUnpublishedTranscript || share.getReportPublishedAt() != null;
 		return new MeetingAssistantShareResponse(
-				share.getMeeting().getId(),
+				meetingId,
 				showTranscript ? readTranscript(share) : null,
 				share.getTranscriptPublishedAt(),
-				readReport(share),
+				showReport ? readReport(share) : null,
 				share.getReportPublishedAt());
+	}
+
+	private boolean hasVisibleShare(MeetingAssistantShare share, boolean mentorViewer) {
+		if (share == null) {
+			return false;
+		}
+		if (mentorViewer) {
+			return hasStoredTranscript(share) || hasStoredReport(share);
+		}
+		return share.getTranscriptPublishedAt() != null || share.getReportPublishedAt() != null;
+	}
+
+	private MeetingAssistantShare publishedShareFromRoommates(
+			Meeting meeting,
+			MeetingAssistantShare current) {
+		for (Meeting mate : roommates(meeting)) {
+			if (mate.getId().equals(meeting.getId())) {
+				continue;
+			}
+			MeetingAssistantShare other = shareRepository.findByMeetingId(mate.getId()).orElse(null);
+			if (hasVisibleShare(other, false)) {
+				return other;
+			}
+		}
+		return current;
+	}
+
+	private void copyPublishedShareToRoommates(
+			Meeting source,
+			MeetingAssistantShare sourceShare,
+			String kind) {
+		boolean transcript = kind.startsWith("TRANSCRIPT");
+		for (Meeting mate : roommates(source)) {
+			if (mate.getId().equals(source.getId())) {
+				continue;
+			}
+			MeetingAssistantShare share = shareRepository.findByMeetingId(mate.getId())
+					.orElseGet(() -> MeetingAssistantShare.emptyFor(mate));
+			share.setPublishedBy(sourceShare.getPublishedBy());
+			if (transcript) {
+				share.setTranscriptS3Key(sourceShare.getTranscriptS3Key());
+				share.setTranscript(sourceShare.getTranscript());
+				share.setTranscriptPublishedAt(sourceShare.getTranscriptPublishedAt());
+			} else {
+				share.setReportS3Key(sourceShare.getReportS3Key());
+				share.setReport(sourceShare.getReport());
+				share.setReportPublishedAt(sourceShare.getReportPublishedAt());
+			}
+			shareRepository.saveAndFlush(share);
+		}
+	}
+
+	private List<Meeting> roommates(Meeting meeting) {
+		String meetLink = meeting.getMeetLink();
+		if (meetLink == null || meetLink.isBlank() || meeting.getScheduledAt() == null) {
+			return List.of(meeting);
+		}
+		List<Meeting> room = meetingRepository.findByMeetLinkAndScheduledAt(meetLink, meeting.getScheduledAt());
+		return room.isEmpty() ? List.of(meeting) : room;
 	}
 
 	private boolean hasStoredTranscript(MeetingAssistantShare share) {
