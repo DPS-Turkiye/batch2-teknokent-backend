@@ -14,6 +14,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
@@ -49,8 +50,11 @@ class AssistantIntegrationTest {
   @MockitoBean
   private MeetingProviderClient meetingProviderClient;
 
-    @MockitoBean
-    private MeetingReportService meetingReportService;
+  @MockitoBean
+  private MeetingReportService meetingReportService;
+
+  @MockitoBean
+  private StringRedisTemplate redisTemplate;
 
   @Test
   void addBotEndToEndReturnsCreated() throws Exception {

@@ -15,6 +15,9 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+  data:
+    redis:
+      enabled: false
 meeting:
   provider:
     base-url: http://localhost
