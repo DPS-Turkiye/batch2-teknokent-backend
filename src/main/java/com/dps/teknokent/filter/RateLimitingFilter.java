@@ -3,6 +3,7 @@ package com.dps.teknokent.filter;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.dps.teknokent.config.RateLimitingConfig;
 import com.dps.teknokent.config.RateLimitingConfig.TokenBucket;
 import jakarta.servlet.FilterChain;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import java.io.IOException;
 
 @Component
+@ConditionalOnProperty(name = "rate-limiting.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class RateLimitingFilter extends OncePerRequestFilter {
 

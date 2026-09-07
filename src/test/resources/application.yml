@@ -18,6 +18,9 @@ spring:
   data:
     redis:
       enabled: false
+
+rate-limiting:
+  enabled: false
 meeting:
   provider:
     base-url: http://localhost

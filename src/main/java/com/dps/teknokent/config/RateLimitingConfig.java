@@ -1,10 +1,12 @@
 package com.dps.teknokent.config;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.RequiredArgsConstructor;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,6 +18,9 @@ public class RateLimitingConfig {
 	// Fallback in-memory cache if Redis is unavailable
 	private final Map<String, TokenBucket> memoryCache = new ConcurrentHashMap<>();
 	private RedisRateLimitingStore redisStore;
+	
+	@Autowired(required = false)
+	private StringRedisTemplate redisTemplate;
 
 	@Bean
 	public Map<String, TokenBucket> rateLimitBuckets() {
@@ -23,9 +28,10 @@ public class RateLimitingConfig {
 	}
 
 	@Bean
-	@ConditionalOnProperty(name = "spring.data.redis.enabled", havingValue = "true", matchIfMissing = true)
-	public RedisRateLimitingStore redisRateLimitingStore(StringRedisTemplate redisTemplate) {
-		this.redisStore = new RedisRateLimitingStore(redisTemplate, memoryCache);
+	public RedisRateLimitingStore redisRateLimitingStore() {
+		if (redisTemplate != null) {
+			this.redisStore = new RedisRateLimitingStore(redisTemplate, memoryCache);
+		}
 		return redisStore;
 	}
 
