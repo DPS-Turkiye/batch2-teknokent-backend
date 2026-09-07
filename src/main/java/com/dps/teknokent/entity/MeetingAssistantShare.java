@@ -45,14 +45,14 @@ public class MeetingAssistantShare {
 	private AppUser publishedBy;
 
 	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(columnDefinition = "jsonb")
+	@Column
 	private String transcript;
 
 	@Column(name = "transcript_published_at")
 	private Instant transcriptPublishedAt;
 
 	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(columnDefinition = "jsonb")
+	@Column
 	private String report;
 
 	@Column(name = "report_published_at")

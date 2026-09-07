@@ -2,6 +2,8 @@ package com.dps.teknokent.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import com.dps.teknokent.filter.RateLimitingFilter;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,6 +15,11 @@ public class RateLimitingConfig {
 	@Bean
 	public Map<String, TokenBucket> rateLimitBuckets() {
 		return cache;
+	}
+
+	@Bean
+	public RateLimitingFilter rateLimitingFilter() {
+		return new RateLimitingFilter(this);
 	}
 
 	public TokenBucket resolveBucket(String key) {

@@ -2,7 +2,6 @@ package com.dps.teknokent.filter;
 
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
 import com.dps.teknokent.config.RateLimitingConfig;
 import com.dps.teknokent.config.RateLimitingConfig.TokenBucket;
 import jakarta.servlet.FilterChain;
@@ -12,7 +11,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import java.io.IOException;
 
-@Component
+/**
+ * Supplied as a bean by {@link com.dps.teknokent.config.RateLimitingConfig}
+ * rather than component-scanned. {@code @WebMvcTest} pulls in every Filter bean
+ * it can see but no {@code @Configuration} class, so a scanned filter arrives
+ * with a dependency the slice cannot satisfy and fails every controller test.
+ * FirebaseBearerFilter is kept out of the scan for the same reason.
+ */
 @RequiredArgsConstructor
 public class RateLimitingFilter extends OncePerRequestFilter {
 
