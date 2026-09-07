@@ -41,6 +41,31 @@ public class ProfileAnalysisService {
 	private final DocumentService documentService;
 	private final JsonUtils jsonUtils;
 
+	/**
+	 * Same as {@link #parse} but with the organization taken from the signed-in
+	 * account rather than a request parameter.
+	 *
+	 * <p>The browser now posts here directly, because the frontend's own edge
+	 * blocks bodies over ~8KB on its proxy routes. That turns {@code
+	 * organizationId} from a value the proxy injected out of the session cookie
+	 * into one the caller sets freely, and {@link #parse} falls back to a real
+	 * seeded organization when it is absent — so a signed-in user could file a CV
+	 * under someone else's startup and feed it into their matching. Resolving it
+	 * from the principal closes that. {@code appUserId} stays a parameter because
+	 * a founder may upload for a team member, and requireMemberOfOrganization
+	 * already confines that to their own organization.
+	 */
+	public ProfileAnalysisResponse parseForCaller(
+			UUID callerUserId, UUID appUserId, String profileType, boolean consentAccepted, String ocrMode,
+			MultipartFile file) {
+		AppUser caller = appUserRepository.findById(callerUserId)
+				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + callerUserId));
+		if (caller.getOrganization() == null) {
+			throw new InvalidRequestException("This account has no organization to file a profile under.");
+		}
+		return parse(caller.getOrganization().getId(), appUserId, profileType, consentAccepted, ocrMode, file);
+	}
+
 	public ProfileAnalysisResponse parse(
 			UUID organizationId, UUID appUserId, String profileType, boolean consentAccepted, String ocrMode,
 			MultipartFile file) {
