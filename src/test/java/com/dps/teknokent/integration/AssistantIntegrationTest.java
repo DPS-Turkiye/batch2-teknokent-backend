@@ -26,10 +26,16 @@ import com.dps.teknokent.service.MeetingReportService;
 
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -71,6 +77,155 @@ class AssistantIntegrationTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail").exists());
   }
+
+    @Test
+    void addBotEndToEndRejectsBlankMeetingUrl() throws Exception {
+        mockMvc.perform(post("/api/assistant/bots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"meetingUrl\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message").value("Request validation failed"))
+          .andExpect(jsonPath("$.fieldErrors.meetingUrl").value("must not be blank"));
+    }
+
+    @Test
+    void addBotEndToEndRejectsNullMeetingUrl() throws Exception {
+        mockMvc.perform(post("/api/assistant/bots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"meetingUrl\":null}"))
+                .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message").value("Request validation failed"))
+          .andExpect(jsonPath("$.fieldErrors.meetingUrl").value("must not be blank"));
+    }
+
+    @Test
+    void addBotEndToEndRejectsUnexpectedMeetingUrlType() throws Exception {
+        mockMvc.perform(post("/api/assistant/bots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"meetingUrl\":{\"value\":\"https://meet.google.com/abc-defg-hij\"}}"))
+                .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message").value("Request body is malformed or contains an unsupported value"));
+    }
+
+    @Test
+    void addBotEndToEndRejectsSqlInjectionLikeInputWithoutLeakingSqlDetails() throws Exception {
+        mockMvc.perform(post("/api/assistant/bots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"meetingUrl\":\"https://zoom.us/j/%27OR%201%3D1--\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").exists())
+                .andExpect(content().string(not(containsString("SQLException"))))
+                .andExpect(content().string(not(containsString("syntax error"))))
+                .andExpect(content().string(not(containsString("jdbc"))));
+    }
+
+    @Test
+    void addBotEndToEndRejectsDoubleQuoteSqlLikeInputWithoutLeakingSqlDetails() throws Exception {
+        mockMvc.perform(post("/api/assistant/bots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"meetingUrl\":\"https://zoom.us/j/%22OR%20%22a%22=%22a%22--\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").exists())
+                .andExpect(content().string(not(containsString("SQLException"))))
+                .andExpect(content().string(not(containsString("syntax error"))))
+                .andExpect(content().string(not(containsString("jdbc"))));
+    }
+
+    @Test
+    void getTranscriptRejectsSqlInjectionLikePathWithoutLeakingSqlDetails() throws Exception {
+        when(meetingProviderClient.getTranscript(anyString(), anyString()))
+                .thenThrow(HttpClientErrorException.create(
+                        HttpStatus.BAD_REQUEST,
+                        "Bad Request",
+                        HttpHeaders.EMPTY,
+                        "invalid native meeting id".getBytes(StandardCharsets.UTF_8),
+                        StandardCharsets.UTF_8));
+
+        mockMvc.perform(get("/api/assistant/transcripts/google_meet/%27OR%201%3D1--"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(not(containsString("SQLException"))))
+                .andExpect(content().string(not(containsString("syntax error"))))
+                .andExpect(content().string(not(containsString("jdbc"))));
+    }
+
+            @Test
+            void getTranscriptUsesPathVariableWhenQueryParameterIsTampered() throws Exception {
+            when(meetingProviderClient.getTranscript("google_meet", "abc-defg-hij"))
+                .thenReturn(new ProviderTranscriptResponse(List.of()));
+
+            mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij?nativeMeetingId=manipulated-id"))
+                .andExpect(status().isOk());
+
+            verify(meetingProviderClient).getTranscript("google_meet", "abc-defg-hij");
+            }
+
+            @Test
+            void getTranscriptRejectsTraversalLikeMeetingIdWithoutLeakingSqlDetails() throws Exception {
+            when(meetingProviderClient.getTranscript(anyString(), anyString()))
+                .thenThrow(HttpClientErrorException.create(
+                    HttpStatus.BAD_REQUEST,
+                    "Bad Request",
+                    HttpHeaders.EMPTY,
+                    "invalid native meeting id".getBytes(StandardCharsets.UTF_8),
+                    StandardCharsets.UTF_8));
+
+            mockMvc.perform(get("/api/assistant/transcripts/google_meet/%2e%2e%2fadmin"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(not(containsString("SQLException"))))
+                .andExpect(content().string(not(containsString("syntax error"))))
+                .andExpect(content().string(not(containsString("jdbc"))));
+            }
+
+    @Test
+    void stopBotRejectsSqlInjectionLikePathWithoutLeakingSqlDetails() throws Exception {
+        doThrow(HttpClientErrorException.create(
+            HttpStatus.BAD_REQUEST,
+            "Bad Request",
+            HttpHeaders.EMPTY,
+            "invalid native meeting id".getBytes(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8))
+                .when(meetingProviderClient).stopBot(anyString(), anyString());
+
+        mockMvc.perform(delete("/api/assistant/bots/google_meet/%27OR%201%3D1--"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(not(containsString("SQLException"))))
+                .andExpect(content().string(not(containsString("syntax error"))))
+                .andExpect(content().string(not(containsString("jdbc"))));
+    }
+
+    @Test
+    void generateMeetingReportRejectsSqlInjectionLikePathWithoutLeakingSqlDetails() throws Exception {
+        when(meetingProviderClient.getTranscript(anyString(), anyString()))
+                .thenThrow(HttpClientErrorException.create(
+                        HttpStatus.BAD_REQUEST,
+                        "Bad Request",
+                        HttpHeaders.EMPTY,
+                        "invalid native meeting id".getBytes(StandardCharsets.UTF_8),
+                        StandardCharsets.UTF_8));
+
+        mockMvc.perform(post("/api/assistant/bots/google_meet/%27OR%201%3D1--/report")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(not(containsString("SQLException"))))
+                .andExpect(content().string(not(containsString("syntax error"))))
+                .andExpect(content().string(not(containsString("jdbc"))));
+    }
+
+    @Test
+    void generateMeetingReportRejectsMalformedPayload() throws Exception {
+        mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"model\":}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Request body is malformed or contains an unsupported value"));
+    }
+
+    @Test
+    void protectedEndpointRejectsUnauthorizedAccess() throws Exception {
+        mockMvc.perform(get("/api/organizations/11111111-1111-1111-1111-111111111111/bottlenecks"))
+                .andExpect(status().isUnauthorized());
+    }
 
   @Test
   void addBotEndToEndReturnsBadGatewayWhenProviderFails() throws Exception {
@@ -221,5 +376,70 @@ class AssistantIntegrationTest {
             .content("{}"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail").value("Failed to generate meeting report: ai provider unavailable"));
+  }
+
+  @Test
+  void rateLimitingIsAppliedToAssistantEndpoints() throws Exception {
+    when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
+        .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
+
+    // Simulate exhausting rate limit by making 101 requests (limit is 100/minute)
+    for (int i = 0; i < 100; i++) {
+      mockMvc.perform(post("/api/assistant/bots")
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+              .header("X-Forwarded-For", "192.168.1.1"))
+          .andExpect(status().isCreated());
+    }
+
+    // 101st request should be rate limited
+    mockMvc.perform(post("/api/assistant/bots")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+            .header("X-Forwarded-For", "192.168.1.1"))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(result -> {
+          String retryAfter = result.getResponse().getHeader("X-Rate-Limit-Retry-After-Seconds");
+          assert retryAfter != null;
+          assert Integer.parseInt(retryAfter) > 0;
+        });
+  }
+
+  @Test
+  void differentIpsHaveSeparateRateLimits() throws Exception {
+    when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
+        .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
+
+    // IP 1 - single request should succeed
+    mockMvc.perform(post("/api/assistant/bots")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+            .header("X-Forwarded-For", "10.0.0.1"))
+        .andExpect(status().isCreated());
+
+    // IP 2 - single request should also succeed (different bucket)
+    // Because they're from different IPs, they should have separate rate limit buckets
+    mockMvc.perform(post("/api/assistant/bots")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+            .header("X-Forwarded-For", "10.0.0.2"))
+        .andExpect(status().isCreated());
+  }
+
+  @Test
+  void rateLimitHeaderIsIncluded() throws Exception {
+    when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
+        .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
+
+    mockMvc.perform(post("/api/assistant/bots")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+            .header("X-Forwarded-For", "10.0.0.100"))
+        .andExpect(status().isCreated())
+        .andExpect(result -> {
+          String remaining = result.getResponse().getHeader("X-Rate-Limit-Remaining");
+          assert remaining != null;
+          assert Integer.parseInt(remaining) == 99;
+        });
   }
 }
