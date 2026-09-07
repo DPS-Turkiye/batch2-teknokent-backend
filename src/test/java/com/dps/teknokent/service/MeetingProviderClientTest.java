@@ -41,9 +41,8 @@ class MeetingProviderClientTest {
               "meeting_url": "https://meet.google.com/abc-defg-hij",
               "bot_name": "Mentor Bot",
               "automatic_leave": {
-                "waiting_room_timeout": 300,
-                "noone_joined_timeout": 300,
-                "everyone_left_timeout": 90
+                "max_wait_for_admission": 300000,
+                "max_time_left_alone": 90000
               }
             }
             """))

@@ -32,9 +32,8 @@ public class MeetingProviderClient {
     payload.put("meeting_url", meetingUrl);
     payload.put("bot_name", ProviderMeetingPresence.BOT_NAME);
     Map<String, Object> automaticLeave = new LinkedHashMap<>();
-    automaticLeave.put("waiting_room_timeout", 300);
-    automaticLeave.put("noone_joined_timeout", 300);
-    automaticLeave.put("everyone_left_timeout", 90);
+    automaticLeave.put("max_wait_for_admission", 300_000);
+    automaticLeave.put("max_time_left_alone", 90_000);
     payload.put("automatic_leave", automaticLeave);
 
     byte[] json = jsonMapper.writeValueAsBytes(payload);
