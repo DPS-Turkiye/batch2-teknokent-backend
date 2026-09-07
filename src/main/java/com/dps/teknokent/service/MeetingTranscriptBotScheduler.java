@@ -18,9 +18,12 @@ import lombok.RequiredArgsConstructor;
 public class MeetingTranscriptBotScheduler {
 
 	private final MeetingTranscriptBotDispatcher dispatcher;
+	private final MeetingTranscriptBotWatchdog watchdog;
 
 	@Scheduled(fixedDelayString = "${meeting.transcript-bot.interval-ms:30000}")
 	public void dispatchDueTranscriptBots() {
-		dispatcher.dispatchDueMeetings(Instant.now());
+		Instant now = Instant.now();
+		dispatcher.dispatchDueMeetings(now);
+		watchdog.closeFinishedMeetings(now);
 	}
 }

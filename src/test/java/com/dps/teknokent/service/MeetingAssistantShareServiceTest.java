@@ -1,6 +1,9 @@
 package com.dps.teknokent.service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,6 +17,7 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.PublishMeetingAssistantShareRequest;
+import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingAssistantShare;
@@ -27,6 +31,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,6 +44,8 @@ class MeetingAssistantShareServiceTest {
 	private DomainLookupService domainLookupService;
 	@Mock
 	private MeetingAssistantShareRepository shareRepository;
+	@Mock
+	private ObjectStorage objectStorage;
 
 	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
 	private final UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000301");
@@ -45,7 +53,7 @@ class MeetingAssistantShareServiceTest {
 	private final UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000401");
 
 	private MeetingAssistantShareService service() {
-		return new MeetingAssistantShareService(domainLookupService, shareRepository, jsonUtils);
+		return new MeetingAssistantShareService(domainLookupService, shareRepository, jsonUtils, objectStorage);
 	}
 
 	@Test
@@ -105,10 +113,159 @@ class MeetingAssistantShareServiceTest {
 
 		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
 		verify(shareRepository).saveAndFlush(saved.capture());
+		verify(objectStorage, never()).put(anyString(), any(), anyString());
 		assertThat(saved.getValue().getTranscript()).contains("Merhaba");
+		assertThat(saved.getValue().getTranscriptS3Key()).isNull();
 		assertThat(saved.getValue().getTranscriptPublishedAt()).isNotNull();
 		assertThat(saved.getValue().getReport()).isNull();
 		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
+	}
+
+	@Test
+	void storesTranscriptInS3WhenStorageIsConfigured() {
+		Meeting meeting = meeting();
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(objectStorage.isConfigured()).thenReturn(true);
+		when(objectStorage.get(anyString())).thenReturn("""
+				[{"id":"s1","speaker":"Ayşe","text":"Merhaba","at":"00:10"}]
+				""".getBytes(StandardCharsets.UTF_8));
+
+		var transcript = jsonUtils.readTree("""
+				[{"id":"s1","speaker":"Ayşe","text":"Merhaba","at":"00:10"}]
+				""");
+		var response = service().publish(meetingId, new PublishMeetingAssistantShareRequest(
+				mentorId, "TRANSCRIPT", transcript, null));
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		ArgumentCaptor<byte[]> body = ArgumentCaptor.forClass(byte[].class);
+		verify(shareRepository).saveAndFlush(saved.capture());
+		verify(objectStorage).put(
+				eq("meetings/" + meetingId + "/transcript.json"),
+				body.capture(),
+				eq("application/json"));
+		assertThat(new String(body.getValue(), StandardCharsets.UTF_8)).contains("Merhaba");
+		assertThat(saved.getValue().getTranscript()).isNull();
+		assertThat(saved.getValue().getTranscriptS3Key())
+				.isEqualTo("meetings/" + meetingId + "/transcript.json");
+		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
+	}
+
+	@Test
+	void readsTranscriptFromS3Key() {
+		Meeting meeting = meeting();
+		MeetingAssistantShare share = MeetingAssistantShare.emptyFor(meeting);
+		share.setTranscriptS3Key("meetings/" + meetingId + "/transcript.json");
+		share.setTranscriptPublishedAt(Instant.parse("2026-09-01T10:00:00Z"));
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(share));
+		when(objectStorage.isConfigured()).thenReturn(true);
+		when(objectStorage.get("meetings/" + meetingId + "/transcript.json"))
+				.thenReturn("[{\"speaker\":\"Ayşe\"}]".getBytes(StandardCharsets.UTF_8));
+
+		var response = service().find(meetingId, organizationId);
+
+		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
+		assertThat(response.transcriptPublishedAt()).isEqualTo(Instant.parse("2026-09-01T10:00:00Z"));
+	}
+
+	@Test
+	void hidesUnpublishedTranscriptArchivedInS3() {
+		Meeting meeting = meeting();
+		MeetingAssistantShare share = MeetingAssistantShare.emptyFor(meeting);
+		share.setTranscriptS3Key("meetings/" + meetingId + "/transcript.json");
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(share));
+
+		var response = service().find(meetingId, organizationId);
+
+		assertThat(response.transcript()).isNull();
+		assertThat(response.transcriptPublishedAt()).isNull();
+		verify(objectStorage, never()).get(anyString());
+	}
+
+	@Test
+	void archivesGeneratedTranscriptWithoutPublishingToTheNotebook() {
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(objectStorage.isConfigured()).thenReturn(true);
+
+		assertThat(service().storeGeneratedTranscript(meetingId, List.of(
+				new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "00:10")))).isTrue();
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository).saveAndFlush(saved.capture());
+		verify(objectStorage).put(
+				eq("meetings/" + meetingId + "/transcript.json"),
+				any(),
+				eq("application/json"));
+		assertThat(saved.getValue().getTranscriptS3Key())
+				.isEqualTo("meetings/" + meetingId + "/transcript.json");
+		assertThat(saved.getValue().getTranscriptPublishedAt()).isNull();
+		assertThat(saved.getValue().getTranscript()).isNull();
+	}
+
+	@Test
+	void keepsATranscriptTheMentorAlreadyStored() {
+		Meeting meeting = meeting();
+		MeetingAssistantShare existing = MeetingAssistantShare.emptyFor(meeting);
+		existing.setTranscriptS3Key("meetings/" + meetingId + "/transcript.json");
+		existing.setTranscriptPublishedAt(Instant.parse("2026-09-01T10:00:00Z"));
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(existing));
+
+		assertThat(service().storeGeneratedTranscript(meetingId, List.of(
+				new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "00:10")))).isFalse();
+
+		verify(shareRepository, never()).saveAndFlush(any());
+		verify(objectStorage, never()).put(anyString(), any(), anyString());
+	}
+
+	@Test
+	void issuesAPresignedPutUrlForTheMeetingsMentor() {
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(objectStorage.isConfigured()).thenReturn(true);
+		when(objectStorage.presignPut(eq("meetings/" + meetingId + "/transcript.json"), eq("application/json")))
+				.thenReturn("https://s3.example/put");
+
+		var response = service().createTranscriptUpload(meetingId, mentorId);
+
+		assertThat(response.url()).isEqualTo("https://s3.example/put");
+		assertThat(response.method()).isEqualTo("PUT");
+		assertThat(response.key()).isEqualTo("meetings/" + meetingId + "/transcript.json");
+		assertThat(response.contentType()).isEqualTo("application/json");
+	}
+
+	@Test
+	void publishesTheTranscriptAlreadyUploadedToS3() {
+		Meeting meeting = meeting();
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(objectStorage.isConfigured()).thenReturn(true);
+		when(objectStorage.get("meetings/" + meetingId + "/transcript.json"))
+				.thenReturn("""
+						[{"id":"s1","speaker":"Ayşe","text":"Düzenlenmiş merhaba","at":"00:10"}]
+						""".getBytes(StandardCharsets.UTF_8));
+
+		var response = service().publish(meetingId, new PublishMeetingAssistantShareRequest(
+				mentorId, "TRANSCRIPT_S3", null, null));
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository).saveAndFlush(saved.capture());
+		verify(objectStorage, never()).put(anyString(), any(), anyString());
+		assertThat(saved.getValue().getTranscriptS3Key())
+				.isEqualTo("meetings/" + meetingId + "/transcript.json");
+		assertThat(saved.getValue().getTranscriptPublishedAt()).isNotNull();
+		assertThat(response.transcript().get(0).path("text").asText()).isEqualTo("Düzenlenmiş merhaba");
 	}
 
 	@Test
@@ -135,6 +292,109 @@ class MeetingAssistantShareServiceTest {
 				mentorId, "TRANSCRIPT", jsonUtils.readTree("[]"), null)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage("Transcript is required.");
+	}
+
+	@Test
+	void storesAReportProducedByTheServerWithoutAMentor() {
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThat(service().storeGeneratedReport(meetingId, Map.of("title", "Otomatik rapor"))).isTrue();
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository).saveAndFlush(saved.capture());
+		assertThat(saved.getValue().getReport()).contains("Otomatik rapor");
+		assertThat(saved.getValue().getReportPublishedAt()).isNotNull();
+		assertThat(saved.getValue().getPublishedBy()).isNull();
+	}
+
+	@Test
+	void storesAGeneratedReportInS3WhenStorageIsConfigured() {
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(objectStorage.isConfigured()).thenReturn(true);
+
+		assertThat(service().storeGeneratedReport(meetingId, Map.of("title", "Otomatik rapor"))).isTrue();
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository).saveAndFlush(saved.capture());
+		verify(objectStorage).put(
+				eq("meetings/" + meetingId + "/report.json"),
+				any(),
+				eq("application/json"));
+		assertThat(saved.getValue().getReport()).isNull();
+		assertThat(saved.getValue().getReportS3Key())
+				.isEqualTo("meetings/" + meetingId + "/report.json");
+		assertThat(saved.getValue().getReportPublishedAt()).isNotNull();
+	}
+
+	@Test
+	void issuesAPresignedPutUrlForTheReport() {
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(objectStorage.isConfigured()).thenReturn(true);
+		when(objectStorage.presignPut(eq("meetings/" + meetingId + "/report.json"), eq("application/json")))
+				.thenReturn("https://s3.example/report-put");
+
+		var response = service().createReportUpload(meetingId, mentorId);
+
+		assertThat(response.url()).isEqualTo("https://s3.example/report-put");
+		assertThat(response.key()).isEqualTo("meetings/" + meetingId + "/report.json");
+	}
+
+	@Test
+	void publishesTheReportAlreadyUploadedToS3() {
+		Meeting meeting = meeting();
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(objectStorage.isConfigured()).thenReturn(true);
+		when(objectStorage.get("meetings/" + meetingId + "/report.json"))
+				.thenReturn("{\"title\":\"S3 raporu\"}".getBytes(StandardCharsets.UTF_8));
+
+		var response = service().publish(meetingId, new PublishMeetingAssistantShareRequest(
+				mentorId, "REPORT_S3", null, null));
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository).saveAndFlush(saved.capture());
+		assertThat(saved.getValue().getReportS3Key())
+				.isEqualTo("meetings/" + meetingId + "/report.json");
+		assertThat(saved.getValue().getReportPublishedAt()).isNotNull();
+		assertThat(response.report().path("title").asText()).isEqualTo("S3 raporu");
+	}
+
+	@Test
+	void keepsTheReportTheMentorAlreadyPublished() {
+		Meeting meeting = meeting();
+		MeetingAssistantShare existing = MeetingAssistantShare.emptyFor(meeting);
+		existing.setReport("{\"title\":\"Mentörün raporu\"}");
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(existing));
+
+		assertThat(service().storeGeneratedReport(meetingId, Map.of("title", "Otomatik rapor"))).isFalse();
+
+		verify(shareRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void keepsAReportAlreadyArchivedInS3() {
+		Meeting meeting = meeting();
+		MeetingAssistantShare existing = MeetingAssistantShare.emptyFor(meeting);
+		existing.setReportS3Key("meetings/" + meetingId + "/report.json");
+		existing.setReportPublishedAt(Instant.parse("2026-09-01T10:00:00Z"));
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(existing));
+
+		assertThat(service().storeGeneratedReport(meetingId, Map.of("title", "Otomatik rapor"))).isFalse();
+
+		verify(shareRepository, never()).saveAndFlush(any());
+		verify(objectStorage, never()).put(anyString(), any(), anyString());
 	}
 
 	private Meeting meeting() {

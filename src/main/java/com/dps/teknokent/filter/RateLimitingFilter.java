@@ -2,7 +2,6 @@ package com.dps.teknokent.filter;
 
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
 import com.dps.teknokent.config.RateLimitingConfig;
 import com.dps.teknokent.config.RateLimitingConfig.TokenBucket;
 import jakarta.servlet.FilterChain;
@@ -12,7 +11,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import java.io.IOException;
 
-@Component
 @RequiredArgsConstructor
 public class RateLimitingFilter extends OncePerRequestFilter {
 

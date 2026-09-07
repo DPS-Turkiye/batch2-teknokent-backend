@@ -1,6 +1,8 @@
 package com.dps.teknokent.service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -10,6 +12,8 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.PublishMeetingAssistantShareRequest;
 import com.dps.teknokent.dto.responses.MeetingAssistantShareResponse;
+import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
+import com.dps.teknokent.dto.responses.TranscriptUploadUrlResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingAssistantShare;
@@ -28,6 +32,7 @@ public class MeetingAssistantShareService {
 	private final DomainLookupService domainLookupService;
 	private final MeetingAssistantShareRepository shareRepository;
 	private final JsonUtils jsonUtils;
+	private final ObjectStorage objectStorage;
 
 	@Transactional(readOnly = true)
 	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId) {
@@ -62,29 +67,186 @@ public class MeetingAssistantShareService {
 			if (transcript == null || !transcript.isArray() || transcript.isEmpty()) {
 				throw new InvalidRequestException("Transcript is required.");
 			}
-			share.setTranscript(jsonUtils.writeValue(transcript));
+			storeTranscript(share, meeting.getId(), jsonUtils.writeValue(transcript));
+			share.setTranscriptPublishedAt(Instant.now());
+		} else if ("TRANSCRIPT_S3".equals(kind)) {
+			publishUploadedTranscript(share, meeting.getId());
 			share.setTranscriptPublishedAt(Instant.now());
 		} else if ("REPORT".equals(kind)) {
 			JsonNode report = request.report();
 			if (report == null || !report.isObject()) {
 				throw new InvalidRequestException("Report is required.");
 			}
-			share.setReport(jsonUtils.writeValue(report));
+			storeReport(share, meeting.getId(), jsonUtils.writeValue(report));
+			share.setReportPublishedAt(Instant.now());
+		} else if ("REPORT_S3".equals(kind)) {
+			publishUploadedReport(share, meeting.getId());
 			share.setReportPublishedAt(Instant.now());
 		} else {
-			throw new InvalidRequestException("kind must be TRANSCRIPT or REPORT.");
+			throw new InvalidRequestException("kind must be TRANSCRIPT, TRANSCRIPT_S3, REPORT or REPORT_S3.");
 		}
 
 		return toResponse(shareRepository.saveAndFlush(share));
 	}
 
+	@Transactional(readOnly = true)
+	public TranscriptUploadUrlResponse createTranscriptUpload(UUID meetingId, UUID actorId) {
+		return createUpload(meetingId, actorId, transcriptObjectKey(meetingId));
+	}
+
+	@Transactional(readOnly = true)
+	public TranscriptUploadUrlResponse createReportUpload(UUID meetingId, UUID actorId) {
+		return createUpload(meetingId, actorId, reportObjectKey(meetingId));
+	}
+
+	private TranscriptUploadUrlResponse createUpload(UUID meetingId, UUID actorId, String key) {
+		AppUser actor = requireApprovedMentor(actorId);
+		Meeting meeting = domainLookupService.requireMeeting(meetingId);
+		if (meeting.getMentor() == null || !meeting.getMentor().getId().equals(actor.getId())) {
+			throw new InvalidRequestException("Only the meeting's mentor can publish to this notebook.");
+		}
+		if (!objectStorage.isConfigured()) {
+			throw new InvalidRequestException("Object storage is not configured.");
+		}
+		return new TranscriptUploadUrlResponse(
+				objectStorage.presignPut(key, "application/json"),
+				"PUT",
+				key,
+				"application/json");
+	}
+
+	@Transactional
+	public boolean storeGeneratedTranscript(UUID meetingId, List<TranscriptSegmentResponse> segments) {
+		if (segments == null || segments.isEmpty()) {
+			return false;
+		}
+		Meeting meeting = domainLookupService.requireMeeting(meetingId);
+		MeetingAssistantShare share = shareRepository.findByMeetingId(meeting.getId())
+				.orElseGet(() -> MeetingAssistantShare.emptyFor(meeting));
+		if (hasStoredTranscript(share)) {
+			return false;
+		}
+		storeTranscript(share, meeting.getId(), jsonUtils.writeValue(segments));
+		shareRepository.saveAndFlush(share);
+		return true;
+	}
+
+	@Transactional
+	public boolean storeGeneratedReport(UUID meetingId, Object report) {
+		Meeting meeting = domainLookupService.requireMeeting(meetingId);
+		MeetingAssistantShare share = shareRepository.findByMeetingId(meeting.getId())
+				.orElseGet(() -> MeetingAssistantShare.emptyFor(meeting));
+		if (hasStoredReport(share)) {
+			return false;
+		}
+		storeReport(share, meeting.getId(), jsonUtils.writeValue(report));
+		share.setReportPublishedAt(Instant.now());
+		shareRepository.saveAndFlush(share);
+		return true;
+	}
+
+	private void storeTranscript(MeetingAssistantShare share, UUID meetingId, String json) {
+		if (objectStorage.isConfigured()) {
+			String key = transcriptObjectKey(meetingId);
+			objectStorage.put(key, json.getBytes(StandardCharsets.UTF_8), "application/json");
+			share.setTranscriptS3Key(key);
+			share.setTranscript(null);
+			return;
+		}
+		share.setTranscript(json);
+	}
+
+	private void publishUploadedTranscript(MeetingAssistantShare share, UUID meetingId) {
+		if (!objectStorage.isConfigured()) {
+			throw new InvalidRequestException("Object storage is not configured.");
+		}
+		String key = transcriptObjectKey(meetingId);
+		byte[] bytes = objectStorage.get(key);
+		if (bytes == null || bytes.length == 0) {
+			throw new InvalidRequestException("Transcript upload was not found.");
+		}
+		JsonNode parsed = jsonUtils.readTree(new String(bytes, StandardCharsets.UTF_8));
+		if (parsed == null || !parsed.isArray() || parsed.isEmpty()) {
+			throw new InvalidRequestException("Transcript is required.");
+		}
+		share.setTranscriptS3Key(key);
+		share.setTranscript(null);
+	}
+
+	private void storeReport(MeetingAssistantShare share, UUID meetingId, String json) {
+		if (objectStorage.isConfigured()) {
+			String key = reportObjectKey(meetingId);
+			objectStorage.put(key, json.getBytes(StandardCharsets.UTF_8), "application/json");
+			share.setReportS3Key(key);
+			share.setReport(null);
+			return;
+		}
+		share.setReport(json);
+	}
+
+	private void publishUploadedReport(MeetingAssistantShare share, UUID meetingId) {
+		if (!objectStorage.isConfigured()) {
+			throw new InvalidRequestException("Object storage is not configured.");
+		}
+		String key = reportObjectKey(meetingId);
+		byte[] bytes = objectStorage.get(key);
+		if (bytes == null || bytes.length == 0) {
+			throw new InvalidRequestException("Report upload was not found.");
+		}
+		JsonNode parsed = jsonUtils.readTree(new String(bytes, StandardCharsets.UTF_8));
+		if (parsed == null || !parsed.isObject()) {
+			throw new InvalidRequestException("Report is required.");
+		}
+		share.setReportS3Key(key);
+		share.setReport(null);
+	}
+
+	static String transcriptObjectKey(UUID meetingId) {
+		return "meetings/" + meetingId + "/transcript.json";
+	}
+
+	static String reportObjectKey(UUID meetingId) {
+		return "meetings/" + meetingId + "/report.json";
+	}
+
 	private MeetingAssistantShareResponse toResponse(MeetingAssistantShare share) {
+		boolean published = share.getTranscriptPublishedAt() != null;
 		return new MeetingAssistantShareResponse(
 				share.getMeeting().getId(),
-				parseOrNull(share.getTranscript()),
+				published ? readTranscript(share) : null,
 				share.getTranscriptPublishedAt(),
-				parseOrNull(share.getReport()),
+				readReport(share),
 				share.getReportPublishedAt());
+	}
+
+	private boolean hasStoredTranscript(MeetingAssistantShare share) {
+		return hasText(share.getTranscriptS3Key()) || hasText(share.getTranscript());
+	}
+
+	private boolean hasStoredReport(MeetingAssistantShare share) {
+		return hasText(share.getReportS3Key()) || hasText(share.getReport());
+	}
+
+	private boolean hasText(String value) {
+		return value != null && !value.isBlank();
+	}
+
+	private JsonNode readTranscript(MeetingAssistantShare share) {
+		return readJson(share.getTranscriptS3Key(), share.getTranscript());
+	}
+
+	private JsonNode readReport(MeetingAssistantShare share) {
+		return readJson(share.getReportS3Key(), share.getReport());
+	}
+
+	private JsonNode readJson(String s3Key, String jsonb) {
+		if (hasText(s3Key) && objectStorage.isConfigured()) {
+			byte[] bytes = objectStorage.get(s3Key);
+			if (bytes != null && bytes.length > 0) {
+				return jsonUtils.readTree(new String(bytes, StandardCharsets.UTF_8));
+			}
+		}
+		return parseOrNull(jsonb);
 	}
 
 	private JsonNode parseOrNull(String json) {

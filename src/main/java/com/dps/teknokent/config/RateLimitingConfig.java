@@ -3,8 +3,10 @@ package com.dps.teknokent.config;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
+
+import com.dps.teknokent.filter.RateLimitingFilter;
+
 import lombok.RequiredArgsConstructor;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +29,11 @@ public class RateLimitingConfig {
 	public RedisRateLimitingStore redisRateLimitingStore(StringRedisTemplate redisTemplate) {
 		this.redisStore = new RedisRateLimitingStore(redisTemplate, memoryCache);
 		return redisStore;
+	}
+
+	@Bean
+	public RateLimitingFilter rateLimitingFilter() {
+		return new RateLimitingFilter(this);
 	}
 
 	public TokenBucket resolveBucket(String key) {

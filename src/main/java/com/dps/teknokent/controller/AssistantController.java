@@ -17,6 +17,7 @@ import com.dps.teknokent.dto.responses.ErrorResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.AssistantService;
+import com.dps.teknokent.service.MeetingService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 public class AssistantController {
 
   private final AssistantService assistantService;
+  private final MeetingService meetingService;
 
   @PostMapping("/api/assistant/bots")
   public ResponseEntity<?> addBot(@Valid @RequestBody AddBotRequest request) {
@@ -65,6 +67,7 @@ public class AssistantController {
       @PathVariable String nativeMeetingId) {
     try {
       assistantService.stopBot(platform, nativeMeetingId);
+      meetingService.markBotStopped(nativeMeetingId);
       return ResponseEntity.noContent().build();
     } catch (RestClientResponseException ex) {
       return ResponseEntity.status(ex.getStatusCode())

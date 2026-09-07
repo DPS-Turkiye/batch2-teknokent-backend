@@ -156,6 +156,7 @@ class MeetingServiceTest {
 		UUID meetingId = UUID.randomUUID();
 		meeting.setId(meetingId);
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
+		when(meetingRepository.saveAll(any())).thenReturn(List.of(meeting));
 		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
 
 		MeetingResponse response = meetingService.update(
@@ -432,6 +433,49 @@ class MeetingServiceTest {
 		user.setFullName(fullName);
 		user.setRole(role);
 		return user;
+	}
+
+	@Test
+	void markBotStoppedCompletesTheRunningSlotAndLeavesLaterOnesAlone() {
+		Meeting running = linkedMeeting(Instant.now().minus(15, ChronoUnit.MINUTES), 120);
+		Meeting nextWeek = linkedMeeting(Instant.now().plus(7, ChronoUnit.DAYS), 120);
+		when(meetingRepository.findByStatusAndMeetLinkContainingIgnoreCase(
+				MeetingStatus.SCHEDULED, "abc-defg-hij")).thenReturn(List.of(running, nextWeek));
+
+		assertThat(meetingService.markBotStopped("abc-defg-hij")).containsExactly(running.getId());
+
+		assertThat(running.getStatus()).isEqualTo(MeetingStatus.COMPLETED);
+		assertThat(running.getBotDispatchedAt()).isNotNull();
+		assertThat(nextWeek.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+		assertThat(nextWeek.getBotDispatchedAt()).isNull();
+		verify(meetingRepository).saveAll(List.of(running));
+	}
+
+	@Test
+	void markBotStoppedIgnoresSlotsTheDispatcherHasAlreadyGivenUpOn() {
+		Meeting longGone = linkedMeeting(Instant.now().minus(5, ChronoUnit.HOURS), 60);
+		when(meetingRepository.findByStatusAndMeetLinkContainingIgnoreCase(
+				MeetingStatus.SCHEDULED, "abc-defg-hij")).thenReturn(List.of(longGone));
+
+		assertThat(meetingService.markBotStopped("abc-defg-hij")).isEmpty();
+		assertThat(longGone.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+	}
+
+	@Test
+	void markBotStoppedIgnoresABlankMeetingId() {
+		assertThat(meetingService.markBotStopped(" ")).isEmpty();
+		verify(meetingRepository, never()).findByStatusAndMeetLinkContainingIgnoreCase(any(), any());
+	}
+
+	private static Meeting linkedMeeting(Instant scheduledAt, int durationMinutes) {
+		Meeting meeting = new Meeting();
+		meeting.setId(UUID.randomUUID());
+		meeting.setMeetLink("https://meet.google.com/abc-defg-hij");
+		meeting.setScheduledAt(scheduledAt);
+		meeting.setDurationMinutes(durationMinutes);
+		meeting.setTranscribeRequested(true);
+		meeting.setStatus(MeetingStatus.SCHEDULED);
+		return meeting;
 	}
 
 	@Test

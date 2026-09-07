@@ -20,8 +20,11 @@ import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.service.AssistantService;
+import com.dps.teknokent.service.MeetingService;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,6 +41,9 @@ class AssistantControllerTest {
 
   @MockitoBean
   private AssistantService assistantService;
+
+  @MockitoBean
+  private MeetingService meetingService;
 
   @Test
   void addBotReturnsCreated() throws Exception {
@@ -122,9 +128,11 @@ class AssistantControllerTest {
   }
 
   @Test
-  void stopBotReturnsNoContent() throws Exception {
+  void stopBotReturnsNoContentAndEndsTheMeetingInTheDatabase() throws Exception {
     mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
         .andExpect(status().isNoContent());
+
+    verify(meetingService).markBotStopped("abc-defg-hij");
   }
 
   @Test
@@ -150,5 +158,7 @@ class AssistantControllerTest {
     mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail").value("Failed to stop bot: provider down"));
+
+    verify(meetingService, never()).markBotStopped(any());
   }
 }
