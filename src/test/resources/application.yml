@@ -28,6 +28,8 @@ app:
   realtime:
     token-secret: test-secret
     allowed-origins: http://localhost:3000
+  documents:
+    allowed-origins: http://localhost:3000
   s3:
     region: eu-central-1
     bucket: test-bucket
