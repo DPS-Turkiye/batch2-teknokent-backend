@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.ProfileAnalysis;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -31,6 +32,8 @@ import lombok.RequiredArgsConstructor;
 public class ProfileAnalysisService {
 
 	private static final UUID DEFAULT_ORGANIZATION_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
+	private static final byte[] PDF_MAGIC = new byte[] { '%', 'P', 'D', 'F', '-' };
+	private static final int PDF_EOF_SCAN_BYTES = 4 * 1024;
 
 	private final ProfileAnalysisRepository profileAnalysisRepository;
 	private final OrganizationRepository organizationRepository;
@@ -145,11 +148,36 @@ public class ProfileAnalysisService {
 				|| !file.getOriginalFilename().toLowerCase().endsWith(".pdf")) {
 			throw new InvalidRequestException("Please upload a PDF pitch deck or company profile.");
 		}
+		if (file.getSize() > DocumentKind.PROFILE_PDF.maxBytes()) {
+			throw new InvalidRequestException("The uploaded PDF is too large.");
+		}
 		try {
-			return file.getBytes();
+			byte[] bytes = file.getBytes();
+			if (!hasPdfSignature(bytes) || !hasPdfEofMarker(bytes)) {
+				throw new InvalidRequestException("The uploaded PDF is invalid.");
+			}
+			return bytes;
 		} catch (IOException error) {
 			throw new InvalidRequestException("The uploaded PDF could not be read.");
 		}
+	}
+
+	private static boolean hasPdfSignature(byte[] bytes) {
+		if (bytes.length < PDF_MAGIC.length) return false;
+		for (int index = 0; index < PDF_MAGIC.length; index++) {
+			if (bytes[index] != PDF_MAGIC[index]) return false;
+		}
+		return true;
+	}
+
+	private static boolean hasPdfEofMarker(byte[] bytes) {
+		int scanLength = Math.min(bytes.length, PDF_EOF_SCAN_BYTES);
+		String tail = new String(
+				bytes,
+				bytes.length - scanLength,
+				scanLength,
+				java.nio.charset.StandardCharsets.ISO_8859_1);
+		return tail.contains("%%EOF");
 	}
 
 	public ProfileAnalysisResponse createManual(UUID organizationId, UUID appUserId, CreateManualProfileRequest request) {
