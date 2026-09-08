@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
+import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.ProfileAnalysisService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -54,7 +57,26 @@ public class ProfileAnalysisController {
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
 			@RequestParam(defaultValue = "auto") String ocrMode,
 			@RequestPart("file") MultipartFile file) {
-		return profileAnalysisService.parse(organizationId, appUserId, profileType, consentAccepted, ocrMode, file);
+		UUID callerUserId = resolveCallerUserId();
+		return callerUserId == null
+				? profileAnalysisService.parse(
+						organizationId, appUserId, profileType, consentAccepted, ocrMode, file)
+				: profileAnalysisService.parseForCaller(
+						callerUserId, appUserId, profileType, consentAccepted, ocrMode, file);
+	}
+
+	/**
+	 * Null when the caller is the Next.js proxy on service Basic credentials,
+	 * which still supplies organizationId from the session cookie. A browser
+	 * posting directly carries a Firebase bearer, and its organization is
+	 * resolved from the account rather than from what it asked for.
+	 */
+	private static UUID resolveCallerUserId() {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {
+			return principal.id();
+		}
+		return null;
 	}
 
 	/**

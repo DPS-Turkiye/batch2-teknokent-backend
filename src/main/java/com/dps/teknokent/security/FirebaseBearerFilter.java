@@ -31,6 +31,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final String ONBOARDING_PATH_PREFIX = "/api/onboarding/";
 	private static final String STATUS_PATH = "/api/auth/me";
 	private static final String MENTOR_PROFILE_PATH_PREFIX = "/api/mentors/";
+	private static final String PROFILE_PARSE_PREVIEW_PATH = "/api/profile-analyses/preview";
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
@@ -67,6 +68,11 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		Optional<AppUser> account = appUserRepository.findByFirebaseUid(identity.get().uid())
 				.or(() -> appUserRepository.findByEmailIgnoreCase(identity.get().email()));
 		if (account.isEmpty()) {
+			if (isProfileParsePreview(request)) {
+				authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+				filterChain.doFilter(request, response);
+				return;
+			}
 			write(response, HttpServletResponse.SC_UNAUTHORIZED, "This account has not completed registration");
 			return;
 		}
@@ -75,6 +81,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		if (user.getStatus() != UserAccountStatus.APPROVED
 				&& !STATUS_PATH.equals(request.getRequestURI())
 				&& !isDocumentAccess(request)
+				&& !isProfileParsePreview(request)
 				&& !isOwnMentorProfileUpdate(request, user)) {
 			write(response, HttpServletResponse.SC_FORBIDDEN, "This account is awaiting approval");
 			return;
@@ -119,6 +126,19 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static boolean isDocumentAccess(HttpServletRequest request) {
 		return ("POST".equalsIgnoreCase(request.getMethod()) || "GET".equalsIgnoreCase(request.getMethod()))
 				&& "/api/documents".equals(request.getRequestURI());
+	}
+
+	/**
+	 * The signup CV step parses a file before the applicant has an account at
+	 * all, and again while they are PENDING, so a token alone has to open it.
+	 * Safe to widen this far because the endpoint persists nothing — no stored
+	 * document, no profile_analysis row — so there is no organization to scope
+	 * and nothing to leak between startups. It is not public, because it runs
+	 * OCR and an LLM call and an open endpoint would be a cost and abuse route.
+	 */
+	private static boolean isProfileParsePreview(HttpServletRequest request) {
+		return "POST".equalsIgnoreCase(request.getMethod())
+				&& PROFILE_PARSE_PREVIEW_PATH.equals(request.getRequestURI());
 	}
 
 	private static void authenticate(Object principal, List<GrantedAuthority> authorities) {

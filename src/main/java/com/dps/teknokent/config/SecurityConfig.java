@@ -41,12 +41,24 @@ public class SecurityConfig {
 
 	/**
 	 * The Amplify-hosted frontend's own edge blocks any request body over ~8KB
-	 * on its proxy routes, so document uploads go straight from the browser to
-	 * this backend instead. Reuses the realtime origin list by default since
-	 * it is already the set of trusted frontend origins.
+	 * on its proxy routes, so every path that carries an uploaded file goes
+	 * straight from the browser to this backend instead. Reuses the realtime
+	 * origin list by default since it is already the set of trusted frontend
+	 * origins.
 	 */
 	@Value("${app.documents.allowed-origins}")
 	private String[] documentsAllowedOrigins;
+
+	/**
+	 * CV parsing cannot use a presigned S3 URL the way a plain document could,
+	 * because the parser consumes the bytes in-request, so it has to reach this
+	 * backend from the browser itself.
+	 */
+	private static final String[] BROWSER_UPLOAD_PATHS = {
+			"/api/documents",
+			"/api/profile-analyses",
+			"/api/profile-analyses/preview",
+	};
 
 	@Bean
 	CorsConfigurationSource corsConfigurationSource(Environment environment) {
@@ -66,7 +78,9 @@ public class SecurityConfig {
 		documentsConfig.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 		documentsConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 		documentsConfig.setAllowCredentials(false);
-		source.registerCorsConfiguration("/api/documents", documentsConfig);
+		for (String path : BROWSER_UPLOAD_PATHS) {
+			source.registerCorsConfiguration(path, documentsConfig);
+		}
 
 		return source;
 	}
