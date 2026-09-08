@@ -31,6 +31,17 @@ class MeetingUrlParserTest {
   }
 
   @Test
+  void tryParseIgnoresQueryParametersOnGoogleMeetLinks() {
+    assertThat(MeetingUrlParser.tryParse("https://meet.google.com/abc-defg-hij?authuser=0"))
+        .hasValueSatisfying(parsed -> assertThat(parsed.nativeMeetingId()).isEqualTo("abc-defg-hij"));
+  }
+
+  @Test
+  void tryParseReturnsEmptyForBlankInput() {
+    assertThat(MeetingUrlParser.tryParse("  ")).isEmpty();
+  }
+
+  @Test
   void rejectsUnsupportedPlatform() {
     assertThatThrownBy(() -> MeetingUrlParser.parse("https://zoom.us/j/123456789"))
         .isInstanceOf(IllegalArgumentException.class)

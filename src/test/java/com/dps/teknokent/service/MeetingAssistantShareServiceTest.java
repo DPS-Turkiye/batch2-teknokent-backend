@@ -134,9 +134,8 @@ class MeetingAssistantShareServiceTest {
 		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
 		when(objectStorage.isConfigured()).thenReturn(true);
-		when(objectStorage.get(anyString())).thenReturn("""
-				[{"id":"s1","speaker":"Ayşe","text":"Merhaba","at":"00:10"}]
-				""".getBytes(StandardCharsets.UTF_8));
+		when(objectStorage.presignGet("meetings/" + meetingId + "/transcript.json"))
+				.thenReturn("https://s3.example/transcript");
 
 		var transcript = jsonUtils.readTree("""
 				[{"id":"s1","speaker":"Ayşe","text":"Merhaba","at":"00:10"}]
@@ -155,7 +154,8 @@ class MeetingAssistantShareServiceTest {
 		assertThat(saved.getValue().getTranscript()).isNull();
 		assertThat(saved.getValue().getTranscriptS3Key())
 				.isEqualTo("meetings/" + meetingId + "/transcript.json");
-		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
+		assertThat(response.transcript()).isNull();
+		assertThat(response.transcriptUrl()).isEqualTo("https://s3.example/transcript");
 	}
 
 	@Test
@@ -167,12 +167,13 @@ class MeetingAssistantShareServiceTest {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
 		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(share));
 		when(objectStorage.isConfigured()).thenReturn(true);
-		when(objectStorage.get("meetings/" + meetingId + "/transcript.json"))
-				.thenReturn("[{\"speaker\":\"Ayşe\"}]".getBytes(StandardCharsets.UTF_8));
+		when(objectStorage.presignGet("meetings/" + meetingId + "/transcript.json"))
+				.thenReturn("https://s3.example/transcript");
 
 		var response = service().find(meetingId, organizationId);
 
-		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
+		assertThat(response.transcript()).isNull();
+		assertThat(response.transcriptUrl()).isEqualTo("https://s3.example/transcript");
 		assertThat(response.transcriptPublishedAt()).isEqualTo(Instant.parse("2026-09-01T10:00:00Z"));
 	}
 
@@ -241,6 +242,95 @@ class MeetingAssistantShareServiceTest {
 	}
 
 	@Test
+	void showsAPublishedShareToTheMenteeCopyWithoutAMeetLink() {
+		UUID guestId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+		UUID guestOrgId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+		Meeting mentorMeeting = meeting();
+		Meeting guestMeeting = meeting();
+		guestMeeting.setId(guestId);
+		Organization guestOrg = new Organization();
+		guestOrg.setId(guestOrgId);
+		guestOrg.setName("GuestCo");
+		guestMeeting.setOrganization(guestOrg);
+
+		MeetingAssistantShare published = MeetingAssistantShare.emptyFor(mentorMeeting);
+		published.setTranscript("[{\"speaker\":\"Ayşe\",\"text\":\"Merhaba\"}]");
+		published.setTranscriptPublishedAt(Instant.parse("2026-09-01T10:00:00Z"));
+
+		when(domainLookupService.requireMeeting(guestId)).thenReturn(guestMeeting);
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, mentorMeeting.getScheduledAt()))
+				.thenReturn(List.of(mentorMeeting, guestMeeting));
+		when(shareRepository.findByMeetingId(guestId)).thenReturn(Optional.empty());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(published));
+
+		var response = service().find(guestId, guestOrgId);
+
+		assertThat(response.meetingId()).isEqualTo(guestId);
+		assertThat(response.transcript().get(0).path("text").asText()).isEqualTo("Merhaba");
+	}
+
+	@Test
+	void copiesAPublishedTranscriptOntoTheMenteeCopyWithoutAMeetLink() {
+		UUID guestId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+		Meeting mentorMeeting = meeting();
+		Meeting guestMeeting = meeting();
+		guestMeeting.setId(guestId);
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(mentorMeeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.findByMeetingId(guestId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, mentorMeeting.getScheduledAt()))
+				.thenReturn(List.of(mentorMeeting, guestMeeting));
+
+		service().publish(meetingId, new PublishMeetingAssistantShareRequest(
+				mentorId,
+				"TRANSCRIPT",
+				jsonUtils.readTree("""
+						[{"id":"s1","speaker":"Ayşe","text":"Merhaba","at":"00:10"}]
+						"""),
+				null));
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository, org.mockito.Mockito.atLeast(2)).saveAndFlush(saved.capture());
+		assertThat(saved.getAllValues())
+				.anyMatch(share -> share.getMeeting().getId().equals(guestId)
+						&& share.getTranscriptPublishedAt() != null);
+	}
+
+	@Test
+	void showsAPublishedShareWhenTheRoommateMeetLinkOnlySharesTheNativeId() {
+		UUID guestId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+		UUID guestOrgId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+		Meeting mentorMeeting = meeting();
+		mentorMeeting.setMeetLink("https://meet.google.com/aaa-bbbb-ccc");
+		Meeting guestMeeting = meeting();
+		guestMeeting.setId(guestId);
+		guestMeeting.setScheduledAt(Instant.parse("2026-09-15T16:30:00Z"));
+		Organization guestOrg = new Organization();
+		guestOrg.setId(guestOrgId);
+		guestOrg.setName("GuestCo");
+		guestMeeting.setOrganization(guestOrg);
+		guestMeeting.setMeetLink("https://meet.google.com/aaa-bbbb-ccc?authuser=0");
+
+		MeetingAssistantShare published = MeetingAssistantShare.emptyFor(mentorMeeting);
+		published.setTranscript("[{\"speaker\":\"Ayşe\",\"text\":\"Merhaba\"}]");
+		published.setTranscriptPublishedAt(Instant.parse("2026-09-01T10:00:00Z"));
+
+		when(domainLookupService.requireMeeting(guestId)).thenReturn(guestMeeting);
+		when(meetingRepository.findByMeetLinkContainingIgnoreCase("aaa-bbbb-ccc"))
+				.thenReturn(List.of(mentorMeeting, guestMeeting));
+		when(shareRepository.findByMeetingId(guestId)).thenReturn(Optional.empty());
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(published));
+
+		var response = service().find(guestId, guestOrgId);
+
+		assertThat(response.meetingId()).isEqualTo(guestId);
+		assertThat(response.transcript().get(0).path("text").asText()).isEqualTo("Merhaba");
+	}
+
+	@Test
 	void hidesUnpublishedTranscriptArchivedInS3() {
 		Meeting meeting = meeting();
 		MeetingAssistantShare share = MeetingAssistantShare.emptyFor(meeting);
@@ -253,6 +343,7 @@ class MeetingAssistantShareServiceTest {
 		assertThat(response.transcript()).isNull();
 		assertThat(response.transcriptPublishedAt()).isNull();
 		verify(objectStorage, never()).get(anyString());
+		verify(objectStorage, never()).presignGet(anyString());
 	}
 
 	@Test
@@ -263,12 +354,13 @@ class MeetingAssistantShareServiceTest {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
 		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(share));
 		when(objectStorage.isConfigured()).thenReturn(true);
-		when(objectStorage.get("meetings/" + meetingId + "/transcript.json"))
-				.thenReturn("[{\"speaker\":\"Ayşe\"}]".getBytes(StandardCharsets.UTF_8));
+		when(objectStorage.presignGet("meetings/" + meetingId + "/transcript.json"))
+				.thenReturn("https://s3.example/transcript");
 
 		var response = service().find(meetingId, null, mentorId);
 
-		assertThat(response.transcript().get(0).path("speaker").asText()).isEqualTo("Ayşe");
+		assertThat(response.transcript()).isNull();
+		assertThat(response.transcriptUrl()).isEqualTo("https://s3.example/transcript");
 		assertThat(response.transcriptPublishedAt()).isNull();
 	}
 
@@ -340,6 +432,8 @@ class MeetingAssistantShareServiceTest {
 				.thenReturn("""
 						[{"id":"s1","speaker":"Ayşe","text":"Düzenlenmiş merhaba","at":"00:10"}]
 						""".getBytes(StandardCharsets.UTF_8));
+		when(objectStorage.presignGet("meetings/" + meetingId + "/transcript.json"))
+				.thenReturn("https://s3.example/transcript");
 
 		var response = service().publish(meetingId, new PublishMeetingAssistantShareRequest(
 				mentorId, "TRANSCRIPT_S3", null, null));
@@ -350,7 +444,8 @@ class MeetingAssistantShareServiceTest {
 		assertThat(saved.getValue().getTranscriptS3Key())
 				.isEqualTo("meetings/" + meetingId + "/transcript.json");
 		assertThat(saved.getValue().getTranscriptPublishedAt()).isNotNull();
-		assertThat(response.transcript().get(0).path("text").asText()).isEqualTo("Düzenlenmiş merhaba");
+		assertThat(response.transcript()).isNull();
+		assertThat(response.transcriptUrl()).isEqualTo("https://s3.example/transcript");
 	}
 
 	@Test
@@ -442,6 +537,8 @@ class MeetingAssistantShareServiceTest {
 		when(objectStorage.isConfigured()).thenReturn(true);
 		when(objectStorage.get("meetings/" + meetingId + "/report.json"))
 				.thenReturn("{\"title\":\"S3 raporu\"}".getBytes(StandardCharsets.UTF_8));
+		when(objectStorage.presignGet("meetings/" + meetingId + "/report.json"))
+				.thenReturn("https://s3.example/report");
 
 		var response = service().publish(meetingId, new PublishMeetingAssistantShareRequest(
 				mentorId, "REPORT_S3", null, null));
@@ -451,7 +548,8 @@ class MeetingAssistantShareServiceTest {
 		assertThat(saved.getValue().getReportS3Key())
 				.isEqualTo("meetings/" + meetingId + "/report.json");
 		assertThat(saved.getValue().getReportPublishedAt()).isNotNull();
-		assertThat(response.report().path("title").asText()).isEqualTo("S3 raporu");
+		assertThat(response.report()).isNull();
+		assertThat(response.reportUrl()).isEqualTo("https://s3.example/report");
 	}
 
 	@Test

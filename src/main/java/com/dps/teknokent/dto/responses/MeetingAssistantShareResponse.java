@@ -8,11 +8,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 public record MeetingAssistantShareResponse(
 		UUID meetingId,
 		JsonNode transcript,
+		String transcriptUrl,
 		Instant transcriptPublishedAt,
 		JsonNode report,
+		String reportUrl,
 		Instant reportPublishedAt) {
 
 	public static MeetingAssistantShareResponse empty(UUID meetingId) {
-		return new MeetingAssistantShareResponse(meetingId, null, null, null, null);
+		return new MeetingAssistantShareResponse(meetingId, null, null, null, null, null, null);
 	}
 }

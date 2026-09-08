@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.net.URI;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 public final class MeetingUrlParser {
@@ -11,6 +12,17 @@ public final class MeetingUrlParser {
   private static final Pattern GMEET = Pattern.compile("^[a-z]{3}-[a-z]{4}-[a-z]{3}$");
 
   private MeetingUrlParser() {}
+
+  public static Optional<Parsed> tryParse(String raw) {
+    if (raw == null || raw.isBlank()) {
+      return Optional.empty();
+    }
+    try {
+      return Optional.of(parse(raw));
+    } catch (RuntimeException ignored) {
+      return Optional.empty();
+    }
+  }
 
   public static Parsed parse(String raw) {
     String input = raw.trim();
