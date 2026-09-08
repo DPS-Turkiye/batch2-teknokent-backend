@@ -18,6 +18,7 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutBucketCorsRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 @Slf4j
@@ -25,6 +26,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 public class S3ObjectStorage implements ObjectStorage {
 
 	private static final Duration PUT_URL_TTL = Duration.ofMinutes(5);
+	private static final Duration GET_URL_TTL = Duration.ofMinutes(30);
 
 	private final S3Client s3Client;
 	private final S3Presigner s3Presigner;
@@ -121,6 +123,27 @@ public class S3ObjectStorage implements ObjectStorage {
 					.toString();
 		} catch (RuntimeException error) {
 			throw new InvalidRequestException("The upload URL could not be created.");
+		}
+	}
+
+	@Override
+	public String presignGet(String key) {
+		if (!isConfigured()) {
+			throw new InvalidRequestException("Object storage is not configured.");
+		}
+		try {
+			return s3Presigner.presignGetObject(
+					GetObjectPresignRequest.builder()
+							.signatureDuration(GET_URL_TTL)
+							.getObjectRequest(GetObjectRequest.builder()
+									.bucket(bucket)
+									.key(key)
+									.build())
+							.build())
+					.url()
+					.toString();
+		} catch (RuntimeException error) {
+			throw new InvalidRequestException("The download URL could not be created.");
 		}
 	}
 }

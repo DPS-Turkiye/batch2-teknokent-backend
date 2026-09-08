@@ -9,4 +9,6 @@ public interface ObjectStorage {
 	byte[] get(String key);
 
 	String presignPut(String key, String contentType);
+
+	String presignGet(String key);
 }

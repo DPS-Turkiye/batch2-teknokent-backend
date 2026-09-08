@@ -293,12 +293,7 @@ public class MeetingService {
 	}
 
 	private List<Meeting> roommates(Meeting meeting) {
-		String meetLink = meeting.getMeetLink();
-		if (meetLink == null || meetLink.isBlank()) {
-			return List.of(meeting);
-		}
-		List<Meeting> room = meetingRepository.findByMeetLinkAndScheduledAt(meetLink, meeting.getScheduledAt());
-		return room.isEmpty() ? List.of(meeting) : room;
+		return MeetingRooms.of(meeting, meetingRepository);
 	}
 
 	private void copyBotDispatchIfSameLink(Meeting meeting) {

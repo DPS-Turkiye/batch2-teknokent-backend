@@ -46,7 +46,7 @@ public class MeetingAssistantShareService {
 		Meeting meeting = requireVisibleMeeting(meetingId, organizationId, viewerId);
 		boolean mentorViewer = isMeetingMentor(meeting, viewerId);
 		MeetingAssistantShare share = shareRepository.findByMeetingId(meeting.getId()).orElse(null);
-		if (!hasVisibleShare(share, mentorViewer)) {
+		if (!hasReadableShare(share, mentorViewer)) {
 			share = publishedShareFromRoommates(meeting, share);
 		}
 		if (share == null) {
@@ -225,12 +225,24 @@ public class MeetingAssistantShareService {
 			boolean includeUnpublishedTranscript) {
 		boolean showTranscript = includeUnpublishedTranscript || share.getTranscriptPublishedAt() != null;
 		boolean showReport = includeUnpublishedTranscript || share.getReportPublishedAt() != null;
+		StoredJson transcript = showTranscript
+				? readStoredJson(share.getTranscriptS3Key(), share.getTranscript())
+				: StoredJson.missing();
+		StoredJson report = showReport
+				? readStoredJson(share.getReportS3Key(), share.getReport())
+				: StoredJson.missing();
 		return new MeetingAssistantShareResponse(
 				meetingId,
-				showTranscript ? readTranscript(share) : null,
+				transcript.body(),
+				transcript.url(),
 				share.getTranscriptPublishedAt(),
-				showReport ? readReport(share) : null,
+				report.body(),
+				report.url(),
 				share.getReportPublishedAt());
+	}
+
+	private boolean hasReadableShare(MeetingAssistantShare share, boolean mentorViewer) {
+		return hasVisibleShare(share, mentorViewer);
 	}
 
 	private boolean hasVisibleShare(MeetingAssistantShare share, boolean mentorViewer) {
@@ -284,12 +296,7 @@ public class MeetingAssistantShareService {
 	}
 
 	private List<Meeting> roommates(Meeting meeting) {
-		String meetLink = meeting.getMeetLink();
-		if (meetLink == null || meetLink.isBlank() || meeting.getScheduledAt() == null) {
-			return List.of(meeting);
-		}
-		List<Meeting> room = meetingRepository.findByMeetLinkAndScheduledAt(meetLink, meeting.getScheduledAt());
-		return room.isEmpty() ? List.of(meeting) : room;
+		return MeetingRooms.of(meeting, meetingRepository);
 	}
 
 	private boolean hasStoredTranscript(MeetingAssistantShare share) {
@@ -304,26 +311,24 @@ public class MeetingAssistantShareService {
 		return value != null && !value.isBlank();
 	}
 
-	private JsonNode readTranscript(MeetingAssistantShare share) {
-		return readJson(share.getTranscriptS3Key(), share.getTranscript());
-	}
-
-	private JsonNode readReport(MeetingAssistantShare share) {
-		return readJson(share.getReportS3Key(), share.getReport());
-	}
-
-	private JsonNode readJson(String s3Key, String jsonb) {
+	private StoredJson readStoredJson(String s3Key, String jsonb) {
 		if (hasText(s3Key) && objectStorage.isConfigured()) {
 			try {
-				byte[] bytes = objectStorage.get(s3Key);
-				if (bytes != null && bytes.length > 0) {
-					return jsonUtils.readTree(new String(bytes, StandardCharsets.UTF_8));
+				String url = objectStorage.presignGet(s3Key);
+				if (hasText(url)) {
+					return new StoredJson(null, url);
 				}
 			} catch (RuntimeException ignored) {
-				return parseOrNull(jsonb);
+				return new StoredJson(parseOrNull(jsonb), null);
 			}
 		}
-		return parseOrNull(jsonb);
+		return new StoredJson(parseOrNull(jsonb), null);
+	}
+
+	private record StoredJson(JsonNode body, String url) {
+		static StoredJson missing() {
+			return new StoredJson(null, null);
+		}
 	}
 
 	private JsonNode parseOrNull(String json) {
