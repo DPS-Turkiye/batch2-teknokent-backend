@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RegisterFounderRequest(
@@ -13,7 +14,7 @@ public record RegisterFounderRequest(
 		@NotBlank @Size(max = 255) String organizationName,
 		@Size(max = 5000) String description,
 		@Size(max = 255) String jobTitle,
-		@Size(max = 32) String phone,
+		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone,
 		// Optional: null is "no program", which is a real answer, not a missing one.
 		UUID programId,
 		@Size(max = 5000) String bio,

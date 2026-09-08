@@ -67,6 +67,27 @@ class DocumentServiceTest {
 	}
 
 	@Test
+	void storesAStartupLogoAsAnImage() {
+		UUID userId = UUID.randomUUID();
+		when(storedDocumentRepository.save(any(StoredDocument.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		var response = documentService.store(
+				userId, UUID.randomUUID(), "logo", "mark.png", "image/png", "png".getBytes());
+
+		assertThat(response.kind()).isEqualTo("logo");
+		verify(objectStorage).put(any(String.class), eq("png".getBytes()), eq("image/png"));
+	}
+
+	@Test
+	void rejectsADocumentSubmittedAsAStartupLogo() {
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(), null, "logo", "pitch.pdf", "application/pdf", "x".getBytes()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("image");
+	}
+
+	@Test
 	void listsDocumentsForTheUserNewestFirst() {
 		UUID userId = UUID.randomUUID();
 		StoredDocument cv = new StoredDocument();

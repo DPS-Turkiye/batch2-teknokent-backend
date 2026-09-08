@@ -161,4 +161,22 @@ class AuthRegistrationControllerTest {
                                 """))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void rejectsFounderRegisterWhenPhoneContainsLetters() throws Exception {
+        mockMvc.perform(post("/api/auth/register/founder")
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ayşe Demir",
+                                  "email": "ayse@startup.com",
+                                  "organizationName": "GreenLoop",
+                                  "phone": "+90abc5551112233"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Request validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.phone").exists());
+    }
 }

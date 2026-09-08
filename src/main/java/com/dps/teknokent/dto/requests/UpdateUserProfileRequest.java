@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 // Email is absent: FirebaseBearerFilter matches accounts by it, so changing it
@@ -13,7 +14,7 @@ public record UpdateUserProfileRequest(
 		@NotNull UUID actorId,
 		@NotBlank @Size(max = 255) String fullName,
 		@Size(max = 255) String jobTitle,
-		@Size(max = 32) String phone,
+		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone,
 		@Size(max = 5000) String bio,
 		@Size(max = 255) String linkedinUrl,
 		List<@Size(max = 255) String> expertise) {

@@ -29,6 +29,8 @@ public class DocumentService {
 	private static final Set<String> DOC_TYPES = Set.of(
 			"application/pdf",
 			"application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+	private static final Set<String> IMAGE_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
+	private static final Set<String> IMAGE_TYPES = Set.of("image/png", "image/jpeg", "image/webp");
 
 	private final AppUserRepository appUserRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
@@ -82,17 +84,23 @@ public class DocumentService {
 			throw new InvalidRequestException("A file name is required.");
 		}
 		String extension = extensionOf(filename);
+		if (kind.imageOnly() && !IMAGE_EXTENSIONS.contains(extension)) {
+			throw new InvalidRequestException("Please upload a PNG, JPG, or WebP image.");
+		}
 		if (kind.pdfOnly() && !extension.equals("pdf")) {
 			throw new InvalidRequestException("Please upload a PDF.");
 		}
-		if (!extension.equals("pdf") && !extension.equals("docx")) {
+		if (!kind.imageOnly() && !extension.equals("pdf") && !extension.equals("docx")) {
 			throw new InvalidRequestException("Please upload a PDF or DOCX file.");
 		}
 		String resolvedType = resolveContentType(contentType, extension);
+		if (kind.imageOnly() && !IMAGE_TYPES.contains(resolvedType)) {
+			throw new InvalidRequestException("Please upload a PNG, JPG, or WebP image.");
+		}
 		if (kind.pdfOnly() && !PDF_TYPES.contains(resolvedType)) {
 			throw new InvalidRequestException("Please upload a PDF.");
 		}
-		if (!kind.pdfOnly() && !DOC_TYPES.contains(resolvedType)) {
+		if (!kind.pdfOnly() && !kind.imageOnly() && !DOC_TYPES.contains(resolvedType)) {
 			throw new InvalidRequestException("Please upload a PDF or DOCX file.");
 		}
 
@@ -129,9 +137,13 @@ public class DocumentService {
 		if (contentType != null && !contentType.isBlank() && !contentType.equals("application/octet-stream")) {
 			return contentType.toLowerCase(Locale.ROOT);
 		}
-		return extension.equals("docx")
-				? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-				: "application/pdf";
+		return switch (extension) {
+			case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+			case "png" -> "image/png";
+			case "jpg", "jpeg" -> "image/jpeg";
+			case "webp" -> "image/webp";
+			default -> "application/pdf";
+		};
 	}
 
 	private static String sanitize(String filename) {
