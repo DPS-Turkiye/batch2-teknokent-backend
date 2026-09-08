@@ -34,6 +34,7 @@ public class AppUserService {
 	private final OrganizationRepository organizationRepository;
 	private final DomainLookupService domainLookupService;
 	private final InviteCodeGenerator inviteCodeGenerator;
+	private final NotificationService notificationService;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -131,6 +132,15 @@ public class AppUserService {
 					.map(this::ensureInviteCode)
 					.orElse(null);
 		}
+		notificationService.create(
+				target,
+				request.status() == UserAccountStatus.APPROVED
+						? "Başvurunuz onaylandı"
+						: "Başvurunuz sonuçlandı",
+				request.status() == UserAccountStatus.APPROVED
+						? "Hesabınız kullanıma açıldı. Platforma giriş yapabilirsiniz."
+						: "Başvurunuz bu aşamada onaylanmadı.",
+				"/application-status");
 		return new AccountDecisionResponse(UserResponse.fromEntity(target), inviteCode);
 	}
 

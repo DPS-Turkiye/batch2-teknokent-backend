@@ -43,6 +43,7 @@ public class ProgramService {
 	private final ProgramMentorRepository programMentorRepository;
 	private final OrganizationRepository organizationRepository;
 	private final DomainLookupService domainLookupService;
+	private final NotificationService notificationService;
 
 	@Transactional
 	public ProgramResponse create(UUID actorId, String name) {
@@ -167,6 +168,11 @@ public class ProgramService {
 		Program program = requireOwnedProgram(actorId, programId);
 		AppUser mentor = requireApprovedMentor(mentorId);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.COORDINATOR);
+		notificationService.create(
+				mentor,
+				"Yeni program daveti",
+				program.getName() + " programına mentor olarak davet edildiniz.",
+				"/mentor-dashboard");
 		return toResponse(program);
 	}
 
@@ -175,6 +181,11 @@ public class ProgramService {
 		AppUser mentor = requireMentor(actorId);
 		Program program = requireProgram(programId);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.MENTOR);
+		notificationService.create(
+				domainLookupService.requireUser(program.getCreatedBy()),
+				"Yeni mentor katılım talebi",
+				mentor.getFullName() + ", " + program.getName() + " programına katılmak istiyor.",
+				"/programs");
 		return toResponse(program);
 	}
 
@@ -189,6 +200,11 @@ public class ProgramService {
 			throw new InvalidRequestException("This invitation cannot be decided.");
 		}
 		applyDecision(membership, accepted);
+		notificationService.create(
+				domainLookupService.requireUser(requireProgram(programId).getCreatedBy()),
+				"Program daveti yanıtlandı",
+				mentor.getFullName() + (accepted ? " davetinizi kabul etti." : " davetinizi reddetti."),
+				"/programs");
 		return toInvitation(membership);
 	}
 
@@ -203,6 +219,11 @@ public class ProgramService {
 			throw new InvalidRequestException("This mentor request cannot be decided.");
 		}
 		applyDecision(membership, accepted);
+		notificationService.create(
+				domainLookupService.requireUser(mentorId),
+				"Program katılım talebiniz sonuçlandı",
+				program.getName() + (accepted ? " talebinizi kabul etti." : " talebinizi reddetti."),
+				"/mentor-dashboard");
 		return toResponse(program);
 	}
 

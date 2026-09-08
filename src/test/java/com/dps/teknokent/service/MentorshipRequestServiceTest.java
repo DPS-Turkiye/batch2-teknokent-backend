@@ -63,7 +63,10 @@ class MentorshipRequestServiceTest {
         @Mock
         private MentorProfileService mentorProfileService;
 
-        @InjectMocks
+        @Mock
+    private NotificationService notificationService;
+
+    @InjectMocks
         private MentorshipRequestService mentorshipRequestService;
 
         @Test

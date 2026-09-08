@@ -60,6 +60,7 @@ public class MentorshipRequestService {
 	private final MeetingRepository meetingRepository;
 	private final DomainLookupService domainLookupService;
 	private final MentorProfileService mentorProfileService;
+	private final NotificationService notificationService;
 
 	@Transactional(readOnly = true)
 	public List<MentorshipRequestResponse> findAll(UUID requesterId, UUID mentorId) {
@@ -104,6 +105,11 @@ public class MentorshipRequestService {
 		if (request.recommendationSnapshot() != null) {
 			saveRecommendationSnapshot(savedRequest, request.recommendationSnapshot());
 		}
+		notificationService.create(
+				mentor,
+				"Yeni mentorluk talebi",
+				requester.getFullName() + " size " + savedRequest.getSupportArea() + " konusunda bir talep gönderdi.",
+				"/mentor-dashboard");
 		return toResponse(savedRequest);
 	}
 
@@ -129,7 +135,17 @@ public class MentorshipRequestService {
 		if (decision.status() == MentorshipRequestStatus.MORE_INFO_REQUESTED) {
 			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_QUESTION, message);
 		}
-		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
+		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
+		notificationService.create(
+				request.getRequester(),
+				decision.status() == MentorshipRequestStatus.ACCEPTED
+						? "Mentorluk talebiniz kabul edildi"
+						: decision.status() == MentorshipRequestStatus.DECLINED
+								? "Mentorluk talebiniz sonuçlandı"
+								: "Mentorunuz ek bilgi istedi",
+				message,
+				"/mentor-request/status?request=" + request.getId());
+		return toResponse(savedRequest);
 	}
 
 	@Transactional
@@ -151,6 +167,11 @@ public class MentorshipRequestService {
 		if (isReplyingToInfoRequest) {
 			request.markReplied();
 		}
+		notificationService.create(
+				request.getMentor(),
+				"Mentorluk talebinize yanıt geldi",
+				request.getRequester().getFullName() + " yeni bir mesaj gönderdi.",
+				"/mentor-dashboard");
 		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
 	}
 
@@ -165,6 +186,11 @@ public class MentorshipRequestService {
 		}
 		saveMessage(request, request.getMentor(), MentorshipRequestMessageType.MENTOR_MESSAGE,
 				TextUtils.trim(postMessage.message()));
+		notificationService.create(
+				request.getRequester(),
+				"Mentorunuzdan yeni mesaj",
+				request.getMentor().getFullName() + " yeni bir mesaj gönderdi.",
+				"/mentor-request/status?request=" + request.getId());
 		return toResponse(request);
 	}
 
@@ -220,7 +246,13 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("This slot has just been booked. Please choose another time");
 		}
 
-		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(Meeting.forMentorshipRequest(request, slot)));
+		Meeting savedMeeting = meetingRepository.saveAndFlush(Meeting.forMentorshipRequest(request, slot));
+		notificationService.create(
+				request.getMentor(),
+				"Yeni görüşme planlandı",
+				request.getRequester().getFullName() + " mentorluk görüşmesi için bir zaman seçti.",
+				"/mentor-dashboard/calendar");
+		return MeetingResponse.fromEntity(savedMeeting);
 	}
 
 	@Transactional(readOnly = true)
