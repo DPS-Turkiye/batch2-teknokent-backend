@@ -62,10 +62,12 @@ public class MentorshipRequestService {
 	private final MentorProfileService mentorProfileService;
 
 	@Transactional(readOnly = true)
-	public List<MentorshipRequestResponse> findAll(UUID requesterId, UUID mentorId) {
+	public List<MentorshipRequestResponse> findAll(UUID requesterId, UUID mentorId, UUID organizationId) {
 		List<MentorshipRequest> requests;
 		if (mentorId != null) {
 			requests = mentorshipRequestRepository.findByMentorIdOrderByCreatedAtDesc(mentorId);
+		} else if (organizationId != null) {
+			requests = mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId);
 		} else if (requesterId != null) {
 			requests = mentorshipRequestRepository.findByRequesterIdOrderByCreatedAtDesc(requesterId);
 		} else {
