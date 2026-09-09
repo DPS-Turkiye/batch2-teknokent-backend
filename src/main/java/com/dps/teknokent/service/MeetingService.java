@@ -29,6 +29,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -139,7 +140,8 @@ public class MeetingService {
 				logRequest.agenda(),
 				logRequest.notes(),
 				logRequest.outcomes(),
-				logRequest.status());
+				logRequest.status(),
+				logRequest.meetLink());
 		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
 	}
 
@@ -155,6 +157,9 @@ public class MeetingService {
 		}
 		if (request.status() != null) {
 			meeting.setStatus(request.status());
+		}
+		if (request.meetLink() != null) {
+			meeting.setMeetLink(TextUtils.normalizeOptional(request.meetLink()));
 		}
 		if (Boolean.TRUE.equals(request.transcriptBotDispatched())
 				|| request.status() == MeetingStatus.COMPLETED) {

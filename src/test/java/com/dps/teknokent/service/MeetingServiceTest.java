@@ -89,7 +89,7 @@ class MeetingServiceTest {
 	private LogMeetingRequest logRequest(UUID callerMentorId) {
 		return new LogMeetingRequest(
 				callerMentorId, Instant.now().minus(1, ChronoUnit.DAYS), 45, "Gündem", "Notlar", "Sonuçlar",
-				MeetingStatus.COMPLETED);
+				MeetingStatus.COMPLETED, null);
 	}
 
 	@Test
@@ -119,7 +119,7 @@ class MeetingServiceTest {
 	}
 
 	@Test
-	void logMeetingSavesEntryWithoutMentorshipRequestLink() {
+		void logMeetingSavesEntryLinkedToTheRequest() {
 		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
 		when(meetingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
 			Meeting meeting = invocation.getArgument(0);
@@ -129,7 +129,7 @@ class MeetingServiceTest {
 
 		MeetingResponse response = meetingService.logMeeting(requestId, logRequest(mentorId));
 
-		assertThat(response.mentorshipRequestId()).isNull();
+		assertThat(response.mentorshipRequestId()).isEqualTo(requestId);
 		assertThat(response.mentorId()).isEqualTo(mentorId);
 		assertThat(response.status()).isEqualTo(MeetingStatus.COMPLETED);
 		assertThat(response.notes()).isEqualTo("Notlar");
@@ -139,7 +139,7 @@ class MeetingServiceTest {
 	void findTimelineForRequestListsMeetingsByMentorAndOrganization() {
 		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
 		Meeting meeting = Meeting.forLoggedEntry(
-				acceptedRequest(), Instant.now(), 30, null, null, null, MeetingStatus.COMPLETED);
+				acceptedRequest(), Instant.now(), 30, null, null, null, MeetingStatus.COMPLETED, null);
 		meeting.setId(UUID.randomUUID());
 		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(mentorId, organizationId))
 				.thenReturn(List.of(meeting));
@@ -152,7 +152,7 @@ class MeetingServiceTest {
 	@Test
 	void updateAppliesOnlyProvidedFields() {
 		Meeting meeting = Meeting.forLoggedEntry(
-				acceptedRequest(), Instant.now(), 30, "Gündem", "Eski not", null, MeetingStatus.SCHEDULED);
+				acceptedRequest(), Instant.now(), 30, "Gündem", "Eski not", null, MeetingStatus.SCHEDULED, null);
 		UUID meetingId = UUID.randomUUID();
 		meeting.setId(meetingId);
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
@@ -160,7 +160,7 @@ class MeetingServiceTest {
 		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
 
 		MeetingResponse response = meetingService.update(
-				meetingId, new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED, null));
+				meetingId, new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED, null, null));
 
 		assertThat(response.notes()).isEqualTo("Yeni not");
 		assertThat(response.status()).isEqualTo(MeetingStatus.COMPLETED);
@@ -172,7 +172,7 @@ class MeetingServiceTest {
 		UUID meetingId = UUID.randomUUID();
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> meetingService.update(meetingId, new UpdateMeetingRequest("Not", null, null, null)))
+		assertThatThrownBy(() -> meetingService.update(meetingId, new UpdateMeetingRequest("Not", null, null, null, null)))
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 

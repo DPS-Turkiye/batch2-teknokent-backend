@@ -60,7 +60,7 @@ class MentorshipRequestControllerTest {
         UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
         UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000301");
 
-        when(mentorshipRequestService.findAll(requesterId, null)).thenReturn(List.of(new MentorshipRequestResponse(
+        when(mentorshipRequestService.findAll(requesterId, null, null)).thenReturn(List.of(new MentorshipRequestResponse(
                 requestId,
                 requesterId,
                 "Ayşe Demir",

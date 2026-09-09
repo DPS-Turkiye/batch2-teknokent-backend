@@ -70,8 +70,10 @@ public class Meeting {
 			String agenda,
 			String notes,
 			String outcomes,
-			MeetingStatus status) {
+			MeetingStatus status,
+			String meetLink) {
 		Meeting meeting = new Meeting();
+		meeting.mentorshipRequest = request;
 		meeting.organization = request.getOrganization();
 		meeting.mentor = request.getMentor();
 		meeting.scheduledAt = scheduledAt;
@@ -79,6 +81,7 @@ public class Meeting {
 		meeting.agenda = TextUtils.normalizeOptional(agenda);
 		meeting.notes = TextUtils.normalizeOptional(notes);
 		meeting.outcomes = TextUtils.normalizeOptional(outcomes);
+		meeting.meetLink = TextUtils.normalizeOptional(meetLink);
 		meeting.status = status;
 		return meeting;
 	}

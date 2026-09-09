@@ -8,5 +8,6 @@ public record UpdateMeetingRequest(
 		@Size(max = 10000) String notes,
 		@Size(max = 10000) String outcomes,
 		MeetingStatus status,
-		Boolean transcriptBotDispatched) {
+		Boolean transcriptBotDispatched,
+		@Size(max = 2048) String meetLink) {
 }

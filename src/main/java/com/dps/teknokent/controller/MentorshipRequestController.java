@@ -45,8 +45,9 @@ public class MentorshipRequestController {
 	@GetMapping
 	public List<MentorshipRequestResponse> findAll(
 			@RequestParam(required = false) UUID requesterId,
-			@RequestParam(required = false) UUID mentorId) {
-		return mentorshipRequestService.findAll(requesterId, mentorId);
+			@RequestParam(required = false) UUID mentorId,
+			@RequestParam(required = false) UUID organizationId) {
+		return mentorshipRequestService.findAll(requesterId, mentorId, organizationId);
 	}
 
 	@GetMapping("/{id}")
