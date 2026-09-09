@@ -86,11 +86,40 @@ class MentorshipRequestServiceTest {
                                 .thenReturn(List.of());
                 when(recommendationRunRepository.findByRequestId(any())).thenReturn(Optional.empty());
 
-                var result = mentorshipRequestService.findAll(requesterId, null);
+                var result = mentorshipRequestService.findAll(requesterId, null, null);
 
                 assertThat(result).hasSize(2);
                 assertThat(result.getFirst().requesterId()).isEqualTo(requesterId);
                 assertThat(result.get(1).status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+        }
+
+        @Test
+        void findAll_listsEveryRequestForTheStartup() {
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                                "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+                AppUser teammate = user(UUID.fromString("00000000-0000-0000-0000-000000000102"),
+                                "teammate@tekno.com", "Mert Kaya", UserRole.MENTEE);
+                AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com",
+                                "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(organizationId, "Teknokent");
+
+                MentorshipRequest first = mentorshipRequest(UUID.fromString("00000000-0000-0000-0000-000000000401"),
+                                requester, organization, mentor, "Roadmap help", MentorshipRequestStatus.PENDING);
+                MentorshipRequest second = mentorshipRequest(UUID.fromString("00000000-0000-0000-0000-000000000402"),
+                                teammate, organization, mentor, "Hiring strategy", MentorshipRequestStatus.ACCEPTED);
+
+                when(mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
+                                .thenReturn(List.of(first, second));
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(any()))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(any())).thenReturn(Optional.empty());
+
+                var result = mentorshipRequestService.findAll(null, null, organizationId);
+
+                assertThat(result).hasSize(2);
+                assertThat(result.getFirst().organizationId()).isEqualTo(organizationId);
+                assertThat(result.get(1).requesterId()).isEqualTo(teammate.getId());
         }
 
         @Test
