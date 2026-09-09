@@ -71,6 +71,43 @@ class DocumentServiceTest {
 	}
 
 	@Test
+	void storesAStartupLogoAsAnImage() {
+		UUID userId = UUID.randomUUID();
+		when(storedDocumentRepository.save(any(StoredDocument.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		byte[] png = pngBytes();
+		var response = documentService.store(
+				userId, UUID.randomUUID(), "logo", "mark.png", "image/png", png);
+
+		assertThat(response.kind()).isEqualTo("logo");
+		verify(objectStorage).put(any(String.class), eq(png), eq("image/png"));
+	}
+
+	@Test
+	void rejectsALogoWhoseBytesAreNotAnImage() {
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(), null, "logo", "mark.png", "image/png", "png".getBytes()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("image");
+	}
+
+	private static byte[] pngBytes() {
+		byte[] header = new byte[] { (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+		byte[] bytes = new byte[32];
+		System.arraycopy(header, 0, bytes, 0, header.length);
+		return bytes;
+	}
+
+	@Test
+	void rejectsADocumentSubmittedAsAStartupLogo() {
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(), null, "logo", "pitch.pdf", "application/pdf", "x".getBytes()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("image");
+	}
+
+	@Test
 	void listsDocumentsForTheUserNewestFirst() {
 		UUID userId = UUID.randomUUID();
 		StoredDocument cv = new StoredDocument();

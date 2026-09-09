@@ -34,6 +34,8 @@ public class DocumentService {
 	private static final Set<String> DOC_TYPES = Set.of(
 			"application/pdf",
 			"application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+	private static final Set<String> IMAGE_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
+	private static final Set<String> IMAGE_TYPES = Set.of("image/png", "image/jpeg", "image/webp");
 	private static final byte[] PDF_MAGIC = new byte[] { '%', 'P', 'D', 'F', '-' };
 	private static final Set<String> DANGEROUS_ARCHIVE_SUFFIXES = Set.of(
 			".js", ".jar", ".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".vbs", ".msi");
@@ -109,10 +111,23 @@ public class DocumentService {
 			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "missing-filename", "A file name is required.");
 		}
 		String extension = extensionOf(filename);
+		if (kind.imageOnly() && !IMAGE_EXTENSIONS.contains(extension)) {
+			throw new InvalidRequestException("Please upload a PNG, JPG, or WebP image.");
+		}
 		if (kind.pdfOnly() && !extension.equals("pdf")) {
 			throw rejectUpload(userId, organizationId, kindValue, filename, fileSize, "extension-not-pdf", "Please upload a PDF.");
 		}
-		if (!extension.equals("pdf") && !extension.equals("docx")) {
+		if (kind.imageOnly() && !IMAGE_EXTENSIONS.contains(extension)) {
+			throw rejectUpload(
+					userId,
+					organizationId,
+					kindValue,
+					filename,
+					fileSize,
+					"extension-not-image",
+					"Please upload a PNG, JPG or WebP image.");
+		}
+		if (!kind.imageOnly() && !extension.equals("pdf") && !extension.equals("docx")) {
 			throw rejectUpload(
 					userId,
 					organizationId,
@@ -123,10 +138,23 @@ public class DocumentService {
 					"Please upload a PDF or DOCX file.");
 		}
 		String resolvedType = resolveContentType(contentType, extension);
+		if (kind.imageOnly() && !IMAGE_TYPES.contains(resolvedType)) {
+			throw new InvalidRequestException("Please upload a PNG, JPG, or WebP image.");
+		}
 		if (kind.pdfOnly() && !PDF_TYPES.contains(resolvedType)) {
 			throw rejectUpload(userId, organizationId, kindValue, filename, fileSize, "mime-not-pdf", "Please upload a PDF.");
 		}
-		if (!kind.pdfOnly() && !DOC_TYPES.contains(resolvedType)) {
+		if (kind.imageOnly() && !IMAGE_TYPES.contains(resolvedType)) {
+			throw rejectUpload(
+					userId,
+					organizationId,
+					kindValue,
+					filename,
+					fileSize,
+					"mime-not-image",
+					"Please upload a PNG, JPG or WebP image.");
+		}
+		if (!kind.pdfOnly() && !kind.imageOnly() && !DOC_TYPES.contains(resolvedType)) {
 			throw rejectUpload(
 					userId,
 					organizationId,
@@ -171,9 +199,13 @@ public class DocumentService {
 		if (contentType != null && !contentType.isBlank() && !contentType.equals("application/octet-stream")) {
 			return contentType.toLowerCase(Locale.ROOT);
 		}
-		return extension.equals("docx")
-				? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-				: "application/pdf";
+		return switch (extension) {
+			case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+			case "png" -> "image/png";
+			case "jpg", "jpeg" -> "image/jpeg";
+			case "webp" -> "image/webp";
+			default -> "application/pdf";
+		};
 	}
 
 	private static String sanitize(String filename) {
@@ -201,6 +233,20 @@ public class DocumentService {
 						(long) bytes.length,
 						"invalid-pdf-structure",
 						"The uploaded PDF is invalid.");
+			}
+			return;
+		}
+
+		if (IMAGE_EXTENSIONS.contains(extension)) {
+			if (!hasImageSignature(bytes)) {
+				throw rejectUpload(
+						userId,
+						organizationId,
+						kindValue,
+						filename,
+						(long) bytes.length,
+						"invalid-image-structure",
+						"The uploaded image is invalid.");
 			}
 			return;
 		}
@@ -290,6 +336,33 @@ public class DocumentService {
 			return false;
 		}
 		return hasContentTypes && hasMainDocument;
+	}
+
+	private boolean hasImageSignature(byte[] bytes) {
+		if (bytes == null) {
+			return false;
+		}
+		if (startsWith(bytes, new byte[] { (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A })) {
+			return true;
+		}
+		if (startsWith(bytes, new byte[] { (byte) 0xFF, (byte) 0xD8, (byte) 0xFF })) {
+			return true;
+		}
+		return bytes.length >= 12
+				&& startsWith(bytes, new byte[] { 'R', 'I', 'F', 'F' })
+				&& bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P';
+	}
+
+	private boolean startsWith(byte[] bytes, byte[] prefix) {
+		if (bytes.length < prefix.length) {
+			return false;
+		}
+		for (int i = 0; i < prefix.length; i++) {
+			if (bytes[i] != prefix[i]) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private InvalidRequestException rejectUpload(
