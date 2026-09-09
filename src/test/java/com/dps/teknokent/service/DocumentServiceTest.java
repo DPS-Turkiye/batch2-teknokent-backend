@@ -7,8 +7,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,7 +55,7 @@ class DocumentServiceTest {
 				.thenAnswer(invocation -> invocation.getArgument(0));
 
 		MockMultipartFile file = new MockMultipartFile(
-				"file", "pitch deck.pdf", "application/pdf", "%PDF-1.4 test".getBytes());
+				"file", "pitch deck.pdf", "application/pdf", "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF".getBytes());
 
 		var response = documentService.storeForUser(userId, "pitch-deck", file);
 
@@ -72,11 +76,27 @@ class DocumentServiceTest {
 		when(storedDocumentRepository.save(any(StoredDocument.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
 
+		byte[] png = pngBytes();
 		var response = documentService.store(
-				userId, UUID.randomUUID(), "logo", "mark.png", "image/png", "png".getBytes());
+				userId, UUID.randomUUID(), "logo", "mark.png", "image/png", png);
 
 		assertThat(response.kind()).isEqualTo("logo");
-		verify(objectStorage).put(any(String.class), eq("png".getBytes()), eq("image/png"));
+		verify(objectStorage).put(any(String.class), eq(png), eq("image/png"));
+	}
+
+	@Test
+	void rejectsALogoWhoseBytesAreNotAnImage() {
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(), null, "logo", "mark.png", "image/png", "png".getBytes()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("image");
+	}
+
+	private static byte[] pngBytes() {
+		byte[] header = new byte[] { (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+		byte[] bytes = new byte[32];
+		System.arraycopy(header, 0, bytes, 0, header.length);
+		return bytes;
 	}
 
 	@Test
@@ -133,5 +153,84 @@ class DocumentServiceTest {
 				"x".getBytes()))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("PDF");
+	}
+
+	@Test
+	void rejectsPdfWithoutEofMarker() {
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(),
+				null,
+				"pitch-deck",
+				"deck.pdf",
+				"application/pdf",
+				"%PDF-1.4\n1 0 obj\n<<>>\nendobj".getBytes()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("invalid");
+	}
+
+	@Test
+	void rejectsDocxWithDangerousEmbeddedScript() throws Exception {
+		byte[] unsafeDocx = docx(
+				"[Content_Types].xml", "<Types></Types>",
+				"word/document.xml", "<w:document></w:document>",
+				"word/embeddings/payload.js", "alert('x')");
+
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(),
+				null,
+				"pitch-deck",
+				"deck.docx",
+				"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				unsafeDocx))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("DOCX");
+	}
+
+	@Test
+	void rejectsDocxWithPathTraversalEntry() throws Exception {
+		byte[] traversalDocx = docx(
+				"[Content_Types].xml", "<Types></Types>",
+				"word/document.xml", "<w:document></w:document>",
+				"../escape.sh", "echo hacked");
+
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(),
+				null,
+				"pitch-deck",
+				"deck.docx",
+				"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				traversalDocx))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("DOCX");
+	}
+
+	@Test
+	void rejectsDocxWhenAnEntryExpandsBeyondSafetyLimit() throws Exception {
+		byte[] hugeEntryDocx = docx(
+				"[Content_Types].xml", "<Types></Types>",
+				"word/document.xml", "<w:document></w:document>",
+				"word/media/huge.bin", "a".repeat(21 * 1024 * 1024));
+
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(),
+				null,
+				"pitch-deck",
+				"deck.docx",
+				"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				hugeEntryDocx))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("DOCX");
+	}
+
+	private static byte[] docx(String... entries) throws IOException {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		try (ZipOutputStream zip = new ZipOutputStream(output)) {
+			for (int index = 0; index < entries.length; index += 2) {
+				zip.putNextEntry(new ZipEntry(entries[index]));
+				zip.write(entries[index + 1].getBytes());
+				zip.closeEntry();
+			}
+		}
+		return output.toByteArray();
 	}
 }

@@ -59,7 +59,11 @@ class ProfileAnalysisServiceTest {
 	private ProfileAnalysisService profileAnalysisService;
 
 	private static MockMultipartFile cvPdf() {
-		return new MockMultipartFile("file", "cv.pdf", "application/pdf", "%PDF-1.4".getBytes());
+		return new MockMultipartFile(
+				"file",
+				"cv.pdf",
+				"application/pdf",
+				"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF".getBytes());
 	}
 
 	private void stubParser(String json) {
@@ -175,7 +179,7 @@ class ProfileAnalysisServiceTest {
 				.thenAnswer(invocation -> invocation.getArgument(0));
 
 		MockMultipartFile file = new MockMultipartFile(
-				"file", "pitch.pdf", "application/pdf", "%PDF-1.4 acme".getBytes());
+				"file", "pitch.pdf", "application/pdf", "%PDF-1.4\n1 0 obj\n(Acme)\nendobj\n%%EOF".getBytes());
 		profileAnalysisService.parse(organizationId, null, "mentee", true, "auto", file);
 
 		verify(documentService).store(

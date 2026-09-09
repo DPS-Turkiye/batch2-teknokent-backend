@@ -7,21 +7,15 @@ import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.exception.InvalidRequestException;
 
-import jakarta.annotation.PostConstruct;
-import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.CORSConfiguration;
-import software.amazon.awssdk.services.s3.model.CORSRule;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.PutBucketCorsRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-@Slf4j
 @Service
 public class S3ObjectStorage implements ObjectStorage {
 
@@ -39,29 +33,6 @@ public class S3ObjectStorage implements ObjectStorage {
 		this.s3Client = s3Client;
 		this.s3Presigner = s3Presigner;
 		this.bucket = bucket;
-	}
-
-	@PostConstruct
-	void allowBrowserPuts() {
-		if (!isConfigured()) {
-			return;
-		}
-		try {
-			s3Client.putBucketCors(PutBucketCorsRequest.builder()
-					.bucket(bucket)
-					.corsConfiguration(CORSConfiguration.builder()
-							.corsRules(CORSRule.builder()
-									.allowedOrigins("*")
-									.allowedMethods("GET", "PUT", "HEAD")
-									.allowedHeaders("*")
-									.exposeHeaders("ETag", "x-amz-request-id")
-									.maxAgeSeconds(3600)
-									.build())
-							.build())
-					.build());
-		} catch (RuntimeException error) {
-			log.warn("Could not set S3 CORS on {}: {}", bucket, error.getMessage());
-		}
 	}
 
 	@Override
