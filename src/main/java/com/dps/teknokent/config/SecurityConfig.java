@@ -60,6 +60,8 @@ public class SecurityConfig {
 			"/api/profile-analyses/preview",
 	};
 
+	private static final String NOTIFICATION_PATH = "/api/notifications/**";
+
 	@Bean
 	CorsConfigurationSource corsConfigurationSource(Environment environment) {
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -81,6 +83,13 @@ public class SecurityConfig {
 		for (String path : BROWSER_UPLOAD_PATHS) {
 			source.registerCorsConfiguration(path, documentsConfig);
 		}
+
+		CorsConfiguration notificationConfig = new CorsConfiguration();
+		notificationConfig.setAllowedOrigins(Arrays.asList(documentsAllowedOrigins));
+		notificationConfig.setAllowedMethods(List.of("GET", "PATCH", "DELETE", "OPTIONS"));
+		notificationConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+		notificationConfig.setAllowCredentials(false);
+		source.registerCorsConfiguration(NOTIFICATION_PATH, notificationConfig);
 
 		return source;
 	}

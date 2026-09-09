@@ -46,6 +46,8 @@ class ProgramServiceTest {
 	private OrganizationRepository organizationRepository;
 	@Mock
 	private DomainLookupService domainLookupService;
+	@Mock
+	private NotificationService notificationService;
 	@InjectMocks
 	private ProgramService programService;
 

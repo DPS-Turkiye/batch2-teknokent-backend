@@ -45,6 +45,9 @@ class AppUserServiceTest {
     @Mock
     private InviteCodeGenerator inviteCodeGenerator;
 
+    @Mock
+    private NotificationService notificationService;
+
     @InjectMocks
     private AppUserService appUserService;
 
