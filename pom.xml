@@ -16,6 +16,7 @@
 
 	<properties>
 		<java.version>25</java.version>
+		<jacoco.version>0.8.15</jacoco.version>
 	</properties>
 
 	<dependencies>
@@ -120,6 +121,53 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<executions>
+					<execution>
+						<id>jacoco-prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>jacoco-report-after-test</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.6.1</version>
+				<executions>
+					<execution>
+						<id>jacoco-console-summary-after-test</id>
+						<phase>test</phase>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>sh</executable>
+							<arguments>
+								<argument>-c</argument>
+								<argument><![CDATA[
+if [ -f target/site/jacoco/jacoco.csv ]; then
+  awk -F, 'NR>1{ins_m+=$4;ins_c+=$5;br_m+=$6;br_c+=$7;ln_m+=$8;ln_c+=$9;met_m+=$12;met_c+=$13} END {ins_t=ins_c+ins_m;br_t=br_c+br_m;ln_t=ln_c+ln_m;met_t=met_c+met_m; printf "\n=== JaCoCo Coverage Summary ===\n"; printf "Instruction: %.2f%% (%d/%d)\n", (ins_t?ins_c/ins_t*100:0), ins_c, ins_t; printf "Branch:      %.2f%% (%d/%d)\n", (br_t?br_c/br_t*100:0), br_c, br_t; printf "Line:        %.2f%% (%d/%d)\n", (ln_t?ln_c/ln_t*100:0), ln_c, ln_t; printf "Method:      %.2f%% (%d/%d)\n", (met_t?met_c/met_t*100:0), met_c, met_t; printf "===============================\n\n"; }' target/site/jacoco/jacoco.csv
+else
+  echo "JaCoCo summary skipped: target/site/jacoco/jacoco.csv not found."
+fi
+]]></argument>
+							</arguments>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

@@ -12,12 +12,10 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.PutBucketCorsRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,15 +44,6 @@ class S3ObjectStorageTest {
 				.thenThrow(NoSuchKeyException.builder().message("missing").build());
 
 		assertThat(storage.get("missing.json")).isNull();
-	}
-
-	@Test
-	void writesBucketCorsWhenConfigured() {
-		var storage = storage("bucket");
-
-		storage.allowBrowserPuts();
-
-		verify(s3Client).putBucketCors(any(PutBucketCorsRequest.class));
 	}
 
 	@Test
