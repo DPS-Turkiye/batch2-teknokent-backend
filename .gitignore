@@ -48,6 +48,9 @@ __pycache__/
 /tools/
 /docs/
 
+# Local-only Docker/Firebase seed users — never push.
+/local/
+
 # Firebase Admin SDK private keys. Never commit these.
 *firebase-adminsdk*.json
 *-firebase-adminsdk-*.json

@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
 import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
@@ -32,8 +33,8 @@ public class MeetingProviderClient {
     payload.put("meeting_url", meetingUrl);
     payload.put("bot_name", ProviderMeetingPresence.BOT_NAME);
     Map<String, Object> automaticLeave = new LinkedHashMap<>();
-    automaticLeave.put("max_wait_for_admission", 300_000);
-    automaticLeave.put("max_time_left_alone", 90_000);
+    automaticLeave.put("max_wait_for_admission", TranscriptBotConstants.MAX_WAIT_FOR_ADMISSION_MS);
+    automaticLeave.put("max_time_left_alone", TranscriptBotConstants.MAX_TIME_LEFT_ALONE_MS);
     payload.put("automatic_leave", automaticLeave);
 
     byte[] json = jsonMapper.writeValueAsBytes(payload);

@@ -17,5 +17,6 @@ public record LogMeetingRequest(
 		@Size(max = 10000) String notes,
 		@Size(max = 10000) String outcomes,
 		@NotNull MeetingStatus status,
-		@Size(max = 2048) String meetLink) {
+		@Size(max = 2048) String meetLink,
+		Boolean transcribeRequested) {
 }

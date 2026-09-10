@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.InviteMeetingGuestRequest;
@@ -41,10 +42,6 @@ public class MeetingService {
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final DomainLookupService domainLookupService;
 	private final MeetingFeedbackRepository meetingFeedbackRepository;
-
-	private static final int BOT_JOIN_LEAD_MINUTES = 5;
-	private static final int DISPATCH_GRACE_MINUTES = 60;
-	private static final int DEFAULT_DURATION_MINUTES = 60;
 
 	@Transactional(readOnly = true)
 	public List<MeetingResponse> findAll(UUID organizationId, UUID mentorId) {
@@ -141,7 +138,9 @@ public class MeetingService {
 				logRequest.notes(),
 				logRequest.outcomes(),
 				logRequest.status(),
-				logRequest.meetLink());
+				logRequest.meetLink(),
+				Boolean.TRUE.equals(logRequest.transcribeRequested()));
+		copyBotDispatchIfSameLink(meeting);
 		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
 	}
 
@@ -160,6 +159,10 @@ public class MeetingService {
 		}
 		if (request.meetLink() != null) {
 			meeting.setMeetLink(TextUtils.normalizeOptional(request.meetLink()));
+			copyBotDispatchIfSameLink(meeting);
+		}
+		if (request.transcribeRequested() != null) {
+			meeting.setTranscribeRequested(Boolean.TRUE.equals(request.transcribeRequested()));
 		}
 		if (Boolean.TRUE.equals(request.transcriptBotDispatched())
 				|| request.status() == MeetingStatus.COMPLETED) {
@@ -217,13 +220,13 @@ public class MeetingService {
 
 	private static boolean isRunningSlot(Meeting meeting, Instant now) {
 		Instant start = meeting.getScheduledAt();
-		if (start == null || start.isAfter(now.plus(BOT_JOIN_LEAD_MINUTES, ChronoUnit.MINUTES))) {
+		if (start == null || start.isAfter(now.plus(TranscriptBotConstants.BOT_JOIN_LEAD_MINUTES, ChronoUnit.MINUTES))) {
 			return false;
 		}
 		int duration = meeting.getDurationMinutes() == null
-				? DEFAULT_DURATION_MINUTES
+				? TranscriptBotConstants.DEFAULT_DURATION_MINUTES
 				: meeting.getDurationMinutes();
-		return !now.isAfter(start.plus(duration + DISPATCH_GRACE_MINUTES, ChronoUnit.MINUTES));
+		return !now.isAfter(start.plus(duration + TranscriptBotConstants.DISPATCH_GRACE_MINUTES, ChronoUnit.MINUTES));
 	}
 
 	/**

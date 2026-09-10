@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.RecommendationEvidenceSubmission;
 import com.dps.teknokent.dto.requests.RecommendationSnapshotSubmission;
@@ -45,6 +46,7 @@ import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.util.ProposedSlots;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -128,14 +130,22 @@ public class MentorshipRequestService {
 		}
 		if (decision.status() != MentorshipRequestStatus.ACCEPTED
 				&& decision.status() != MentorshipRequestStatus.DECLINED
-				&& decision.status() != MentorshipRequestStatus.MORE_INFO_REQUESTED) {
-			throw new InvalidRequestException("Decision status must be ACCEPTED, DECLINED, or MORE_INFO_REQUESTED");
+				&& decision.status() != MentorshipRequestStatus.MORE_INFO_REQUESTED
+				&& decision.status() != MentorshipRequestStatus.COUNTER_PROPOSED) {
+			throw new InvalidRequestException(
+					"Decision status must be ACCEPTED, DECLINED, MORE_INFO_REQUESTED, or COUNTER_PROPOSED");
+		}
+		if (decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED
+				&& ProposedSlots.parse(decision.message()).isEmpty()) {
+			throw new InvalidRequestException("At least one proposed slot is required");
 		}
 
 		String message = TextUtils.trim(decision.message());
 		request.recordDecision(decision.status(), message);
 		if (decision.status() == MentorshipRequestStatus.MORE_INFO_REQUESTED) {
 			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_QUESTION, message);
+		} else if (decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED) {
+			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_MESSAGE, message);
 		}
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
 		notificationService.create(
@@ -144,9 +154,34 @@ public class MentorshipRequestService {
 						? "Mentorluk talebiniz kabul edildi"
 						: decision.status() == MentorshipRequestStatus.DECLINED
 								? "Mentorluk talebiniz sonuçlandı"
-								: "Mentorunuz ek bilgi istedi",
+								: decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED
+										? "Mentorunuz alternatif saat önerdi"
+										: "Mentorunuz ek bilgi istedi",
 				message,
 				"/mentor-request/status?request=" + request.getId());
+		return toResponse(savedRequest);
+	}
+
+	@Transactional
+	public MentorshipRequestResponse acceptProposedSlot(UUID id, AcceptProposedSlotRequest acceptance) {
+		MentorshipRequest request = requireRequest(id);
+		if (!request.getRequester().getId().equals(acceptance.requesterId())) {
+			throw new InvalidRequestException("Only the requester can accept a proposed slot");
+		}
+		if (request.getStatus() != MentorshipRequestStatus.COUNTER_PROPOSED) {
+			throw new InvalidRequestException("Only counter-proposed requests can accept a slot");
+		}
+		String selectedSlot = TextUtils.trim(acceptance.selectedSlot());
+		if (!ProposedSlots.contains(request.getMentorMessage(), selectedSlot)) {
+			throw new InvalidRequestException("Selected slot is not among the mentor proposals");
+		}
+		request.recordDecision(MentorshipRequestStatus.ACCEPTED, "Görüşme saati: " + selectedSlot);
+		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
+		notificationService.create(
+				request.getMentor(),
+				"Mentee görüşme saatini seçti",
+				request.getRequester().getFullName() + " önerdiğiniz saatlerden birini kabul etti.",
+				"/mentorships");
 		return toResponse(savedRequest);
 	}
 
@@ -203,7 +238,8 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Only the requester can withdraw this request");
 		}
 		if (request.getStatus() != MentorshipRequestStatus.PENDING
-				&& request.getStatus() != MentorshipRequestStatus.MORE_INFO_REQUESTED) {
+				&& request.getStatus() != MentorshipRequestStatus.MORE_INFO_REQUESTED
+				&& request.getStatus() != MentorshipRequestStatus.COUNTER_PROPOSED) {
 			throw new InvalidRequestException("Only an unanswered request can be withdrawn");
 		}
 		request.withdraw();
