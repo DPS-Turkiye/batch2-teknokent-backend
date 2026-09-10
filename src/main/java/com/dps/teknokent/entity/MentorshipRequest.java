@@ -55,6 +55,27 @@ public class MentorshipRequest {
 		return mentorshipRequest;
 	}
 
+	public static MentorshipRequest forCalendarMeeting(
+			AppUser requester,
+			Organization organization,
+			AppUser mentor,
+			String agenda) {
+		MentorshipRequest mentorshipRequest = new MentorshipRequest();
+		mentorshipRequest.requester = requester;
+		mentorshipRequest.organization = organization;
+		mentorshipRequest.mentor = mentor;
+		mentorshipRequest.requestedForName = requester.getFullName();
+		String topic = TextUtils.normalizeOptional(agenda);
+		mentorshipRequest.supportArea = topic == null ? "Takvim toplantısı" : topic;
+		mentorshipRequest.summary = mentorshipRequest.supportArea;
+		mentorshipRequest.urgency = MentorshipRequestUrgency.THIS_WEEK;
+		mentorshipRequest.mentorshipFormat = MentorshipRequestFormat.SINGLE_MEETING;
+		mentorshipRequest.meetingMode = MeetingMode.ONLINE;
+		mentorshipRequest.status = MentorshipRequestStatus.ACCEPTED;
+		mentorshipRequest.mentorMessage = "Takvimden oluşturuldu";
+		return mentorshipRequest;
+	}
+
 	public void recordDecision(MentorshipRequestStatus decision, String message) {
 		status = decision;
 		if (decision == MentorshipRequestStatus.DECLINED) {

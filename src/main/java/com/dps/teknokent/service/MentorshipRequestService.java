@@ -46,6 +46,7 @@ import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProposedSlots;
 import com.dps.teknokent.util.TextUtils;
 
@@ -148,6 +149,9 @@ public class MentorshipRequestService {
 			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_MESSAGE, message);
 		}
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
+		if (decision.status() == MentorshipRequestStatus.ACCEPTED) {
+			ensureMeetingForAccepted(savedRequest, MeetingSlotTimes.parseFromDecisionMessage(message));
+		}
 		notificationService.create(
 				request.getRequester(),
 				decision.status() == MentorshipRequestStatus.ACCEPTED
@@ -177,6 +181,7 @@ public class MentorshipRequestService {
 		}
 		request.recordDecision(MentorshipRequestStatus.ACCEPTED, "Görüşme saati: " + selectedSlot);
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
+		ensureMeetingForAccepted(savedRequest, MeetingSlotTimes.parseMachineSlot(selectedSlot));
 		notificationService.create(
 				request.getMentor(),
 				"Mentee görüşme saatini seçti",
@@ -363,6 +368,25 @@ public class MentorshipRequestService {
 			String body) {
 		mentorshipRequestMessageRepository.saveAndFlush(
 				MentorshipRequestMessage.create(request, author, messageType, body));
+	}
+
+	private void ensureMeetingForAccepted(MentorshipRequest request, Instant scheduledAt) {
+		if (scheduledAt == null) {
+			return;
+		}
+		if (meetingRepository.findByMentorshipRequestId(request.getId()).isPresent()) {
+			return;
+		}
+		meetingRepository.saveAndFlush(Meeting.forLoggedEntry(
+				request,
+				scheduledAt,
+				45,
+				request.getSupportArea() + " — Mentorluk Görüşmesi",
+				null,
+				null,
+				MeetingStatus.SCHEDULED,
+				null,
+				false));
 	}
 
 	private MentorshipRequestResponse toResponse(MentorshipRequest request) {

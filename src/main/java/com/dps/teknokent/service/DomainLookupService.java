@@ -5,10 +5,12 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -36,6 +38,15 @@ public class DomainLookupService {
 	public Organization requireOrganization(UUID id) {
 		return organizationRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Organization not found: " + id));
+	}
+
+	@Transactional(readOnly = true)
+	public AppUser requireOrganizationMentee(UUID organizationId) {
+		return appUserRepository.findByOrganizationIdOrderByFullNameAsc(organizationId).stream()
+				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.findFirst()
+				.orElseThrow(() -> new InvalidRequestException(
+						"No mentee found in the startup to attach this calendar meeting"));
 	}
 
 	@Transactional(readOnly = true)

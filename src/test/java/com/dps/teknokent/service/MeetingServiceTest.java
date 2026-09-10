@@ -121,6 +121,7 @@ class MeetingServiceTest {
 	@Test
 		void logMeetingSavesEntryLinkedToTheRequest() {
 		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
+		when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.empty());
 		when(meetingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
 			Meeting meeting = invocation.getArgument(0);
 			meeting.setId(UUID.randomUUID());
@@ -139,6 +140,7 @@ class MeetingServiceTest {
 	@Test
 	void logMeetingPersistsTranscriptRequestAndMeetLink() {
 		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
+		when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.empty());
 		when(meetingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
 			Meeting meeting = invocation.getArgument(0);
 			meeting.setId(UUID.randomUUID());
@@ -161,6 +163,43 @@ class MeetingServiceTest {
 		assertThat(response.transcribeRequested()).isTrue();
 		assertThat(response.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
 		assertThat(response.status()).isEqualTo(MeetingStatus.SCHEDULED);
+	}
+
+	@Test
+	void logMeetingUpdatesExistingRequestMeetingInsteadOfDuplicating() {
+		MentorshipRequest request = acceptedRequest();
+		Meeting existing = Meeting.forLoggedEntry(
+				request,
+				Instant.parse("2026-09-10T10:00:00Z"),
+				45,
+				"Eski",
+				null,
+				null,
+				MeetingStatus.SCHEDULED,
+				null,
+				false);
+		existing.setId(UUID.fromString("00000000-0000-0000-0000-000000000501"));
+		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+		when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.of(existing));
+		when(meetingRepository.saveAndFlush(existing)).thenReturn(existing);
+
+		MeetingResponse response = meetingService.logMeeting(
+				requestId,
+				new LogMeetingRequest(
+						mentorId,
+						Instant.parse("2026-09-10T11:00:00Z"),
+						45,
+						null,
+						null,
+						null,
+						MeetingStatus.SCHEDULED,
+						"https://meet.google.com/abc-defg-hij",
+						true));
+
+		assertThat(response.id()).isEqualTo(existing.getId());
+		assertThat(response.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
+		assertThat(response.transcribeRequested()).isTrue();
+		assertThat(response.scheduledAt()).isEqualTo(Instant.parse("2026-09-10T11:00:00Z"));
 	}
 
 	@Test
@@ -316,6 +355,25 @@ class MeetingServiceTest {
 
 		when(domainLookupService.requireUser(demoMentorId)).thenReturn(mentor);
 		when(domainLookupService.requireOrganization(demoOrganizationId)).thenReturn(organization);
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				demoMentorId, demoOrganizationId, MentorshipRequestStatus.ACCEPTED))
+				.thenReturn(Optional.empty());
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				demoMentorId, demoOrganizationId, MentorshipRequestStatus.PENDING))
+				.thenReturn(Optional.empty());
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				demoMentorId, demoOrganizationId, MentorshipRequestStatus.MORE_INFO_REQUESTED))
+				.thenReturn(Optional.empty());
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				demoMentorId, demoOrganizationId, MentorshipRequestStatus.COUNTER_PROPOSED))
+				.thenReturn(Optional.empty());
+		AppUser mentee = namedUser(UUID.fromString("00000000-0000-0000-0000-000000000102"), "Ayşe", UserRole.MENTEE);
+		when(domainLookupService.requireOrganizationMentee(demoOrganizationId)).thenReturn(mentee);
+		when(mentorshipRequestRepository.saveAndFlush(any(MentorshipRequest.class))).thenAnswer(invocation -> {
+			MentorshipRequest saved = invocation.getArgument(0);
+			saved.setId(UUID.fromString("00000000-0000-0000-0000-000000000401"));
+			return saved;
+		});
 		when(meetingRepository.save(any(Meeting.class))).thenAnswer(invocation -> {
 			Meeting saved = invocation.getArgument(0);
 			saved.setId(meetingId);
@@ -329,6 +387,8 @@ class MeetingServiceTest {
 		assertThat(result.mentorId()).isEqualTo(demoMentorId);
 		assertThat(result.status()).isEqualTo(MeetingStatus.SCHEDULED);
 		assertThat(result.transcribeRequested()).isFalse();
+		assertThat(result.mentorshipRequestId())
+				.isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000401"));
 	}
 
 	@Test
@@ -353,6 +413,12 @@ class MeetingServiceTest {
 
 		when(domainLookupService.requireUser(demoMentorId)).thenReturn(mentor);
 		when(domainLookupService.requireOrganization(demoOrganizationId)).thenReturn(organization);
+		MentorshipRequest accepted = new MentorshipRequest();
+		accepted.setId(UUID.fromString("00000000-0000-0000-0000-000000000401"));
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				demoMentorId, demoOrganizationId, MentorshipRequestStatus.ACCEPTED))
+				.thenReturn(Optional.of(accepted));
+		when(meetingRepository.findByMentorshipRequestId(accepted.getId())).thenReturn(Optional.empty());
 		when(meetingRepository.save(any(Meeting.class))).thenAnswer(invocation -> {
 			Meeting saved = invocation.getArgument(0);
 			saved.setId(meetingId);
@@ -362,6 +428,7 @@ class MeetingServiceTest {
 		MeetingResponse result = meetingService.create(request);
 
 		assertThat(result.transcribeRequested()).isTrue();
+		assertThat(result.mentorshipRequestId()).isEqualTo(accepted.getId());
 	}
 
 	@Test

@@ -277,6 +277,8 @@ class MentorshipRequestServiceTest {
                 when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
                                 .thenReturn(List.of());
                 when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+                when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.empty());
+                when(meetingRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
                 var result = mentorshipRequestService.acceptProposedSlot(requestId,
                                 new AcceptProposedSlotRequest(requesterId, "2026-09-12T15:00"));
@@ -284,6 +286,7 @@ class MentorshipRequestServiceTest {
                 assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
                 assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
                 assertThat(request.getMentorMessage()).isEqualTo("Görüşme saati: 2026-09-12T15:00");
+                verify(meetingRepository).saveAndFlush(any());
         }
 
         @Test

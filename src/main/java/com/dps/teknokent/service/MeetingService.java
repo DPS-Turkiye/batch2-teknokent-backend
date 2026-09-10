@@ -67,10 +67,46 @@ public class MeetingService {
 				throw new InvalidRequestException("Selected user does not have the MENTOR role");
 			}
 		}
-		Meeting meeting = Meeting.fromRequest(request,
-				domainLookupService.requireOrganization(request.organizationId()), mentor);
+		Organization organization = domainLookupService.requireOrganization(request.organizationId());
+		Meeting meeting = Meeting.fromRequest(request, organization, mentor);
+		if (mentor != null) {
+			meeting.setMentorshipRequest(resolveAcceptedMentorship(organization, mentor, request.agenda()));
+		}
 		copyBotDispatchIfSameLink(meeting);
 		return MeetingResponse.fromEntity(meetingRepository.save(meeting));
+	}
+
+	private MentorshipRequest resolveAcceptedMentorship(
+			Organization organization,
+			AppUser mentor,
+			String agenda) {
+		Optional<MentorshipRequest> accepted = mentorshipRequestRepository
+				.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+						mentor.getId(), organization.getId(), MentorshipRequestStatus.ACCEPTED);
+		if (accepted.isPresent()
+				&& meetingRepository.findByMentorshipRequestId(accepted.get().getId()).isEmpty()) {
+			return accepted.get();
+		}
+
+		for (MentorshipRequestStatus open : List.of(
+				MentorshipRequestStatus.PENDING,
+				MentorshipRequestStatus.MORE_INFO_REQUESTED,
+				MentorshipRequestStatus.COUNTER_PROPOSED)) {
+			Optional<MentorshipRequest> openRequest = mentorshipRequestRepository
+					.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+							mentor.getId(), organization.getId(), open);
+			if (openRequest.isPresent()
+					&& meetingRepository.findByMentorshipRequestId(openRequest.get().getId()).isEmpty()) {
+				MentorshipRequest request = openRequest.get();
+				request.recordDecision(MentorshipRequestStatus.ACCEPTED, "Takvimden oluşturuldu");
+				return mentorshipRequestRepository.saveAndFlush(request);
+			}
+		}
+
+		AppUser requester = domainLookupService.requireOrganizationMentee(organization.getId());
+		MentorshipRequest created = MentorshipRequest.forCalendarMeeting(
+				requester, organization, mentor, agenda);
+		return mentorshipRequestRepository.saveAndFlush(created);
 	}
 
 	@Transactional(readOnly = true)
@@ -130,16 +166,44 @@ public class MeetingService {
 		if (!request.getMentor().getId().equals(logRequest.mentorId())) {
 			throw new InvalidRequestException("Only the assigned mentor can log a meeting for this request");
 		}
-		Meeting meeting = Meeting.forLoggedEntry(
-				request,
-				logRequest.scheduledAt(),
-				logRequest.durationMinutes(),
-				logRequest.agenda(),
-				logRequest.notes(),
-				logRequest.outcomes(),
-				logRequest.status(),
-				logRequest.meetLink(),
-				Boolean.TRUE.equals(logRequest.transcribeRequested()));
+		Meeting meeting = meetingRepository.findByMentorshipRequestId(request.getId()).orElse(null);
+		if (meeting == null) {
+			meeting = Meeting.forLoggedEntry(
+					request,
+					logRequest.scheduledAt(),
+					logRequest.durationMinutes(),
+					logRequest.agenda(),
+					logRequest.notes(),
+					logRequest.outcomes(),
+					logRequest.status(),
+					logRequest.meetLink(),
+					Boolean.TRUE.equals(logRequest.transcribeRequested()));
+		} else {
+			if (logRequest.scheduledAt() != null) {
+				meeting.setScheduledAt(logRequest.scheduledAt());
+			}
+			if (logRequest.durationMinutes() != null) {
+				meeting.setDurationMinutes(logRequest.durationMinutes());
+			}
+			if (logRequest.agenda() != null) {
+				meeting.setAgenda(TextUtils.normalizeOptional(logRequest.agenda()));
+			}
+			if (logRequest.notes() != null) {
+				meeting.setNotes(TextUtils.normalizeOptional(logRequest.notes()));
+			}
+			if (logRequest.outcomes() != null) {
+				meeting.setOutcomes(TextUtils.normalizeOptional(logRequest.outcomes()));
+			}
+			if (logRequest.status() != null) {
+				meeting.setStatus(logRequest.status());
+			}
+			if (logRequest.meetLink() != null) {
+				meeting.setMeetLink(TextUtils.normalizeOptional(logRequest.meetLink()));
+			}
+			if (logRequest.transcribeRequested() != null) {
+				meeting.setTranscribeRequested(Boolean.TRUE.equals(logRequest.transcribeRequested()));
+			}
+		}
 		copyBotDispatchIfSameLink(meeting);
 		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
 	}
