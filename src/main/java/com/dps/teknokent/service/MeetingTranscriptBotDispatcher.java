@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -27,8 +29,8 @@ public class MeetingTranscriptBotDispatcher {
 
 	@Transactional
 	public int dispatchDueMeetings(Instant now) {
-		Instant from = now.minus(1, ChronoUnit.HOURS);
-		Instant until = now.plus(2, ChronoUnit.MINUTES);
+		Instant from = now.minus(TranscriptBotConstants.DISPATCH_LOOKBACK_HOURS, ChronoUnit.HOURS);
+		Instant until = now.plus(TranscriptBotConstants.DISPATCH_LOOKAHEAD_MINUTES, ChronoUnit.MINUTES);
 		List<Meeting> due = meetingRepository
 				.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
 						MeetingStatus.SCHEDULED, from, until);
@@ -36,11 +38,18 @@ public class MeetingTranscriptBotDispatcher {
 		Map<String, List<Meeting>> byLink = new LinkedHashMap<>();
 		for (Meeting meeting : due) {
 			String link = meeting.getMeetLink();
-			if (link == null || link.isBlank()) continue;
-			int duration = meeting.getDurationMinutes() == null ? 60 : meeting.getDurationMinutes();
+			if (link == null || link.isBlank()) {
+				continue;
+			}
+			Integer durationMinutes = meeting.getDurationMinutes();
+			int duration = durationMinutes == null
+					? TranscriptBotConstants.DEFAULT_DURATION_MINUTES
+					: durationMinutes;
 			Instant endsAt = meeting.getScheduledAt().plus(duration, ChronoUnit.MINUTES);
-			if (now.isAfter(endsAt)) continue;
-			byLink.computeIfAbsent(link.trim(), ignored -> new java.util.ArrayList<>()).add(meeting);
+			if (now.isAfter(endsAt)) {
+				continue;
+			}
+			byLink.computeIfAbsent(link.trim(), ignored -> new ArrayList<>()).add(meeting);
 		}
 
 		int sent = 0;
@@ -66,13 +75,10 @@ public class MeetingTranscriptBotDispatcher {
 	}
 
 	static boolean isUnrecoverableJoinFailure(Throwable error) {
-		String message = error.getMessage() == null ? "" : error.getMessage().toLowerCase();
-		return message.contains("ended")
-				|| message.contains("finished")
-				|| message.contains("not found")
-				|| message.contains("no longer")
-				|| message.contains("destroyed")
-				|| message.contains("does not exist")
-				|| message.contains("404");
+		String text = error.getMessage() == null ? "" : error.getMessage().toLowerCase();
+		return text.contains("ended")
+				|| text.contains("finished")
+				|| text.contains("no longer")
+				|| text.contains("destroyed");
 	}
 }

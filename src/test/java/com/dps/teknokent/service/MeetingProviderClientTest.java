@@ -41,7 +41,7 @@ class MeetingProviderClientTest {
               "meeting_url": "https://meet.google.com/abc-defg-hij",
               "bot_name": "Mentor Bot",
               "automatic_leave": {
-                "max_wait_for_admission": 300000,
+                "max_wait_for_admission": 900000,
                 "max_time_left_alone": 90000
               }
             }

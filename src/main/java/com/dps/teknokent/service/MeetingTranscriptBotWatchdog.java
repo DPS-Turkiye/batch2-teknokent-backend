@@ -1,6 +1,5 @@
 package com.dps.teknokent.service;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -14,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
 import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
@@ -29,10 +29,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class MeetingTranscriptBotWatchdog {
-
-	private static final int JOIN_GRACE_MINUTES = 3;
-	private static final Duration EMPTY_ROOM = Duration.ofSeconds(90);
-	private static final int SLOT_GRACE_MINUTES = 2;
 
 	private final MeetingRepository meetingRepository;
 	private final MeetingService meetingService;
@@ -85,14 +81,14 @@ public class MeetingTranscriptBotWatchdog {
 		} else if (humans == 0 && sawHumans.containsKey(key)) {
 			Instant firstEmpty = emptySince.putIfAbsent(key, now);
 			Instant emptyFrom = firstEmpty == null ? now : firstEmpty;
-			if (!now.isBefore(emptyFrom.plus(EMPTY_ROOM))) {
+			if (!now.isBefore(emptyFrom.plus(TranscriptBotConstants.EMPTY_ROOM))) {
 				forget(key);
 				return true;
 			}
 		}
 
-		if (candidate.slotEndsAt != null
-				&& now.isAfter(candidate.slotEndsAt.plus(SLOT_GRACE_MINUTES, ChronoUnit.MINUTES))) {
+		if (candidate.slotEndsAt != null && now.isAfter(
+				candidate.slotEndsAt.plus(TranscriptBotConstants.SLOT_GRACE_MINUTES, ChronoUnit.MINUTES))) {
 			forget(key);
 			return true;
 		}
@@ -128,9 +124,11 @@ public class MeetingTranscriptBotWatchdog {
 
 	private Map<String, Candidate> candidatesByNativeId(List<Meeting> live, Instant now) {
 		Map<String, Candidate> candidates = new LinkedHashMap<>();
+		Instant joinGraceCutoff = now.minus(
+				TranscriptBotConstants.JOIN_GRACE_MINUTES, ChronoUnit.MINUTES);
 		for (Meeting meeting : live) {
 			Instant dispatchedAt = meeting.getBotDispatchedAt();
-			if (dispatchedAt == null || dispatchedAt.isAfter(now.minus(JOIN_GRACE_MINUTES, ChronoUnit.MINUTES))) {
+			if (dispatchedAt == null || dispatchedAt.isAfter(joinGraceCutoff)) {
 				continue;
 			}
 			String meetLink = meeting.getMeetLink();
@@ -139,10 +137,14 @@ public class MeetingTranscriptBotWatchdog {
 			}
 			try {
 				MeetingUrlParser.Parsed parsed = MeetingUrlParser.parse(meetLink);
-				int duration = meeting.getDurationMinutes() == null ? 60 : meeting.getDurationMinutes();
-				Instant endsAt = meeting.getScheduledAt() == null
+				Integer durationMinutes = meeting.getDurationMinutes();
+				int duration = durationMinutes == null
+						? TranscriptBotConstants.DEFAULT_DURATION_MINUTES
+						: durationMinutes;
+				Instant scheduledAt = meeting.getScheduledAt();
+				Instant endsAt = scheduledAt == null
 						? null
-						: meeting.getScheduledAt().plus(duration, ChronoUnit.MINUTES);
+						: scheduledAt.plus(duration, ChronoUnit.MINUTES);
 				Candidate next = new Candidate(parsed.nativeMeetingId(), parsed.platform(), endsAt);
 				candidates.merge(parsed.nativeMeetingId(), next, (left, right) -> {
 					if (left.slotEndsAt == null) {

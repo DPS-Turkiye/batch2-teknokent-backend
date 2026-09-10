@@ -71,7 +71,8 @@ public class Meeting {
 			String notes,
 			String outcomes,
 			MeetingStatus status,
-			String meetLink) {
+			String meetLink,
+			boolean transcribeRequested) {
 		Meeting meeting = new Meeting();
 		meeting.mentorshipRequest = request;
 		meeting.organization = request.getOrganization();
@@ -83,6 +84,7 @@ public class Meeting {
 		meeting.outcomes = TextUtils.normalizeOptional(outcomes);
 		meeting.meetLink = TextUtils.normalizeOptional(meetLink);
 		meeting.status = status;
+		meeting.transcribeRequested = transcribeRequested;
 		return meeting;
 	}
 

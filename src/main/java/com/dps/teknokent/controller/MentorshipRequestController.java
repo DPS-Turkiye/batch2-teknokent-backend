@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.LogMeetingRequest;
@@ -66,6 +67,13 @@ public class MentorshipRequestController {
 			@PathVariable UUID id,
 			@Valid @RequestBody DecideMentorshipRequest decision) {
 		return mentorshipRequestService.decide(id, decision);
+	}
+
+	@PatchMapping("/{id}/accept-proposal")
+	public MentorshipRequestResponse acceptProposedSlot(
+			@PathVariable UUID id,
+			@Valid @RequestBody AcceptProposedSlotRequest acceptance) {
+		return mentorshipRequestService.acceptProposedSlot(id, acceptance);
 	}
 
 	@PostMapping("/{id}/messages")
