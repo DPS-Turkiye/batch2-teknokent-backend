@@ -100,6 +100,19 @@ class MeetingTranscriptBotDispatcherTest {
 	}
 
 	@Test
+	void retriesWhenTheProviderCannotFindAnEmptyRoomYet() {
+		Instant now = Instant.parse("2026-09-02T12:00:00Z");
+		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of(meeting));
+		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("404 meeting not found"));
+
+		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
+		assertThat(meeting.getBotDispatchedAt()).isNull();
+		assertThat(meeting.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+	}
+
+	@Test
 	void stillSendsTheBotWhenTheMeetingAlreadyStarted() {
 		Instant now = Instant.parse("2026-09-02T12:20:00Z");
 		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");

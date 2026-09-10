@@ -89,7 +89,7 @@ class MeetingServiceTest {
 	private LogMeetingRequest logRequest(UUID callerMentorId) {
 		return new LogMeetingRequest(
 				callerMentorId, Instant.now().minus(1, ChronoUnit.DAYS), 45, "Gündem", "Notlar", "Sonuçlar",
-				MeetingStatus.COMPLETED, null);
+				MeetingStatus.COMPLETED, null, null);
 	}
 
 	@Test
@@ -133,13 +133,41 @@ class MeetingServiceTest {
 		assertThat(response.mentorId()).isEqualTo(mentorId);
 		assertThat(response.status()).isEqualTo(MeetingStatus.COMPLETED);
 		assertThat(response.notes()).isEqualTo("Notlar");
+		assertThat(response.transcribeRequested()).isFalse();
+	}
+
+	@Test
+	void logMeetingPersistsTranscriptRequestAndMeetLink() {
+		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
+		when(meetingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+			Meeting meeting = invocation.getArgument(0);
+			meeting.setId(UUID.randomUUID());
+			return meeting;
+		});
+
+		MeetingResponse response = meetingService.logMeeting(
+				requestId,
+				new LogMeetingRequest(
+						mentorId,
+						Instant.parse("2026-09-10T10:00:00Z"),
+						45,
+						null,
+						null,
+						null,
+						MeetingStatus.SCHEDULED,
+						"https://meet.google.com/abc-defg-hij",
+						true));
+
+		assertThat(response.transcribeRequested()).isTrue();
+		assertThat(response.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
+		assertThat(response.status()).isEqualTo(MeetingStatus.SCHEDULED);
 	}
 
 	@Test
 	void findTimelineForRequestListsMeetingsByMentorAndOrganization() {
 		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
 		Meeting meeting = Meeting.forLoggedEntry(
-				acceptedRequest(), Instant.now(), 30, null, null, null, MeetingStatus.COMPLETED, null);
+				acceptedRequest(), Instant.now(), 30, null, null, null, MeetingStatus.COMPLETED, null, false);
 		meeting.setId(UUID.randomUUID());
 		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(mentorId, organizationId))
 				.thenReturn(List.of(meeting));
@@ -152,7 +180,8 @@ class MeetingServiceTest {
 	@Test
 	void updateAppliesOnlyProvidedFields() {
 		Meeting meeting = Meeting.forLoggedEntry(
-				acceptedRequest(), Instant.now(), 30, "Gündem", "Eski not", null, MeetingStatus.SCHEDULED, null);
+				acceptedRequest(), Instant.now(), 30, "Gündem", "Eski not", null, MeetingStatus.SCHEDULED, null,
+				false);
 		UUID meetingId = UUID.randomUUID();
 		meeting.setId(meetingId);
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
@@ -160,7 +189,7 @@ class MeetingServiceTest {
 		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
 
 		MeetingResponse response = meetingService.update(
-				meetingId, new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED, null, null));
+				meetingId, new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED, null, null, null));
 
 		assertThat(response.notes()).isEqualTo("Yeni not");
 		assertThat(response.status()).isEqualTo(MeetingStatus.COMPLETED);
@@ -168,11 +197,29 @@ class MeetingServiceTest {
 	}
 
 	@Test
+	void updateAppliesTranscriptRequestAndMeetLink() {
+		Meeting meeting = Meeting.forLoggedEntry(
+				acceptedRequest(), Instant.now(), 30, "Gündem", null, null, MeetingStatus.SCHEDULED, null,
+				false);
+		UUID meetingId = UUID.randomUUID();
+		meeting.setId(meetingId);
+		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
+		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+
+		MeetingResponse response = meetingService.update(
+				meetingId,
+				new UpdateMeetingRequest(null, null, null, null, "https://meet.google.com/abc-defg-hij", true));
+
+		assertThat(response.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
+		assertThat(response.transcribeRequested()).isTrue();
+	}
+
+	@Test
 	void updateRejectsUnknownMeeting() {
 		UUID meetingId = UUID.randomUUID();
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> meetingService.update(meetingId, new UpdateMeetingRequest("Not", null, null, null, null)))
+		assertThatThrownBy(() -> meetingService.update(meetingId, new UpdateMeetingRequest("Not", null, null, null, null, null)))
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 

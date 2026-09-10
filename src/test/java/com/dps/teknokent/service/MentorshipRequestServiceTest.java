@@ -24,6 +24,7 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
+import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
@@ -224,6 +225,65 @@ class MentorshipRequestServiceTest {
                 assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
                 assertThat(result.mentorMessage()).isEqualTo("Let's meet");
                 assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+        }
+
+        @Test
+        void decide_counterProposesAlternativeSlots() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com",
+                                "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.PENDING);
+                String message = "Alternatif öneriyorum.\nproposedSlots:2026-09-12T15:00,2026-09-13T10:30";
+
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+                when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+                var result = mentorshipRequestService.decide(requestId,
+                                new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.COUNTER_PROPOSED,
+                                                message));
+
+                assertThat(result.status()).isEqualTo(MentorshipRequestStatus.COUNTER_PROPOSED);
+                assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.COUNTER_PROPOSED);
+                assertThat(request.getMentorMessage()).contains("proposedSlots:2026-09-12T15:00");
+                verify(mentorshipRequestMessageRepository).saveAndFlush(
+                                argThat((MentorshipRequestMessage saved) -> saved
+                                                .getMessageType() == MentorshipRequestMessageType.MENTOR_MESSAGE));
+        }
+
+        @Test
+        void acceptProposedSlot_acceptsWhenMenteePicksAProposedTime() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+                AppUser requester = user(requesterId, "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com",
+                                "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.COUNTER_PROPOSED);
+                request.setMentorMessage("proposedSlots:2026-09-12T15:00,2026-09-13T10:30");
+
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+                var result = mentorshipRequestService.acceptProposedSlot(requestId,
+                                new AcceptProposedSlotRequest(requesterId, "2026-09-12T15:00"));
+
+                assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+                assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+                assertThat(request.getMentorMessage()).isEqualTo("Görüşme saati: 2026-09-12T15:00");
         }
 
         @Test
