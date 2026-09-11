@@ -26,6 +26,7 @@ import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
@@ -619,7 +620,7 @@ class MeetingServiceTest {
 	}
 
 	@Test
-	void submitFeedback_replacesEarlierAnswersRatherThanDuplicating() {
+	void submitFeedback_rejectsWhenAuthorAlreadySubmitted() {
 		UUID meetingId = UUID.randomUUID();
 		AppUser author = mentor(mentorId);
 		Meeting meeting = new Meeting();
@@ -637,14 +638,12 @@ class MeetingServiceTest {
 		when(domainLookupService.requireUser(mentorId)).thenReturn(author);
 		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, mentorId))
 				.thenReturn(Optional.of(existing));
-		when(meetingFeedbackRepository.saveAndFlush(any(MeetingFeedback.class)))
-				.thenAnswer(invocation -> invocation.getArgument(0));
 
-		var response = meetingService.submitFeedback(meetingId, mentorId,
-				new SubmitMeetingFeedbackRequest(List.of(5, 5, 5), List.of()));
-
-		assertThat(response.ratings()).containsExactly(5, 5, 5);
-		verify(meetingFeedbackRepository, never()).save(any(MeetingFeedback.class));
+		assertThatThrownBy(() -> meetingService.submitFeedback(meetingId, mentorId,
+				new SubmitMeetingFeedbackRequest(List.of(5, 5, 5), List.of())))
+				.isInstanceOf(ConflictException.class)
+				.hasMessageContaining("already submitted");
+		verify(meetingFeedbackRepository, never()).saveAndFlush(any(MeetingFeedback.class));
 	}
 
 	@Test
