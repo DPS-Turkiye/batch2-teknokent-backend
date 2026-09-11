@@ -25,6 +25,7 @@ import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.MentorshipRequest;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
@@ -293,10 +294,6 @@ public class MeetingService {
 		return !now.isAfter(start.plus(duration + TranscriptBotConstants.DISPATCH_GRACE_MINUTES, ChronoUnit.MINUTES));
 	}
 
-	/**
-	 * One feedback per person per meeting; submitting again replaces the earlier
-	 * answers rather than accumulating duplicates the UI could not show.
-	 */
 	@Transactional
 	public MeetingFeedbackResponse submitFeedback(
 			UUID meetingId, UUID authorId, SubmitMeetingFeedbackRequest request) {
@@ -304,19 +301,15 @@ public class MeetingService {
 		AppUser author = domainLookupService.requireUser(authorId);
 		requireMeetingParticipant(meeting, author);
 
-		MeetingFeedback feedback = meetingFeedbackRepository
-				.findByMeetingIdAndAuthorId(meetingId, authorId)
-				.orElseGet(() -> {
-					MeetingFeedback created = new MeetingFeedback();
-					created.setMeeting(meeting);
-					created.setAuthor(author);
-					created.setCreatedAt(Instant.now());
-					return created;
-				});
+		if (meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, authorId).isPresent()) {
+			throw new ConflictException("Feedback already submitted for this meeting.");
+		}
 
-		feedback.getRatings().clear();
+		MeetingFeedback feedback = new MeetingFeedback();
+		feedback.setMeeting(meeting);
+		feedback.setAuthor(author);
+		feedback.setCreatedAt(Instant.now());
 		feedback.getRatings().addAll(request.ratings());
-		feedback.getBenefits().clear();
 		feedback.getBenefits().addAll(request.benefits());
 
 		return MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));

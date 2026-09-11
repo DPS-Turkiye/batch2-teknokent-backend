@@ -3,6 +3,8 @@ package com.dps.teknokent.controller;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.domain.MentorshipWorkspaceTab;
 import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
@@ -27,6 +30,7 @@ import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
+import com.dps.teknokent.dto.responses.PageResponse;
 import com.dps.teknokent.service.MeetingService;
 import com.dps.teknokent.service.MentorshipRequestService;
 
@@ -49,6 +53,19 @@ public class MentorshipRequestController {
 			@RequestParam(required = false) UUID mentorId,
 			@RequestParam(required = false) UUID organizationId) {
 		return mentorshipRequestService.findAll(requesterId, mentorId, organizationId);
+	}
+
+	@GetMapping(params = "tab")
+	public PageResponse<MentorshipRequestResponse> findWorkspacePage(
+			@RequestParam String tab,
+			@RequestParam(required = false) UUID mentorId,
+			@RequestParam(required = false) UUID organizationId,
+			@PageableDefault(size = 7) Pageable pageable) {
+		return mentorshipRequestService.findWorkspacePage(
+				mentorId,
+				organizationId,
+				MentorshipWorkspaceTab.fromParam(tab),
+				pageable);
 	}
 
 	@GetMapping("/{id}")

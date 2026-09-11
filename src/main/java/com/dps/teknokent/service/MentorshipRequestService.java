@@ -8,11 +8,16 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
+import com.dps.teknokent.domain.MentorshipWorkspaceTab;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
@@ -28,6 +33,7 @@ import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestMessageResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
+import com.dps.teknokent.dto.responses.PageResponse;
 import com.dps.teknokent.dto.responses.RecommendationSnapshotResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -44,6 +50,7 @@ import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorshipRequestMessageRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
+import com.dps.teknokent.repository.MentorshipRequestWorkspaceQuery;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.util.MeetingSlotTimes;
@@ -57,6 +64,7 @@ import lombok.RequiredArgsConstructor;
 public class MentorshipRequestService {
 
 	private final MentorshipRequestRepository mentorshipRequestRepository;
+	private final MentorshipRequestWorkspaceQuery mentorshipRequestWorkspaceQuery;
 	private final MentorshipRequestRecommendationRunRepository recommendationRunRepository;
 	private final MentorshipRequestMessageRepository mentorshipRequestMessageRepository;
 	private final MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
@@ -80,6 +88,28 @@ public class MentorshipRequestService {
 		return requests.stream()
 				.map(this::toResponse)
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public PageResponse<MentorshipRequestResponse> findWorkspacePage(
+			UUID mentorId,
+			UUID organizationId,
+			MentorshipWorkspaceTab tab,
+			Pageable pageable) {
+		Pageable safePageable = PageRequest.of(
+				Math.max(pageable.getPageNumber(), 0),
+				Math.max(pageable.getPageSize(), 1),
+				pageable.getSort().isSorted() ? pageable.getSort() : Sort.by(Sort.Direction.DESC, "createdAt"));
+		Page<MentorshipRequest> page = mentorshipRequestWorkspaceQuery.findPage(
+				mentorId,
+				organizationId,
+				tab,
+				safePageable,
+				Instant.now());
+		List<MentorshipRequestResponse> content = page.getContent().stream()
+				.map(this::toResponse)
+				.toList();
+		return PageResponse.of(content, page.getNumber(), page.getSize(), page.getTotalElements());
 	}
 
 	@Transactional(readOnly = true)

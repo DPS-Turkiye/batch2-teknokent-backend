@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,6 +23,7 @@ import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
+import com.dps.teknokent.domain.MentorshipWorkspaceTab;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
@@ -38,13 +40,20 @@ import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorshipRequestMessageRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.repository.MentorshipRequestWorkspaceQuery;
 import com.dps.teknokent.repository.MeetingRepository;
+
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class MentorshipRequestServiceTest {
 
         @Mock
         private MentorshipRequestRepository mentorshipRequestRepository;
+
+        @Mock
+        private MentorshipRequestWorkspaceQuery mentorshipRequestWorkspaceQuery;
 
         @Mock
         private MentorshipRequestRecommendationRunRepository recommendationRunRepository;
@@ -124,6 +133,40 @@ class MentorshipRequestServiceTest {
                 assertThat(result).hasSize(2);
                 assertThat(result.getFirst().organizationId()).isEqualTo(organizationId);
                 assertThat(result.get(1).requesterId()).isEqualTo(teammate.getId());
+        }
+
+        @Test
+        void findWorkspacePage_returnsOnlyRequestedPageOfMatchingTab() {
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                UUID pendingId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                                "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(organizationId, "Teknokent");
+                MentorshipRequest pending = mentorshipRequest(
+                                pendingId, requester, organization, mentor, "Roadmap", MentorshipRequestStatus.PENDING);
+
+                when(mentorshipRequestWorkspaceQuery.findPage(
+                                eq(null),
+                                eq(organizationId),
+                                eq(MentorshipWorkspaceTab.REQUESTS),
+                                any(),
+                                any()))
+                                .thenReturn(new PageImpl<>(List.of(pending), PageRequest.of(0, 1), 2));
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(pendingId))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(pendingId)).thenReturn(Optional.empty());
+
+                var result = mentorshipRequestService.findWorkspacePage(
+                                null, organizationId, MentorshipWorkspaceTab.REQUESTS, PageRequest.of(0, 1));
+
+                assertThat(result.content()).hasSize(1);
+                assertThat(result.content().getFirst().id()).isEqualTo(pendingId);
+                assertThat(result.totalElements()).isEqualTo(2);
+                assertThat(result.totalPages()).isEqualTo(2);
+                assertThat(result.page()).isZero();
+                assertThat(result.size()).isEqualTo(1);
         }
 
         @Test
