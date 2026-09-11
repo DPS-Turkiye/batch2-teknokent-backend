@@ -15,6 +15,7 @@ import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.StartupProgramLevelConverter;
 import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.StartupSectorConverter;
+import com.dps.teknokent.domain.StartupStage;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.util.TextUtils;
 
@@ -23,6 +24,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -113,6 +116,10 @@ public class Organization {
 
 	@Column(name = "completion_percent")
 	private Integer completionPercent;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "current_stage", length = 32)
+	private StartupStage currentStage;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
