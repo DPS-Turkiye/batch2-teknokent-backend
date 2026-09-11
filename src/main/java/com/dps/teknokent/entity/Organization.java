@@ -105,6 +105,15 @@ public class Organization {
 	@Column(name = "active_program_id")
 	private UUID activeProgramId;
 
+	@Column(name = "status_version", length = 32)
+	private String statusVersion;
+
+	@Column(name = "status_summary", columnDefinition = "TEXT")
+	private String statusSummary;
+
+	@Column(name = "completion_percent")
+	private Integer completionPercent;
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;

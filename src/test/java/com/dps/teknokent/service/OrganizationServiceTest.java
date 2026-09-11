@@ -20,6 +20,7 @@ import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
+import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -180,6 +181,36 @@ class OrganizationServiceTest {
                 java.util.Arrays.asList("Finans", "   ", "Finans", null, "Pazarlama")));
 
         assertThat(response.supportAreas()).containsExactly("Finans", "Pazarlama");
+    }
+
+    @Test
+    void updateStatus_storesTheStatusForTheFounder() {
+        Organization organization = organizationWithFounder("CODE1234");
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(organizationRepository.save(any(Organization.class))).thenAnswer(call -> call.getArgument(0));
+
+        var response = organizationService.updateStatus(ORGANIZATION_ID, new UpdateOrganizationStatusRequest(
+                FOUNDER_ID, "v0.9.2", "Öğretmen modülü geliştirme aşamasında.", 72));
+
+        assertThat(response.statusVersion()).isEqualTo("v0.9.2");
+        assertThat(response.completionPercent()).isEqualTo(72);
+        assertThat(organization.getStatusSummary()).isEqualTo("Öğretmen modülü geliştirme aşamasında.");
+    }
+
+    @Test
+    void updateStatus_rejectsAnyoneButTheFounder() {
+        Organization organization = organizationWithFounder("CODE1234");
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(OTHER_ID))
+                .thenReturn(user(OTHER_ID, UserRole.MENTEE, UserAccountStatus.APPROVED));
+
+        assertThatThrownBy(() -> organizationService.updateStatus(ORGANIZATION_ID,
+                new UpdateOrganizationStatusRequest(OTHER_ID, "v1.0.0", null, 90)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("founder");
+
+        verify(organizationRepository, never()).save(any(Organization.class));
     }
 
     private static Organization organizationWithFounder(String inviteCode) {

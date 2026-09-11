@@ -19,6 +19,9 @@ public record OrganizationResponse(
 		String maturity,
 		String programLevel,
 		List<String> supportAreas,
+		String statusVersion,
+		String statusSummary,
+		Integer completionPercent,
 		Instant createdAt,
 		Instant updatedAt) {
 
@@ -30,6 +33,7 @@ public record OrganizationResponse(
 				organization.getMaturity() == null ? null : organization.getMaturity().value(),
 				organization.getProgramLevel() == null ? null : organization.getProgramLevel().value(),
 				List.copyOf(organization.getSupportAreas()),
+				organization.getStatusVersion(), organization.getStatusSummary(), organization.getCompletionPercent(),
 				organization.getCreatedAt(), organization.getUpdatedAt());
 	}
 }

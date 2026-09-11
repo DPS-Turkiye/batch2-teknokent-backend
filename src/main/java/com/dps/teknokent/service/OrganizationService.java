@@ -14,6 +14,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
+import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -75,6 +76,20 @@ public class OrganizationService {
 		organization.getSupportAreas().clear();
 		organization.getSupportAreas().addAll(TextUtils.normalizedList(request.supportAreas()));
 
+		return OrganizationResponse.fromEntity(organizationRepository.save(organization));
+	}
+
+	@Transactional
+	public OrganizationResponse updateStatus(UUID organizationId, UpdateOrganizationStatusRequest request) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		domainLookupService.requireUser(request.actorId());
+		if (!isFounder(organization, request.actorId())) {
+			throw new InvalidRequestException("Only the organization founder can edit the startup status");
+		}
+
+		organization.setStatusVersion(TextUtils.normalizeOptional(request.statusVersion()));
+		organization.setStatusSummary(TextUtils.normalizeOptional(request.statusSummary()));
+		organization.setCompletionPercent(request.completionPercent());
 		return OrganizationResponse.fromEntity(organizationRepository.save(organization));
 	}
 
