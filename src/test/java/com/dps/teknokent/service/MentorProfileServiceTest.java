@@ -1,5 +1,14 @@
 package com.dps.teknokent.service;
 
+import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.repository.MentorProgramName;
+import com.dps.teknokent.repository.MentorCount;
+import com.dps.teknokent.entity.MentorExperience;
+import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.dto.requests.MentorExperienceRequest;
+import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.MentorshipStatus;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.time.DayOfWeek;
@@ -58,6 +67,10 @@ class MentorProfileServiceTest {
 	private MeetingRepository meetingRepository;
 	@Mock
 	private DomainLookupService domainLookupService;
+	@Mock
+	private MentorshipRepository mentorshipRepository;
+	@Mock
+	private ProgramMentorRepository programMentorRepository;
 
 	private MentorProfileService mentorProfileService;
 
@@ -67,7 +80,7 @@ class MentorProfileServiceTest {
 	void setUp() {
 		mentorProfileService = new MentorProfileService(
 				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilitySlotRepository,
-				meetingRepository, domainLookupService);
+				meetingRepository, domainLookupService, mentorshipRepository, programMentorRepository);
 	}
 
 	private AppUser mentor() {
@@ -215,7 +228,8 @@ class MentorProfileServiceTest {
 		return new UpdateMentorProfileRequest(
 				"Ürün Danışmanı", "Acme", "Bu hafta müsait", "~24 saat", "Online",
 				"Mesajlaşma açık", "Yapılandırılmış", "Yüksek", "Kıdemli", "SaaS", "Seed",
-				List.of("Büyüme", "Ürün Stratejisi"));
+				List.of("Büyüme", "Ürün Stratejisi"), 4,
+				List.of(new MentorExperienceRequest(" Head of Product ", "Looply", "2022–2026", " ")));
 	}
 
 	@Test
@@ -233,6 +247,87 @@ class MentorProfileServiceTest {
 		assertThat(profile.getProfessionalTitle()).isEqualTo("Ürün Danışmanı");
 		assertThat(profile.getCompany()).isEqualTo("Acme");
 		assertThat(profile.getSpecialties()).containsExactly("Büyüme", "Ürün Stratejisi");
+		assertThat(profile.getMenteeCapacity()).isEqualTo(4);
+		assertThat(profile.getExperiences()).singleElement().satisfies(experience -> {
+			assertThat(experience.getTitle()).isEqualTo("Head of Product");
+			assertThat(experience.getPeriod()).isEqualTo("2022–2026");
+			assertThat(experience.getSummary()).isNull();
+		});
+	}
+
+	@Test
+	void updateProfileKeepsCapacityAndExperienceWhenTheyAreNotSent() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		profile.setMenteeCapacity(6);
+		profile.getExperiences().add(new MentorExperience("METU Stars Mentoru", null, null, null));
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		UpdateMentorProfileRequest request = updateRequest();
+		mentorProfileService.updateProfile(mentorId, new UpdateMentorProfileRequest(
+				request.professionalTitle(), request.company(), request.availabilityLabel(),
+				request.responseTimeLabel(), request.meetingMode(), request.communicationPreference(),
+				request.mentoringStyle(), request.fitLabel(), request.experienceLevel(), request.sectorExperience(),
+				request.startupStages(), request.specialties(), null, null));
+
+		assertThat(profile.getMenteeCapacity()).isEqualTo(6);
+		assertThat(profile.getExperiences()).extracting(MentorExperience::getTitle)
+				.containsExactly("METU Stars Mentoru");
+	}
+
+	@Test
+	void findAllAddsMenteeCountsAndProgramsToEachMentor() {
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		profile.setMenteeCapacity(6);
+		when(mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED))
+				.thenReturn(List.of(profile));
+		when(mentorshipRepository.countOrganizationsByMentor(List.of(mentorId),
+				List.of(MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED)))
+				.thenReturn(List.of(count(4)));
+		when(mentorshipRepository.countMentorshipsByMentor(List.of(mentorId), MentorshipStatus.COMPLETED))
+				.thenReturn(List.of(count(28)));
+		when(programMentorRepository.findProgramNamesByMentorIds(List.of(mentorId), ProgramMentorStatus.ACCEPTED))
+				.thenReturn(List.of(program("METU Stars")));
+
+		MentorProfileResponse result = mentorProfileService.findAll().getFirst();
+
+		assertThat(result.menteeCapacity()).isEqualTo(6);
+		assertThat(result.activeMenteeCount()).isEqualTo(4);
+		assertThat(result.completedMentorshipCount()).isEqualTo(28);
+		assertThat(result.programNames()).containsExactly("METU Stars");
+	}
+
+	private MentorCount count(long total) {
+		return new MentorCount() {
+			@Override
+			public UUID getMentorId() {
+				return mentorId;
+			}
+
+			@Override
+			public Long getTotal() {
+				return total;
+			}
+		};
+	}
+
+	private MentorProgramName program(String name) {
+		return new MentorProgramName() {
+			@Override
+			public UUID getMentorId() {
+				return mentorId;
+			}
+
+			@Override
+			public String getProgramName() {
+				return name;
+			}
+		};
 	}
 
 	@Test

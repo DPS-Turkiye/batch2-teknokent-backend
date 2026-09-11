@@ -1,5 +1,13 @@
 package com.dps.teknokent.service;
 
+import java.util.stream.Collectors;
+import java.util.Map;
+import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.repository.MentorProgramName;
+import com.dps.teknokent.repository.MentorCount;
+import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.MentorshipStatus;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -42,20 +50,22 @@ public class MentorProfileService {
 	private final MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 	private final MeetingRepository meetingRepository;
 	private final DomainLookupService domainLookupService;
+	private final MentorshipRepository mentorshipRepository;
+	private final ProgramMentorRepository programMentorRepository;
+
+	private static final List<MentorshipStatus> ONGOING_MENTORSHIP = List.of(
+			MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
 
 	@Transactional(readOnly = true)
 	public List<MentorProfileResponse> findAll() {
-		return approvedMentors().stream()
-				.map(MentorProfileResponse::fromEntity)
-				.toList();
+		return withActivity(approvedMentors());
 	}
 
 	@Transactional(readOnly = true)
 	public List<MentorProfileResponse> findAllExcept(UUID excludedMentorId) {
-		return approvedMentors().stream()
+		return withActivity(approvedMentors().stream()
 				.filter(profile -> !profile.getId().equals(excludedMentorId))
-				.map(MentorProfileResponse::fromEntity)
-				.toList();
+				.toList());
 	}
 
 	/**
@@ -162,10 +172,35 @@ public class MentorProfileService {
 		return mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
 	}
 
+	// Counts come from grouped queries so a mentor list costs three queries, not three per mentor.
+	private List<MentorProfileResponse> withActivity(List<MentorProfile> profiles) {
+		if (profiles.isEmpty()) {
+			return List.of();
+		}
+		List<UUID> ids = profiles.stream().map(MentorProfile::getId).toList();
+		Map<UUID, Long> active = totals(mentorshipRepository.countOrganizationsByMentor(ids, ONGOING_MENTORSHIP));
+		Map<UUID, Long> completed = totals(
+				mentorshipRepository.countMentorshipsByMentor(ids, MentorshipStatus.COMPLETED));
+		Map<UUID, List<String>> programs = programMentorRepository
+				.findProgramNamesByMentorIds(ids, ProgramMentorStatus.ACCEPTED).stream()
+				.collect(Collectors.groupingBy(MentorProgramName::getMentorId,
+						Collectors.mapping(MentorProgramName::getProgramName, Collectors.toList())));
+		return profiles.stream()
+				.map(profile -> MentorProfileResponse.fromEntity(profile).withActivity(
+						active.getOrDefault(profile.getId(), 0L),
+						completed.getOrDefault(profile.getId(), 0L),
+						programs.getOrDefault(profile.getId(), List.of())))
+				.toList();
+	}
+
+	private static Map<UUID, Long> totals(List<MentorCount> counts) {
+		return counts.stream().collect(Collectors.toMap(MentorCount::getMentorId, MentorCount::getTotal));
+	}
+
 	@Transactional(readOnly = true)
 	public MentorProfileResponse findById(UUID id) {
 		return mentorProfileRepository.findOneById(id)
-				.map(MentorProfileResponse::fromEntity)
+				.map(profile -> withActivity(List.of(profile)).getFirst())
 				.orElseThrow(() -> new ResourceNotFoundException("Mentor not found: " + id));
 	}
 
@@ -221,8 +256,16 @@ public class MentorProfileService {
 		profile.setStartupStages(request.startupStages());
 		profile.getSpecialties().clear();
 		profile.getSpecialties().addAll(request.specialties());
+		// Both are optional so an older client that never sends them cannot wipe them.
+		if (request.menteeCapacity() != null) {
+			profile.setMenteeCapacity(request.menteeCapacity());
+		}
+		if (request.experiences() != null) {
+			profile.getExperiences().clear();
+			request.experiences().forEach(experience -> profile.getExperiences().add(experience.toEntity()));
+		}
 
-		return MentorProfileResponse.fromEntity(mentorProfileRepository.saveAndFlush(profile));
+		return withActivity(List.of(mentorProfileRepository.saveAndFlush(profile))).getFirst();
 	}
 
 	@Transactional

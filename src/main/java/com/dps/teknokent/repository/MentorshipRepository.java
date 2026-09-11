@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -58,4 +59,24 @@ public interface MentorshipRepository extends JpaRepository<Mentorship, UUID> {
 			@Param("status") MentorshipStatus status,
 			@Param("weekStart") LocalDate weekStart,
 			@Param("weekEnd") LocalDate weekEnd);
+
+	@Query("""
+			SELECT m.mentor.id AS mentorId, COUNT(DISTINCT m.organization.id) AS total
+			FROM Mentorship m
+			WHERE m.mentor.id IN :mentorIds AND m.status IN :statuses
+			GROUP BY m.mentor.id
+			""")
+	List<MentorCount> countOrganizationsByMentor(
+			@Param("mentorIds") Collection<UUID> mentorIds,
+			@Param("statuses") Collection<MentorshipStatus> statuses);
+
+	@Query("""
+			SELECT m.mentor.id AS mentorId, COUNT(m) AS total
+			FROM Mentorship m
+			WHERE m.mentor.id IN :mentorIds AND m.status = :status
+			GROUP BY m.mentor.id
+			""")
+	List<MentorCount> countMentorshipsByMentor(
+			@Param("mentorIds") Collection<UUID> mentorIds,
+			@Param("status") MentorshipStatus status);
 }
