@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -16,10 +17,12 @@ import org.springframework.web.multipart.MultipartFile;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.dto.responses.StoredDocumentResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -31,9 +34,13 @@ import lombok.extern.slf4j.Slf4j;
 public class DocumentService {
 
 	private static final Set<String> PDF_TYPES = Set.of("application/pdf");
-	private static final Set<String> DOC_TYPES = Set.of(
-			"application/pdf",
-			"application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+	private static final String DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+	private static final String XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+	private static final Set<String> DOC_TYPES = Set.of("application/pdf", DOCX_TYPE, XLSX_TYPE);
+	// Office Open XML formats accepted beside PDF, with the part every genuine file must contain.
+	private static final Map<String, String> OFFICE_MAIN_PARTS = Map.of(
+			"docx", "word/document.xml",
+			"xlsx", "xl/workbook.xml");
 	private static final Set<String> IMAGE_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
 	private static final Set<String> IMAGE_TYPES = Set.of("image/png", "image/jpeg", "image/webp");
 	private static final byte[] PDF_MAGIC = new byte[] { '%', 'P', 'D', 'F', '-' };
@@ -49,14 +56,27 @@ public class DocumentService {
 	private final AppUserRepository appUserRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final ObjectStorage objectStorage;
+	private final MeetingRepository meetingRepository;
 
 	public StoredDocumentResponse storeForUser(UUID userId, String kindValue, MultipartFile file) {
+		return storeForUser(userId, kindValue, file, null);
+	}
+
+	/** With a meetingId the file is attached to that meeting, which must be the uploader's startup's. */
+	public StoredDocumentResponse storeForUser(UUID userId, String kindValue, MultipartFile file, UUID meetingId) {
 		if (userId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 		UUID organizationId = user.getOrganization() == null ? null : user.getOrganization().getId();
+		if (meetingId != null) {
+			Meeting meeting = meetingRepository.findById(meetingId)
+					.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
+			if (organizationId == null || !organizationId.equals(meeting.getOrganization().getId())) {
+				throw new InvalidRequestException("The meeting belongs to another startup.");
+			}
+		}
 		try {
 			return store(
 					user.getId(),
@@ -64,7 +84,8 @@ public class DocumentService {
 					kindValue,
 					file.getOriginalFilename(),
 					file.getContentType(),
-					file.getBytes());
+					file.getBytes(),
+					meetingId);
 		} catch (IOException error) {
 			throw rejectUpload(
 					userId,
@@ -93,6 +114,17 @@ public class DocumentService {
 			String originalFilename,
 			String contentType,
 			byte[] bytes) {
+		return store(userId, organizationId, kindValue, originalFilename, contentType, bytes, null);
+	}
+
+	private StoredDocumentResponse store(
+			UUID userId,
+			UUID organizationId,
+			String kindValue,
+			String originalFilename,
+			String contentType,
+			byte[] bytes,
+			UUID meetingId) {
 		Long fileSize = bytes == null ? null : (long) bytes.length;
 		if (bytes == null || bytes.length == 0) {
 			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "empty-file", "A file is required.");
@@ -127,7 +159,7 @@ public class DocumentService {
 					"extension-not-image",
 					"Please upload a PNG, JPG or WebP image.");
 		}
-		if (!kind.imageOnly() && !extension.equals("pdf") && !extension.equals("docx")) {
+		if (!kind.imageOnly() && !extension.equals("pdf") && !OFFICE_MAIN_PARTS.containsKey(extension)) {
 			throw rejectUpload(
 					userId,
 					organizationId,
@@ -135,7 +167,7 @@ public class DocumentService {
 					filename,
 					fileSize,
 					"extension-not-allowed",
-					"Please upload a PDF or DOCX file.");
+					"Please upload a PDF, DOCX or XLSX file.");
 		}
 		String resolvedType = resolveContentType(contentType, extension);
 		if (kind.imageOnly() && !IMAGE_TYPES.contains(resolvedType)) {
@@ -162,7 +194,7 @@ public class DocumentService {
 					filename,
 					fileSize,
 					"mime-not-allowed",
-					"Please upload a PDF or DOCX file.");
+					"Please upload a PDF, DOCX or XLSX file.");
 		}
 		validateFileContent(userId, organizationId, kindValue, filename, extension, bytes);
 
@@ -184,6 +216,7 @@ public class DocumentService {
 		document.setSizeBytes(bytes.length);
 		document.setS3Key(key);
 		document.setCreatedAt(Instant.now());
+		document.setMeetingId(meetingId);
 		return StoredDocumentResponse.fromEntity(storedDocumentRepository.save(document));
 	}
 
@@ -200,7 +233,8 @@ public class DocumentService {
 			return contentType.toLowerCase(Locale.ROOT);
 		}
 		return switch (extension) {
-			case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+			case "docx" -> DOCX_TYPE;
+			case "xlsx" -> XLSX_TYPE;
 			case "png" -> "image/png";
 			case "jpg", "jpeg" -> "image/jpeg";
 			case "webp" -> "image/webp";
@@ -251,15 +285,16 @@ public class DocumentService {
 			return;
 		}
 
-		if ("docx".equals(extension) && !isSafeDocx(bytes)) {
+		String officeMainPart = OFFICE_MAIN_PARTS.get(extension);
+		if (officeMainPart != null && !isSafeOfficeFile(bytes, officeMainPart)) {
 			throw rejectUpload(
 					userId,
 					organizationId,
 					kindValue,
 					filename,
 					(long) bytes.length,
-					"invalid-or-unsafe-docx",
-					"The uploaded DOCX file is invalid.");
+					"invalid-or-unsafe-" + extension,
+					"The uploaded " + extension.toUpperCase(Locale.ROOT) + " file is invalid.");
 		}
 	}
 
@@ -281,7 +316,7 @@ public class DocumentService {
 		return tail.contains("%%EOF");
 	}
 
-	private static boolean isSafeDocx(byte[] bytes) {
+	private static boolean isSafeOfficeFile(byte[] bytes, String mainPart) {
 		boolean hasContentTypes = false;
 		boolean hasMainDocument = false;
 		int entries = 0;
@@ -304,7 +339,7 @@ public class DocumentService {
 				if ("[content_types].xml".equals(lower)) {
 					hasContentTypes = true;
 				}
-				if ("word/document.xml".equals(lower)) {
+				if (mainPart.equals(lower)) {
 					hasMainDocument = true;
 				}
 				if (lower.contains("vbaproject.bin") || hasDangerousSuffix(lower)) {

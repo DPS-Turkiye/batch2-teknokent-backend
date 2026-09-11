@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,10 +24,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,8 +41,89 @@ class DocumentServiceTest {
 	private StoredDocumentRepository storedDocumentRepository;
 	@Mock
 	private ObjectStorage objectStorage;
+	@Mock
+	private MeetingRepository meetingRepository;
 	@InjectMocks
 	private DocumentService documentService;
+
+	@Test
+	void acceptsAnXlsxSpreadsheet() throws Exception {
+		when(storedDocumentRepository.save(any(StoredDocument.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		byte[] xlsx = docx(
+				"[Content_Types].xml", "<Types></Types>",
+				"xl/workbook.xml", "<workbook></workbook>");
+
+		var response = documentService.store(
+				UUID.randomUUID(), UUID.randomUUID(), "other", "financial-model.xlsx", "application/octet-stream", xlsx);
+
+		assertThat(response.contentType())
+				.isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+	}
+
+	@Test
+	void rejectsAnXlsxWithoutAWorkbook() throws Exception {
+		byte[] notASpreadsheet = docx(
+				"[Content_Types].xml", "<Types></Types>",
+				"word/document.xml", "<w:document></w:document>");
+
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(), null, "other", "model.xlsx", "application/octet-stream", notASpreadsheet))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("XLSX");
+	}
+
+	@Test
+	void attachesAnUploadToAMeetingOfTheSameStartup() throws Exception {
+		UUID userId = UUID.randomUUID();
+		UUID meetingId = UUID.randomUUID();
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		AppUser user = new AppUser();
+		user.setId(userId);
+		user.setOrganization(organization);
+		Meeting meeting = new Meeting();
+		meeting.setId(meetingId);
+		meeting.setOrganization(organization);
+		when(appUserRepository.findById(userId)).thenReturn(Optional.of(user));
+		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
+		when(storedDocumentRepository.save(any(StoredDocument.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		MockMultipartFile file = new MockMultipartFile(
+				"file", "user flow v2.pdf", "application/pdf", "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF".getBytes());
+
+		documentService.storeForUser(userId, "meeting-file", file, meetingId);
+
+		ArgumentCaptor<StoredDocument> saved = ArgumentCaptor.forClass(StoredDocument.class);
+		verify(storedDocumentRepository).save(saved.capture());
+		assertThat(saved.getValue().getMeetingId()).isEqualTo(meetingId);
+	}
+
+	@Test
+	void refusesToAttachAnUploadToAnotherStartupsMeeting() {
+		UUID userId = UUID.randomUUID();
+		UUID meetingId = UUID.randomUUID();
+		Organization ownStartup = new Organization();
+		ownStartup.setId(UUID.randomUUID());
+		Organization otherStartup = new Organization();
+		otherStartup.setId(UUID.randomUUID());
+		AppUser user = new AppUser();
+		user.setId(userId);
+		user.setOrganization(ownStartup);
+		Meeting meeting = new Meeting();
+		meeting.setId(meetingId);
+		meeting.setOrganization(otherStartup);
+		when(appUserRepository.findById(userId)).thenReturn(Optional.of(user));
+		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
+		MockMultipartFile file = new MockMultipartFile(
+				"file", "notes.pdf", "application/pdf", "%PDF-1.4\n%%EOF".getBytes());
+
+		assertThatThrownBy(() -> documentService.storeForUser(userId, "meeting-file", file, meetingId))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("another startup");
+
+		verify(objectStorage, never()).put(any(String.class), any(byte[].class), any(String.class));
+	}
 
 	@Test
 	void storesAPdfUnderTheUserAndKind() throws Exception {
