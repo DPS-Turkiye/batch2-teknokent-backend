@@ -1,6 +1,7 @@
 package com.dps.teknokent.dto.responses;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.MentorshipStatus;
@@ -15,12 +16,32 @@ public record MentorshipResponse(
 		MentorshipStatus status,
 		LocalDate startDate,
 		LocalDate endDate,
-		String goals) {
+		int daysPerWeek,
+		String goals,
+		List<MentorshipGoalResponse> goalItems,
+		int progressPercent) {
 
 	public static MentorshipResponse fromEntity(Mentorship mentorship) {
+		return fromEntity(mentorship, List.of());
+	}
+
+	public static MentorshipResponse fromEntity(
+			Mentorship mentorship, List<MentorshipGoalResponse> goalItems) {
+		int done = (int) goalItems.stream().filter(MentorshipGoalResponse::done).count();
+		int total = goalItems.size();
+		int progressPercent = total == 0 ? 0 : (int) Math.round((done * 100.0) / total);
 		return new MentorshipResponse(
-				mentorship.getId(), mentorship.getMentor().getId(), mentorship.getMentor().getFullName(),
-				mentorship.getOrganization().getId(), mentorship.getOrganization().getName(), mentorship.getStatus(),
-				mentorship.getStartDate(), mentorship.getEndDate(), mentorship.getGoals());
+				mentorship.getId(),
+				mentorship.getMentor().getId(),
+				mentorship.getMentor().getFullName(),
+				mentorship.getOrganization().getId(),
+				mentorship.getOrganization().getName(),
+				mentorship.getStatus(),
+				mentorship.getStartDate(),
+				mentorship.getEndDate(),
+				mentorship.getDaysPerWeek(),
+				mentorship.getGoals(),
+				goalItems,
+				progressPercent);
 	}
 }

@@ -41,6 +41,7 @@ public class Mentorship {
 		mentorship.status = request.status();
 		mentorship.startDate = request.startDate();
 		mentorship.endDate = request.endDate();
+		mentorship.daysPerWeek = request.daysPerWeek() == null ? 1 : request.daysPerWeek();
 		mentorship.goals = TextUtils.normalizeOptional(request.goals());
 		return mentorship;
 	}
@@ -66,6 +67,9 @@ public class Mentorship {
 
 	@Column(name = "end_date")
 	private LocalDate endDate;
+
+	@Column(name = "days_per_week", nullable = false)
+	private int daysPerWeek = 1;
 
 	@Column(columnDefinition = "TEXT")
 	private String goals;
