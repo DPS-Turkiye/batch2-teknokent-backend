@@ -29,6 +29,7 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
@@ -36,6 +37,8 @@ import com.dps.teknokent.repository.MentorshipRequestRepository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,6 +54,10 @@ class MeetingServiceTest {
 	private DomainLookupService domainLookupService;
 	@Mock
 	private MeetingFeedbackRepository meetingFeedbackRepository;
+	@Mock
+	private AppUserRepository appUserRepository;
+	@Mock
+	private NotificationService notificationService;
 
 	private MeetingService meetingService;
 
@@ -61,8 +68,15 @@ class MeetingServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		meetingService = new MeetingService(meetingRepository, mentorshipRequestRepository, domainLookupService,
-				meetingFeedbackRepository);
+		meetingService = new MeetingService(
+				meetingRepository,
+				mentorshipRequestRepository,
+				domainLookupService,
+				meetingFeedbackRepository,
+				appUserRepository,
+				notificationService);
+		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(any()))
+				.thenReturn(List.of());
 	}
 
 	private AppUser mentor(UUID id) {
@@ -380,6 +394,8 @@ class MeetingServiceTest {
 			saved.setId(meetingId);
 			return saved;
 		});
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(demoOrganizationId))
+				.thenReturn(List.of(mentee));
 
 		MeetingResponse result = meetingService.create(request);
 
@@ -390,6 +406,11 @@ class MeetingServiceTest {
 		assertThat(result.transcribeRequested()).isFalse();
 		assertThat(result.mentorshipRequestId())
 				.isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000401"));
+		verify(notificationService).create(
+				eq(mentee),
+				eq("Yeni görüşme planlandı"),
+				org.mockito.ArgumentMatchers.contains("Teknokent"),
+				eq("/mentorships?tab=active"));
 	}
 
 	@Test

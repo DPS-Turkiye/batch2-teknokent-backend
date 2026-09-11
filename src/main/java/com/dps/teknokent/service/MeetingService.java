@@ -28,6 +28,7 @@ import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
@@ -43,6 +44,8 @@ public class MeetingService {
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final DomainLookupService domainLookupService;
 	private final MeetingFeedbackRepository meetingFeedbackRepository;
+	private final AppUserRepository appUserRepository;
+	private final NotificationService notificationService;
 
 	@Transactional(readOnly = true)
 	public List<MeetingResponse> findAll(UUID organizationId, UUID mentorId) {
@@ -74,7 +77,34 @@ public class MeetingService {
 			meeting.setMentorshipRequest(resolveAcceptedMentorship(organization, mentor, request.agenda()));
 		}
 		copyBotDispatchIfSameLink(meeting);
-		return MeetingResponse.fromEntity(meetingRepository.save(meeting));
+		Meeting saved = meetingRepository.save(meeting);
+		notifyOrgMentees(saved);
+		return MeetingResponse.fromEntity(saved);
+	}
+
+	private void notifyOrgMentees(Meeting meeting) {
+		if (meeting.getOrganization() == null) {
+			return;
+		}
+		String mentorName = meeting.getMentor() == null
+				? "Mentörünüz"
+				: meeting.getMentor().getFullName();
+		String when = meeting.getScheduledAt() == null
+				? ""
+				: " · " + meeting.getScheduledAt().toString();
+		String body = mentorName
+				+ ", "
+				+ meeting.getOrganization().getName()
+				+ " için yeni bir görüşme planladı"
+				+ when
+				+ ".";
+		appUserRepository.findByOrganizationIdOrderByFullNameAsc(meeting.getOrganization().getId()).stream()
+				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.forEach(mentee -> notificationService.create(
+						mentee,
+						"Yeni görüşme planlandı",
+						body,
+						"/mentorships?tab=active"));
 	}
 
 	private MentorshipRequest resolveAcceptedMentorship(
