@@ -1,5 +1,11 @@
 package com.dps.teknokent.controller;
 
+import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.security.AppUserPrincipal;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -72,9 +78,11 @@ class StartupProcessControllerTest {
 
     @Test
     void returnsTheProcess() throws Exception {
-        when(startupProcessService.get(ORG_ID)).thenReturn(process(StartupStage.MVP));
+        when(startupProcessService.get(ORG_ID, ACTOR_ID)).thenReturn(process(StartupStage.MVP));
 
-        mockMvc.perform(get("/api/organizations/{id}/process", ORG_ID).with(user("test-user")))
+        mockMvc.perform(get("/api/organizations/{id}/process", ORG_ID)
+                        .param("actorId", ACTOR_ID.toString())
+                        .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStage").value("MVP"))
                 .andExpect(jsonPath("$.stages[1].state").value("CURRENT"))
@@ -150,5 +158,28 @@ class StartupProcessControllerTest {
                                 }
                                 """.formatted(ACTOR_ID)))
                 .andExpect(status().isOk());
+    }
+
+    private static UsernamePasswordAuthenticationToken signedInAs(UUID userId) {
+        return new UsernamePasswordAuthenticationToken(
+                new AppUserPrincipal(userId, "founder@dongu.co", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid"),
+                null, List.of());
+    }
+
+    @Test
+    void actsAsTheSignedInUserWhateverActorIdIsSent() throws Exception {
+        UUID signedIn = UUID.fromString("20000000-0000-0000-0000-000000000099");
+        when(startupProcessService.updateStage(eq(ORG_ID), any(UpdateStartupStageRequest.class)))
+                .thenReturn(process(StartupStage.MVP));
+
+        mockMvc.perform(put("/api/organizations/{id}/process/stage", ORG_ID)
+                        .with(authentication(signedInAs(signedIn)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "actorId": "%s", "stage": "MVP" }
+                                """.formatted(ACTOR_ID)))
+                .andExpect(status().isOk());
+
+        verify(startupProcessService).updateStage(ORG_ID, new UpdateStartupStageRequest(signedIn, StartupStage.MVP));
     }
 }

@@ -374,4 +374,14 @@ class StartupProcessServiceTest {
         document.setOriginalFilename("finansal-model.pdf");
         return document;
     }
+
+    @Test
+    void get_refusesSomeoneOutsideTheStartup() {
+        UUID outsider = UUID.fromString("90000000-0000-0000-0000-000000000001");
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(startup());
+        when(domainLookupService.requireUser(outsider)).thenReturn(user(outsider, UserRole.MENTEE, null));
+
+        assertThatThrownBy(() -> startupProcessService.get(ORG_ID, outsider))
+                .isInstanceOf(InvalidRequestException.class);
+    }
 }

@@ -63,8 +63,10 @@ public class StartupProcessService {
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 
 	@Transactional(readOnly = true)
-	public StartupProcessResponse get(UUID organizationId) {
-		return describe(domainLookupService.requireOrganization(organizationId), today());
+	public StartupProcessResponse get(UUID organizationId, UUID actorId) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		requireTeamOrEditor(organization, actorId);
+		return describe(organization, today());
 	}
 
 	@Transactional
@@ -220,7 +222,7 @@ public class StartupProcessService {
 		boolean teamMember = actor.getOrganization() != null
 				&& organization.getId().equals(actor.getOrganization().getId());
 		if (!teamMember && !isEditor(organization, actor)) {
-			throw new InvalidRequestException("Only the startup's team can submit an assignment");
+			throw new InvalidRequestException("Only the startup's team, its mentors, an admin or a coordinator can do this");
 		}
 	}
 
