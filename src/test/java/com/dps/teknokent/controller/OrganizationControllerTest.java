@@ -1,5 +1,8 @@
 package com.dps.teknokent.controller;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import com.dps.teknokent.security.AppUserPrincipal;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -330,5 +333,25 @@ class OrganizationControllerTest {
                                 """.formatted(actorId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.inviteCode").value("NEWCODE8"));
+    }
+
+    private static UsernamePasswordAuthenticationToken signedInAs(UUID userId) {
+        return new UsernamePasswordAuthenticationToken(
+                new AppUserPrincipal(userId, "founder@dongu.co", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid"),
+                null, List.of());
+    }
+
+    @Test
+    void removesAMemberAsTheSignedInUserWhateverActorIdIsSent() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000444");
+        UUID memberId = UUID.fromString("00000000-0000-0000-0000-000000000555");
+        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000003");
+
+        mockMvc.perform(delete("/api/organizations/{id}/members/{memberId}", organizationId, memberId)
+                        .param("actorId", "00000000-0000-0000-0000-000000000999")
+                        .with(authentication(signedInAs(signedIn))))
+                .andExpect(status().isNoContent());
+
+        verify(appUserService).removeOrganizationMember(organizationId, memberId, signedIn);
     }
 }

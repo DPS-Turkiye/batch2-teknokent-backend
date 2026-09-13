@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.security.CurrentActor;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,7 +61,9 @@ public class OrganizationController {
 	public OrganizationResponse updateStatus(
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateOrganizationStatusRequest request) {
-		return organizationService.updateStatus(id, request);
+		return organizationService.updateStatus(id, new UpdateOrganizationStatusRequest(
+				CurrentActor.resolve(request.actorId()), request.statusVersion(), request.statusSummary(),
+				request.completionPercent()));
 	}
 
 	@PostMapping
@@ -87,13 +90,17 @@ public class OrganizationController {
 			@PathVariable UUID id,
 			@PathVariable UUID memberId,
 			@Valid @RequestBody UpdateOrganizationMemberRequest request) {
-		return appUserService.updateOrganizationMember(id, memberId, request);
+		return appUserService.updateOrganizationMember(id, memberId, new UpdateOrganizationMemberRequest(
+				CurrentActor.resolve(request.actorId()), request.fullName(), request.jobTitle()));
 	}
 
 	@DeleteMapping("/{id}/members/{memberId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void removeMember(@PathVariable UUID id, @PathVariable UUID memberId, @RequestParam UUID actorId) {
-		appUserService.removeOrganizationMember(id, memberId, actorId);
+	public void removeMember(
+			@PathVariable UUID id,
+			@PathVariable UUID memberId,
+			@RequestParam(required = false) UUID actorId) {
+		appUserService.removeOrganizationMember(id, memberId, CurrentActor.resolve(actorId));
 	}
 
 	@GetMapping("/{id}/invite-code")
