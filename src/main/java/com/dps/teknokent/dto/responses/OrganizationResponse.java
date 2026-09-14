@@ -22,6 +22,8 @@ public record OrganizationResponse(
 		String statusVersion,
 		String statusSummary,
 		Integer completionPercent,
+		String fundingStage,
+		Integer foundedYear,
 		Instant createdAt,
 		Instant updatedAt) {
 
@@ -34,6 +36,8 @@ public record OrganizationResponse(
 				organization.getProgramLevel() == null ? null : organization.getProgramLevel().value(),
 				List.copyOf(organization.getSupportAreas()),
 				organization.getStatusVersion(), organization.getStatusSummary(), organization.getCompletionPercent(),
+				organization.getFundingStage() == null ? null : organization.getFundingStage().value(),
+				organization.getFoundedYear(),
 				organization.getCreatedAt(), organization.getUpdatedAt());
 	}
 }

@@ -9,6 +9,8 @@ import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.dps.teknokent.domain.StartupFundingStage;
+import com.dps.teknokent.domain.StartupFundingStageConverter;
 import com.dps.teknokent.domain.StartupMaturity;
 import com.dps.teknokent.domain.StartupMaturityConverter;
 import com.dps.teknokent.domain.StartupProgramLevel;
@@ -88,6 +90,13 @@ public class Organization {
 	@Convert(converter = StartupProgramLevelConverter.class)
 	@Column(name = "program_level")
 	private StartupProgramLevel programLevel;
+
+	@Convert(converter = StartupFundingStageConverter.class)
+	@Column(name = "funding_stage", length = 64)
+	private StartupFundingStage fundingStage;
+
+	@Column(name = "founded_year")
+	private Integer foundedYear;
 
 	@ElementCollection
 	@CollectionTable(name = "organization_support_area", joinColumns = @JoinColumn(name = "organization_id"))

@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.requests;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -20,5 +22,7 @@ public record UpdateOrganizationRequest(
 		@Size(max = 255) String sector,
 		@Size(max = 255) String maturity,
 		@Size(max = 255) String programLevel,
-		List<@Size(max = 255) String> supportAreas) {
+		List<@Size(max = 255) String> supportAreas,
+		@Size(max = 64) String fundingStage,
+		@Min(1900) @Max(2100) Integer foundedYear) {
 }

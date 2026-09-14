@@ -7,6 +7,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.StartupFundingStage;
 import com.dps.teknokent.domain.StartupMaturity;
 import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.StartupSector;
@@ -71,6 +72,8 @@ public class OrganizationService {
 		organization.setSector(StartupSector.requireValidOrNull(request.sector()));
 		organization.setMaturity(StartupMaturity.requireValidOrNull(request.maturity()));
 		organization.setProgramLevel(StartupProgramLevel.requireValidOrNull(request.programLevel()));
+		organization.setFundingStage(StartupFundingStage.requireValidOrNull(request.fundingStage()));
+		organization.setFoundedYear(request.foundedYear());
 		// Mutated in place: replacing the list on a managed entity makes Hibernate
 		// clear() the old instance during merge, which threw on an immutable list.
 		organization.getSupportAreas().clear();
