@@ -11,7 +11,8 @@ public enum DocumentKind {
 	MVP("mvp", 10 * 1024 * 1024, false, false),
 	VALIDATION("validation", 10 * 1024 * 1024, false, false),
 	LOGO("logo", 5 * 1024 * 1024, false, true),
-	PROFILE_PDF("profile-pdf", 50 * 1024 * 1024, true, false);
+	PROFILE_PDF("profile-pdf", 50 * 1024 * 1024, true, false),
+	REQUESTED_DOC("requested-doc", 10 * 1024 * 1024, false, false);
 
 	private final String value;
 	private final long maxBytes;

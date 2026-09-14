@@ -76,6 +76,9 @@ class MentorshipRequestServiceTest {
         @Mock
     private NotificationService notificationService;
 
+        @Mock
+        private DocumentRequestService documentRequestService;
+
     @InjectMocks
         private MentorshipRequestService mentorshipRequestService;
 
@@ -261,9 +264,11 @@ class MentorshipRequestServiceTest {
                 when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
                                 .thenReturn(List.of());
                 when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+                when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.empty());
 
                 var result = mentorshipRequestService.decide(requestId,
-                                new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.ACCEPTED, "Let's meet"));
+                                new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.ACCEPTED, "Let's meet",
+                                                null));
 
                 assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
                 assertThat(result.mentorMessage()).isEqualTo("Let's meet");
@@ -292,7 +297,7 @@ class MentorshipRequestServiceTest {
 
                 var result = mentorshipRequestService.decide(requestId,
                                 new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.COUNTER_PROPOSED,
-                                                message));
+                                                message, null));
 
                 assertThat(result.status()).isEqualTo(MentorshipRequestStatus.COUNTER_PROPOSED);
                 assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.COUNTER_PROPOSED);
