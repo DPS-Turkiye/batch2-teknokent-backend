@@ -81,6 +81,7 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-20T08:00:00Z"),
                 Instant.parse("2026-08-20T08:05:00Z"),
                 List.of(),
+                null,
                 null
         )));
 
@@ -121,6 +122,7 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-21T10:00:00Z"),
                 Instant.parse("2026-08-21T10:05:00Z"),
                 List.of(),
+                null,
                 null
         ));
 
@@ -173,6 +175,7 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-21T12:00:00Z"),
                 Instant.parse("2026-08-21T12:10:00Z"),
                 List.of(),
+                null,
                 null
         ));
 
@@ -218,6 +221,7 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-21T14:00:00Z"),
                 Instant.parse("2026-08-21T14:05:00Z"),
                 List.of(),
+                null,
                 null
         ));
 

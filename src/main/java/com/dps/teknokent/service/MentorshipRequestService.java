@@ -25,6 +25,7 @@ import com.dps.teknokent.dto.requests.RecommendationEvidenceSubmission;
 import com.dps.teknokent.dto.requests.RecommendationSnapshotSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
+import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 import com.dps.teknokent.dto.requests.ScheduleMentorshipRequest;
 import com.dps.teknokent.dto.requests.WithdrawMentorshipRequest;
@@ -269,6 +270,19 @@ public class MentorshipRequestService {
 				request.getMentor().getFullName() + " yeni bir mesaj gönderdi.",
 				"/mentor-request/status?request=" + request.getId());
 		return toResponse(request);
+	}
+
+	@Transactional
+	public MentorshipRequestResponse updatePlannedSessions(UUID id, UpdatePlannedSessionsRequest update) {
+		MentorshipRequest request = requireRequest(id);
+		if (!request.getMentor().getId().equals(update.mentorId())) {
+			throw new InvalidRequestException("Only the assigned mentor can plan the sessions of this request");
+		}
+		if (request.getStatus() != MentorshipRequestStatus.ACCEPTED) {
+			throw new InvalidRequestException("Sessions can only be planned after the request is accepted");
+		}
+		request.planSessions(update.plannedSessionCount());
+		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
 	}
 
 	@Transactional

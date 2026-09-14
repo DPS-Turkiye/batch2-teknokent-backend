@@ -25,12 +25,14 @@ import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 
 import com.dps.teknokent.dto.requests.ScheduleMentorshipRequest;
+import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
 import com.dps.teknokent.dto.requests.WithdrawMentorshipRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.dto.responses.PageResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.MeetingService;
 import com.dps.teknokent.service.MentorshipRequestService;
 
@@ -105,6 +107,14 @@ public class MentorshipRequestController {
 			@PathVariable UUID id,
 			@Valid @RequestBody PostMentorMessageRequest request) {
 		return mentorshipRequestService.postMentorMessage(id, request);
+	}
+
+	@PatchMapping("/{id}/planned-sessions")
+	public MentorshipRequestResponse updatePlannedSessions(
+			@PathVariable UUID id,
+			@Valid @RequestBody UpdatePlannedSessionsRequest request) {
+		return mentorshipRequestService.updatePlannedSessions(id, new UpdatePlannedSessionsRequest(
+				CurrentActor.resolve(request.mentorId()), request.plannedSessionCount()));
 	}
 
 	@PatchMapping("/{id}/withdrawal")

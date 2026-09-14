@@ -143,6 +143,13 @@ public class MentorshipRequest {
 	@Column(name = "rejection_reason", columnDefinition = "TEXT")
 	private String rejectionReason;
 
+	@Column(name = "planned_session_count")
+	private Integer plannedSessionCount;
+
+	public void planSessions(Integer plannedSessionCount) {
+		this.plannedSessionCount = plannedSessionCount;
+	}
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
