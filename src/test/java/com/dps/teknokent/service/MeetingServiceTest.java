@@ -58,6 +58,8 @@ class MeetingServiceTest {
 	private AppUserRepository appUserRepository;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private DocumentRequestService documentRequestService;
 
 	private MeetingService meetingService;
 
@@ -74,7 +76,8 @@ class MeetingServiceTest {
 				domainLookupService,
 				meetingFeedbackRepository,
 				appUserRepository,
-				notificationService);
+				notificationService,
+				documentRequestService);
 		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(any()))
 				.thenReturn(List.of());
 	}
@@ -366,6 +369,7 @@ class MeetingServiceTest {
 				"Share final plan after review",
 				"https://meet.google.com/demo-link",
 				MeetingStatus.SCHEDULED,
+				null,
 				null);
 
 		when(domainLookupService.requireUser(demoMentorId)).thenReturn(mentor);
@@ -431,7 +435,8 @@ class MeetingServiceTest {
 				null,
 				"https://meet.google.com/demo-link",
 				MeetingStatus.SCHEDULED,
-				true);
+				true,
+				null);
 
 		when(domainLookupService.requireUser(demoMentorId)).thenReturn(mentor);
 		when(domainLookupService.requireOrganization(demoOrganizationId)).thenReturn(organization);
@@ -469,6 +474,7 @@ class MeetingServiceTest {
 				null,
 				null,
 				MeetingStatus.SCHEDULED,
+				null,
 				null);
 
 		when(domainLookupService.requireUser(userId)).thenReturn(nonMentor);

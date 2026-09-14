@@ -1,6 +1,7 @@
 package com.dps.teknokent.dto.requests;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.MeetingStatus;
@@ -19,5 +20,6 @@ public record CreateMeetingRequest(
 		@Size(max = 10000) String outcomes,
 		@Size(max = 2048) String meetLink,
 		@NotNull MeetingStatus status,
-		Boolean transcribeRequested) {
+		Boolean transcribeRequested,
+		List<@Size(max = 500) String> requestedDocuments) {
 }

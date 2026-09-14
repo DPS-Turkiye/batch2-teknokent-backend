@@ -34,10 +34,7 @@ import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.util.TextUtils;
 
-import lombok.RequiredArgsConstructor;
-
 @Service
-@RequiredArgsConstructor
 public class MeetingService {
 
 	private final MeetingRepository meetingRepository;
@@ -46,6 +43,24 @@ public class MeetingService {
 	private final MeetingFeedbackRepository meetingFeedbackRepository;
 	private final AppUserRepository appUserRepository;
 	private final NotificationService notificationService;
+	private final DocumentRequestService documentRequestService;
+
+	public MeetingService(
+			MeetingRepository meetingRepository,
+			MentorshipRequestRepository mentorshipRequestRepository,
+			DomainLookupService domainLookupService,
+			MeetingFeedbackRepository meetingFeedbackRepository,
+			AppUserRepository appUserRepository,
+			NotificationService notificationService,
+			DocumentRequestService documentRequestService) {
+		this.meetingRepository = meetingRepository;
+		this.mentorshipRequestRepository = mentorshipRequestRepository;
+		this.domainLookupService = domainLookupService;
+		this.meetingFeedbackRepository = meetingFeedbackRepository;
+		this.appUserRepository = appUserRepository;
+		this.notificationService = notificationService;
+		this.documentRequestService = documentRequestService;
+	}
 
 	@Transactional(readOnly = true)
 	public List<MeetingResponse> findAll(UUID organizationId, UUID mentorId) {
@@ -79,6 +94,9 @@ public class MeetingService {
 		copyBotDispatchIfSameLink(meeting);
 		Meeting saved = meetingRepository.save(meeting);
 		notifyOrgMentees(saved);
+		if (mentor != null) {
+			documentRequestService.saveTitlesOnMeeting(saved, mentor, request.requestedDocuments());
+		}
 		return MeetingResponse.fromEntity(saved);
 	}
 
@@ -236,7 +254,9 @@ public class MeetingService {
 			}
 		}
 		copyBotDispatchIfSameLink(meeting);
-		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
+		Meeting saved = meetingRepository.saveAndFlush(meeting);
+		documentRequestService.copyFromRequestToMeeting(request, saved);
+		return MeetingResponse.fromEntity(saved);
 	}
 
 	@Transactional
@@ -353,10 +373,6 @@ public class MeetingService {
 						"Feedback not found for meeting: " + meetingId));
 	}
 
-	/**
-	 * Feedback is about a conversation, so only the two sides of it may leave any:
-	 * the assigned mentor, or a member of the startup the meeting belongs to.
-	 */
 	private void requireMeetingParticipant(Meeting meeting, AppUser author) {
 		boolean isMentor = meeting.getMentor() != null
 				&& meeting.getMentor().getId().equals(author.getId());
