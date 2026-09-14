@@ -9,6 +9,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -16,6 +17,7 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,5 +55,21 @@ class S3ObjectStorageTest {
 				.thenReturn(ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), new byte[] { 9, 8 }));
 
 		assertThat(storage.get("meetings/id/transcript.json")).containsExactly(9, 8);
+	}
+
+	@Test
+	void deletesTheObject() {
+		storage("bucket").delete("documents/u/other/model.xlsx");
+
+		verify(s3Client).deleteObject(any(DeleteObjectRequest.class));
+	}
+
+	@Test
+	void reportsAFailedDelete() {
+		when(s3Client.deleteObject(any(DeleteObjectRequest.class))).thenThrow(new RuntimeException("boom"));
+
+		assertThatThrownBy(() -> storage("bucket").delete("documents/u/other/model.xlsx"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("The file could not be deleted.");
 	}
 }

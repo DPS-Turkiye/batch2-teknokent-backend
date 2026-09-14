@@ -1,5 +1,17 @@
 package com.dps.teknokent.controller;
 
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.security.AppUserPrincipal;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,5 +76,55 @@ class MentorProfileControllerTest {
 				.andExpect(jsonPath("$[0].id").value(mentorId.toString()))
 				.andExpect(jsonPath("$[0].fullName").value("Dr. Kemal Arslan"))
 				.andExpect(jsonPath("$[0].specialties[0]").value("Kullanıcı araştırması"));
+	}
+
+	private static final String PROFILE_UPDATE = """
+			{
+			  "professionalTitle": "Ürün Danışmanı",
+			  "company": "Looply",
+			  "availabilityLabel": "",
+			  "responseTimeLabel": "",
+			  "meetingMode": "",
+			  "communicationPreference": "",
+			  "mentoringStyle": "Yapılandırılmış",
+			  "fitLabel": "",
+			  "experienceLevel": "Kıdemli",
+			  "sectorExperience": "SaaS",
+			  "startupStages": "Seed",
+			  "specialties": []
+			}
+			""";
+
+	private static UsernamePasswordAuthenticationToken signedInAs(UUID userId) {
+		return new UsernamePasswordAuthenticationToken(
+				new AppUserPrincipal(userId, "mentor@looply.co", UserRole.MENTOR, UserAccountStatus.APPROVED, "uid"),
+				null, List.of());
+	}
+
+	@Test
+	void refusesToEditAnotherMentorsProfile() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000701");
+		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000702");
+
+		mockMvc.perform(put("/api/mentors/{id}", otherMentor)
+						.with(authentication(signedInAs(signedIn)))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(PROFILE_UPDATE))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(mentorProfileService);
+	}
+
+	@Test
+	void letsAMentorEditTheirOwnProfile() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000701");
+
+		mockMvc.perform(put("/api/mentors/{id}", signedIn)
+						.with(authentication(signedInAs(signedIn)))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(PROFILE_UPDATE))
+				.andExpect(status().isOk());
+
+		verify(mentorProfileService).updateProfile(eq(signedIn), any(UpdateMentorProfileRequest.class));
 	}
 }

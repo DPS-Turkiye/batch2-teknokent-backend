@@ -205,12 +205,7 @@ public class MentorRecommendationService {
 
 	private MentorProfileResponse withReasons(
 			RecommendMentorsRequest request, MentorProfileResponse mentor, List<String> reasons) {
-		return new MentorProfileResponse(mentor.id(), mentor.fullName(), mentor.email(), mentor.initials(),
-				mentor.professionalTitle(), mentor.company(), mentor.availabilityLabel(), mentor.responseTimeLabel(),
-				mentor.meetingMode(), mentor.communicationPreference(), mentor.mentoringStyle(), mentor.fitLabel(),
-				mentor.experienceLevel(), mentor.sectorExperience(), mentor.startupStages(), mentor.specialties(),
-				reasons,
-				selectEvidence(request, mentor.recommendationEvidence()));
+		return mentor.withRecommendation(reasons, selectEvidence(request, mentor.recommendationEvidence()));
 	}
 
 	private List<MentorEvidenceResponse> selectEvidence(

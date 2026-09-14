@@ -2,6 +2,7 @@ package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -48,7 +49,7 @@ class DocumentControllerTest {
 	void storesADocumentForTheRequestedUserWhenUsingMachineCredentials() throws Exception {
 		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
 		UUID documentId = UUID.fromString("00000000-0000-0000-0000-000000000912");
-		when(documentService.storeForUser(eq(userId), eq("cv"), any())).thenReturn(new StoredDocumentResponse(
+		when(documentService.storeForUser(eq(userId), eq("cv"), any(), isNull())).thenReturn(new StoredDocumentResponse(
 				documentId,
 				userId,
 				null,
@@ -67,7 +68,7 @@ class DocumentControllerTest {
 				.andExpect(jsonPath("$.id").value(documentId.toString()))
 				.andExpect(jsonPath("$.kind").value("cv"));
 
-		verify(documentService).storeForUser(eq(userId), eq("cv"), any());
+		verify(documentService).storeForUser(eq(userId), eq("cv"), any(), isNull());
 	}
 
 	@Test

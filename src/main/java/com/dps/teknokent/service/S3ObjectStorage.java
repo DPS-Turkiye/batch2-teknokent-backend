@@ -9,6 +9,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -115,6 +116,18 @@ public class S3ObjectStorage implements ObjectStorage {
 					.toString();
 		} catch (RuntimeException error) {
 			throw new InvalidRequestException("The download URL could not be created.");
+		}
+	}
+
+	@Override
+	public void delete(String key) {
+		if (!isConfigured()) {
+			throw new InvalidRequestException("Object storage is not configured.");
+		}
+		try {
+			s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+		} catch (RuntimeException error) {
+			throw new InvalidRequestException("The file could not be deleted.");
 		}
 	}
 }

@@ -76,6 +76,9 @@ public class MentorProfile {
 	@Column(name = "sort_order", nullable = false)
 	private int sortOrder;
 
+	@Column(name = "mentee_capacity")
+	private Integer menteeCapacity;
+
 	@ElementCollection
 	@CollectionTable(name = "mentor_specialty", joinColumns = @JoinColumn(name = "mentor_id"))
 	@OrderColumn(name = "display_order")
@@ -95,4 +98,10 @@ public class MentorProfile {
 	@OrderColumn(name = "display_order")
 	@BatchSize(size = 50)
 	private List<MentorProfileEvidence> confirmedEvidence = new ArrayList<>();
+
+	@ElementCollection
+	@CollectionTable(name = "mentor_experience", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@BatchSize(size = 50)
+	private List<MentorExperience> experiences = new ArrayList<>();
 }

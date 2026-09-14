@@ -10,4 +10,6 @@ import com.dps.teknokent.entity.StoredDocument;
 public interface StoredDocumentRepository extends JpaRepository<StoredDocument, UUID> {
 
 	List<StoredDocument> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+	List<StoredDocument> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 }

@@ -9,8 +9,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.requests.UpdateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
 import com.dps.teknokent.dto.responses.UserProfileResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -83,15 +85,47 @@ public class AppUserService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<UserResponse> findByOrganization(UUID organizationId) {
-		domainLookupService.requireOrganization(organizationId);
+	public List<OrganizationMemberResponse> findByOrganization(UUID organizationId) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
 		return appUserRepository.findByOrganizationIdOrderByFullNameAsc(organizationId).stream()
-				.map(UserResponse::fromEntity)
+				.map(member -> OrganizationMemberResponse.fromEntity(member, organization))
 				.toList();
 	}
 
+	// The founder manages the whole team; everyone else may only fix their own entry.
 	@Transactional
-	public UserResponse addOrganizationMember(UUID organizationId, CreateOrganizationMemberRequest request) {
+	public OrganizationMemberResponse updateOrganizationMember(
+			UUID organizationId, UUID memberId, UpdateOrganizationMemberRequest request) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		AppUser member = requireMember(organization, memberId);
+		if (!isFounder(organization, request.actorId()) && !memberId.equals(request.actorId())) {
+			throw new InvalidRequestException("Only the founder or the member themself can edit a team member");
+		}
+
+		member.setFullName(TextUtils.trim(request.fullName()));
+		member.setJobTitle(TextUtils.normalizeOptional(request.jobTitle()));
+		return OrganizationMemberResponse.fromEntity(appUserRepository.save(member), organization);
+	}
+
+	// Detaches rather than deletes: the account keeps its own history.
+	@Transactional
+	public void removeOrganizationMember(UUID organizationId, UUID memberId, UUID actorId) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		if (!isFounder(organization, actorId)) {
+			throw new InvalidRequestException("Only the organization founder can remove team members");
+		}
+		if (isFounder(organization, memberId)) {
+			throw new InvalidRequestException("The founder cannot be removed from the team");
+		}
+
+		AppUser member = requireMember(organization, memberId);
+		member.setOrganization(null);
+		appUserRepository.save(member);
+	}
+
+	@Transactional
+	public OrganizationMemberResponse addOrganizationMember(
+			UUID organizationId, CreateOrganizationMemberRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		String email = TextUtils.trim(request.email());
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
@@ -105,7 +139,19 @@ public class AppUserService {
 		member.setStatus(UserAccountStatus.APPROVED);
 		member.setOrganization(organization);
 		member.setJobTitle(TextUtils.normalizeOptional(request.jobTitle()));
-		return UserResponse.fromEntity(appUserRepository.save(member));
+		return OrganizationMemberResponse.fromEntity(appUserRepository.save(member), organization);
+	}
+
+	private AppUser requireMember(Organization organization, UUID memberId) {
+		AppUser member = domainLookupService.requireUser(memberId);
+		if (member.getOrganization() == null || !organization.getId().equals(member.getOrganization().getId())) {
+			throw new ResourceNotFoundException("Team member not found: " + memberId);
+		}
+		return member;
+	}
+
+	private static boolean isFounder(Organization organization, UUID userId) {
+		return organization.getFounder() != null && organization.getFounder().getId().equals(userId);
 	}
 
 	@Transactional

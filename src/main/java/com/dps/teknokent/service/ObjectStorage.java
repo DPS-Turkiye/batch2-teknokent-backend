@@ -11,4 +11,6 @@ public interface ObjectStorage {
 	String presignPut(String key, String contentType);
 
 	String presignGet(String key);
+
+	void delete(String key);
 }

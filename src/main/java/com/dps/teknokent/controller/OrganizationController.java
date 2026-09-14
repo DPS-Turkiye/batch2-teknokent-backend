@@ -1,10 +1,13 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.security.CurrentActor;
 import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -17,10 +20,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.dto.requests.ActorRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
+import com.dps.teknokent.dto.requests.UpdateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
+import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
+import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
-import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
 
@@ -52,6 +57,15 @@ public class OrganizationController {
 		return organizationService.update(id, request);
 	}
 
+	@PutMapping("/{id}/status")
+	public OrganizationResponse updateStatus(
+			@PathVariable UUID id,
+			@Valid @RequestBody UpdateOrganizationStatusRequest request) {
+		return organizationService.updateStatus(id, new UpdateOrganizationStatusRequest(
+				CurrentActor.resolve(request.actorId()), request.statusVersion(), request.statusSummary(),
+				request.completionPercent()));
+	}
+
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public OrganizationResponse create(@Valid @RequestBody CreateOrganizationRequest request) {
@@ -59,14 +73,34 @@ public class OrganizationController {
 	}
 
 	@GetMapping("/{id}/members")
-	public List<UserResponse> members(@PathVariable UUID id) {
+	public List<OrganizationMemberResponse> members(@PathVariable UUID id) {
 		return appUserService.findByOrganization(id);
 	}
 
 	@PostMapping("/{id}/members")
 	@ResponseStatus(HttpStatus.CREATED)
-	public UserResponse addMember(@PathVariable UUID id, @Valid @RequestBody CreateOrganizationMemberRequest request) {
+	public OrganizationMemberResponse addMember(
+			@PathVariable UUID id,
+			@Valid @RequestBody CreateOrganizationMemberRequest request) {
 		return appUserService.addOrganizationMember(id, request);
+	}
+
+	@PatchMapping("/{id}/members/{memberId}")
+	public OrganizationMemberResponse updateMember(
+			@PathVariable UUID id,
+			@PathVariable UUID memberId,
+			@Valid @RequestBody UpdateOrganizationMemberRequest request) {
+		return appUserService.updateOrganizationMember(id, memberId, new UpdateOrganizationMemberRequest(
+				CurrentActor.resolve(request.actorId()), request.fullName(), request.jobTitle()));
+	}
+
+	@DeleteMapping("/{id}/members/{memberId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void removeMember(
+			@PathVariable UUID id,
+			@PathVariable UUID memberId,
+			@RequestParam(required = false) UUID actorId) {
+		appUserService.removeOrganizationMember(id, memberId, CurrentActor.resolve(actorId));
 	}
 
 	@GetMapping("/{id}/invite-code")

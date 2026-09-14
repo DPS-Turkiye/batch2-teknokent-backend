@@ -10,6 +10,10 @@ public enum DocumentKind {
 	PITCH_DECK("pitch-deck", 10 * 1024 * 1024, false, false),
 	MVP("mvp", 10 * 1024 * 1024, false, false),
 	VALIDATION("validation", 10 * 1024 * 1024, false, false),
+	HOMEWORK("homework", 10 * 1024 * 1024, false, false),
+	MEETING_FILE("meeting-file", 10 * 1024 * 1024, false, false),
+	NOTE_PHOTO("note-photo", 5 * 1024 * 1024, false, true),
+	OTHER("other", 10 * 1024 * 1024, false, false),
 	LOGO("logo", 5 * 1024 * 1024, false, true),
 	PROFILE_PDF("profile-pdf", 50 * 1024 * 1024, true, false),
 	REQUESTED_DOC("requested-doc", 10 * 1024 * 1024, false, false);

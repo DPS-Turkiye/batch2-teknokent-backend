@@ -36,8 +36,9 @@ public class DocumentController {
 	public StoredDocumentResponse upload(
 			@RequestParam("kind") String kind,
 			@RequestParam(required = false) UUID userId,
+			@RequestParam(required = false) UUID meetingId,
 			@RequestPart("file") MultipartFile file) {
-		return documentService.storeForUser(resolveUserId(userId), kind, file);
+		return documentService.storeForUser(resolveUserId(userId), kind, file, meetingId);
 	}
 
 	@GetMapping

@@ -1,5 +1,7 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.security.CurrentActor;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,6 +50,9 @@ public class MentorProfileController {
 	public MentorProfileResponse updateProfile(
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateMentorProfileRequest request) {
+		if (!CurrentActor.resolve(id).equals(id)) {
+			throw new InvalidRequestException("You can only edit your own mentor profile");
+		}
 		return mentorProfileService.updateProfile(id, request);
 	}
 

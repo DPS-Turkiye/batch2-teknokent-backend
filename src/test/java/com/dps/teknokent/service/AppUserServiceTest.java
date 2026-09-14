@@ -21,6 +21,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.requests.UpdateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
@@ -117,6 +118,8 @@ class AppUserServiceTest {
                 UUID.fromString("00000000-0000-0000-0000-000000000502"), "ekip@greenloop.demo", "Ekip Üyesi",
                 UserRole.MENTEE, organization, "Ürün Müdürü");
 
+        organization.setFounder(member);
+        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
         when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(organizationId)).thenReturn(List.of(member));
 
         var result = appUserService.findByOrganization(organizationId);
@@ -124,6 +127,7 @@ class AppUserServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).fullName()).isEqualTo("Ekip Üyesi");
         assertThat(result.get(0).organizationId()).isEqualTo(organizationId);
+        assertThat(result.get(0).founder()).isTrue();
     }
 
     @Test
@@ -158,6 +162,114 @@ class AppUserServiceTest {
                 new CreateOrganizationMemberRequest("Tekrar", "mevcut@greenloop.demo", null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("already exists");
+    }
+
+    private static final UUID TEAM_ORG_ID = UUID.fromString("00000000-0000-0000-0000-000000000901");
+    private static final UUID TEAM_FOUNDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000902");
+    private static final UUID TEAM_MEMBER_ID = UUID.fromString("00000000-0000-0000-0000-000000000903");
+
+    private static Organization teamWithFounder() {
+        Organization organization = organization(TEAM_ORG_ID, "Döngü");
+        organization.setFounder(user(TEAM_FOUNDER_ID, "gulse@dongu.app", "Gülse Buran", UserRole.MENTEE,
+                organization, "Product Designer"));
+        return organization;
+    }
+
+    @Test
+    void updateOrganizationMember_letsTheFounderEditAnotherMember() {
+        Organization organization = teamWithFounder();
+        AppUser member = user(TEAM_MEMBER_ID, "sude@dongu.app", "Eski Ad", UserRole.MENTEE, organization, null);
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(TEAM_MEMBER_ID)).thenReturn(member);
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = appUserService.updateOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID,
+                new UpdateOrganizationMemberRequest(TEAM_FOUNDER_ID, "Sude Arya", "Developer"));
+
+        assertThat(result.fullName()).isEqualTo("Sude Arya");
+        assertThat(result.jobTitle()).isEqualTo("Developer");
+        assertThat(result.founder()).isFalse();
+    }
+
+    @Test
+    void updateOrganizationMember_letsAMemberEditThemself() {
+        Organization organization = teamWithFounder();
+        AppUser member = user(TEAM_MEMBER_ID, "sude@dongu.app", "Sude", UserRole.MENTEE, organization, null);
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(TEAM_MEMBER_ID)).thenReturn(member);
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = appUserService.updateOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID,
+                new UpdateOrganizationMemberRequest(TEAM_MEMBER_ID, "Sude Arya", "Developer"));
+
+        assertThat(result.jobTitle()).isEqualTo("Developer");
+    }
+
+    @Test
+    void updateOrganizationMember_rejectsAnotherTeammate() {
+        Organization organization = teamWithFounder();
+        AppUser member = user(TEAM_MEMBER_ID, "sude@dongu.app", "Sude", UserRole.MENTEE, organization, null);
+        UUID teammateId = UUID.fromString("00000000-0000-0000-0000-000000000904");
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(TEAM_MEMBER_ID)).thenReturn(member);
+
+        assertThatThrownBy(() -> appUserService.updateOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID,
+                new UpdateOrganizationMemberRequest(teammateId, "Başka Ad", null)))
+                .isInstanceOf(InvalidRequestException.class);
+
+        verify(appUserRepository, never()).save(any(AppUser.class));
+    }
+
+    @Test
+    void updateOrganizationMember_rejectsSomeoneFromAnotherTeam() {
+        Organization organization = teamWithFounder();
+        AppUser outsider = user(TEAM_MEMBER_ID, "dis@baska.app", "Dış Kişi", UserRole.MENTEE,
+                organization(UUID.fromString("00000000-0000-0000-0000-000000000999"), "Başka"), null);
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(TEAM_MEMBER_ID)).thenReturn(outsider);
+
+        assertThatThrownBy(() -> appUserService.updateOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID,
+                new UpdateOrganizationMemberRequest(TEAM_FOUNDER_ID, "Yeni Ad", null)))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void removeOrganizationMember_detachesTheMemberFromTheTeam() {
+        Organization organization = teamWithFounder();
+        AppUser member = user(TEAM_MEMBER_ID, "sude@dongu.app", "Sude", UserRole.MENTEE, organization, null);
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(TEAM_MEMBER_ID)).thenReturn(member);
+
+        appUserService.removeOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID, TEAM_FOUNDER_ID);
+
+        assertThat(member.getOrganization()).isNull();
+        verify(appUserRepository).save(member);
+    }
+
+    @Test
+    void removeOrganizationMember_refusesToRemoveTheFounder() {
+        Organization organization = teamWithFounder();
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+
+        assertThatThrownBy(() -> appUserService.removeOrganizationMember(TEAM_ORG_ID, TEAM_FOUNDER_ID,
+                TEAM_FOUNDER_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("founder cannot be removed");
+
+        verify(appUserRepository, never()).save(any(AppUser.class));
+    }
+
+    @Test
+    void removeOrganizationMember_rejectsAnActorWhoIsNotTheFounder() {
+        Organization organization = teamWithFounder();
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+
+        assertThatThrownBy(() -> appUserService.removeOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID,
+                TEAM_MEMBER_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Only the organization founder");
+
+        verify(appUserRepository, never()).save(any(AppUser.class));
     }
 
     @Test

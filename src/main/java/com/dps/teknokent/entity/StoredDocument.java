@@ -44,4 +44,8 @@ public class StoredDocument {
 
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
+
+	// Set when the file belongs to a meeting: its attachments and note photos.
+	@Column(name = "meeting_id")
+	private UUID meetingId;
 }

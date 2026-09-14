@@ -1,5 +1,8 @@
 package com.dps.teknokent.dto.requests;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.Valid;
 import java.util.List;
 
 import jakarta.validation.constraints.NotBlank;
@@ -18,5 +21,7 @@ public record UpdateMentorProfileRequest(
 		@NotBlank @Size(max = 200) String experienceLevel,
 		@NotBlank @Size(max = 200) String sectorExperience,
 		@NotBlank @Size(max = 200) String startupStages,
-		@NotNull List<@NotBlank String> specialties) {
+		@NotNull List<@NotBlank String> specialties,
+		@Min(1) @Max(50) Integer menteeCapacity,
+		@Size(max = 10) List<@Valid MentorExperienceRequest> experiences) {
 }

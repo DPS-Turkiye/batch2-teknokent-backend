@@ -8,6 +8,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.domain.StartupStage;
 import com.dps.teknokent.dto.requests.CreateActionItemRequest;
 import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
 import com.dps.teknokent.util.TextUtils;
@@ -87,6 +88,18 @@ public class ActionItem {
 
 	@Column(name = "completion_notes", columnDefinition = "TEXT")
 	private String completionNotes;
+
+	// The three below are only set on Süreç "Ödevler"; plain action items leave them null.
+	@Enumerated(EnumType.STRING)
+	@Column(length = 32)
+	private StartupStage stage;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "round_id")
+	private StartupRound round;
+
+	@Column(name = "submission_document_id")
+	private UUID submissionDocumentId;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
