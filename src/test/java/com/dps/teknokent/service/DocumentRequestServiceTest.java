@@ -28,6 +28,16 @@ import com.dps.teknokent.repository.DocumentRequestItemRepository;
 import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
+import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.exception.InvalidRequestException;
+import java.time.LocalDate;
+import java.util.Optional;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class DocumentRequestServiceTest {
@@ -46,6 +56,10 @@ class DocumentRequestServiceTest {
 	private DomainLookupService domainLookupService;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private ProgramRepository programRepository;
+	@Mock
+	private ProgramStartupRepository programStartupRepository;
 
 	@InjectMocks
 	private DocumentRequestService documentRequestService;
@@ -122,5 +136,112 @@ class DocumentRequestServiceTest {
 				eq("Mentor belgeler istedi"),
 				eq("Mentor Ali şu belgeleri istedi: CV"),
 				eq("/mentorships?tab=active"));
+	}
+
+	@Test
+	void replaceOnProgramAsksEveryStartupInTheProgram() {
+		UUID programId = UUID.randomUUID();
+		AppUser coordinator = user(UserRole.COORDINATOR, "Koordinatör Ece");
+		Program program = new Program();
+		program.setId(programId);
+		program.setCreatedBy(coordinator.getId());
+		Organization first = organization();
+		Organization second = organization();
+		LocalDate dueDate = LocalDate.of(2026, 9, 30);
+
+		when(programRepository.findById(programId)).thenReturn(Optional.of(program));
+		when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(programId))
+				.thenReturn(List.of(programStartup(programId, first), programStartup(programId, second)));
+		when(domainLookupService.requireOrganization(first.getId())).thenReturn(first);
+		when(domainLookupService.requireOrganization(second.getId())).thenReturn(second);
+		when(itemRepository.save(any(DocumentRequestItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		List<DocumentRequestItemResponse> saved = documentRequestService.replaceOnProgram(
+				programId, coordinator.getId(), List.of("Finansal tablolar"), dueDate);
+
+		verify(itemRepository).deleteByProgramId(programId);
+		assertThat(saved).extracting(DocumentRequestItemResponse::organizationId)
+				.containsExactly(first.getId(), second.getId());
+		assertThat(saved).allSatisfy(item -> {
+			assertThat(item.programId()).isEqualTo(programId);
+			assertThat(item.dueDate()).isEqualTo(dueDate);
+			assertThat(item.createdByName()).isEqualTo("Koordinatör Ece");
+		});
+	}
+
+	@Test
+	void replaceOnProgramRejectsTheCoordinatorOfAnotherProgram() {
+		UUID programId = UUID.randomUUID();
+		AppUser coordinator = user(UserRole.COORDINATOR, "Koordinatör Ece");
+		Program program = new Program();
+		program.setId(programId);
+		program.setCreatedBy(UUID.randomUUID());
+		when(programRepository.findById(programId)).thenReturn(Optional.of(program));
+		when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+
+		assertThatThrownBy(() -> documentRequestService.replaceOnProgram(
+				programId, coordinator.getId(), List.of("CV"), null))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(itemRepository, never()).deleteByProgramId(any());
+	}
+
+	@Test
+	void listForOrganizationReturnsEveryRequestToATeamMember() {
+		Organization organization = organization();
+		AppUser member = user(UserRole.MENTEE, "Gülse Buran");
+		member.setOrganization(organization);
+		DocumentRequestItem item = new DocumentRequestItem();
+		item.setId(UUID.randomUUID());
+		item.setTitle("Pitch deck");
+		item.setDueDate(LocalDate.of(2026, 9, 20));
+		item.setCreatedBy(user(UserRole.MENTOR, "Mentor Ali"));
+		item.setOrganization(organization);
+		when(domainLookupService.requireOrganization(organization.getId())).thenReturn(organization);
+		when(domainLookupService.requireUser(member.getId())).thenReturn(member);
+		when(itemRepository.findByOrganizationIdOrderByCreatedAtDescSortOrderAsc(organization.getId()))
+				.thenReturn(List.of(item));
+
+		List<DocumentRequestItemResponse> items = documentRequestService.listForOrganization(
+				organization.getId(), member.getId());
+
+		assertThat(items).singleElement().satisfies(response -> {
+			assertThat(response.createdByName()).isEqualTo("Mentor Ali");
+			assertThat(response.dueDate()).isEqualTo(LocalDate.of(2026, 9, 20));
+		});
+	}
+
+	@Test
+	void listForOrganizationRejectsAnotherStartupsMember() {
+		Organization organization = organization();
+		AppUser outsider = user(UserRole.MENTEE, "Başka Girişim");
+		outsider.setOrganization(organization());
+		when(domainLookupService.requireOrganization(organization.getId())).thenReturn(organization);
+		when(domainLookupService.requireUser(outsider.getId())).thenReturn(outsider);
+
+		assertThatThrownBy(() -> documentRequestService.listForOrganization(organization.getId(), outsider.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	private static AppUser user(UserRole role, String fullName) {
+		AppUser user = new AppUser();
+		user.setId(UUID.randomUUID());
+		user.setRole(role);
+		user.setFullName(fullName);
+		return user;
+	}
+
+	private static Organization organization() {
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		return organization;
+	}
+
+	private static ProgramStartup programStartup(UUID programId, Organization organization) {
+		ProgramStartup startup = new ProgramStartup();
+		startup.setId(UUID.randomUUID());
+		startup.setProgramId(programId);
+		startup.setOrganizationId(organization.getId());
+		return startup;
 	}
 }

@@ -30,6 +30,9 @@ import com.dps.teknokent.dto.responses.DocumentDownloadResponse;
 import com.dps.teknokent.dto.responses.DocumentShareResponse;
 import com.dps.teknokent.dto.responses.OrganizationDocumentResponse;
 import com.dps.teknokent.service.StartupDocumentService;
+import com.dps.teknokent.service.DocumentRequestService;
+import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
+import java.time.LocalDate;
 
 @WebMvcTest(StartupDocumentController.class)
 @Import(SecurityConfig.class)
@@ -46,10 +49,30 @@ class StartupDocumentControllerTest {
     @MockitoBean
     private StartupDocumentService startupDocumentService;
 
+    @MockitoBean
+    private DocumentRequestService documentRequestService;
+
     private static OrganizationDocumentResponse deck() {
         return new OrganizationDocumentResponse(DOCUMENT_ID, "pitch-deck", "Pitch Deck v2.pdf", "application/pdf",
                 4_200_000, Instant.parse("2026-09-12T08:00:00Z"), ACTOR_ID, "Gülse Buran", null, null, null,
                 List.of(new DocumentShareResponse(MENTOR_ID, "Nihan Öztürk", Instant.parse("2026-09-05T10:00:00Z"))));
+    }
+
+    @Test
+    void listsTheStartupsDocumentRequestsWithTheirDueDateAndRequester() throws Exception {
+        UUID itemId = UUID.fromString("80000000-0000-0000-0000-000000000001");
+        when(documentRequestService.listForOrganization(ORG_ID, ACTOR_ID)).thenReturn(List.of(
+                new DocumentRequestItemResponse(itemId, "Finansal tablolar", 0, LocalDate.parse("2026-09-30"), ORG_ID,
+                        null, null, null, null, MENTOR_ID, "Nihan Öztürk", Instant.parse("2026-09-14T08:00:00Z"),
+                        List.of())));
+
+        mockMvc.perform(get("/api/organizations/{id}/document-requests", ORG_ID)
+                        .param("actorId", ACTOR_ID.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(itemId.toString()))
+                .andExpect(jsonPath("$[0].dueDate").value("2026-09-30"))
+                .andExpect(jsonPath("$[0].createdByName").value("Nihan Öztürk"));
     }
 
     @Test

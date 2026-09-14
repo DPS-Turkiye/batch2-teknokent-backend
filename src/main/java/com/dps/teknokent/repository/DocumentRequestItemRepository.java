@@ -15,9 +15,13 @@ public interface DocumentRequestItemRepository extends JpaRepository<DocumentReq
 
 	List<DocumentRequestItem> findByMentorshipIdOrderBySortOrderAscCreatedAtAsc(UUID mentorshipId);
 
+	List<DocumentRequestItem> findByOrganizationIdOrderByCreatedAtDescSortOrderAsc(UUID organizationId);
+
 	void deleteByMentorshipRequestId(UUID mentorshipRequestId);
 
 	void deleteByMeetingId(UUID meetingId);
 
 	void deleteByMentorshipId(UUID mentorshipId);
+
+	void deleteByProgramId(UUID programId);
 }

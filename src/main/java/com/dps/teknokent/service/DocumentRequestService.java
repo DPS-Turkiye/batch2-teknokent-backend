@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,8 @@ import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -27,6 +30,8 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.DocumentRequestItemRepository;
 import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.util.TextUtils;
 
@@ -36,10 +41,14 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class DocumentRequestService {
 
+	private static final String MENTOR_REQUESTED_TITLE = "Mentor belgeler istedi";
+
 	private final DocumentRequestItemRepository itemRepository;
 	private final DocumentRequestUploadRepository uploadRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final MentorshipRepository mentorshipRepository;
+	private final ProgramRepository programRepository;
+	private final ProgramStartupRepository programStartupRepository;
 	private final AppUserRepository appUserRepository;
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
@@ -61,21 +70,40 @@ public class DocumentRequestService {
 		return toResponses(items);
 	}
 
+	/** Every document request addressed to a startup, whoever asked — the Dosyalar tab's checklist. */
+	@Transactional(readOnly = true)
+	public List<DocumentRequestItemResponse> listForOrganization(UUID organizationId, UUID actorId) {
+		domainLookupService.requireOrganization(organizationId);
+		AppUser actor = domainLookupService.requireUser(actorId);
+		boolean teamMember = actor.getOrganization() != null
+				&& organizationId.equals(actor.getOrganization().getId());
+		boolean staff = actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR;
+		if (!teamMember && !staff) {
+			throw new InvalidRequestException("Only the startup's team can list its document requests");
+		}
+		return toResponses(itemRepository.findByOrganizationIdOrderByCreatedAtDescSortOrderAsc(organizationId));
+	}
+
 	@Transactional
 	public List<DocumentRequestItemResponse> replaceOnRequest(
 			UUID mentorshipRequestId,
 			UUID actorId,
-			List<String> titles) {
+			List<String> titles,
+			LocalDate dueDate) {
 		MentorshipRequest request = domainLookupService.requireMentorshipRequest(mentorshipRequestId);
 		AppUser actor = requireMentorActor(actorId, request.getMentor().getId());
-		List<DocumentRequestItem> saved = replaceItems(
+		itemRepository.deleteByMentorshipRequestId(request.getId());
+		List<DocumentRequestItem> saved = insertItems(
 				actor,
 				request.getOrganization(),
 				normalizeTitles(titles),
+				dueDate,
 				request,
 				null,
+				null,
 				null);
-		notifyDocumentsRequested(request.getOrganization(), actor, saved, "/mentorships?tab=active");
+		notifyDocumentsRequested(
+				request.getOrganization(), actor, saved, MENTOR_REQUESTED_TITLE, "/mentorships?tab=active");
 		return toResponses(saved);
 	}
 
@@ -83,20 +111,25 @@ public class DocumentRequestService {
 	public List<DocumentRequestItemResponse> replaceOnMeeting(
 			UUID meetingId,
 			UUID actorId,
-			List<String> titles) {
+			List<String> titles,
+			LocalDate dueDate) {
 		Meeting meeting = domainLookupService.requireMeeting(meetingId);
 		AppUser actor = requireMeetingMentor(actorId, meeting);
-		List<DocumentRequestItem> saved = replaceItems(
+		itemRepository.deleteByMeetingId(meeting.getId());
+		List<DocumentRequestItem> saved = insertItems(
 				actor,
 				meeting.getOrganization(),
 				normalizeTitles(titles),
+				dueDate,
 				null,
 				meeting,
+				null,
 				null);
 		notifyDocumentsRequested(
 				meeting.getOrganization(),
 				actor,
 				saved,
+				MENTOR_REQUESTED_TITLE,
 				"/meetings/research?id=" + meeting.getId());
 		return toResponses(saved);
 	}
@@ -105,22 +138,53 @@ public class DocumentRequestService {
 	public List<DocumentRequestItemResponse> replaceOnMentorship(
 			UUID mentorshipId,
 			UUID actorId,
-			List<String> titles) {
+			List<String> titles,
+			LocalDate dueDate) {
 		Mentorship mentorship = mentorshipRepository.findById(mentorshipId)
 				.orElseThrow(() -> new ResourceNotFoundException("Mentorship not found: " + mentorshipId));
 		AppUser actor = requireMentorActor(actorId, mentorship.getMentor().getId());
-		List<DocumentRequestItem> saved = replaceItems(
+		itemRepository.deleteByMentorshipId(mentorship.getId());
+		List<DocumentRequestItem> saved = insertItems(
 				actor,
 				mentorship.getOrganization(),
 				normalizeTitles(titles),
+				dueDate,
 				null,
 				null,
-				mentorship);
+				mentorship,
+				null);
 		notifyDocumentsRequested(
 				mentorship.getOrganization(),
 				actor,
 				saved,
+				MENTOR_REQUESTED_TITLE,
 				"/mentorships?tab=regular");
+		return toResponses(saved);
+	}
+
+	/** The program's coordinator asks every startup in the program for the same documents. */
+	@Transactional
+	public List<DocumentRequestItemResponse> replaceOnProgram(
+			UUID programId,
+			UUID actorId,
+			List<String> titles,
+			LocalDate dueDate) {
+		Program program = programRepository.findById(programId)
+				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
+		AppUser actor = domainLookupService.requireUser(actorId);
+		if (actor.getRole() != UserRole.COORDINATOR || !actor.getId().equals(program.getCreatedBy())) {
+			throw new InvalidRequestException("Only the program coordinator can request documents from its startups");
+		}
+		List<String> normalized = normalizeTitles(titles);
+		itemRepository.deleteByProgramId(program.getId());
+		List<DocumentRequestItem> saved = new ArrayList<>();
+		for (ProgramStartup startup : programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())) {
+			Organization organization = domainLookupService.requireOrganization(startup.getOrganizationId());
+			List<DocumentRequestItem> items = insertItems(
+					actor, organization, normalized, dueDate, null, null, null, program.getId());
+			notifyDocumentsRequested(organization, actor, items, "Koordinatör belgeler istedi", "/startup/files");
+			saved.addAll(items);
+		}
 		return toResponses(saved);
 	}
 
@@ -130,14 +194,18 @@ public class DocumentRequestService {
 		if (normalized.isEmpty()) {
 			return;
 		}
-		List<DocumentRequestItem> saved = replaceItems(
+		itemRepository.deleteByMentorshipRequestId(request.getId());
+		List<DocumentRequestItem> saved = insertItems(
 				mentor,
 				request.getOrganization(),
 				normalized,
+				null,
 				request,
 				null,
+				null,
 				null);
-		notifyDocumentsRequested(request.getOrganization(), mentor, saved, "/mentorships?tab=active");
+		notifyDocumentsRequested(
+				request.getOrganization(), mentor, saved, MENTOR_REQUESTED_TITLE, "/mentorships?tab=active");
 	}
 
 	@Transactional
@@ -146,17 +214,21 @@ public class DocumentRequestService {
 		if (normalized.isEmpty()) {
 			return;
 		}
-		List<DocumentRequestItem> saved = replaceItems(
+		itemRepository.deleteByMeetingId(meeting.getId());
+		List<DocumentRequestItem> saved = insertItems(
 				mentor,
 				meeting.getOrganization(),
 				normalized,
 				null,
+				null,
 				meeting,
+				null,
 				null);
 		notifyDocumentsRequested(
 				meeting.getOrganization(),
 				mentor,
 				saved,
+				MENTOR_REQUESTED_TITLE,
 				"/meetings/research?id=" + meeting.getId());
 	}
 
@@ -184,6 +256,7 @@ public class DocumentRequestService {
 			target.setId(UUID.randomUUID());
 			target.setTitle(source.getTitle());
 			target.setSortOrder(source.getSortOrder());
+			target.setDueDate(source.getDueDate());
 			target.setCreatedBy(source.getCreatedBy());
 			target.setOrganization(meeting.getOrganization());
 			target.setMeeting(meeting);
@@ -235,20 +308,16 @@ public class DocumentRequestService {
 		uploadRepository.delete(upload);
 	}
 
-	private List<DocumentRequestItem> replaceItems(
+	// Callers delete the target's existing items first, so a save replaces the checklist.
+	private List<DocumentRequestItem> insertItems(
 			AppUser actor,
 			Organization organization,
 			List<String> titles,
+			LocalDate dueDate,
 			MentorshipRequest request,
 			Meeting meeting,
-			Mentorship mentorship) {
-		if (request != null) {
-			itemRepository.deleteByMentorshipRequestId(request.getId());
-		} else if (meeting != null) {
-			itemRepository.deleteByMeetingId(meeting.getId());
-		} else if (mentorship != null) {
-			itemRepository.deleteByMentorshipId(mentorship.getId());
-		}
+			Mentorship mentorship,
+			UUID programId) {
 		itemRepository.flush();
 		List<DocumentRequestItem> saved = new ArrayList<>();
 		int order = 0;
@@ -257,11 +326,13 @@ public class DocumentRequestService {
 			item.setId(UUID.randomUUID());
 			item.setTitle(title);
 			item.setSortOrder(order++);
+			item.setDueDate(dueDate);
 			item.setCreatedBy(actor);
 			item.setOrganization(organization);
 			item.setMentorshipRequest(request);
 			item.setMeeting(meeting);
 			item.setMentorship(mentorship);
+			item.setProgramId(programId);
 			saved.add(itemRepository.save(item));
 		}
 		return saved;
@@ -338,19 +409,20 @@ public class DocumentRequestService {
 
 	private void notifyDocumentsRequested(
 			Organization organization,
-			AppUser mentor,
+			AppUser requester,
 			List<DocumentRequestItem> items,
+			String title,
 			String href) {
 		if (organization == null || items.isEmpty()) {
 			return;
 		}
 		String titles = items.stream().map(DocumentRequestItem::getTitle).collect(Collectors.joining(", "));
-		String body = mentor.getFullName() + " şu belgeleri istedi: " + titles;
+		String body = requester.getFullName() + " şu belgeleri istedi: " + titles;
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(organization.getId()).stream()
 				.filter(user -> user.getRole() == UserRole.MENTEE)
 				.forEach(mentee -> notificationService.create(
 						mentee,
-						"Mentor belgeler istedi",
+						title,
 						body,
 						href));
 	}
@@ -391,11 +463,14 @@ public class DocumentRequestService {
 						item.getId(),
 						item.getTitle(),
 						item.getSortOrder(),
+						item.getDueDate(),
 						item.getOrganization().getId(),
 						item.getMentorshipRequest() == null ? null : item.getMentorshipRequest().getId(),
 						item.getMeeting() == null ? null : item.getMeeting().getId(),
 						item.getMentorship() == null ? null : item.getMentorship().getId(),
+						item.getProgramId(),
 						item.getCreatedBy().getId(),
+						item.getCreatedBy().getFullName(),
 						item.getCreatedAt(),
 						uploadsByItem.getOrDefault(item.getId(), List.of()).stream()
 								.map(this::toUploadResponse)

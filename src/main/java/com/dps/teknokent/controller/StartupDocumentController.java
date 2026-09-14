@@ -16,7 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.ShareDocumentRequest;
 import com.dps.teknokent.dto.responses.DocumentDownloadResponse;
+import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
 import com.dps.teknokent.dto.responses.OrganizationDocumentResponse;
+import com.dps.teknokent.service.DocumentRequestService;
 import com.dps.teknokent.service.StartupDocumentService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +31,14 @@ import lombok.RequiredArgsConstructor;
 public class StartupDocumentController {
 
 	private final StartupDocumentService startupDocumentService;
+	private final DocumentRequestService documentRequestService;
+
+	@GetMapping("/api/organizations/{organizationId}/document-requests")
+	public List<DocumentRequestItemResponse> listDocumentRequests(
+			@PathVariable UUID organizationId,
+			@RequestParam(required = false) UUID actorId) {
+		return documentRequestService.listForOrganization(organizationId, CurrentActor.resolve(actorId));
+	}
 
 	@GetMapping("/api/organizations/{organizationId}/documents")
 	public List<OrganizationDocumentResponse> list(
