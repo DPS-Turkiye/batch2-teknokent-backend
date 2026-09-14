@@ -160,7 +160,6 @@ class DocumentRequestServiceTest {
 		List<DocumentRequestItemResponse> saved = documentRequestService.replaceOnProgram(
 				programId, coordinator.getId(), List.of("Finansal tablolar"), dueDate);
 
-		verify(itemRepository).deleteByProgramId(programId);
 		assertThat(saved).extracting(DocumentRequestItemResponse::organizationId)
 				.containsExactly(first.getId(), second.getId());
 		assertThat(saved).allSatisfy(item -> {
@@ -183,7 +182,7 @@ class DocumentRequestServiceTest {
 		assertThatThrownBy(() -> documentRequestService.replaceOnProgram(
 				programId, coordinator.getId(), List.of("CV"), null))
 				.isInstanceOf(InvalidRequestException.class);
-		verify(itemRepository, never()).deleteByProgramId(any());
+		verify(itemRepository, never()).save(any());
 	}
 
 	@Test
@@ -221,6 +220,62 @@ class DocumentRequestServiceTest {
 
 		assertThatThrownBy(() -> documentRequestService.listForOrganization(organization.getId(), outsider.getId()))
 				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	@Test
+	void replaceOnProgramKeepsTheItemsStillOnTheChecklistAndDropsTheRest() {
+		UUID programId = UUID.randomUUID();
+		AppUser coordinator = user(UserRole.COORDINATOR, "Koordinatör Ece");
+		Program program = new Program();
+		program.setId(programId);
+		program.setCreatedBy(coordinator.getId());
+		Organization startup = organization();
+		DocumentRequestItem kept = programItem(programId, startup, "Pitch deck", coordinator);
+		DocumentRequestItem dropped = programItem(programId, startup, "Eski rapor", coordinator);
+		LocalDate dueDate = LocalDate.of(2026, 9, 30);
+
+		when(programRepository.findById(programId)).thenReturn(Optional.of(program));
+		when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+		when(itemRepository.findByProgramIdOrderBySortOrderAscCreatedAtAsc(programId))
+				.thenReturn(List.of(kept, dropped));
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(programId))
+				.thenReturn(List.of(programStartup(programId, startup)));
+		when(domainLookupService.requireOrganization(startup.getId())).thenReturn(startup);
+		when(itemRepository.save(any(DocumentRequestItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		List<DocumentRequestItemResponse> saved = documentRequestService.replaceOnProgram(
+				programId, coordinator.getId(), List.of("Finansal tablolar", "Pitch deck"), dueDate);
+
+		assertThat(saved).extracting(DocumentRequestItemResponse::title)
+				.containsExactly("Finansal tablolar", "Pitch deck");
+		assertThat(saved.get(1).id()).isEqualTo(kept.getId());
+		assertThat(kept.getSortOrder()).isEqualTo(1);
+		assertThat(kept.getDueDate()).isEqualTo(dueDate);
+		verify(itemRepository).deleteAll(List.of(dropped));
+	}
+
+	@Test
+	void listForOrganizationLetsACoordinatorSeeAnyStartup() {
+		Organization organization = organization();
+		AppUser coordinator = user(UserRole.COORDINATOR, "Koordinatör Ece");
+		when(domainLookupService.requireOrganization(organization.getId())).thenReturn(organization);
+		when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+		when(itemRepository.findByOrganizationIdOrderByCreatedAtDescSortOrderAsc(organization.getId()))
+				.thenReturn(List.of());
+
+		assertThat(documentRequestService.listForOrganization(organization.getId(), coordinator.getId()))
+				.isEmpty();
+	}
+
+	private static DocumentRequestItem programItem(
+			UUID programId, Organization organization, String title, AppUser createdBy) {
+		DocumentRequestItem item = new DocumentRequestItem();
+		item.setId(UUID.randomUUID());
+		item.setTitle(title);
+		item.setOrganization(organization);
+		item.setProgramId(programId);
+		item.setCreatedBy(createdBy);
+		return item;
 	}
 
 	private static AppUser user(UserRole role, String fullName) {

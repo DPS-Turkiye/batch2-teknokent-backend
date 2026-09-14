@@ -30,6 +30,7 @@ import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
+import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.service.MeetingService;
 import com.dps.teknokent.service.MentorshipRequestService;
@@ -237,6 +238,65 @@ class MentorshipRequestControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(requestId.toString()))
                 .andExpect(jsonPath("$.status").value("MORE_INFO_REQUESTED"));
+    }
+
+    @Test
+    void plansTheSessionsOfAnAcceptedMentorship() throws Exception {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000305");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+
+        when(mentorshipRequestService.updatePlannedSessions(requestId, new UpdatePlannedSessionsRequest(mentorId, 6)))
+                .thenReturn(new MentorshipRequestResponse(
+                        requestId,
+                        UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                        "Ayşe Demir",
+                        UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                        "Teknokent",
+                        mentorId,
+                        "Dr. Kemal Arslan",
+                        "Arda Demir",
+                        "Product strategy",
+                        "We need guidance on roadmap validation.",
+                        MentorshipRequestUrgency.THIS_MONTH,
+                        MentorshipRequestFormat.REGULAR,
+                        MeetingMode.ONLINE,
+                        MentorshipRequestStatus.ACCEPTED,
+                        "We are a B2B SaaS startup.",
+                        null,
+                        null,
+                        Instant.parse("2026-08-21T14:00:00Z"),
+                        Instant.parse("2026-08-21T14:05:00Z"),
+                        List.of(),
+                        null,
+                        6
+                ));
+
+        mockMvc.perform(patch("/api/mentorship-requests/{id}/planned-sessions", requestId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mentorId": "00000000-0000-0000-0000-000000000201",
+                                  "plannedSessionCount": 6
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plannedSessionCount").value(6));
+    }
+
+    @Test
+    void rejectsMoreSessionsThanAYearOfWeeks() throws Exception {
+        mockMvc.perform(patch("/api/mentorship-requests/{id}/planned-sessions",
+                        UUID.fromString("00000000-0000-0000-0000-000000000305"))
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mentorId": "00000000-0000-0000-0000-000000000201",
+                                  "plannedSessionCount": 53
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

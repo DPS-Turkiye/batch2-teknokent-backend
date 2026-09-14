@@ -315,6 +315,45 @@ class StartupDocumentServiceTest {
         verify(storedDocumentRepository, never()).saveAndFlush(any());
     }
 
+    @Test
+    void review_refusesAMentorWhoCannotOpenTheDocument() {
+        StoredDocument deck = document(FOUNDER_ID);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+        when(storedDocumentShareRepository.existsByDocumentIdAndMentorId(deck.getId(), MENTOR_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> startupDocumentService.review(deck.getId(), MENTOR_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(storedDocumentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void review_refusesAMentorReviewingTheirOwnUpload() {
+        StoredDocument notes = document(MENTOR_ID);
+        when(storedDocumentRepository.findById(notes.getId())).thenReturn(Optional.of(notes));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+
+        assertThatThrownBy(() -> startupDocumentService.review(notes.getId(), MENTOR_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(storedDocumentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void review_letsACoordinatorMarkItReviewed() {
+        StoredDocument deck = document(FOUNDER_ID);
+        AppUser coordinator = new AppUser();
+        coordinator.setId(UUID.fromString("20000000-0000-0000-0000-000000000009"));
+        coordinator.setFullName("Ece Koordinatör");
+        coordinator.setRole(UserRole.COORDINATOR);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+
+        startupDocumentService.review(deck.getId(), coordinator.getId());
+
+        verify(storedDocumentRepository).saveAndFlush(deck);
+        assertThat(deck.getReviewedById()).isEqualTo(coordinator.getId());
+    }
+
     private static Organization startup() {
         Organization organization = new Organization();
         organization.setId(ORG_ID);

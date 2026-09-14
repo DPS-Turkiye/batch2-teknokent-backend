@@ -103,13 +103,15 @@ public class StartupDocumentService {
 		return describe(List.of(document)).getFirst();
 	}
 
-	// Staff, or a mentor who can open the file; the startup cannot mark its own files reviewed.
+	// Staff, or a mentor who can open the file. The startup cannot mark its own files
+	// reviewed, and nobody can review a file they uploaded.
 	@Transactional
 	public OrganizationDocumentResponse review(UUID documentId, UUID actorId) {
 		StoredDocument document = requireDocument(documentId);
 		AppUser actor = domainLookupService.requireUser(actorId);
 		boolean reviewerRole = isStaff(actor) || actor.getRole() == UserRole.MENTOR;
-		if (!reviewerRole || !canRead(document, actor)) {
+		boolean ownUpload = actor.getId().equals(document.getUserId());
+		if (!reviewerRole || ownUpload || !canRead(document, actor)) {
 			throw new InvalidRequestException("Only a mentor with access or a coordinator can review this document");
 		}
 

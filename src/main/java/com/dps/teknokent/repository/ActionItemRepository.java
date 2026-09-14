@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.dps.teknokent.domain.ActionItemStatus;
@@ -13,6 +14,7 @@ import com.dps.teknokent.entity.ActionItem;
 
 public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 
+	@EntityGraph(attributePaths = "createdBy")
 	List<ActionItem> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
 	Optional<ActionItem> findByIdAndOrganizationId(UUID id, UUID organizationId);

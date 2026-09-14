@@ -1,7 +1,10 @@
 package com.dps.teknokent.service;
 
 import java.time.LocalDate;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -100,7 +103,6 @@ public class DocumentRequestService {
 				dueDate,
 				request,
 				null,
-				null,
 				null);
 		notifyDocumentsRequested(
 				request.getOrganization(), actor, saved, MENTOR_REQUESTED_TITLE, "/mentorships?tab=active");
@@ -123,7 +125,6 @@ public class DocumentRequestService {
 				dueDate,
 				null,
 				meeting,
-				null,
 				null);
 		notifyDocumentsRequested(
 				meeting.getOrganization(),
@@ -151,8 +152,7 @@ public class DocumentRequestService {
 				dueDate,
 				null,
 				null,
-				mentorship,
-				null);
+				mentorship);
 		notifyDocumentsRequested(
 				mentorship.getOrganization(),
 				actor,
@@ -162,7 +162,11 @@ public class DocumentRequestService {
 		return toResponses(saved);
 	}
 
-	/** The program's coordinator asks every startup in the program for the same documents. */
+	/**
+	 * The program's coordinator asks every startup in the program for the same documents.
+	 * Unlike the other targets this edits the checklist in place: a program reaches many
+	 * startups, and a title that stays keeps every upload made against it.
+	 */
 	@Transactional
 	public List<DocumentRequestItemResponse> replaceOnProgram(
 			UUID programId,
@@ -176,14 +180,42 @@ public class DocumentRequestService {
 			throw new InvalidRequestException("Only the program coordinator can request documents from its startups");
 		}
 		List<String> normalized = normalizeTitles(titles);
-		itemRepository.deleteByProgramId(program.getId());
+
+		Map<UUID, Map<String, Deque<DocumentRequestItem>>> existing = new HashMap<>();
+		for (DocumentRequestItem item : itemRepository.findByProgramIdOrderBySortOrderAscCreatedAtAsc(program.getId())) {
+			existing.computeIfAbsent(item.getOrganization().getId(), id -> new HashMap<>())
+					.computeIfAbsent(item.getTitle(), title -> new ArrayDeque<>())
+					.add(item);
+		}
+
 		List<DocumentRequestItem> saved = new ArrayList<>();
+		List<DocumentRequestItem> leftovers = new ArrayList<>();
 		for (ProgramStartup startup : programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())) {
 			Organization organization = domainLookupService.requireOrganization(startup.getOrganizationId());
-			List<DocumentRequestItem> items = insertItems(
-					actor, organization, normalized, dueDate, null, null, null, program.getId());
-			notifyDocumentsRequested(organization, actor, items, "Koordinatör belgeler istedi", "/startup/files");
-			saved.addAll(items);
+			Map<String, Deque<DocumentRequestItem>> current = existing.getOrDefault(organization.getId(), Map.of());
+			List<DocumentRequestItem> added = new ArrayList<>();
+			for (int order = 0; order < normalized.size(); order++) {
+				String title = normalized.get(order);
+				Deque<DocumentRequestItem> matches = current.get(title);
+				DocumentRequestItem item = matches == null ? null : matches.poll();
+				if (item == null) {
+					item = newItem(actor, organization, title, order, dueDate);
+					item.setProgramId(program.getId());
+					added.add(item);
+				} else {
+					item.setSortOrder(order);
+					item.setDueDate(dueDate);
+				}
+				saved.add(itemRepository.save(item));
+			}
+			current.values().forEach(leftovers::addAll);
+			existing.remove(organization.getId());
+			notifyDocumentsRequested(organization, actor, added, "Koordinatör belgeler istedi", "/startup/files");
+		}
+		// Startups that have left the program no longer owe its documents.
+		existing.values().forEach(byTitle -> byTitle.values().forEach(leftovers::addAll));
+		if (!leftovers.isEmpty()) {
+			itemRepository.deleteAll(leftovers);
 		}
 		return toResponses(saved);
 	}
@@ -201,7 +233,6 @@ public class DocumentRequestService {
 				normalized,
 				null,
 				request,
-				null,
 				null,
 				null);
 		notifyDocumentsRequested(
@@ -222,7 +253,6 @@ public class DocumentRequestService {
 				null,
 				null,
 				meeting,
-				null,
 				null);
 		notifyDocumentsRequested(
 				meeting.getOrganization(),
@@ -316,26 +346,33 @@ public class DocumentRequestService {
 			LocalDate dueDate,
 			MentorshipRequest request,
 			Meeting meeting,
-			Mentorship mentorship,
-			UUID programId) {
+			Mentorship mentorship) {
 		itemRepository.flush();
 		List<DocumentRequestItem> saved = new ArrayList<>();
-		int order = 0;
-		for (String title : titles) {
-			DocumentRequestItem item = new DocumentRequestItem();
-			item.setId(UUID.randomUUID());
-			item.setTitle(title);
-			item.setSortOrder(order++);
-			item.setDueDate(dueDate);
-			item.setCreatedBy(actor);
-			item.setOrganization(organization);
+		for (int order = 0; order < titles.size(); order++) {
+			DocumentRequestItem item = newItem(actor, organization, titles.get(order), order, dueDate);
 			item.setMentorshipRequest(request);
 			item.setMeeting(meeting);
 			item.setMentorship(mentorship);
-			item.setProgramId(programId);
 			saved.add(itemRepository.save(item));
 		}
 		return saved;
+	}
+
+	private static DocumentRequestItem newItem(
+			AppUser actor,
+			Organization organization,
+			String title,
+			int order,
+			LocalDate dueDate) {
+		DocumentRequestItem item = new DocumentRequestItem();
+		item.setId(UUID.randomUUID());
+		item.setTitle(title);
+		item.setSortOrder(order);
+		item.setDueDate(dueDate);
+		item.setCreatedBy(actor);
+		item.setOrganization(organization);
+		return item;
 	}
 
 	private List<String> normalizeTitles(List<String> titles) {
