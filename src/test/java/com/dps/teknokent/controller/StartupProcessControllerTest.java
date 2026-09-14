@@ -62,7 +62,7 @@ class StartupProcessControllerTest {
         StartupRoundResponse round = new StartupRoundResponse(ROUND_ID, "Value proposition & onboarding",
                 "MVP test turu", StartupStage.MVP, LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 31));
         ProcessAssignmentResponse assignment = new ProcessAssignmentResponse(ASSIGNMENT_ID, ROUND_ID,
-                StartupStage.FINANCE, "Finansal model", null, ActionItemStatus.OPEN, null, null, null,
+                StartupStage.FINANCE, "Finansal model", null, ActionItemStatus.OPEN, null, null, null, null, null,
                 Instant.parse("2026-08-10T09:00:00Z"));
         return new StartupProcessResponse(ORG_ID, currentStage,
                 List.of(new StartupStageResponse(StartupStage.PROBLEM, StartupStageState.COMPLETED),

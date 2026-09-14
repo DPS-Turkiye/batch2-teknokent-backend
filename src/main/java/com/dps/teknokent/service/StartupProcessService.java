@@ -101,7 +101,7 @@ public class StartupProcessService {
 	@Transactional
 	public StartupProcessResponse createAssignment(UUID organizationId, CreateProcessAssignmentRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
-		requireEditor(organization, request.actorId());
+		AppUser actor = requireEditor(organization, request.actorId());
 		StartupRound round = request.roundId() == null
 				? null
 				: startupRoundRepository.findByIdAndOrganizationId(request.roundId(), organizationId)
@@ -122,6 +122,7 @@ public class StartupProcessService {
 		item.setDueDate(request.dueDate());
 		item.setStage(stage);
 		item.setRound(round);
+		item.setCreatedBy(actor);
 		actionItemRepository.saveAndFlush(item);
 		return describe(organization, today());
 	}
