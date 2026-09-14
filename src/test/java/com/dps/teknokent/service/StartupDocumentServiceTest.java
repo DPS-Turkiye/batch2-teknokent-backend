@@ -29,6 +29,7 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.dto.responses.OrganizationDocumentResponse;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.StoredDocumentShare;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -285,6 +286,33 @@ class StartupDocumentServiceTest {
                 .isInstanceOf(InvalidRequestException.class);
 
         verify(storedDocumentRepository, never()).delete(any(StoredDocument.class));
+    }
+
+    @Test
+    void review_letsAMentorItWasSharedWithMarkItReviewed() {
+        StoredDocument deck = document(FOUNDER_ID);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+        when(storedDocumentShareRepository.existsByDocumentIdAndMentorId(deck.getId(), MENTOR_ID)).thenReturn(true);
+        when(appUserRepository.findAllById(any())).thenReturn(List.of(mentor()));
+
+        OrganizationDocumentResponse reviewed = startupDocumentService.review(deck.getId(), MENTOR_ID);
+
+        verify(storedDocumentRepository).saveAndFlush(deck);
+        assertThat(deck.getReviewedById()).isEqualTo(MENTOR_ID);
+        assertThat(reviewed.reviewedAt()).isNotNull();
+        assertThat(reviewed.reviewedByName()).isEqualTo("Nihan Öztürk");
+    }
+
+    @Test
+    void review_refusesTheStartupsOwnTeam() {
+        StoredDocument deck = document(FOUNDER_ID);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(TEAMMATE_ID)).thenReturn(member(TEAMMATE_ID, "Sude Arya", startup()));
+
+        assertThatThrownBy(() -> startupDocumentService.review(deck.getId(), TEAMMATE_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(storedDocumentRepository, never()).saveAndFlush(any());
     }
 
     private static Organization startup() {

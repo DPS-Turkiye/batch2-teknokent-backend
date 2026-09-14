@@ -58,6 +58,11 @@ public class StartupDocumentController {
 				new ShareDocumentRequest(CurrentActor.resolve(request.actorId()), request.mentorId()));
 	}
 
+	@PostMapping("/api/documents/{id}/review")
+	public OrganizationDocumentResponse review(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return startupDocumentService.review(id, CurrentActor.resolve(actorId));
+	}
+
 	@DeleteMapping("/api/documents/{id}/shares/{mentorId}")
 	public OrganizationDocumentResponse unshare(
 			@PathVariable UUID id,

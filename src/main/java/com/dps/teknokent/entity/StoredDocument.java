@@ -48,4 +48,15 @@ public class StoredDocument {
 	// Set when the file belongs to a meeting: its attachments and note photos.
 	@Column(name = "meeting_id")
 	private UUID meetingId;
+
+	@Column(name = "reviewed_at")
+	private Instant reviewedAt;
+
+	@Column(name = "reviewed_by_id")
+	private UUID reviewedById;
+
+	public void markReviewed(UUID reviewerId, Instant at) {
+		this.reviewedById = reviewerId;
+		this.reviewedAt = at;
+	}
 }

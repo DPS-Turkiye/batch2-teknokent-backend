@@ -54,7 +54,7 @@ class StartupDocumentControllerTest {
 
     private static OrganizationDocumentResponse deck() {
         return new OrganizationDocumentResponse(DOCUMENT_ID, "pitch-deck", "Pitch Deck v2.pdf", "application/pdf",
-                4_200_000, Instant.parse("2026-09-12T08:00:00Z"), ACTOR_ID, "Gülse Buran", null, null, null,
+                4_200_000, Instant.parse("2026-09-12T08:00:00Z"), ACTOR_ID, "Gülse Buran", null, null, null, null, null, null,
                 List.of(new DocumentShareResponse(MENTOR_ID, "Nihan Öztürk", Instant.parse("2026-09-05T10:00:00Z"))));
     }
 
@@ -73,6 +73,17 @@ class StartupDocumentControllerTest {
                 .andExpect(jsonPath("$[0].id").value(itemId.toString()))
                 .andExpect(jsonPath("$[0].dueDate").value("2026-09-30"))
                 .andExpect(jsonPath("$[0].createdByName").value("Nihan Öztürk"));
+    }
+
+    @Test
+    void marksADocumentReviewed() throws Exception {
+        when(startupDocumentService.review(DOCUMENT_ID, MENTOR_ID)).thenReturn(deck());
+
+        mockMvc.perform(post("/api/documents/{id}/review", DOCUMENT_ID)
+                        .param("actorId", MENTOR_ID.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(DOCUMENT_ID.toString()));
     }
 
     @Test
