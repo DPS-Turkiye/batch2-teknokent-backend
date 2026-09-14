@@ -72,6 +72,7 @@ public class MentorshipRequestService {
 	private final DomainLookupService domainLookupService;
 	private final MentorProfileService mentorProfileService;
 	private final NotificationService notificationService;
+	private final DocumentRequestService documentRequestService;
 
 	@Transactional(readOnly = true)
 	public List<MentorshipRequestResponse> findAll(UUID requesterId, UUID mentorId, UUID organizationId) {
@@ -179,6 +180,10 @@ public class MentorshipRequestService {
 			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_MESSAGE, message);
 		}
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
+		if (decision.status() == MentorshipRequestStatus.ACCEPTED
+				|| decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED) {
+			documentRequestService.saveTitlesOnRequest(savedRequest, mentor, decision.requestedDocuments());
+		}
 		if (decision.status() == MentorshipRequestStatus.ACCEPTED) {
 			ensureMeetingForAccepted(savedRequest, MeetingSlotTimes.parseFromDecisionMessage(message));
 		}
@@ -401,22 +406,23 @@ public class MentorshipRequestService {
 	}
 
 	private void ensureMeetingForAccepted(MentorshipRequest request, Instant scheduledAt) {
-		if (scheduledAt == null) {
-			return;
+		Meeting meeting = meetingRepository.findByMentorshipRequestId(request.getId()).orElse(null);
+		if (meeting == null) {
+			if (scheduledAt == null) {
+				return;
+			}
+			meeting = meetingRepository.saveAndFlush(Meeting.forLoggedEntry(
+					request,
+					scheduledAt,
+					45,
+					request.getSupportArea() + " — Mentorluk Görüşmesi",
+					null,
+					null,
+					MeetingStatus.SCHEDULED,
+					null,
+					false));
 		}
-		if (meetingRepository.findByMentorshipRequestId(request.getId()).isPresent()) {
-			return;
-		}
-		meetingRepository.saveAndFlush(Meeting.forLoggedEntry(
-				request,
-				scheduledAt,
-				45,
-				request.getSupportArea() + " — Mentorluk Görüşmesi",
-				null,
-				null,
-				MeetingStatus.SCHEDULED,
-				null,
-				false));
+		documentRequestService.copyFromRequestToMeeting(request, meeting);
 	}
 
 	private MentorshipRequestResponse toResponse(MentorshipRequest request) {
