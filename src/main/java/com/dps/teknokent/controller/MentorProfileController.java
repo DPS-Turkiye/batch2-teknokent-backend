@@ -65,6 +65,9 @@ public class MentorProfileController {
 
 	@GetMapping("/{id}/availability-settings")
 	public MentorAvailabilitySettingsResponse findAvailabilitySettings(@PathVariable UUID id) {
+		if (!CurrentActor.resolve(id).equals(id)) {
+			throw new InvalidRequestException("You can only read your own availability settings");
+		}
 		return mentorProfileService.findAvailabilitySettings(id);
 	}
 

@@ -114,7 +114,9 @@ public class MentorProfileService {
 		mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId)
 				.forEach(rule -> deleteAvailabilityRule(mentorId, rule.getId()));
 		mentorAvailabilityExceptionRepository.deleteAll(mentorAvailabilityExceptionRepository.findByMentorId(mentorId));
-		profile.setMenteeCapacity(request.menteeCapacity());
+		if (request.menteeCapacity() != null) {
+			profile.setMenteeCapacity(request.menteeCapacity());
+		}
 		profile.setDefaultMeetingDurationMinutes(request.defaultMeetingDurationMinutes());
 		profile.setMeetingBufferMinutes(request.meetingBufferMinutes());
 		mentorProfileRepository.save(profile);
@@ -131,7 +133,7 @@ public class MentorProfileService {
 						.map(MentorAvailabilityRuleResponse::fromEntity).toList(),
 				mentorAvailabilityExceptionRepository.findByMentorIdOrderByStartsOnAsc(mentorId).stream()
 						.map(MentorAvailabilityExceptionResponse::fromEntity).toList(),
-				profile.getMenteeCapacity() == null ? 1 : profile.getMenteeCapacity(),
+				profile.getMenteeCapacity(),
 				profile.getDefaultMeetingDurationMinutes(), profile.getMeetingBufferMinutes());
 	}
 
@@ -149,9 +151,13 @@ public class MentorProfileService {
 	}
 
 	private void validateExceptions(List<MentorAvailabilityExceptionRequest> exceptions) {
+		Set<String> seen = new HashSet<>();
 		for (MentorAvailabilityExceptionRequest exception : exceptions) {
 			if (exception.endsOn().isBefore(exception.startsOn()))
 				throw new InvalidRequestException("Availability exception must end on or after it starts");
+			// The table is unique on these dates, so a repeat would otherwise surface as a 500.
+			if (!seen.add(exception.startsOn() + ":" + exception.endsOn()))
+				throw new InvalidRequestException("Duplicate availability exception dates");
 		}
 	}
 

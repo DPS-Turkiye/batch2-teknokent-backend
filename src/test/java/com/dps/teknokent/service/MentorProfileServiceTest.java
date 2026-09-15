@@ -44,6 +44,11 @@ import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
+import com.dps.teknokent.dto.requests.MentorAvailabilityExceptionRequest;
+import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
+import com.dps.teknokent.entity.MentorAvailabilityException;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -454,6 +459,83 @@ class MentorProfileServiceTest {
 		verify(mentorAvailabilitySlotRepository).deleteAll(captor.capture());
 		assertThat(captor.getValue()).containsExactly(free);
 		verify(mentorAvailabilityRuleRepository).delete(rule);
+	}
+
+	@Test
+	void findAvailabilitySettings_leavesAnUnsetCapacityEmpty() {
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile()));
+		when(mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId))
+				.thenReturn(List.of());
+		when(mentorAvailabilityExceptionRepository.findByMentorIdOrderByStartsOnAsc(mentorId)).thenReturn(List.of());
+
+		MentorAvailabilitySettingsResponse settings = mentorProfileService.findAvailabilitySettings(mentorId);
+
+		assertThat(settings.menteeCapacity()).isNull();
+		assertThat(settings.defaultMeetingDurationMinutes()).isEqualTo(45);
+	}
+
+	@Test
+	void updateAvailabilitySettings_savesTheDatesAndDefaultsAndKeepsAnOmittedCapacity() {
+		MentorProfile profile = profile();
+		profile.setMenteeCapacity(4);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		when(mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId))
+				.thenReturn(List.of());
+		when(mentorAvailabilityExceptionRepository.findByMentorId(mentorId)).thenReturn(List.of());
+		when(mentorAvailabilityExceptionRepository.findByMentorIdOrderByStartsOnAsc(mentorId)).thenReturn(List.of());
+		when(mentorAvailabilitySlotRepository.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(eq(mentorId),
+				any(Instant.class))).thenReturn(List.of());
+
+		mentorProfileService.updateAvailabilitySettings(mentorId, new UpdateMentorAvailabilitySettingsRequest(
+				List.of(),
+				List.of(new MentorAvailabilityExceptionRequest(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3),
+						"  İzin ")),
+				null, 60, 10));
+
+		ArgumentCaptor<MentorAvailabilityException> saved = ArgumentCaptor.forClass(MentorAvailabilityException.class);
+		verify(mentorAvailabilityExceptionRepository).save(saved.capture());
+		assertThat(saved.getValue().getReason()).isEqualTo("İzin");
+		assertThat(profile.getMenteeCapacity()).isEqualTo(4);
+		assertThat(profile.getDefaultMeetingDurationMinutes()).isEqualTo(60);
+		assertThat(profile.getMeetingBufferMinutes()).isEqualTo(10);
+	}
+
+	@Test
+	void updateAvailabilitySettings_rejectsTheSameUnavailableDatesTwice() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile()));
+		MentorAvailabilityExceptionRequest dates =
+				new MentorAvailabilityExceptionRequest(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3), null);
+
+		assertThatThrownBy(() -> mentorProfileService.updateAvailabilitySettings(mentorId,
+				new UpdateMentorAvailabilitySettingsRequest(List.of(), List.of(dates, dates), 5, 45, 15)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Duplicate");
+		verify(mentorAvailabilityExceptionRepository, never()).deleteAll(any());
+	}
+
+	@Test
+	void updateAvailabilitySettings_rejectsOverlappingRangesOnOneDay() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile()));
+
+		assertThatThrownBy(() -> mentorProfileService.updateAvailabilitySettings(mentorId,
+				new UpdateMentorAvailabilitySettingsRequest(List.of(
+						new CreateMentorAvailabilityRuleRequest(DayOfWeek.TUESDAY, LocalTime.of(10, 0),
+								LocalTime.of(13, 0), 45),
+						new CreateMentorAvailabilityRuleRequest(DayOfWeek.TUESDAY, LocalTime.of(12, 0),
+								LocalTime.of(14, 0), 45)),
+						List.of(), 5, 45, 15)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("overlap");
+		verify(mentorAvailabilityRuleRepository, never()).delete(any());
+	}
+
+	private MentorProfile profile() {
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		return profile;
 	}
 
 	private MentorAvailabilitySlot slotAt(AppUser mentorUser, Instant startsAt) {

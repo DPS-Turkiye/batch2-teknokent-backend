@@ -8,10 +8,11 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+/** Left out, {@code menteeCapacity} keeps what the mentor saved before. */
 public record UpdateMentorAvailabilitySettingsRequest(
 		@NotNull @Size(max = 21) List<@Valid CreateMentorAvailabilityRuleRequest> rules,
 		@NotNull @Size(max = 30) List<@Valid MentorAvailabilityExceptionRequest> exceptions,
-		@NotNull @Min(1) @Max(50) Integer menteeCapacity,
+		@Min(1) @Max(50) Integer menteeCapacity,
 		@NotNull @Min(15) @Max(480) Integer defaultMeetingDurationMinutes,
 		@NotNull @Min(0) @Max(240) Integer meetingBufferMinutes) {
 }

@@ -1,7 +1,7 @@
 ALTER TABLE mentor_profile
     ADD COLUMN about TEXT NOT NULL DEFAULT '',
-    ADD COLUMN default_meeting_duration_minutes SMALLINT NOT NULL DEFAULT 45,
-    ADD COLUMN meeting_buffer_minutes SMALLINT NOT NULL DEFAULT 15,
+    ADD COLUMN default_meeting_duration_minutes INTEGER NOT NULL DEFAULT 45,
+    ADD COLUMN meeting_buffer_minutes INTEGER NOT NULL DEFAULT 15,
     ADD CONSTRAINT chk_mentor_profile_default_meeting_duration
         CHECK (default_meeting_duration_minutes BETWEEN 15 AND 480),
     ADD CONSTRAINT chk_mentor_profile_meeting_buffer
