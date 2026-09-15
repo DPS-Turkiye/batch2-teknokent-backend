@@ -79,6 +79,15 @@ public class MentorProfile {
 	@Column(name = "mentee_capacity")
 	private Integer menteeCapacity;
 
+	@Column(name = "about", nullable = false, columnDefinition = "TEXT")
+	private String about = "";
+
+	@Column(name = "default_meeting_duration_minutes", nullable = false)
+	private int defaultMeetingDurationMinutes = 45;
+
+	@Column(name = "meeting_buffer_minutes", nullable = false)
+	private int meetingBufferMinutes = 15;
+
 	@ElementCollection
 	@CollectionTable(name = "mentor_specialty", joinColumns = @JoinColumn(name = "mentor_id"))
 	@OrderColumn(name = "display_order")

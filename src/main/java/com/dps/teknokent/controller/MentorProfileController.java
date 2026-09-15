@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
+import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
 import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
@@ -59,6 +61,21 @@ public class MentorProfileController {
 	@GetMapping("/{id}/availability-rules")
 	public List<MentorAvailabilityRuleResponse> findAvailabilityRules(@PathVariable UUID id) {
 		return mentorProfileService.findAvailabilityRules(id);
+	}
+
+	@GetMapping("/{id}/availability-settings")
+	public MentorAvailabilitySettingsResponse findAvailabilitySettings(@PathVariable UUID id) {
+		return mentorProfileService.findAvailabilitySettings(id);
+	}
+
+	@PutMapping("/{id}/availability-settings")
+	public MentorAvailabilitySettingsResponse updateAvailabilitySettings(
+			@PathVariable UUID id,
+			@Valid @RequestBody UpdateMentorAvailabilitySettingsRequest request) {
+		if (!CurrentActor.resolve(id).equals(id)) {
+			throw new InvalidRequestException("You can only edit your own availability settings");
+		}
+		return mentorProfileService.updateAvailabilitySettings(id, request);
 	}
 
 	@PostMapping("/{id}/availability-rules")

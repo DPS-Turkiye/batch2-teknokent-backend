@@ -25,6 +25,9 @@ public record MentorProfileResponse(
 		List<String> recommendationReasons,
 		List<MentorEvidenceResponse> recommendationEvidence,
 		Integer menteeCapacity,
+		String about,
+		int defaultMeetingDurationMinutes,
+		int meetingBufferMinutes,
 		long activeMenteeCount,
 		long completedMentorshipCount,
 		List<String> programNames,
@@ -38,7 +41,7 @@ public record MentorProfileResponse(
 			List<String> recommendationReasons, List<MentorEvidenceResponse> recommendationEvidence) {
 		this(id, fullName, email, initials, professionalTitle, company, availabilityLabel, responseTimeLabel,
 				meetingMode, communicationPreference, mentoringStyle, fitLabel, experienceLevel, sectorExperience,
-				startupStages, specialties, recommendationReasons, recommendationEvidence, null, 0, 0, List.of(),
+				startupStages, specialties, recommendationReasons, recommendationEvidence, null, "", 45, 15, 0, 0, List.of(),
 				List.of());
 	}
 
@@ -51,7 +54,8 @@ public record MentorProfileResponse(
 				profile.getSectorExperience(), profile.getStartupStages(), List.copyOf(profile.getSpecialties()),
 				List.copyOf(profile.getRecommendationReasons()),
 				profile.getConfirmedEvidence().stream().map(MentorEvidenceResponse::fromEntity).toList(),
-				profile.getMenteeCapacity(), 0, 0, List.of(),
+				profile.getMenteeCapacity(), profile.getAbout(), profile.getDefaultMeetingDurationMinutes(),
+				profile.getMeetingBufferMinutes(), 0, 0, List.of(),
 				profile.getExperiences().stream().map(MentorExperienceResponse::fromEntity).toList());
 	}
 
@@ -59,7 +63,8 @@ public record MentorProfileResponse(
 		return new MentorProfileResponse(id, fullName, email, initials, professionalTitle, company,
 				availabilityLabel, responseTimeLabel, meetingMode, communicationPreference, mentoringStyle, fitLabel,
 				experienceLevel, sectorExperience, startupStages, specialties, recommendationReasons,
-				recommendationEvidence, menteeCapacity, activeMentees, completedMentorships, List.copyOf(programs),
+				recommendationEvidence, menteeCapacity, about, defaultMeetingDurationMinutes, meetingBufferMinutes,
+				activeMentees, completedMentorships, List.copyOf(programs),
 				experiences);
 	}
 
@@ -67,6 +72,7 @@ public record MentorProfileResponse(
 		return new MentorProfileResponse(id, fullName, email, initials, professionalTitle, company,
 				availabilityLabel, responseTimeLabel, meetingMode, communicationPreference, mentoringStyle, fitLabel,
 				experienceLevel, sectorExperience, startupStages, specialties, reasons, evidence, menteeCapacity,
+				about, defaultMeetingDurationMinutes, meetingBufferMinutes,
 				activeMenteeCount, completedMentorshipCount, programNames, experiences);
 	}
 }

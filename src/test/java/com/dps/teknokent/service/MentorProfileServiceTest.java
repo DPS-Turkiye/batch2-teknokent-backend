@@ -43,6 +43,7 @@ import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
+import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -62,6 +63,8 @@ class MentorProfileServiceTest {
 	@Mock
 	private MentorAvailabilityRuleRepository mentorAvailabilityRuleRepository;
 	@Mock
+	private MentorAvailabilityExceptionRepository mentorAvailabilityExceptionRepository;
+	@Mock
 	private MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 	@Mock
 	private MeetingRepository meetingRepository;
@@ -79,7 +82,7 @@ class MentorProfileServiceTest {
 	@BeforeEach
 	void setUp() {
 		mentorProfileService = new MentorProfileService(
-				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilitySlotRepository,
+				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilityExceptionRepository, mentorAvailabilitySlotRepository,
 				meetingRepository, domainLookupService, mentorshipRepository, programMentorRepository);
 	}
 
