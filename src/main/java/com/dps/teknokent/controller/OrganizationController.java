@@ -54,7 +54,10 @@ public class OrganizationController {
 
 	@PutMapping("/{id}")
 	public OrganizationResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateOrganizationRequest request) {
-		return organizationService.update(id, request);
+		return organizationService.update(id, new UpdateOrganizationRequest(CurrentActor.resolve(request.actorId()),
+				request.name(), request.description(), request.website(), request.problem(), request.solution(),
+				request.currentSolution(), request.targetUser(), request.sector(), request.maturity(),
+				request.programLevel(), request.supportAreas(), request.fundingStage(), request.foundedYear()));
 	}
 
 	@PutMapping("/{id}/status")

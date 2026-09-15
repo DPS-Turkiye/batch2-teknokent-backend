@@ -89,7 +89,7 @@ public class ActionItem {
 	@Column(name = "completion_notes", columnDefinition = "TEXT")
 	private String completionNotes;
 
-	// The three below are only set on Süreç "Ödevler"; plain action items leave them null.
+	// The four below are only set on Süreç "Ödevler"; plain action items leave them null.
 	@Enumerated(EnumType.STRING)
 	@Column(length = 32)
 	private StartupStage stage;
@@ -100,6 +100,10 @@ public class ActionItem {
 
 	@Column(name = "submission_document_id")
 	private UUID submissionDocumentId;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "created_by_id")
+	private AppUser createdBy;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

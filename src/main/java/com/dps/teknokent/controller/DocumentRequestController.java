@@ -19,6 +19,7 @@ import com.dps.teknokent.dto.requests.AttachDocumentRequestUploadRequest;
 import com.dps.teknokent.dto.requests.ReplaceDocumentRequestsRequest;
 import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
 import com.dps.teknokent.dto.responses.DocumentRequestUploadResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.DocumentRequestService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -46,20 +47,25 @@ public class DocumentRequestController {
 			@RequestParam(required = false) UUID mentorshipRequestId,
 			@RequestParam(required = false) UUID meetingId,
 			@RequestParam(required = false) UUID mentorshipId,
+			@RequestParam(required = false) UUID programId,
 			@Valid @RequestBody ReplaceDocumentRequestsRequest request) {
+		UUID actorId = CurrentActor.resolve(request.actorId());
 		if (mentorshipRequestId != null) {
 			return documentRequestService.replaceOnRequest(
-					mentorshipRequestId, request.actorId(), request.titles());
+					mentorshipRequestId, actorId, request.titles(), request.dueDate());
 		}
 		if (meetingId != null) {
-			return documentRequestService.replaceOnMeeting(meetingId, request.actorId(), request.titles());
+			return documentRequestService.replaceOnMeeting(meetingId, actorId, request.titles(), request.dueDate());
 		}
 		if (mentorshipId != null) {
 			return documentRequestService.replaceOnMentorship(
-					mentorshipId, request.actorId(), request.titles());
+					mentorshipId, actorId, request.titles(), request.dueDate());
+		}
+		if (programId != null) {
+			return documentRequestService.replaceOnProgram(programId, actorId, request.titles(), request.dueDate());
 		}
 		throw new com.dps.teknokent.exception.InvalidRequestException(
-				"Provide exactly one of mentorshipRequestId, meetingId, or mentorshipId");
+				"Provide exactly one of mentorshipRequestId, meetingId, mentorshipId, or programId");
 	}
 
 	@PostMapping("/{itemId}/uploads")

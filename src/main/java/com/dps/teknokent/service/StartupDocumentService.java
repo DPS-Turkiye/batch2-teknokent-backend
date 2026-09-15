@@ -1,6 +1,8 @@
 package com.dps.teknokent.service;
 
 import java.util.Collection;
+import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -101,6 +103,23 @@ public class StartupDocumentService {
 		return describe(List.of(document)).getFirst();
 	}
 
+	// Staff, or a mentor who can open the file. The startup cannot mark its own files
+	// reviewed, and nobody can review a file they uploaded.
+	@Transactional
+	public OrganizationDocumentResponse review(UUID documentId, UUID actorId) {
+		StoredDocument document = requireDocument(documentId);
+		AppUser actor = domainLookupService.requireUser(actorId);
+		boolean reviewerRole = isStaff(actor) || actor.getRole() == UserRole.MENTOR;
+		boolean ownUpload = actor.getId().equals(document.getUserId());
+		if (!reviewerRole || ownUpload || !canRead(document, actor)) {
+			throw new InvalidRequestException("Only a mentor with access or a coordinator can review this document");
+		}
+
+		document.markReviewed(actor.getId(), Instant.now());
+		storedDocumentRepository.saveAndFlush(document);
+		return describe(List.of(document)).getFirst();
+	}
+
 	// The uploader or the founder; the stored object goes after the row, so a
 	// storage hiccup leaves an orphaned object rather than a dangling record.
 	@Transactional
@@ -122,8 +141,9 @@ public class StartupDocumentService {
 	}
 
 	private List<OrganizationDocumentResponse> describe(List<StoredDocument> documents) {
-		Map<UUID, AppUser> uploaders = byId(appUserRepository.findAllById(ids(documents, StoredDocument::getUserId)),
-				AppUser::getId);
+		Set<UUID> userIds = new HashSet<>(ids(documents, StoredDocument::getUserId));
+		userIds.addAll(ids(documents, StoredDocument::getReviewedById));
+		Map<UUID, AppUser> users = byId(appUserRepository.findAllById(userIds), AppUser::getId);
 		Map<UUID, Meeting> meetings = byId(meetingRepository.findAllById(ids(documents, StoredDocument::getMeetingId)),
 				Meeting::getId);
 		Map<UUID, List<DocumentShareResponse>> shares = storedDocumentShareRepository
@@ -134,13 +154,16 @@ public class StartupDocumentService {
 						Collectors.toList())));
 
 		return documents.stream().map(document -> {
-			AppUser uploader = uploaders.get(document.getUserId());
+			AppUser uploader = users.get(document.getUserId());
+			AppUser reviewer = users.get(document.getReviewedById());
 			Meeting meeting = meetings.get(document.getMeetingId());
 			return new OrganizationDocumentResponse(
 					document.getId(), document.getKind(), document.getOriginalFilename(), document.getContentType(),
 					document.getSizeBytes(), document.getCreatedAt(), document.getUserId(),
 					uploader == null ? null : uploader.getFullName(), document.getMeetingId(),
 					meeting == null ? null : meeting.getAgenda(), meeting == null ? null : meeting.getScheduledAt(),
+					document.getReviewedAt(), document.getReviewedById(),
+					reviewer == null ? null : reviewer.getFullName(),
 					shares.getOrDefault(document.getId(), List.of()));
 		}).toList();
 	}

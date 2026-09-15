@@ -29,6 +29,7 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.dto.responses.OrganizationDocumentResponse;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.StoredDocumentShare;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -285,6 +286,72 @@ class StartupDocumentServiceTest {
                 .isInstanceOf(InvalidRequestException.class);
 
         verify(storedDocumentRepository, never()).delete(any(StoredDocument.class));
+    }
+
+    @Test
+    void review_letsAMentorItWasSharedWithMarkItReviewed() {
+        StoredDocument deck = document(FOUNDER_ID);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+        when(storedDocumentShareRepository.existsByDocumentIdAndMentorId(deck.getId(), MENTOR_ID)).thenReturn(true);
+        when(appUserRepository.findAllById(any())).thenReturn(List.of(mentor()));
+
+        OrganizationDocumentResponse reviewed = startupDocumentService.review(deck.getId(), MENTOR_ID);
+
+        verify(storedDocumentRepository).saveAndFlush(deck);
+        assertThat(deck.getReviewedById()).isEqualTo(MENTOR_ID);
+        assertThat(reviewed.reviewedAt()).isNotNull();
+        assertThat(reviewed.reviewedByName()).isEqualTo("Nihan Öztürk");
+    }
+
+    @Test
+    void review_refusesTheStartupsOwnTeam() {
+        StoredDocument deck = document(FOUNDER_ID);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(TEAMMATE_ID)).thenReturn(member(TEAMMATE_ID, "Sude Arya", startup()));
+
+        assertThatThrownBy(() -> startupDocumentService.review(deck.getId(), TEAMMATE_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(storedDocumentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void review_refusesAMentorWhoCannotOpenTheDocument() {
+        StoredDocument deck = document(FOUNDER_ID);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+        when(storedDocumentShareRepository.existsByDocumentIdAndMentorId(deck.getId(), MENTOR_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> startupDocumentService.review(deck.getId(), MENTOR_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(storedDocumentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void review_refusesAMentorReviewingTheirOwnUpload() {
+        StoredDocument notes = document(MENTOR_ID);
+        when(storedDocumentRepository.findById(notes.getId())).thenReturn(Optional.of(notes));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+
+        assertThatThrownBy(() -> startupDocumentService.review(notes.getId(), MENTOR_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(storedDocumentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void review_letsACoordinatorMarkItReviewed() {
+        StoredDocument deck = document(FOUNDER_ID);
+        AppUser coordinator = new AppUser();
+        coordinator.setId(UUID.fromString("20000000-0000-0000-0000-000000000009"));
+        coordinator.setFullName("Ece Koordinatör");
+        coordinator.setRole(UserRole.COORDINATOR);
+        when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+        when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+
+        startupDocumentService.review(deck.getId(), coordinator.getId());
+
+        verify(storedDocumentRepository).saveAndFlush(deck);
+        assertThat(deck.getReviewedById()).isEqualTo(coordinator.getId());
     }
 
     private static Organization startup() {

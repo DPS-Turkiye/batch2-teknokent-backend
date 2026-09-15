@@ -263,6 +263,7 @@ class StartupProcessServiceTest {
         assertThat(saved.getValue().getStage()).isEqualTo(StartupStage.MVP);
         assertThat(saved.getValue().getRound()).isSameAs(round);
         assertThat(saved.getValue().getOwner()).isSameAs(organization.getFounder());
+        assertThat(saved.getValue().getCreatedBy()).isSameAs(organization.getFounder());
         assertThat(saved.getValue().getStatus()).isEqualTo(ActionItemStatus.OPEN);
     }
 

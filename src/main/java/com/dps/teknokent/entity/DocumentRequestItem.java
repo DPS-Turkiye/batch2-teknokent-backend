@@ -1,6 +1,7 @@
 package com.dps.teknokent.entity;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
@@ -51,6 +52,12 @@ public class DocumentRequestItem {
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "mentorship_id")
 	private Mentorship mentorship;
+
+	@Column(name = "program_id")
+	private UUID programId;
+
+	@Column(name = "due_date")
+	private LocalDate dueDate;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

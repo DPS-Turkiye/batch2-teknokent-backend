@@ -17,5 +17,8 @@ public record OrganizationDocumentResponse(
 		UUID meetingId,
 		String meetingAgenda,
 		Instant meetingScheduledAt,
+		Instant reviewedAt,
+		UUID reviewedById,
+		String reviewedByName,
 		List<DocumentShareResponse> shares) {
 }

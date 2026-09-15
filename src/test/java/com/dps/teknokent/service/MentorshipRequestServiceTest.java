@@ -30,6 +30,7 @@ import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
+import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorshipRequest;
@@ -466,6 +467,73 @@ class MentorshipRequestServiceTest {
                                 new PostMentorMessageRequest(otherMentorId, "Merhaba")))
                                 .isInstanceOf(InvalidRequestException.class)
                                 .hasMessageContaining("assigned mentor");
+        }
+
+        @Test
+        void updatePlannedSessions_storesTheCountForTheAssignedMentor() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000402");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com",
+                                "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.ACCEPTED);
+
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+                var result = mentorshipRequestService.updatePlannedSessions(requestId,
+                                new UpdatePlannedSessionsRequest(mentorId, 6));
+
+                assertThat(result.plannedSessionCount()).isEqualTo(6);
+                assertThat(request.getPlannedSessionCount()).isEqualTo(6);
+        }
+
+        @Test
+        void updatePlannedSessions_rejectsAnotherMentor() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000403");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com",
+                                "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com",
+                                "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.ACCEPTED);
+
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+
+                assertThatThrownBy(() -> mentorshipRequestService.updatePlannedSessions(requestId,
+                                new UpdatePlannedSessionsRequest(
+                                                UUID.fromString("00000000-0000-0000-0000-000000000999"), 6)))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("assigned mentor");
+                assertThat(request.getPlannedSessionCount()).isNull();
+        }
+
+        @Test
+        void updatePlannedSessions_rejectsARequestThatIsNotAccepted() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000404");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com",
+                                "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.PENDING);
+
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+
+                assertThatThrownBy(() -> mentorshipRequestService.updatePlannedSessions(requestId,
+                                new UpdatePlannedSessionsRequest(mentorId, 6)))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("accepted");
         }
 
         @Test

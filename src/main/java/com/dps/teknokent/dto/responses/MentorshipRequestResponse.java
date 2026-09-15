@@ -31,7 +31,8 @@ public record MentorshipRequestResponse(
 		Instant createdAt,
 		Instant updatedAt,
 		List<MentorshipRequestMessageResponse> messages,
-		RecommendationSnapshotResponse recommendationSnapshot) {
+		RecommendationSnapshotResponse recommendationSnapshot,
+		Integer plannedSessionCount) {
 
 	public static MentorshipRequestResponse fromEntity(
 			MentorshipRequest request,
@@ -58,6 +59,7 @@ public record MentorshipRequestResponse(
 				request.getCreatedAt(),
 				request.getUpdatedAt(),
 				List.copyOf(messages),
-				recommendationSnapshot);
+				recommendationSnapshot,
+				request.getPlannedSessionCount());
 	}
 }
