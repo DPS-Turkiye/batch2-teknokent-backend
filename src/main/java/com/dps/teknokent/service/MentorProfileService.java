@@ -114,6 +114,9 @@ public class MentorProfileService {
 		mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId)
 				.forEach(rule -> deleteAvailabilityRule(mentorId, rule.getId()));
 		mentorAvailabilityExceptionRepository.deleteAll(mentorAvailabilityExceptionRepository.findByMentorId(mentorId));
+		// Hibernate flushes inserts before deletes and the dates are unique per mentor,
+		// so re-saving unchanged dates would collide with the rows being replaced.
+		mentorAvailabilityExceptionRepository.flush();
 		if (request.menteeCapacity() != null) {
 			profile.setMenteeCapacity(request.menteeCapacity());
 		}
