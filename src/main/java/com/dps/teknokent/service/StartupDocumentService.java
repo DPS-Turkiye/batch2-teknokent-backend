@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.ShareDocumentRequest;
 import com.dps.teknokent.dto.responses.DocumentDownloadResponse;
@@ -30,6 +31,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.StoredDocumentShareRepository;
 
@@ -50,6 +52,7 @@ public class StartupDocumentService {
 	private final AppUserRepository appUserRepository;
 	private final MeetingRepository meetingRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
+	private final ProgramMentorRepository programMentorRepository;
 	private final DomainLookupService domainLookupService;
 	private final ObjectStorage objectStorage;
 
@@ -57,8 +60,8 @@ public class StartupDocumentService {
 	public List<OrganizationDocumentResponse> listForOrganization(UUID organizationId, UUID actorId) {
 		domainLookupService.requireOrganization(organizationId);
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (!isTeamMember(actor, organizationId) && !isStaff(actor)) {
-			throw new InvalidRequestException("Only the startup's team can list its documents");
+		if (!isTeamMember(actor, organizationId) && !isStaff(actor) && !isMentorForOrganization(actor, organizationId)) {
+			throw new InvalidRequestException("Only the startup's team or related mentor can list its documents");
 		}
 		return describe(storedDocumentRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId));
 	}
@@ -176,6 +179,9 @@ public class StartupDocumentService {
 		if (actor.getRole() != UserRole.MENTOR) {
 			return false;
 		}
+		if (isMentorForOrganization(actor, document.getOrganizationId())) {
+			return true;
+		}
 		if (storedDocumentShareRepository.existsByDocumentIdAndMentorId(document.getId(), actor.getId())) {
 			return true;
 		}
@@ -195,6 +201,17 @@ public class StartupDocumentService {
 				.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
 						mentor.getId(), organizationId, MentorshipRequestStatus.ACCEPTED)
 				.isPresent();
+	}
+
+	private boolean isMentorForOrganization(AppUser mentor, UUID organizationId) {
+		if (mentor.getRole() != UserRole.MENTOR || organizationId == null) {
+			return false;
+		}
+		if (mentorshipRequestRepository.existsByMentorIdAndOrganizationId(mentor.getId(), organizationId)) {
+			return true;
+		}
+		return programMentorRepository.countAcceptedForOrganization(
+				mentor.getId(), organizationId, ProgramMentorStatus.ACCEPTED) > 0;
 	}
 
 	private boolean isFounder(AppUser actor, UUID organizationId) {
