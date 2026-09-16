@@ -4,15 +4,19 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
+from collections import defaultdict
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
 OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+OPENROUTER_ACTIVITY_URL = "https://openrouter.ai/api/v1/activity"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
 
@@ -55,6 +59,47 @@ def fetch_key_usage(
     if not isinstance(data, dict):
         raise OpenRouterUsageError(
             "OpenRouter response did not contain a usage object."
+        )
+    return data
+
+
+def fetch_model_activity(
+    management_key: str,
+    target_api_key: str,
+    *,
+    url: str = OPENROUTER_ACTIVITY_URL,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[dict[str, Any]]:
+    """Fetch the last 30 completed UTC days for one API key."""
+    key_hash = hashlib.sha256(target_api_key.encode("utf-8")).hexdigest()
+    request = Request(
+        f"{url}?{urlencode({'api_key_hash': key_hash})}",
+        headers={
+            "Authorization": f"Bearer {management_key}",
+            "Accept": "application/json",
+            "User-Agent": "dps-openrouter-usage/1.0",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = json.load(response)
+    except HTTPError as error:
+        detail = _http_error_detail(error)
+        raise OpenRouterUsageError(
+            f"OpenRouter activity returned HTTP {error.code}{detail}."
+        ) from error
+    except URLError as error:
+        raise OpenRouterUsageError(
+            f"Could not reach OpenRouter: {error.reason}."
+        ) from error
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise OpenRouterUsageError("OpenRouter returned invalid JSON.") from error
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
+        raise OpenRouterUsageError(
+            "OpenRouter response did not contain model activity."
         )
     return data
 
@@ -109,6 +154,76 @@ def format_usage(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def aggregate_model_activity(
+    activity: list[dict[str, Any]],
+) -> list[dict[str, int | float | str]]:
+    """Combine OpenRouter endpoint/day activity into one row per model."""
+    totals: dict[str, dict[str, int | float | str]] = defaultdict(
+        lambda: {
+            "model": "",
+            "requests": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "reasoning_tokens": 0,
+            "usage": 0.0,
+        }
+    )
+    for item in activity:
+        model = item.get("model")
+        if not isinstance(model, str) or not model:
+            model = "unknown"
+        row = totals[model]
+        row["model"] = model
+        for field in (
+            "requests",
+            "prompt_tokens",
+            "completion_tokens",
+            "reasoning_tokens",
+        ):
+            value = item.get(field)
+            if _is_number(value):
+                row[field] = int(row[field]) + int(value)
+        usage = item.get("usage")
+        if _is_number(usage):
+            row["usage"] = float(row["usage"]) + float(usage)
+
+    return sorted(totals.values(), key=lambda row: float(row["usage"]), reverse=True)
+
+
+def format_model_activity(activity: list[dict[str, Any]]) -> str:
+    """Format model-level usage as an aligned terminal table."""
+    rows = aggregate_model_activity(activity)
+    if not rows:
+        return (
+            "OpenRouter usage by model\n"
+            "No activity in the last 30 completed UTC days."
+        )
+
+    model_width = max(5, *(len(str(row["model"])) for row in rows))
+    lines = [
+        "OpenRouter usage by model (last 30 completed UTC days)",
+        (
+            f"{'Model':<{model_width}}  {'Requests':>8}  {'Prompt':>10}  "
+            f"{'Completion':>10}  {'Reasoning':>10}  {'Cost':>12}"
+        ),
+    ]
+    for row in rows:
+        lines.append(
+            f"{row['model']:<{model_width}}  {row['requests']:>8,}  "
+            f"{row['prompt_tokens']:>10,}  {row['completion_tokens']:>10,}  "
+            f"{row['reasoning_tokens']:>10,}  {_money(row['usage']):>12}"
+        )
+    lines.append(
+        f"{'Total':<{model_width}}  "
+        f"{sum(int(row['requests']) for row in rows):>8,}  "
+        f"{sum(int(row['prompt_tokens']) for row in rows):>10,}  "
+        f"{sum(int(row['completion_tokens']) for row in rows):>10,}  "
+        f"{sum(int(row['reasoning_tokens']) for row in rows):>10,}  "
+        f"{_money(sum(float(row['usage']) for row in rows)):>12}"
+    )
+    return "\n".join(lines)
+
+
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
@@ -125,6 +240,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--json",
         action="store_true",
         help="print the API usage object as JSON instead of a summary",
+    )
+    parser.add_argument(
+        "--by-model",
+        action="store_true",
+        help=(
+            "show per-model activity for the last 30 completed UTC days; "
+            "requires OPENROUTER_MANAGEMENT_KEY"
+        ),
     )
     parser.add_argument(
         "--timeout",
@@ -146,13 +269,29 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        data = fetch_key_usage(api_key, timeout=args.timeout)
+        if args.by_model:
+            management_key = os.environ.get("OPENROUTER_MANAGEMENT_KEY", "").strip()
+            if not management_key:
+                print(
+                    "OPENROUTER_MANAGEMENT_KEY is required with --by-model.",
+                    file=sys.stderr,
+                )
+                return 2
+            data = fetch_model_activity(
+                management_key,
+                api_key,
+                timeout=args.timeout,
+            )
+        else:
+            data = fetch_key_usage(api_key, timeout=args.timeout)
     except OpenRouterUsageError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
     if args.json:
         print(json.dumps(data, indent=2, sort_keys=True))
+    elif args.by_model:
+        print(format_model_activity(data))
     else:
         print(format_usage(data))
     return 0

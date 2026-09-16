@@ -52,6 +52,18 @@ It reports lifetime, daily, weekly, and monthly spend, together with the key's
 configured limit and remaining amount. Add `--json` to print OpenRouter's current
 key usage object. The script never prints the API key itself.
 
+For a per-model breakdown of the last 30 completed UTC days, create an OpenRouter
+management key and keep the regular key as `OPENROUTER_API_KEY`:
+
+```bash
+export OPENROUTER_MANAGEMENT_KEY="sk-or-v1-..."
+python3 scripts/openrouter_usage.py --by-model
+```
+
+This view groups requests, prompt/completion/reasoning tokens, and cost by model.
+The management key is required by OpenRouter's Activity API; the regular API key
+is hashed locally before being used as the activity filter. Neither key is printed.
+
 ## Stack
 
 Java 25, Spring Boot 4.1, PostgreSQL 17 + pgvector, Apache PDFBox,
