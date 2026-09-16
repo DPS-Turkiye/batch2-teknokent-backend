@@ -23,6 +23,23 @@ public interface ProgramMentorRepository extends JpaRepository<ProgramMentor, UU
 			ProgramMentorStatus status,
 			ProgramMentorInvitedBy invitedBy);
 
+	List<ProgramMentor> findByMentorIdAndStatusOrderByCreatedAtDesc(
+			UUID mentorId,
+			ProgramMentorStatus status);
+
+	@Query("""
+			SELECT COUNT(pm)
+			FROM ProgramMentor pm, ProgramStartup ps
+			WHERE pm.programId = ps.programId
+				AND pm.mentorId = :mentorId
+				AND ps.organizationId = :organizationId
+				AND pm.status = :status
+			""")
+	long countAcceptedForOrganization(
+			@Param("mentorId") UUID mentorId,
+			@Param("organizationId") UUID organizationId,
+			@Param("status") ProgramMentorStatus status);
+
 	@Query("""
 			SELECT pm.mentorId AS mentorId, p.id AS programId, p.name AS programName,
 				p.status AS programStatus, pm.role AS role

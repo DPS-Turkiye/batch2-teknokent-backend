@@ -76,7 +76,7 @@ public class SecurityConfig {
 		}
 
 		CorsConfiguration documentsConfig = new CorsConfiguration();
-		documentsConfig.setAllowedOrigins(Arrays.asList(documentsAllowedOrigins));
+		documentsConfig.setAllowedOriginPatterns(Arrays.asList(documentsAllowedOrigins));
 		documentsConfig.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 		documentsConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 		documentsConfig.setAllowCredentials(false);
@@ -85,7 +85,7 @@ public class SecurityConfig {
 		}
 
 		CorsConfiguration notificationConfig = new CorsConfiguration();
-		notificationConfig.setAllowedOrigins(Arrays.asList(documentsAllowedOrigins));
+		notificationConfig.setAllowedOriginPatterns(Arrays.asList(documentsAllowedOrigins));
 		notificationConfig.setAllowedMethods(List.of("GET", "PATCH", "DELETE", "OPTIONS"));
 		notificationConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 		notificationConfig.setAllowCredentials(false);

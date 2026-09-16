@@ -36,6 +36,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.StoredDocumentShareRepository;
 
@@ -63,6 +64,9 @@ class StartupDocumentServiceTest {
 
     @Mock
     private MentorshipRequestRepository mentorshipRequestRepository;
+
+    @Mock
+    private ProgramMentorRepository programMentorRepository;
 
     @Mock
     private DomainLookupService domainLookupService;

@@ -10,16 +10,18 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
-import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse.OrganizationProgramResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
+import com.dps.teknokent.dto.responses.ProgramDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
+import com.dps.teknokent.dto.responses.ProgramMemberSummaryResponse;
 import com.dps.teknokent.dto.responses.ProgramMentorResponse;
 import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
+import com.dps.teknokent.dto.responses.ProgramStartupRosterResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
@@ -28,6 +30,7 @@ import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
@@ -44,6 +47,7 @@ public class ProgramService {
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final OrganizationRepository organizationRepository;
+	private final AppUserRepository appUserRepository;
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
 
@@ -131,6 +135,14 @@ public class ProgramService {
 		organization.setActiveProgramId(programId);
 		organizationRepository.save(organization);
 		return listForOrganization(actorId);
+	}
+
+	@Transactional(readOnly = true)
+	public ProgramDetailResponse findDetail(UUID actorId, UUID programId) {
+		AppUser actor = requireActor(actorId);
+		Program program = requireProgram(programId);
+		assertCanViewProgram(actor, program);
+		return toDetailResponse(program);
 	}
 
 	@Transactional(readOnly = true)
@@ -322,6 +334,70 @@ public class ProgramService {
 			throw new InvalidRequestException("Only a startup member can view their programs.");
 		}
 		return organization;
+	}
+
+	private void assertCanViewProgram(AppUser actor, Program program) {
+		if (actor.getRole() == UserRole.ADMIN) {
+			return;
+		}
+		if (actor.getRole() == UserRole.COORDINATOR
+				&& program.getCreatedBy().equals(actor.getId())) {
+			return;
+		}
+		if (actor.getRole() == UserRole.MENTOR
+				&& programMentorRepository
+						.findByProgramIdAndMentorId(program.getId(), actor.getId())
+						.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
+						.isPresent()) {
+			return;
+		}
+		if (actor.getOrganization() != null
+				&& programStartupRepository
+						.findByProgramIdAndOrganizationId(program.getId(), actor.getOrganization().getId())
+						.isPresent()) {
+			return;
+		}
+		throw new InvalidRequestException("You are not a member of this program.");
+	}
+
+	private ProgramDetailResponse toDetailResponse(Program program) {
+		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
+		List<ProgramStartupRosterResponse> startups = programStartupRepository
+				.findByProgramIdOrderByCreatedAtAsc(program.getId())
+				.stream()
+				.map(row -> {
+					Organization organization = domainLookupService.requireOrganization(row.getOrganizationId());
+					List<ProgramMemberSummaryResponse> members = appUserRepository
+							.findByOrganizationIdOrderByFullNameAsc(organization.getId())
+							.stream()
+							.map(user -> new ProgramMemberSummaryResponse(
+									user.getId(),
+									user.getFullName(),
+									user.getJobTitle(),
+									organization.getFounder() != null
+											&& organization.getFounder().getId().equals(user.getId())))
+							.toList();
+					return new ProgramStartupRosterResponse(
+							organization.getId(),
+							organization.getName(),
+							organization.getDescription(),
+							members);
+				})
+				.toList();
+		List<ProgramMentorResponse> mentors = programMentorRepository
+				.findByProgramIdOrderByCreatedAtAsc(program.getId())
+				.stream()
+				.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
+				.map(this::toMentorResponse)
+				.toList();
+		return new ProgramDetailResponse(
+				program.getId(),
+				program.getName(),
+				coordinator.getId(),
+				coordinator.getFullName(),
+				program.getCreatedAt(),
+				startups,
+				mentors);
 	}
 
 	private OrganizationProgramResponse toOrganizationProgram(Program program) {

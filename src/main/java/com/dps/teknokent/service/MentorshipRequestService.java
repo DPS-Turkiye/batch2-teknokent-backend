@@ -232,10 +232,8 @@ public class MentorshipRequestService {
 		if (!request.getRequester().getId().equals(reply.requesterId())) {
 			throw new InvalidRequestException("Only the requester can reply to this request");
 		}
-		if (request.getStatus() != MentorshipRequestStatus.MORE_INFO_REQUESTED
-				&& request.getStatus() != MentorshipRequestStatus.ACCEPTED) {
-			throw new InvalidRequestException(
-					"A message can only be sent when more information was requested or the request was accepted");
+		if (!allowsMessaging(request.getStatus())) {
+			throw new InvalidRequestException("A message can only be sent on an open mentorship request");
 		}
 		boolean isReplyingToInfoRequest = request.getStatus() == MentorshipRequestStatus.MORE_INFO_REQUESTED;
 		saveMessage(request, request.getRequester(),
@@ -259,8 +257,8 @@ public class MentorshipRequestService {
 		if (!request.getMentor().getId().equals(postMessage.mentorId())) {
 			throw new InvalidRequestException("Only the assigned mentor can message this request");
 		}
-		if (request.getStatus() != MentorshipRequestStatus.ACCEPTED) {
-			throw new InvalidRequestException("Messages can only be sent after the request is accepted");
+		if (!allowsMessaging(request.getStatus())) {
+			throw new InvalidRequestException("Messages can only be sent on an open mentorship request");
 		}
 		saveMessage(request, request.getMentor(), MentorshipRequestMessageType.MENTOR_MESSAGE,
 				TextUtils.trim(postMessage.message()));
@@ -408,6 +406,13 @@ public class MentorshipRequestService {
 	private MentorshipRequest requireRequest(UUID id) {
 		return mentorshipRequestRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Mentorship request not found: " + id));
+	}
+
+	private static boolean allowsMessaging(MentorshipRequestStatus status) {
+		return status == MentorshipRequestStatus.PENDING
+				|| status == MentorshipRequestStatus.MORE_INFO_REQUESTED
+				|| status == MentorshipRequestStatus.COUNTER_PROPOSED
+				|| status == MentorshipRequestStatus.ACCEPTED;
 	}
 
 	private void saveMessage(
