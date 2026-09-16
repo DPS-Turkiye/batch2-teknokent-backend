@@ -22,6 +22,7 @@ import com.dps.teknokent.dto.requests.AddProgramStartupRequest;
 import com.dps.teknokent.dto.requests.CreateProgramRequest;
 import com.dps.teknokent.dto.requests.DecideProgramMembershipRequest;
 import com.dps.teknokent.dto.requests.SetActiveProgramRequest;
+import com.dps.teknokent.dto.requests.SetProgramStatusRequest;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramNameResponse;
@@ -79,6 +80,13 @@ public class ProgramController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public ProgramResponse create(@Valid @RequestBody CreateProgramRequest request) {
 		return programService.create(resolveActorId(request.actorId()), request.name());
+	}
+
+	@PutMapping("/{id}/status")
+	public ProgramResponse setStatus(
+			@PathVariable UUID id,
+			@Valid @RequestBody SetProgramStatusRequest request) {
+		return programService.setStatus(resolveActorId(request.actorId()), id, request.status());
 	}
 
 	@PostMapping("/{id}/startups")

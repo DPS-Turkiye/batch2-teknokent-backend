@@ -36,12 +36,16 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
+import com.dps.teknokent.dto.requests.MentorProgramRoleRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.dto.responses.MentorProgramResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorProfile;
+import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -281,10 +285,12 @@ public class MentorProfileService {
 		Map<UUID, Long> active = totals(mentorshipRepository.countOrganizationsByMentor(ids, ONGOING_MENTORSHIP));
 		Map<UUID, Long> completed = totals(
 				mentorshipRepository.countMentorshipsByMentor(ids, MentorshipStatus.COMPLETED));
-		Map<UUID, List<String>> programs = programMentorRepository
+		Map<UUID, List<MentorProgramResponse>> programs = programMentorRepository
 				.findProgramNamesByMentorIds(ids, ProgramMentorStatus.ACCEPTED).stream()
 				.collect(Collectors.groupingBy(MentorProgramName::getMentorId,
-						Collectors.mapping(MentorProgramName::getProgramName, Collectors.toList())));
+						Collectors.mapping(row -> new MentorProgramResponse(
+								row.getProgramId(), row.getProgramName(), row.getProgramStatus(), row.getRole()),
+								Collectors.toList())));
 		return profiles.stream()
 				.map(profile -> MentorProfileResponse.fromEntity(profile).withActivity(
 						active.getOrDefault(profile.getId(), 0L),
@@ -367,6 +373,19 @@ public class MentorProfileService {
 		if (request.about() != null) {
 			profile.setAbout(request.about().trim());
 		}
+		if (request.meetingFrequency() != null) {
+			profile.setMeetingFrequency(request.meetingFrequency());
+		}
+		if (request.prepFileRequirement() != null) {
+			profile.setPrepFileRequirement(request.prepFileRequirement());
+		}
+		if (request.languages() != null) {
+			profile.getLanguages().clear();
+			request.languages().stream().distinct().forEach(profile.getLanguages()::add);
+		}
+		if (request.programRoles() != null) {
+			request.programRoles().forEach(programRole -> updateProgramRole(mentorId, programRole));
+		}
 
 		return withActivity(List.of(mentorProfileRepository.saveAndFlush(profile))).getFirst();
 	}
@@ -383,6 +402,16 @@ public class MentorProfileService {
 			throw new InvalidRequestException("Cannot remove a slot that already has a scheduled meeting");
 		}
 		mentorAvailabilitySlotRepository.delete(slot);
+	}
+
+	private void updateProgramRole(UUID mentorId, MentorProgramRoleRequest programRole) {
+		ProgramMentor membership = programMentorRepository
+				.findByProgramIdAndMentorId(programRole.programId(), mentorId)
+				.filter(row -> row.getStatus() == ProgramMentorStatus.ACCEPTED)
+				.orElseThrow(() -> new InvalidRequestException("You are not a mentor in this program."));
+		String role = TextUtils.trim(programRole.role());
+		membership.setRole(role == null || role.isBlank() ? null : role);
+		programMentorRepository.save(membership);
 	}
 
 	private AppUser requireMentor(UUID mentorId) {

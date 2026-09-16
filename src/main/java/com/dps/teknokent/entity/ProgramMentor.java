@@ -45,4 +45,7 @@ public class ProgramMentor {
 
 	@Column(name = "decided_at")
 	private Instant decidedAt;
+
+	@Column(length = 80)
+	private String role;
 }

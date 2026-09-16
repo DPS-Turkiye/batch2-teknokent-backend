@@ -24,7 +24,8 @@ public interface ProgramMentorRepository extends JpaRepository<ProgramMentor, UU
 			ProgramMentorInvitedBy invitedBy);
 
 	@Query("""
-			SELECT pm.mentorId AS mentorId, p.name AS programName
+			SELECT pm.mentorId AS mentorId, p.id AS programId, p.name AS programName,
+				p.status AS programStatus, pm.role AS role
 			FROM ProgramMentor pm, Program p
 			WHERE p.id = pm.programId AND pm.mentorId IN :mentorIds AND pm.status = :status
 			ORDER BY p.name

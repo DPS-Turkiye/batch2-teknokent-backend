@@ -3,6 +3,9 @@ package com.dps.teknokent.dto.responses;
 import java.util.List;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.MeetingFrequency;
+import com.dps.teknokent.domain.MentorLanguage;
+import com.dps.teknokent.domain.PrepFileRequirement;
 import com.dps.teknokent.entity.MentorProfile;
 
 public record MentorProfileResponse(
@@ -28,9 +31,13 @@ public record MentorProfileResponse(
 		String about,
 		int defaultMeetingDurationMinutes,
 		int meetingBufferMinutes,
+		MeetingFrequency meetingFrequency,
+		PrepFileRequirement prepFileRequirement,
+		List<MentorLanguage> languages,
 		long activeMenteeCount,
 		long completedMentorshipCount,
 		List<String> programNames,
+		List<MentorProgramResponse> programs,
 		List<MentorExperienceResponse> experiences) {
 
 	// Recommendation ranking and its tests build profiles from the matching fields alone.
@@ -41,8 +48,8 @@ public record MentorProfileResponse(
 			List<String> recommendationReasons, List<MentorEvidenceResponse> recommendationEvidence) {
 		this(id, fullName, email, initials, professionalTitle, company, availabilityLabel, responseTimeLabel,
 				meetingMode, communicationPreference, mentoringStyle, fitLabel, experienceLevel, sectorExperience,
-				startupStages, specialties, recommendationReasons, recommendationEvidence, null, "", 45, 15, 0, 0, List.of(),
-				List.of());
+				startupStages, specialties, recommendationReasons, recommendationEvidence, null, "", 45, 15, null,
+				null, List.of(), 0, 0, List.of(), List.of(), List.of());
 	}
 
 	public static MentorProfileResponse fromEntity(MentorProfile profile) {
@@ -55,16 +62,19 @@ public record MentorProfileResponse(
 				List.copyOf(profile.getRecommendationReasons()),
 				profile.getConfirmedEvidence().stream().map(MentorEvidenceResponse::fromEntity).toList(),
 				profile.getMenteeCapacity(), profile.getAbout(), profile.getDefaultMeetingDurationMinutes(),
-				profile.getMeetingBufferMinutes(), 0, 0, List.of(),
+				profile.getMeetingBufferMinutes(), profile.getMeetingFrequency(), profile.getPrepFileRequirement(),
+				List.copyOf(profile.getLanguages()), 0, 0, List.of(), List.of(),
 				profile.getExperiences().stream().map(MentorExperienceResponse::fromEntity).toList());
 	}
 
-	public MentorProfileResponse withActivity(long activeMentees, long completedMentorships, List<String> programs) {
+	public MentorProfileResponse withActivity(long activeMentees, long completedMentorships,
+			List<MentorProgramResponse> joinedPrograms) {
 		return new MentorProfileResponse(id, fullName, email, initials, professionalTitle, company,
 				availabilityLabel, responseTimeLabel, meetingMode, communicationPreference, mentoringStyle, fitLabel,
 				experienceLevel, sectorExperience, startupStages, specialties, recommendationReasons,
 				recommendationEvidence, menteeCapacity, about, defaultMeetingDurationMinutes, meetingBufferMinutes,
-				activeMentees, completedMentorships, List.copyOf(programs),
+				meetingFrequency, prepFileRequirement, languages, activeMentees, completedMentorships,
+				joinedPrograms.stream().map(MentorProgramResponse::name).toList(), List.copyOf(joinedPrograms),
 				experiences);
 	}
 
@@ -72,7 +82,7 @@ public record MentorProfileResponse(
 		return new MentorProfileResponse(id, fullName, email, initials, professionalTitle, company,
 				availabilityLabel, responseTimeLabel, meetingMode, communicationPreference, mentoringStyle, fitLabel,
 				experienceLevel, sectorExperience, startupStages, specialties, reasons, evidence, menteeCapacity,
-				about, defaultMeetingDurationMinutes, meetingBufferMinutes,
-				activeMenteeCount, completedMentorshipCount, programNames, experiences);
+				about, defaultMeetingDurationMinutes, meetingBufferMinutes, meetingFrequency, prepFileRequirement,
+				languages, activeMenteeCount, completedMentorshipCount, programNames, programs, experiences);
 	}
 }

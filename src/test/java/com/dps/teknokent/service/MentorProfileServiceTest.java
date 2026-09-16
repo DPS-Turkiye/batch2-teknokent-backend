@@ -8,6 +8,13 @@ import com.dps.teknokent.entity.MentorExperience;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.requests.MentorExperienceRequest;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.MeetingFrequency;
+import com.dps.teknokent.domain.MentorLanguage;
+import com.dps.teknokent.domain.PrepFileRequirement;
+import com.dps.teknokent.dto.requests.MentorProgramRoleRequest;
+import com.dps.teknokent.dto.responses.MentorProgramResponse;
+import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.domain.MentorshipStatus;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -83,6 +90,7 @@ class MentorProfileServiceTest {
 	private MentorProfileService mentorProfileService;
 
 	private final UUID mentorId = UUID.randomUUID();
+	private final UUID programId = UUID.randomUUID();
 
 	@BeforeEach
 	void setUp() {
@@ -308,6 +316,8 @@ class MentorProfileServiceTest {
 		assertThat(result.activeMenteeCount()).isEqualTo(4);
 		assertThat(result.completedMentorshipCount()).isEqualTo(28);
 		assertThat(result.programNames()).containsExactly("METU Stars");
+		assertThat(result.programs()).containsExactly(
+				new MentorProgramResponse(programId, "METU Stars", ProgramStatus.COMPLETED, "Design mentor"));
 	}
 
 	private MentorCount count(long total) {
@@ -332,10 +342,109 @@ class MentorProfileServiceTest {
 			}
 
 			@Override
+			public UUID getProgramId() {
+				return programId;
+			}
+
+			@Override
 			public String getProgramName() {
 				return name;
 			}
+
+			@Override
+			public ProgramStatus getProgramStatus() {
+				return ProgramStatus.COMPLETED;
+			}
+
+			@Override
+			public String getRole() {
+				return "Design mentor";
+			}
 		};
+	}
+
+	private UpdateMentorProfileRequest requestWithPreferences(List<MentorProgramRoleRequest> programRoles) {
+		UpdateMentorProfileRequest request = updateRequest();
+		return new UpdateMentorProfileRequest(
+				request.professionalTitle(), request.company(), request.availabilityLabel(),
+				request.responseTimeLabel(), request.meetingMode(), request.communicationPreference(),
+				request.mentoringStyle(), request.fitLabel(), request.experienceLevel(), request.sectorExperience(),
+				request.startupStages(), request.specialties(), null, null, null,
+				MeetingFrequency.BIWEEKLY, PrepFileRequirement.REQUIRED,
+				List.of(MentorLanguage.TURKISH, MentorLanguage.ENGLISH, MentorLanguage.TURKISH), programRoles);
+	}
+
+	private MentorProfile editableProfile() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		profile.getLanguages().add(MentorLanguage.GERMAN);
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		return profile;
+	}
+
+	@Test
+	void updateProfileStoresMeetingPreferencesLanguagesAndProgramRoles() {
+		MentorProfile profile = editableProfile();
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+		ProgramMentor membership = new ProgramMentor();
+		membership.setStatus(ProgramMentorStatus.ACCEPTED);
+		when(programMentorRepository.findByProgramIdAndMentorId(programId, mentorId))
+				.thenReturn(Optional.of(membership));
+
+		mentorProfileService.updateProfile(mentorId,
+				requestWithPreferences(List.of(new MentorProgramRoleRequest(programId, "  Design mentor "))));
+
+		assertThat(profile.getMeetingFrequency()).isEqualTo(MeetingFrequency.BIWEEKLY);
+		assertThat(profile.getPrepFileRequirement()).isEqualTo(PrepFileRequirement.REQUIRED);
+		assertThat(profile.getLanguages()).containsExactly(MentorLanguage.TURKISH, MentorLanguage.ENGLISH);
+		assertThat(membership.getRole()).isEqualTo("Design mentor");
+		verify(programMentorRepository).save(membership);
+	}
+
+	@Test
+	void updateProfileClearsABlankProgramRole() {
+		MentorProfile profile = editableProfile();
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+		ProgramMentor membership = new ProgramMentor();
+		membership.setStatus(ProgramMentorStatus.ACCEPTED);
+		membership.setRole("Eski rol");
+		when(programMentorRepository.findByProgramIdAndMentorId(programId, mentorId))
+				.thenReturn(Optional.of(membership));
+
+		mentorProfileService.updateProfile(mentorId,
+				requestWithPreferences(List.of(new MentorProgramRoleRequest(programId, "   "))));
+
+		assertThat(membership.getRole()).isNull();
+	}
+
+	@Test
+	void updateProfileRefusesARoleInAProgramTheMentorHasNotJoined() {
+		editableProfile();
+		ProgramMentor pending = new ProgramMentor();
+		pending.setStatus(ProgramMentorStatus.PENDING);
+		when(programMentorRepository.findByProgramIdAndMentorId(programId, mentorId))
+				.thenReturn(Optional.of(pending));
+
+		assertThatThrownBy(() -> mentorProfileService.updateProfile(mentorId,
+				requestWithPreferences(List.of(new MentorProgramRoleRequest(programId, "Design mentor")))))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programMentorRepository, never()).save(any());
+	}
+
+	@Test
+	void updateProfileKeepsPreferencesAndLanguagesWhenTheyAreNotSent() {
+		MentorProfile profile = editableProfile();
+		profile.setMeetingFrequency(MeetingFrequency.MONTHLY);
+		profile.setPrepFileRequirement(PrepFileRequirement.OPTIONAL);
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		mentorProfileService.updateProfile(mentorId, updateRequest());
+
+		assertThat(profile.getMeetingFrequency()).isEqualTo(MeetingFrequency.MONTHLY);
+		assertThat(profile.getPrepFileRequirement()).isEqualTo(PrepFileRequirement.OPTIONAL);
+		assertThat(profile.getLanguages()).containsExactly(MentorLanguage.GERMAN);
 	}
 
 	@Test

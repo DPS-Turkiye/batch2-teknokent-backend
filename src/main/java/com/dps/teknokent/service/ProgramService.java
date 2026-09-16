@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
@@ -57,6 +59,13 @@ public class ProgramService {
 		program.setName(trimmed);
 		program.setCreatedBy(actor.getId());
 		program.setCreatedAt(Instant.now());
+		return toResponse(programRepository.save(program));
+	}
+
+	@Transactional
+	public ProgramResponse setStatus(UUID actorId, UUID programId, ProgramStatus status) {
+		Program program = requireOwnedProgram(actorId, programId);
+		program.setStatus(status);
 		return toResponse(programRepository.save(program));
 	}
 
@@ -339,6 +348,7 @@ public class ProgramService {
 				coordinator.getId(),
 				coordinator.getFullName(),
 				program.getCreatedAt(),
+				program.getStatus(),
 				startups,
 				mentors);
 	}
@@ -351,7 +361,8 @@ public class ProgramService {
 				mentor.getEmail(),
 				membership.getStatus(),
 				membership.getInvitedBy(),
-				membership.getCreatedAt());
+				membership.getCreatedAt(),
+				membership.getRole());
 	}
 
 	private ProgramInvitationResponse toInvitation(ProgramMentor membership) {
