@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -82,6 +83,40 @@ class ProgramServiceTest {
 		assertThatThrownBy(() -> programService.create(MENTOR_ID, "Seed"))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("coordinator");
+	}
+
+	@Test
+	void setStatusMarksTheCoordinatorsProgramCompleted() {
+		Program program = program();
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		when(programRepository.save(program)).thenReturn(program);
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
+		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
+
+		var result = programService.setStatus(COORDINATOR_ID, PROGRAM_ID, ProgramStatus.COMPLETED);
+
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.COMPLETED);
+		assertThat(result.status()).isEqualTo(ProgramStatus.COMPLETED);
+	}
+
+	@Test
+	void setStatusRefusesAnotherCoordinatorsProgram() {
+		AppUser other = coordinator();
+		other.setId(UUID.randomUUID());
+		when(domainLookupService.requireUser(other.getId())).thenReturn(other);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+
+		assertThatThrownBy(() -> programService.setStatus(other.getId(), PROGRAM_ID, ProgramStatus.COMPLETED))
+				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	@Test
+	void setStatusRefusesAMentor() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+
+		assertThatThrownBy(() -> programService.setStatus(MENTOR_ID, PROGRAM_ID, ProgramStatus.COMPLETED))
+				.isInstanceOf(InvalidRequestException.class);
 	}
 
 	@Test

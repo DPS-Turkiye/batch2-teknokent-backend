@@ -9,14 +9,23 @@ import com.dps.teknokent.repository.MentorCount;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
 import com.dps.teknokent.entity.MentorAvailabilityRule;
 import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
+import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
+import com.dps.teknokent.entity.MentorAvailabilityException;
+import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
+import com.dps.teknokent.dto.requests.MentorAvailabilityExceptionRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilityExceptionResponse;
+import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,12 +36,16 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
+import com.dps.teknokent.dto.requests.MentorProgramRoleRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.dto.responses.MentorProgramResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorProfile;
+import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -47,6 +60,7 @@ public class MentorProfileService {
 
 	private final MentorProfileRepository mentorProfileRepository;
 	private final MentorAvailabilityRuleRepository mentorAvailabilityRuleRepository;
+	private final MentorAvailabilityExceptionRepository mentorAvailabilityExceptionRepository;
 	private final MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 	private final MeetingRepository meetingRepository;
 	private final DomainLookupService domainLookupService;
@@ -84,6 +98,90 @@ public class MentorProfileService {
 				.stream()
 				.map(MentorAvailabilityRuleResponse::fromEntity)
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public MentorAvailabilitySettingsResponse findAvailabilitySettings(UUID mentorId) {
+		MentorProfile profile = mentorProfileRepository.findOneById(mentorId)
+				.orElseThrow(() -> new ResourceNotFoundException("Mentor profile not found: " + mentorId));
+		return availabilitySettings(profile);
+	}
+
+	@Transactional
+	public MentorAvailabilitySettingsResponse updateAvailabilitySettings(
+			UUID mentorId, UpdateMentorAvailabilitySettingsRequest request) {
+		AppUser mentor = requireMentor(mentorId);
+		MentorProfile profile = mentorProfileRepository.findOneById(mentorId)
+				.orElseThrow(() -> new ResourceNotFoundException("Mentor profile not found: " + mentorId));
+		validateRules(request.rules());
+		validateExceptions(request.exceptions());
+		mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId)
+				.forEach(rule -> deleteAvailabilityRule(mentorId, rule.getId()));
+		mentorAvailabilityExceptionRepository.deleteAll(mentorAvailabilityExceptionRepository.findByMentorId(mentorId));
+		// Hibernate flushes inserts before deletes and the dates are unique per mentor,
+		// so re-saving unchanged dates would collide with the rows being replaced.
+		mentorAvailabilityExceptionRepository.flush();
+		if (request.menteeCapacity() != null) {
+			profile.setMenteeCapacity(request.menteeCapacity());
+		}
+		profile.setDefaultMeetingDurationMinutes(request.defaultMeetingDurationMinutes());
+		profile.setMeetingBufferMinutes(request.meetingBufferMinutes());
+		mentorProfileRepository.save(profile);
+		request.exceptions().forEach(exception -> saveException(mentor, exception));
+		request.rules().forEach(rule -> createAvailabilityRule(mentorId, rule));
+		removeUnbookedSlotsInExceptions(mentorId);
+		return availabilitySettings(profile);
+	}
+
+	private MentorAvailabilitySettingsResponse availabilitySettings(MentorProfile profile) {
+		UUID mentorId = profile.getId();
+		return new MentorAvailabilitySettingsResponse(
+				mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId).stream()
+						.map(MentorAvailabilityRuleResponse::fromEntity).toList(),
+				mentorAvailabilityExceptionRepository.findByMentorIdOrderByStartsOnAsc(mentorId).stream()
+						.map(MentorAvailabilityExceptionResponse::fromEntity).toList(),
+				profile.getMenteeCapacity(),
+				profile.getDefaultMeetingDurationMinutes(), profile.getMeetingBufferMinutes());
+	}
+
+	private void validateRules(List<CreateMentorAvailabilityRuleRequest> rules) {
+		Set<String> seen = new HashSet<>();
+		for (CreateMentorAvailabilityRuleRequest rule : rules) {
+			if (!rule.endTime().isAfter(rule.startTime())) throw new InvalidRequestException("Availability must end after it starts");
+			if (!seen.add(rule.dayOfWeek() + ":" + rule.startTime())) throw new InvalidRequestException("Duplicate weekly availability rule");
+		}
+		for (CreateMentorAvailabilityRuleRequest left : rules) for (CreateMentorAvailabilityRuleRequest right : rules) {
+			if (left == right || left.dayOfWeek() != right.dayOfWeek()) continue;
+			if (left.startTime().isBefore(right.endTime()) && right.startTime().isBefore(left.endTime()))
+				throw new InvalidRequestException("Weekly availability ranges cannot overlap");
+		}
+	}
+
+	private void validateExceptions(List<MentorAvailabilityExceptionRequest> exceptions) {
+		Set<String> seen = new HashSet<>();
+		for (MentorAvailabilityExceptionRequest exception : exceptions) {
+			if (exception.endsOn().isBefore(exception.startsOn()))
+				throw new InvalidRequestException("Availability exception must end on or after it starts");
+			// The table is unique on these dates, so a repeat would otherwise surface as a 500.
+			if (!seen.add(exception.startsOn() + ":" + exception.endsOn()))
+				throw new InvalidRequestException("Duplicate availability exception dates");
+		}
+	}
+
+	private void saveException(AppUser mentor, MentorAvailabilityExceptionRequest request) {
+		MentorAvailabilityException exception = new MentorAvailabilityException();
+		exception.setMentor(mentor);
+		exception.setStartsOn(request.startsOn());
+		exception.setEndsOn(request.endsOn());
+		exception.setReason(request.reason() == null || request.reason().isBlank() ? null : request.reason().trim());
+		mentorAvailabilityExceptionRepository.save(exception);
+	}
+
+	private void removeUnbookedSlotsInExceptions(UUID mentorId) {
+		mentorAvailabilitySlotRepository.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(mentorId, Instant.now()).stream()
+				.filter(slot -> isExcluded(mentorId, slot.getStartsAt().atZone(BUSINESS_ZONE).toLocalDate()))
+				.filter(slot -> !isBooked(slot))
+				.forEach(mentorAvailabilitySlotRepository::delete);
 	}
 
 	@Transactional
@@ -152,6 +250,7 @@ public class MentorProfileService {
 				Instant startsAt = at.toInstant();
 				// Skip anything already past, and anything the mentor added by hand.
 				if (!startsAt.isAfter(Instant.now())
+						|| isExcluded(mentor.getId(), at.toLocalDate())
 						|| mentorAvailabilitySlotRepository.existsByMentorIdAndStartsAt(mentor.getId(), startsAt)) {
 					continue;
 				}
@@ -168,6 +267,11 @@ public class MentorProfileService {
 		mentorAvailabilitySlotRepository.saveAll(created);
 	}
 
+	private boolean isExcluded(UUID mentorId, LocalDate day) {
+		return mentorAvailabilityExceptionRepository
+				.existsByMentorIdAndStartsOnLessThanEqualAndEndsOnGreaterThanEqual(mentorId, day, day);
+	}
+
 	private List<MentorProfile> approvedMentors() {
 		return mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
 	}
@@ -181,10 +285,12 @@ public class MentorProfileService {
 		Map<UUID, Long> active = totals(mentorshipRepository.countOrganizationsByMentor(ids, ONGOING_MENTORSHIP));
 		Map<UUID, Long> completed = totals(
 				mentorshipRepository.countMentorshipsByMentor(ids, MentorshipStatus.COMPLETED));
-		Map<UUID, List<String>> programs = programMentorRepository
+		Map<UUID, List<MentorProgramResponse>> programs = programMentorRepository
 				.findProgramNamesByMentorIds(ids, ProgramMentorStatus.ACCEPTED).stream()
 				.collect(Collectors.groupingBy(MentorProgramName::getMentorId,
-						Collectors.mapping(MentorProgramName::getProgramName, Collectors.toList())));
+						Collectors.mapping(row -> new MentorProgramResponse(
+								row.getProgramId(), row.getProgramName(), row.getProgramStatus(), row.getRole()),
+								Collectors.toList())));
 		return profiles.stream()
 				.map(profile -> MentorProfileResponse.fromEntity(profile).withActivity(
 						active.getOrDefault(profile.getId(), 0L),
@@ -264,6 +370,22 @@ public class MentorProfileService {
 			profile.getExperiences().clear();
 			request.experiences().forEach(experience -> profile.getExperiences().add(experience.toEntity()));
 		}
+		if (request.about() != null) {
+			profile.setAbout(request.about().trim());
+		}
+		if (request.meetingFrequency() != null) {
+			profile.setMeetingFrequency(request.meetingFrequency());
+		}
+		if (request.prepFileRequirement() != null) {
+			profile.setPrepFileRequirement(request.prepFileRequirement());
+		}
+		if (request.languages() != null) {
+			profile.getLanguages().clear();
+			request.languages().stream().distinct().forEach(profile.getLanguages()::add);
+		}
+		if (request.programRoles() != null) {
+			request.programRoles().forEach(programRole -> updateProgramRole(mentorId, programRole));
+		}
 
 		return withActivity(List.of(mentorProfileRepository.saveAndFlush(profile))).getFirst();
 	}
@@ -280,6 +402,16 @@ public class MentorProfileService {
 			throw new InvalidRequestException("Cannot remove a slot that already has a scheduled meeting");
 		}
 		mentorAvailabilitySlotRepository.delete(slot);
+	}
+
+	private void updateProgramRole(UUID mentorId, MentorProgramRoleRequest programRole) {
+		ProgramMentor membership = programMentorRepository
+				.findByProgramIdAndMentorId(programRole.programId(), mentorId)
+				.filter(row -> row.getStatus() == ProgramMentorStatus.ACCEPTED)
+				.orElseThrow(() -> new InvalidRequestException("You are not a mentor in this program."));
+		String role = TextUtils.trim(programRole.role());
+		membership.setRole(role == null || role.isBlank() ? null : role);
+		programMentorRepository.save(membership);
 	}
 
 	private AppUser requireMentor(UUID mentorId) {

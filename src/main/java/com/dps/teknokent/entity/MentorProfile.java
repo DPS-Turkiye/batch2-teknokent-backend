@@ -6,10 +6,16 @@ import java.util.UUID;
 
 import org.hibernate.annotations.BatchSize;
 
+import com.dps.teknokent.domain.MeetingFrequency;
+import com.dps.teknokent.domain.MentorLanguage;
+import com.dps.teknokent.domain.PrepFileRequirement;
+
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -78,6 +84,31 @@ public class MentorProfile {
 
 	@Column(name = "mentee_capacity")
 	private Integer menteeCapacity;
+
+	@Column(name = "about", nullable = false, columnDefinition = "TEXT")
+	private String about = "";
+
+	@Column(name = "default_meeting_duration_minutes", nullable = false)
+	private int defaultMeetingDurationMinutes = 45;
+
+	@Column(name = "meeting_buffer_minutes", nullable = false)
+	private int meetingBufferMinutes = 15;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "meeting_frequency", length = 32)
+	private MeetingFrequency meetingFrequency;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "prep_file_requirement", length = 32)
+	private PrepFileRequirement prepFileRequirement;
+
+	@ElementCollection
+	@CollectionTable(name = "mentor_language", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@Enumerated(EnumType.STRING)
+	@Column(name = "language", nullable = false, length = 32)
+	@BatchSize(size = 50)
+	private List<MentorLanguage> languages = new ArrayList<>();
 
 	@ElementCollection
 	@CollectionTable(name = "mentor_specialty", joinColumns = @JoinColumn(name = "mentor_id"))

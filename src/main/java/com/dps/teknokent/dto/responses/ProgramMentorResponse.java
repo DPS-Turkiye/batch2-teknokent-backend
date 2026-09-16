@@ -12,5 +12,6 @@ public record ProgramMentorResponse(
 		String email,
 		ProgramMentorStatus status,
 		ProgramMentorInvitedBy invitedBy,
-		Instant createdAt) {
+		Instant createdAt,
+		String role) {
 }
