@@ -40,6 +40,18 @@ mvnw.cmd clean package
 
 Configuration lives in `.env` (see `.env.example`).
 
+To check how much the configured OpenRouter key has spent, export the key and run
+the dependency-free usage script:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+python3 scripts/openrouter_usage.py
+```
+
+It reports lifetime, daily, weekly, and monthly spend, together with the key's
+configured limit and remaining amount. Add `--json` to print OpenRouter's current
+key usage object. The script never prints the API key itself.
+
 ## Stack
 
 Java 25, Spring Boot 4.1, PostgreSQL 17 + pgvector, Apache PDFBox,
