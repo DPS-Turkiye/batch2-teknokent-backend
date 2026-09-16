@@ -12,4 +12,6 @@ public interface StoredDocumentRepository extends JpaRepository<StoredDocument, 
 	List<StoredDocument> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
 	List<StoredDocument> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
+
+	List<StoredDocument> findByUserIdAndKind(UUID userId, String kind);
 }

@@ -4,14 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -304,6 +307,64 @@ class DocumentServiceTest {
 				hugeEntryDocx))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("DOCX");
+	}
+
+	@Test
+	void keepsAProfilePhotoOffTheStartupAndRemovesTheOlderOne() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument older = olderAvatar(userId);
+		AtomicReference<StoredDocument> saved = stubAvatarUpload(userId, older);
+
+		var response = documentService.storeForUser(userId, "avatar", avatarFile());
+
+		assertThat(response.kind()).isEqualTo("avatar");
+		assertThat(response.organizationId()).isNull();
+		verify(storedDocumentRepository).deleteAll(List.of(older));
+		verify(objectStorage).delete(older.getS3Key());
+		verify(objectStorage, never()).delete(saved.get().getS3Key());
+	}
+
+	@Test
+	void keepsTheNewProfilePhotoWhenTheOldFileCannotBeDeleted() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument older = olderAvatar(userId);
+		stubAvatarUpload(userId, older);
+		doThrow(new IllegalStateException("storage unavailable")).when(objectStorage).delete(older.getS3Key());
+
+		var response = documentService.storeForUser(userId, "avatar", avatarFile());
+
+		assertThat(response.kind()).isEqualTo("avatar");
+		verify(storedDocumentRepository).deleteAll(List.of(older));
+	}
+
+	private StoredDocument olderAvatar(UUID userId) {
+		StoredDocument older = new StoredDocument();
+		older.setId(UUID.randomUUID());
+		older.setUserId(userId);
+		older.setKind("avatar");
+		older.setS3Key("documents/" + userId + "/avatar/old-me.png");
+		return older;
+	}
+
+	private AtomicReference<StoredDocument> stubAvatarUpload(UUID userId, StoredDocument older) {
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		AppUser user = new AppUser();
+		user.setId(userId);
+		user.setOrganization(organization);
+		AtomicReference<StoredDocument> saved = new AtomicReference<>();
+		when(appUserRepository.findById(userId)).thenReturn(Optional.of(user));
+		when(storedDocumentRepository.save(any(StoredDocument.class))).thenAnswer(invocation -> {
+			saved.set(invocation.getArgument(0));
+			return saved.get();
+		});
+		when(storedDocumentRepository.findByUserIdAndKind(userId, "avatar"))
+				.thenAnswer(invocation -> List.of(older, saved.get()));
+		return saved;
+	}
+
+	private static MockMultipartFile avatarFile() {
+		return new MockMultipartFile("file", "me.png", "image/png", pngBytes());
 	}
 
 	private static byte[] docx(String... entries) throws IOException {

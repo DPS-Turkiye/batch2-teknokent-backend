@@ -69,7 +69,9 @@ public class DocumentService {
 		}
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-		UUID organizationId = user.getOrganization() == null ? null : user.getOrganization().getId();
+		boolean avatar = DocumentKind.AVATAR.value().equals(kindValue);
+		// A profile photo belongs to the person, so it is kept off the startup's file list.
+		UUID organizationId = avatar || user.getOrganization() == null ? null : user.getOrganization().getId();
 		if (meetingId != null) {
 			Meeting meeting = meetingRepository.findById(meetingId)
 					.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
@@ -78,7 +80,7 @@ public class DocumentService {
 			}
 		}
 		try {
-			return store(
+			StoredDocumentResponse stored = store(
 					user.getId(),
 					organizationId,
 					kindValue,
@@ -86,6 +88,10 @@ public class DocumentService {
 					file.getContentType(),
 					file.getBytes(),
 					meetingId);
+			if (avatar) {
+				removeOlderAvatars(user.getId(), stored.id());
+			}
+			return stored;
 		} catch (IOException error) {
 			throw rejectUpload(
 					userId,
@@ -95,6 +101,26 @@ public class DocumentService {
 					file == null ? null : file.getSize(),
 					"io-read-failure",
 					"The uploaded file could not be read.");
+		}
+	}
+
+	// Only the newest photo is ever shown, so the replaced ones are removed rather than kept.
+	private void removeOlderAvatars(UUID userId, UUID keptId) {
+		List<StoredDocument> older = storedDocumentRepository
+				.findByUserIdAndKind(userId, DocumentKind.AVATAR.value()).stream()
+				.filter(document -> !document.getId().equals(keptId))
+				.toList();
+		if (older.isEmpty()) {
+			return;
+		}
+		storedDocumentRepository.deleteAll(older);
+		for (StoredDocument document : older) {
+			try {
+				objectStorage.delete(document.getS3Key());
+			} catch (RuntimeException error) {
+				log.warn("Replaced profile photo {} but its stored object {} remains: {}",
+						document.getId(), document.getS3Key(), error.getMessage());
+			}
 		}
 	}
 

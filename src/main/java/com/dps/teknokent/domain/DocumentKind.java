@@ -15,6 +15,7 @@ public enum DocumentKind {
 	NOTE_PHOTO("note-photo", 5 * 1024 * 1024, false, true),
 	OTHER("other", 10 * 1024 * 1024, false, false),
 	LOGO("logo", 5 * 1024 * 1024, false, true),
+	AVATAR("avatar", 5 * 1024 * 1024, false, true),
 	PROFILE_PDF("profile-pdf", 50 * 1024 * 1024, true, false),
 	REQUESTED_DOC("requested-doc", 10 * 1024 * 1024, false, false);
 
