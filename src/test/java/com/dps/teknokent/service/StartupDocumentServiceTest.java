@@ -34,7 +34,9 @@ import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.StoredDocumentShare;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
@@ -66,7 +68,13 @@ class StartupDocumentServiceTest {
     private MentorshipRequestRepository mentorshipRequestRepository;
 
     @Mock
+    private MentorshipRepository mentorshipRepository;
+
+    @Mock
     private ProgramMentorRepository programMentorRepository;
+
+    @Mock
+    private DocumentRequestUploadRepository documentRequestUploadRepository;
 
     @Mock
     private DomainLookupService domainLookupService;
@@ -131,7 +139,8 @@ class StartupDocumentServiceTest {
         StoredDocument deck = document(FOUNDER_ID);
         when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
         when(domainLookupService.requireUser(TEAMMATE_ID)).thenReturn(member(TEAMMATE_ID, "Sude Arya", startup()));
-        when(objectStorage.presignGet(deck.getS3Key())).thenReturn("https://bucket.s3/pitch-deck.pdf?sig");
+        when(objectStorage.presignInline(anyString(), anyString(), anyString()))
+                .thenReturn("https://bucket.s3/pitch-deck.pdf?sig");
 
         var link = startupDocumentService.downloadUrl(deck.getId(), TEAMMATE_ID);
 
@@ -145,9 +154,23 @@ class StartupDocumentServiceTest {
         when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
         when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
         when(storedDocumentShareRepository.existsByDocumentIdAndMentorId(deck.getId(), MENTOR_ID)).thenReturn(true);
-        when(objectStorage.presignGet(deck.getS3Key())).thenReturn("https://bucket.s3/pitch-deck.pdf?sig");
+        when(objectStorage.presignInline(anyString(), anyString(), anyString()))
+                .thenReturn("https://bucket.s3/pitch-deck.pdf?sig");
 
         assertThat(startupDocumentService.downloadUrl(deck.getId(), MENTOR_ID).url()).startsWith("https://");
+    }
+
+    @Test
+    void downloadUrl_letsTheMentorWhoAskedForTheFile() {
+        StoredDocument notes = document(FOUNDER_ID);
+        when(storedDocumentRepository.findById(notes.getId())).thenReturn(Optional.of(notes));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+        when(documentRequestUploadRepository.existsVisibleToMentor(notes.getId(), MENTOR_ID)).thenReturn(true);
+        when(objectStorage.presignInline(anyString(), anyString(), anyString()))
+                .thenReturn("https://bucket.s3/requested.pdf?sig");
+
+        assertThat(startupDocumentService.downloadUrl(notes.getId(), MENTOR_ID).url())
+                .isEqualTo("https://bucket.s3/requested.pdf?sig");
     }
 
     @Test
@@ -159,7 +182,7 @@ class StartupDocumentServiceTest {
         when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor);
         when(storedDocumentShareRepository.existsByDocumentIdAndMentorId(notes.getId(), MENTOR_ID)).thenReturn(false);
         when(meetingRepository.findById(MEETING_ID)).thenReturn(Optional.of(meeting(startup(), mentor)));
-        when(objectStorage.presignGet(notes.getS3Key())).thenReturn("https://bucket.s3/notes.pdf?sig");
+        when(objectStorage.presignInline(anyString(), anyString(), anyString())).thenReturn("https://bucket.s3/notes.pdf?sig");
 
         assertThat(startupDocumentService.downloadUrl(notes.getId(), MENTOR_ID).url()).startsWith("https://");
     }
@@ -174,7 +197,7 @@ class StartupDocumentServiceTest {
         assertThatThrownBy(() -> startupDocumentService.downloadUrl(deck.getId(), MENTOR_ID))
                 .isInstanceOf(InvalidRequestException.class);
 
-        verify(objectStorage, never()).presignGet(anyString());
+        verify(objectStorage, never()).presignInline(anyString(), anyString(), anyString());
     }
 
     @Test

@@ -12,5 +12,9 @@ public interface ObjectStorage {
 
 	String presignGet(String key);
 
+	default String presignInline(String key, String filename, String contentType) {
+		return presignGet(key);
+	}
+
 	void delete(String key);
 }

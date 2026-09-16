@@ -100,17 +100,31 @@ public class S3ObjectStorage implements ObjectStorage {
 
 	@Override
 	public String presignGet(String key) {
+		return presign(key, null, null);
+	}
+
+	@Override
+	public String presignInline(String key, String filename, String contentType) {
+		String safe = filename == null ? "document" : filename.replace('\\', '_').replace('"', '_').replace('\n', '_');
+		return presign(key, contentType, "inline; filename=\"" + safe + "\"");
+	}
+
+	private String presign(String key, String contentType, String contentDisposition) {
 		if (!isConfigured()) {
 			throw new InvalidRequestException("Object storage is not configured.");
 		}
 		try {
+			var request = GetObjectRequest.builder().bucket(bucket).key(key);
+			if (contentType != null && !contentType.isBlank()) {
+				request.responseContentType(contentType);
+			}
+			if (contentDisposition != null && !contentDisposition.isBlank()) {
+				request.responseContentDisposition(contentDisposition);
+			}
 			return s3Presigner.presignGetObject(
 					GetObjectPresignRequest.builder()
 							.signatureDuration(GET_URL_TTL)
-							.getObjectRequest(GetObjectRequest.builder()
-									.bucket(bucket)
-									.key(key)
-									.build())
+							.getObjectRequest(request.build())
 							.build())
 					.url()
 					.toString();
