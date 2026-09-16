@@ -127,4 +127,44 @@ class MentorProfileControllerTest {
 
 		verify(mentorProfileService).updateProfile(eq(signedIn), any(UpdateMentorProfileRequest.class));
 	}
+
+	@Test
+	void refusesToReadAnotherMentorsAvailabilitySettings() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000801");
+		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000802");
+
+		mockMvc.perform(get("/api/mentors/{id}/availability-settings", otherMentor)
+						.with(authentication(signedInAs(signedIn))))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(mentorProfileService);
+	}
+
+	@Test
+	void letsAMentorReadTheirOwnAvailabilitySettings() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000801");
+
+		mockMvc.perform(get("/api/mentors/{id}/availability-settings", signedIn)
+						.with(authentication(signedInAs(signedIn))))
+				.andExpect(status().isOk());
+
+		verify(mentorProfileService).findAvailabilitySettings(signedIn);
+	}
+
+	@Test
+	void refusesToSaveAnotherMentorsAvailabilitySettings() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000801");
+		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000802");
+
+		mockMvc.perform(put("/api/mentors/{id}/availability-settings", otherMentor)
+						.with(authentication(signedInAs(signedIn)))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"rules": [], "exceptions": [], "menteeCapacity": null,
+								 "defaultMeetingDurationMinutes": 45, "meetingBufferMinutes": 15}
+								"""))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(mentorProfileService);
+	}
 }

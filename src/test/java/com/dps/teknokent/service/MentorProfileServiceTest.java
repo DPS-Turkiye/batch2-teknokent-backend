@@ -8,6 +8,13 @@ import com.dps.teknokent.entity.MentorExperience;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.requests.MentorExperienceRequest;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.MeetingFrequency;
+import com.dps.teknokent.domain.MentorLanguage;
+import com.dps.teknokent.domain.PrepFileRequirement;
+import com.dps.teknokent.dto.requests.MentorProgramRoleRequest;
+import com.dps.teknokent.dto.responses.MentorProgramResponse;
+import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.domain.MentorshipStatus;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -43,6 +50,12 @@ import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
+import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
+import com.dps.teknokent.dto.requests.MentorAvailabilityExceptionRequest;
+import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
+import com.dps.teknokent.entity.MentorAvailabilityException;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -62,6 +75,8 @@ class MentorProfileServiceTest {
 	@Mock
 	private MentorAvailabilityRuleRepository mentorAvailabilityRuleRepository;
 	@Mock
+	private MentorAvailabilityExceptionRepository mentorAvailabilityExceptionRepository;
+	@Mock
 	private MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 	@Mock
 	private MeetingRepository meetingRepository;
@@ -75,11 +90,12 @@ class MentorProfileServiceTest {
 	private MentorProfileService mentorProfileService;
 
 	private final UUID mentorId = UUID.randomUUID();
+	private final UUID programId = UUID.randomUUID();
 
 	@BeforeEach
 	void setUp() {
 		mentorProfileService = new MentorProfileService(
-				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilitySlotRepository,
+				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilityExceptionRepository, mentorAvailabilitySlotRepository,
 				meetingRepository, domainLookupService, mentorshipRepository, programMentorRepository);
 	}
 
@@ -300,6 +316,8 @@ class MentorProfileServiceTest {
 		assertThat(result.activeMenteeCount()).isEqualTo(4);
 		assertThat(result.completedMentorshipCount()).isEqualTo(28);
 		assertThat(result.programNames()).containsExactly("METU Stars");
+		assertThat(result.programs()).containsExactly(
+				new MentorProgramResponse(programId, "METU Stars", ProgramStatus.COMPLETED, "Design mentor"));
 	}
 
 	private MentorCount count(long total) {
@@ -324,10 +342,109 @@ class MentorProfileServiceTest {
 			}
 
 			@Override
+			public UUID getProgramId() {
+				return programId;
+			}
+
+			@Override
 			public String getProgramName() {
 				return name;
 			}
+
+			@Override
+			public ProgramStatus getProgramStatus() {
+				return ProgramStatus.COMPLETED;
+			}
+
+			@Override
+			public String getRole() {
+				return "Design mentor";
+			}
 		};
+	}
+
+	private UpdateMentorProfileRequest requestWithPreferences(List<MentorProgramRoleRequest> programRoles) {
+		UpdateMentorProfileRequest request = updateRequest();
+		return new UpdateMentorProfileRequest(
+				request.professionalTitle(), request.company(), request.availabilityLabel(),
+				request.responseTimeLabel(), request.meetingMode(), request.communicationPreference(),
+				request.mentoringStyle(), request.fitLabel(), request.experienceLevel(), request.sectorExperience(),
+				request.startupStages(), request.specialties(), null, null, null,
+				MeetingFrequency.BIWEEKLY, PrepFileRequirement.REQUIRED,
+				List.of(MentorLanguage.TURKISH, MentorLanguage.ENGLISH, MentorLanguage.TURKISH), programRoles);
+	}
+
+	private MentorProfile editableProfile() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		profile.getLanguages().add(MentorLanguage.GERMAN);
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		return profile;
+	}
+
+	@Test
+	void updateProfileStoresMeetingPreferencesLanguagesAndProgramRoles() {
+		MentorProfile profile = editableProfile();
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+		ProgramMentor membership = new ProgramMentor();
+		membership.setStatus(ProgramMentorStatus.ACCEPTED);
+		when(programMentorRepository.findByProgramIdAndMentorId(programId, mentorId))
+				.thenReturn(Optional.of(membership));
+
+		mentorProfileService.updateProfile(mentorId,
+				requestWithPreferences(List.of(new MentorProgramRoleRequest(programId, "  Design mentor "))));
+
+		assertThat(profile.getMeetingFrequency()).isEqualTo(MeetingFrequency.BIWEEKLY);
+		assertThat(profile.getPrepFileRequirement()).isEqualTo(PrepFileRequirement.REQUIRED);
+		assertThat(profile.getLanguages()).containsExactly(MentorLanguage.TURKISH, MentorLanguage.ENGLISH);
+		assertThat(membership.getRole()).isEqualTo("Design mentor");
+		verify(programMentorRepository).save(membership);
+	}
+
+	@Test
+	void updateProfileClearsABlankProgramRole() {
+		MentorProfile profile = editableProfile();
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+		ProgramMentor membership = new ProgramMentor();
+		membership.setStatus(ProgramMentorStatus.ACCEPTED);
+		membership.setRole("Eski rol");
+		when(programMentorRepository.findByProgramIdAndMentorId(programId, mentorId))
+				.thenReturn(Optional.of(membership));
+
+		mentorProfileService.updateProfile(mentorId,
+				requestWithPreferences(List.of(new MentorProgramRoleRequest(programId, "   "))));
+
+		assertThat(membership.getRole()).isNull();
+	}
+
+	@Test
+	void updateProfileRefusesARoleInAProgramTheMentorHasNotJoined() {
+		editableProfile();
+		ProgramMentor pending = new ProgramMentor();
+		pending.setStatus(ProgramMentorStatus.PENDING);
+		when(programMentorRepository.findByProgramIdAndMentorId(programId, mentorId))
+				.thenReturn(Optional.of(pending));
+
+		assertThatThrownBy(() -> mentorProfileService.updateProfile(mentorId,
+				requestWithPreferences(List.of(new MentorProgramRoleRequest(programId, "Design mentor")))))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programMentorRepository, never()).save(any());
+	}
+
+	@Test
+	void updateProfileKeepsPreferencesAndLanguagesWhenTheyAreNotSent() {
+		MentorProfile profile = editableProfile();
+		profile.setMeetingFrequency(MeetingFrequency.MONTHLY);
+		profile.setPrepFileRequirement(PrepFileRequirement.OPTIONAL);
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		mentorProfileService.updateProfile(mentorId, updateRequest());
+
+		assertThat(profile.getMeetingFrequency()).isEqualTo(MeetingFrequency.MONTHLY);
+		assertThat(profile.getPrepFileRequirement()).isEqualTo(PrepFileRequirement.OPTIONAL);
+		assertThat(profile.getLanguages()).containsExactly(MentorLanguage.GERMAN);
 	}
 
 	@Test
@@ -451,6 +568,83 @@ class MentorProfileServiceTest {
 		verify(mentorAvailabilitySlotRepository).deleteAll(captor.capture());
 		assertThat(captor.getValue()).containsExactly(free);
 		verify(mentorAvailabilityRuleRepository).delete(rule);
+	}
+
+	@Test
+	void findAvailabilitySettings_leavesAnUnsetCapacityEmpty() {
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile()));
+		when(mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId))
+				.thenReturn(List.of());
+		when(mentorAvailabilityExceptionRepository.findByMentorIdOrderByStartsOnAsc(mentorId)).thenReturn(List.of());
+
+		MentorAvailabilitySettingsResponse settings = mentorProfileService.findAvailabilitySettings(mentorId);
+
+		assertThat(settings.menteeCapacity()).isNull();
+		assertThat(settings.defaultMeetingDurationMinutes()).isEqualTo(45);
+	}
+
+	@Test
+	void updateAvailabilitySettings_savesTheDatesAndDefaultsAndKeepsAnOmittedCapacity() {
+		MentorProfile profile = profile();
+		profile.setMenteeCapacity(4);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		when(mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId))
+				.thenReturn(List.of());
+		when(mentorAvailabilityExceptionRepository.findByMentorId(mentorId)).thenReturn(List.of());
+		when(mentorAvailabilityExceptionRepository.findByMentorIdOrderByStartsOnAsc(mentorId)).thenReturn(List.of());
+		when(mentorAvailabilitySlotRepository.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(eq(mentorId),
+				any(Instant.class))).thenReturn(List.of());
+
+		mentorProfileService.updateAvailabilitySettings(mentorId, new UpdateMentorAvailabilitySettingsRequest(
+				List.of(),
+				List.of(new MentorAvailabilityExceptionRequest(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3),
+						"  İzin ")),
+				null, 60, 10));
+
+		ArgumentCaptor<MentorAvailabilityException> saved = ArgumentCaptor.forClass(MentorAvailabilityException.class);
+		verify(mentorAvailabilityExceptionRepository).save(saved.capture());
+		assertThat(saved.getValue().getReason()).isEqualTo("İzin");
+		assertThat(profile.getMenteeCapacity()).isEqualTo(4);
+		assertThat(profile.getDefaultMeetingDurationMinutes()).isEqualTo(60);
+		assertThat(profile.getMeetingBufferMinutes()).isEqualTo(10);
+	}
+
+	@Test
+	void updateAvailabilitySettings_rejectsTheSameUnavailableDatesTwice() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile()));
+		MentorAvailabilityExceptionRequest dates =
+				new MentorAvailabilityExceptionRequest(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3), null);
+
+		assertThatThrownBy(() -> mentorProfileService.updateAvailabilitySettings(mentorId,
+				new UpdateMentorAvailabilitySettingsRequest(List.of(), List.of(dates, dates), 5, 45, 15)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Duplicate");
+		verify(mentorAvailabilityExceptionRepository, never()).deleteAll(any());
+	}
+
+	@Test
+	void updateAvailabilitySettings_rejectsOverlappingRangesOnOneDay() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile()));
+
+		assertThatThrownBy(() -> mentorProfileService.updateAvailabilitySettings(mentorId,
+				new UpdateMentorAvailabilitySettingsRequest(List.of(
+						new CreateMentorAvailabilityRuleRequest(DayOfWeek.TUESDAY, LocalTime.of(10, 0),
+								LocalTime.of(13, 0), 45),
+						new CreateMentorAvailabilityRuleRequest(DayOfWeek.TUESDAY, LocalTime.of(12, 0),
+								LocalTime.of(14, 0), 45)),
+						List.of(), 5, 45, 15)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("overlap");
+		verify(mentorAvailabilityRuleRepository, never()).delete(any());
+	}
+
+	private MentorProfile profile() {
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		return profile;
 	}
 
 	private MentorAvailabilitySlot slotAt(AppUser mentorUser, Instant startsAt) {

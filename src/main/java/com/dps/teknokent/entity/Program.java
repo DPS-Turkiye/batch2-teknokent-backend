@@ -3,8 +3,12 @@ package com.dps.teknokent.entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.ProgramStatus;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -29,4 +33,8 @@ public class Program {
 
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 32)
+	private ProgramStatus status = ProgramStatus.ACTIVE;
 }
