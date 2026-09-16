@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -89,7 +90,7 @@ public class DocumentService {
 					file.getBytes(),
 					meetingId);
 			if (avatar) {
-				removeOlderAvatars(user.getId(), stored.id());
+				removeOlderAvatars(user.getId());
 			}
 			return stored;
 		} catch (IOException error) {
@@ -104,16 +105,29 @@ public class DocumentService {
 		}
 	}
 
-	// Only the newest photo is ever shown, so the replaced ones are removed rather than kept.
-	private void removeOlderAvatars(UUID userId, UUID keptId) {
-		List<StoredDocument> older = storedDocumentRepository
-				.findByUserIdAndKind(userId, DocumentKind.AVATAR.value()).stream()
-				.filter(document -> !document.getId().equals(keptId))
+	// Only the newest photo is ever shown, so the rest are removed. Keeping the newest,
+	// rather than this request's own upload, means two uploads racing each other agree
+	// on what stays; a failed cleanup is left for the next upload to finish.
+	private void removeOlderAvatars(UUID userId) {
+		List<StoredDocument> avatars = storedDocumentRepository
+				.findByUserIdAndKind(userId, DocumentKind.AVATAR.value());
+		StoredDocument newest = avatars.stream()
+				.max(Comparator.comparing(StoredDocument::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+						.thenComparing(StoredDocument::getId))
+				.orElse(null);
+		List<StoredDocument> older = avatars.stream()
+				.filter(document -> document != newest)
 				.toList();
 		if (older.isEmpty()) {
 			return;
 		}
-		storedDocumentRepository.deleteAll(older);
+		try {
+			storedDocumentRepository.deleteAll(older);
+		} catch (RuntimeException error) {
+			log.warn("Stored a new profile photo for {} but could not remove the older ones: {}",
+					userId, error.getMessage());
+			return;
+		}
 		for (StoredDocument document : older) {
 			try {
 				objectStorage.delete(document.getS3Key());
