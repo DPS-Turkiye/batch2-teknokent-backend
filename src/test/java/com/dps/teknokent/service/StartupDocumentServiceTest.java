@@ -127,6 +127,54 @@ class StartupDocumentServiceTest {
     }
 
     @Test
+    void listForOrganization_keepsCvsFromTheStartupsMentors() {
+        StoredDocument deck = document(FOUNDER_ID);
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(startup());
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+        when(mentorshipRequestRepository.existsByMentorIdAndOrganizationId(MENTOR_ID, ORG_ID)).thenReturn(true);
+        when(storedDocumentRepository.findByOrganizationIdOrderByCreatedAtDesc(ORG_ID))
+                .thenReturn(List.of(deck, cv(FOUNDER_ID)));
+
+        assertThat(startupDocumentService.listForOrganization(ORG_ID, MENTOR_ID))
+                .extracting(OrganizationDocumentResponse::id)
+                .containsExactly(deck.getId());
+    }
+
+    @Test
+    void listForOrganization_showsTheTeamItsCvs() {
+        StoredDocument cv = cv(FOUNDER_ID);
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(startup());
+        when(domainLookupService.requireUser(TEAMMATE_ID)).thenReturn(member(TEAMMATE_ID, "Sude Arya", startup()));
+        when(storedDocumentRepository.findByOrganizationIdOrderByCreatedAtDesc(ORG_ID)).thenReturn(List.of(cv));
+
+        assertThat(startupDocumentService.listForOrganization(ORG_ID, TEAMMATE_ID))
+                .extracting(OrganizationDocumentResponse::id)
+                .containsExactly(cv.getId());
+    }
+
+    @Test
+    void downloadUrl_refusesAMentorACv() {
+        StoredDocument cv = cv(FOUNDER_ID);
+        when(storedDocumentRepository.findById(cv.getId())).thenReturn(Optional.of(cv));
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+
+        assertThatThrownBy(() -> startupDocumentService.downloadUrl(cv.getId(), MENTOR_ID))
+                .isInstanceOf(InvalidRequestException.class);
+
+        verify(objectStorage, never()).presignGet(anyString());
+    }
+
+    @Test
+    void downloadUrl_letsThePersonOpenTheirOwnCv() {
+        StoredDocument cv = cv(FOUNDER_ID);
+        when(storedDocumentRepository.findById(cv.getId())).thenReturn(Optional.of(cv));
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(startup().getFounder());
+        when(objectStorage.presignGet(cv.getS3Key())).thenReturn("https://bucket.s3/cv.pdf?sig");
+
+        assertThat(startupDocumentService.downloadUrl(cv.getId(), FOUNDER_ID).url()).startsWith("https://");
+    }
+
+    @Test
     void downloadUrl_givesTheTeamAPresignedLink() {
         StoredDocument deck = document(FOUNDER_ID);
         when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
@@ -405,5 +453,13 @@ class StartupDocumentServiceTest {
         document.setS3Key("documents/" + uploaderId + "/pitch-deck/pitch-deck.pdf");
         document.setCreatedAt(Instant.parse("2026-09-12T08:00:00Z"));
         return document;
+    }
+
+    private static StoredDocument cv(UUID ownerId) {
+        StoredDocument cv = document(ownerId);
+        cv.setKind("cv");
+        cv.setOriginalFilename("cv.pdf");
+        cv.setS3Key("documents/org/" + ORG_ID + "/cv/cv.pdf");
+        return cv;
     }
 }

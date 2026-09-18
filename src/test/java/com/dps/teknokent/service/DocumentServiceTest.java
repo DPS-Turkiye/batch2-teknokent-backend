@@ -32,6 +32,7 @@ import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
@@ -214,6 +215,46 @@ class DocumentServiceTest {
 		assertThat(documents).hasSize(1);
 		assertThat(documents.get(0).kind()).isEqualTo("cv");
 		assertThat(documents.get(0).originalFilename()).isEqualTo("cv.pdf");
+	}
+
+	@Test
+	void readsTheCallersOwnCv() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument cv = storedCv(userId, "cv");
+		when(storedDocumentRepository.findById(cv.getId())).thenReturn(Optional.of(cv));
+		when(objectStorage.get(cv.getS3Key())).thenReturn("%PDF-".getBytes());
+
+		assertThat(documentService.readOwnCv(userId, cv.getId())).isEqualTo("%PDF-".getBytes());
+	}
+
+	@Test
+	void treatsSomeoneElsesCvAsMissing() {
+		StoredDocument cv = storedCv(UUID.randomUUID(), "cv");
+		when(storedDocumentRepository.findById(cv.getId())).thenReturn(Optional.of(cv));
+
+		assertThatThrownBy(() -> documentService.readOwnCv(UUID.randomUUID(), cv.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		verify(objectStorage, never()).get(any());
+	}
+
+	@Test
+	void readsOnlyACvThroughTheCvReader() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument deck = storedCv(userId, "pitch-deck");
+		when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
+
+		assertThatThrownBy(() -> documentService.readOwnCv(userId, deck.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		verify(objectStorage, never()).get(any());
+	}
+
+	private static StoredDocument storedCv(UUID ownerId, String kind) {
+		StoredDocument document = new StoredDocument();
+		document.setId(UUID.randomUUID());
+		document.setUserId(ownerId);
+		document.setKind(kind);
+		document.setS3Key("documents/" + ownerId + "/" + kind + "/file.pdf");
+		return document;
 	}
 
 	@Test

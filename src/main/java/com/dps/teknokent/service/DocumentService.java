@@ -147,6 +147,17 @@ public class DocumentService {
 				.toList();
 	}
 
+	/** Another person's CV reads as missing, so its id reveals nothing. */
+	public byte[] readOwnCv(UUID userId, UUID documentId) {
+		if (userId == null) {
+			throw new InvalidRequestException("A signed-in user is required.");
+		}
+		StoredDocument document = storedDocumentRepository.findById(documentId)
+				.filter(found -> userId.equals(found.getUserId()) && DocumentKind.CV.value().equals(found.getKind()))
+				.orElseThrow(() -> new ResourceNotFoundException("CV not found: " + documentId));
+		return objectStorage.get(document.getS3Key());
+	}
+
 	public StoredDocumentResponse store(
 			UUID userId,
 			UUID organizationId,
