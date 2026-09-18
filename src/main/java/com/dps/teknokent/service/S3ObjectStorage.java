@@ -105,8 +105,25 @@ public class S3ObjectStorage implements ObjectStorage {
 
 	@Override
 	public String presignInline(String key, String filename, String contentType) {
-		String safe = filename == null ? "document" : filename.replace('\\', '_').replace('"', '_').replace('\n', '_');
-		return presign(key, contentType, "inline; filename=\"" + safe + "\"");
+		return presign(key, contentType, inlineContentDisposition(filename));
+	}
+
+	/**
+	 * S3 {@code response-content-disposition} is a query parameter, so it must stay
+	 * ASCII. Turkish (and other non-ASCII) names are replaced here; the original name
+	 * is still returned on {@code DocumentDownloadResponse.filename}.
+	 */
+	static String inlineContentDisposition(String filename) {
+		String raw = filename == null || filename.isBlank() ? "document" : filename.strip();
+		String ascii = raw.replace('\\', '_')
+				.replace('"', '_')
+				.replace('\r', '_')
+				.replace('\n', '_')
+				.replaceAll("[^\\x20-\\x7E]", "_");
+		if (ascii.isBlank()) {
+			ascii = "document";
+		}
+		return "inline; filename=\"" + ascii + "\"";
 	}
 
 	private String presign(String key, String contentType, String contentDisposition) {
