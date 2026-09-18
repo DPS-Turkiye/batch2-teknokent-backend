@@ -117,7 +117,7 @@ public class ProfileAnalysisService {
 	 * to keep. The CV itself is uploaded separately through POST /api/documents.
 	 */
 	public Map<String, Object> parsePreview(String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
-		validateProfileType(profileType);
+		validatePreviewProfileType(profileType);
 		validateOcrMode(ocrMode);
 		requireConsent(consentAccepted);
 		return preview(readPdf(file), profileType, ocrMode);
@@ -130,7 +130,7 @@ public class ProfileAnalysisService {
 	 */
 	public Map<String, Object> parseStoredCvPreview(
 			UUID callerUserId, UUID documentId, String profileType, boolean consentAccepted, String ocrMode) {
-		validateProfileType(profileType);
+		validatePreviewProfileType(profileType);
 		validateOcrMode(ocrMode);
 		requireConsent(consentAccepted);
 		byte[] bytes = documentService.readOwnCv(callerUserId, documentId);
@@ -303,6 +303,13 @@ public class ProfileAnalysisService {
 			if (value.isTextual() && !value.asText().isBlank()) result.add(value.asText());
 		});
 		return result;
+	}
+
+	// A preview stores nothing and feeds no matching, so a mentor may read their own CV too.
+	private void validatePreviewProfileType(String profileType) {
+		if (!"mentor".equals(profileType)) {
+			validateProfileType(profileType);
+		}
 	}
 
 	private void validateProfileType(String profileType) {
