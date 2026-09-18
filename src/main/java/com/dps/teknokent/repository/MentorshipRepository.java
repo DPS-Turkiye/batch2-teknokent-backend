@@ -16,6 +16,8 @@ public interface MentorshipRepository extends JpaRepository<Mentorship, UUID> {
 
 	List<Mentorship> findAllByOrderByCreatedAtDesc();
 
+	boolean existsByMentorIdAndOrganizationId(UUID mentorId, UUID organizationId);
+
 	long countByStatus(MentorshipStatus status);
 
 	long countByOrganizationIdAndStatus(UUID organizationId, MentorshipStatus status);

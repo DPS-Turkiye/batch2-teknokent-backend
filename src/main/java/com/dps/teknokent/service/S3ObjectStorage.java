@@ -100,17 +100,48 @@ public class S3ObjectStorage implements ObjectStorage {
 
 	@Override
 	public String presignGet(String key) {
+		return presign(key, null, null);
+	}
+
+	@Override
+	public String presignInline(String key, String filename, String contentType) {
+		return presign(key, contentType, inlineContentDisposition(filename));
+	}
+
+	/**
+	 * S3 {@code response-content-disposition} is a query parameter, so it must stay
+	 * ASCII. Turkish (and other non-ASCII) names are replaced here; the original name
+	 * is still returned on {@code DocumentDownloadResponse.filename}.
+	 */
+	static String inlineContentDisposition(String filename) {
+		String raw = filename == null || filename.isBlank() ? "document" : filename.strip();
+		String ascii = raw.replace('\\', '_')
+				.replace('"', '_')
+				.replace('\r', '_')
+				.replace('\n', '_')
+				.replaceAll("[^\\x20-\\x7E]", "_");
+		if (ascii.isBlank()) {
+			ascii = "document";
+		}
+		return "inline; filename=\"" + ascii + "\"";
+	}
+
+	private String presign(String key, String contentType, String contentDisposition) {
 		if (!isConfigured()) {
 			throw new InvalidRequestException("Object storage is not configured.");
 		}
 		try {
+			var request = GetObjectRequest.builder().bucket(bucket).key(key);
+			if (contentType != null && !contentType.isBlank()) {
+				request.responseContentType(contentType);
+			}
+			if (contentDisposition != null && !contentDisposition.isBlank()) {
+				request.responseContentDisposition(contentDisposition);
+			}
 			return s3Presigner.presignGetObject(
 					GetObjectPresignRequest.builder()
 							.signatureDuration(GET_URL_TTL)
-							.getObjectRequest(GetObjectRequest.builder()
-									.bucket(bucket)
-									.key(key)
-									.build())
+							.getObjectRequest(request.build())
 							.build())
 					.url()
 					.toString();

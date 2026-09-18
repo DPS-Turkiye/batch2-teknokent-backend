@@ -65,6 +65,18 @@ class S3ObjectStorageTest {
 	}
 
 	@Test
+	void keepsAsciiFilenamesInContentDisposition() {
+		assertThat(S3ObjectStorage.inlineContentDisposition("pitch-deck.pdf"))
+				.isEqualTo("inline; filename=\"pitch-deck.pdf\"");
+	}
+
+	@Test
+	void stripsTurkishCharactersFromS3ContentDisposition() {
+		assertThat(S3ObjectStorage.inlineContentDisposition("Toplantı Notları.pdf"))
+				.isEqualTo("inline; filename=\"Toplant_ Notlar_.pdf\"");
+	}
+
+	@Test
 	void reportsAFailedDelete() {
 		when(s3Client.deleteObject(any(DeleteObjectRequest.class))).thenThrow(new RuntimeException("boom"));
 

@@ -29,7 +29,9 @@ import com.dps.teknokent.entity.StoredDocumentShare;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
@@ -52,7 +54,9 @@ public class StartupDocumentService {
 	private final AppUserRepository appUserRepository;
 	private final MeetingRepository meetingRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
+	private final MentorshipRepository mentorshipRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final DocumentRequestUploadRepository documentRequestUploadRepository;
 	private final DomainLookupService domainLookupService;
 	private final ObjectStorage objectStorage;
 
@@ -74,7 +78,10 @@ public class StartupDocumentService {
 			throw new InvalidRequestException("You cannot open this document");
 		}
 		return new DocumentDownloadResponse(
-				objectStorage.presignGet(document.getS3Key()), document.getOriginalFilename(), document.getContentType());
+				objectStorage.presignInline(
+						document.getS3Key(), document.getOriginalFilename(), document.getContentType()),
+				document.getOriginalFilename(),
+				document.getContentType());
 	}
 
 	@Transactional
@@ -185,6 +192,9 @@ public class StartupDocumentService {
 		if (storedDocumentShareRepository.existsByDocumentIdAndMentorId(document.getId(), actor.getId())) {
 			return true;
 		}
+		if (documentRequestUploadRepository.existsVisibleToMentor(document.getId(), actor.getId())) {
+			return true;
+		}
 		return document.getMeetingId() != null && meetingRepository.findById(document.getMeetingId())
 				.map(meeting -> meeting.getMentor() != null && actor.getId().equals(meeting.getMentor().getId()))
 				.orElse(false);
@@ -208,6 +218,9 @@ public class StartupDocumentService {
 			return false;
 		}
 		if (mentorshipRequestRepository.existsByMentorIdAndOrganizationId(mentor.getId(), organizationId)) {
+			return true;
+		}
+		if (mentorshipRepository.existsByMentorIdAndOrganizationId(mentor.getId(), organizationId)) {
 			return true;
 		}
 		return programMentorRepository.countAcceptedForOrganization(
