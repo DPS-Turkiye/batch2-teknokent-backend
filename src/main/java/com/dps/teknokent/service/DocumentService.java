@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -69,7 +70,9 @@ public class DocumentService {
 		}
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-		UUID organizationId = user.getOrganization() == null ? null : user.getOrganization().getId();
+		boolean avatar = DocumentKind.AVATAR.value().equals(kindValue);
+		// A profile photo belongs to the person, so it is kept off the startup's file list.
+		UUID organizationId = avatar || user.getOrganization() == null ? null : user.getOrganization().getId();
 		if (meetingId != null) {
 			Meeting meeting = meetingRepository.findById(meetingId)
 					.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
@@ -78,7 +81,7 @@ public class DocumentService {
 			}
 		}
 		try {
-			return store(
+			StoredDocumentResponse stored = store(
 					user.getId(),
 					organizationId,
 					kindValue,
@@ -86,6 +89,10 @@ public class DocumentService {
 					file.getContentType(),
 					file.getBytes(),
 					meetingId);
+			if (avatar) {
+				removeOlderAvatars(user.getId());
+			}
+			return stored;
 		} catch (IOException error) {
 			throw rejectUpload(
 					userId,
@@ -95,6 +102,39 @@ public class DocumentService {
 					file == null ? null : file.getSize(),
 					"io-read-failure",
 					"The uploaded file could not be read.");
+		}
+	}
+
+	// Only the newest photo is ever shown, so the rest are removed. Keeping the newest,
+	// rather than this request's own upload, means two uploads racing each other agree
+	// on what stays; a failed cleanup is left for the next upload to finish.
+	private void removeOlderAvatars(UUID userId) {
+		List<StoredDocument> avatars = storedDocumentRepository
+				.findByUserIdAndKind(userId, DocumentKind.AVATAR.value());
+		StoredDocument newest = avatars.stream()
+				.max(Comparator.comparing(StoredDocument::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+						.thenComparing(StoredDocument::getId))
+				.orElse(null);
+		List<StoredDocument> older = avatars.stream()
+				.filter(document -> document != newest)
+				.toList();
+		if (older.isEmpty()) {
+			return;
+		}
+		try {
+			storedDocumentRepository.deleteAll(older);
+		} catch (RuntimeException error) {
+			log.warn("Stored a new profile photo for {} but could not remove the older ones: {}",
+					userId, error.getMessage());
+			return;
+		}
+		for (StoredDocument document : older) {
+			try {
+				objectStorage.delete(document.getS3Key());
+			} catch (RuntimeException error) {
+				log.warn("Replaced profile photo {} but its stored object {} remains: {}",
+						document.getId(), document.getS3Key(), error.getMessage());
+			}
 		}
 	}
 

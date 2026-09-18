@@ -4,14 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -304,6 +308,118 @@ class DocumentServiceTest {
 				hugeEntryDocx))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("DOCX");
+	}
+
+	@Test
+	void keepsAProfilePhotoOffTheStartupAndRemovesTheOlderOne() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument older = olderAvatar(userId);
+		AtomicReference<StoredDocument> saved = stubAvatarUpload(userId, older);
+
+		var response = documentService.storeForUser(userId, "avatar", avatarFile());
+
+		assertThat(response.kind()).isEqualTo("avatar");
+		assertThat(response.organizationId()).isNull();
+		verify(storedDocumentRepository).deleteAll(List.of(older));
+		verify(objectStorage).delete(older.getS3Key());
+		verify(objectStorage, never()).delete(saved.get().getS3Key());
+	}
+
+	@Test
+	void keepsTheNewProfilePhotoWhenTheOldFileCannotBeDeleted() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument older = olderAvatar(userId);
+		stubAvatarUpload(userId, older);
+		doThrow(new IllegalStateException("storage unavailable")).when(objectStorage).delete(older.getS3Key());
+
+		var response = documentService.storeForUser(userId, "avatar", avatarFile());
+
+		assertThat(response.kind()).isEqualTo("avatar");
+		verify(storedDocumentRepository).deleteAll(List.of(older));
+	}
+
+	@Test
+	void keepsTheNewestProfilePhotoWhenAnotherUploadRacedAhead() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument older = olderAvatar(userId);
+		StoredDocument racedAhead = olderAvatar(userId);
+		racedAhead.setCreatedAt(Instant.now().plusSeconds(60));
+		AtomicReference<StoredDocument> saved = stubAvatarUpload(userId, older, racedAhead);
+
+		documentService.storeForUser(userId, "avatar", avatarFile());
+
+		verify(storedDocumentRepository).deleteAll(List.of(older, saved.get()));
+		verify(objectStorage, never()).delete(racedAhead.getS3Key());
+	}
+
+	@Test
+	void keepsTheNewProfilePhotoWhenTheOlderRowsCannotBeRemoved() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument older = olderAvatar(userId);
+		stubAvatarUpload(userId, older);
+		doThrow(new IllegalStateException("database unavailable"))
+				.when(storedDocumentRepository).deleteAll(List.of(older));
+
+		var response = documentService.storeForUser(userId, "avatar", avatarFile());
+
+		assertThat(response.kind()).isEqualTo("avatar");
+		verify(objectStorage, never()).delete(older.getS3Key());
+	}
+
+	@Test
+	void refusesToAttachAProfilePhotoToAMeeting() {
+		UUID userId = UUID.randomUUID();
+		UUID meetingId = UUID.randomUUID();
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		AppUser user = new AppUser();
+		user.setId(userId);
+		user.setOrganization(organization);
+		Meeting meeting = new Meeting();
+		meeting.setId(meetingId);
+		meeting.setOrganization(organization);
+		when(appUserRepository.findById(userId)).thenReturn(Optional.of(user));
+		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
+
+		assertThatThrownBy(() -> documentService.storeForUser(userId, "avatar", avatarFile(), meetingId))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(objectStorage, never()).put(any(String.class), any(byte[].class), any(String.class));
+	}
+
+	private StoredDocument olderAvatar(UUID userId) {
+		StoredDocument older = new StoredDocument();
+		older.setId(UUID.randomUUID());
+		older.setUserId(userId);
+		older.setKind("avatar");
+		older.setS3Key("documents/" + userId + "/avatar/" + older.getId() + "-me.png");
+		older.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+		return older;
+	}
+
+	/** The repository then lists the older photo, this upload, and any photos stored after it. */
+	private AtomicReference<StoredDocument> stubAvatarUpload(
+			UUID userId, StoredDocument older, StoredDocument... storedAfter) {
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		AppUser user = new AppUser();
+		user.setId(userId);
+		user.setOrganization(organization);
+		AtomicReference<StoredDocument> saved = new AtomicReference<>();
+		when(appUserRepository.findById(userId)).thenReturn(Optional.of(user));
+		when(storedDocumentRepository.save(any(StoredDocument.class))).thenAnswer(invocation -> {
+			saved.set(invocation.getArgument(0));
+			return saved.get();
+		});
+		when(storedDocumentRepository.findByUserIdAndKind(userId, "avatar")).thenAnswer(invocation -> {
+			List<StoredDocument> listed = new java.util.ArrayList<>(List.of(older, saved.get()));
+			listed.addAll(List.of(storedAfter));
+			return listed;
+		});
+		return saved;
+	}
+
+	private static MockMultipartFile avatarFile() {
+		return new MockMultipartFile("file", "me.png", "image/png", pngBytes());
 	}
 
 	private static byte[] docx(String... entries) throws IOException {
