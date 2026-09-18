@@ -183,6 +183,26 @@ class ProfileAnalysisControllerTest {
         }
 
         @Test
+        void requiresAuthenticationToParseAStoredCv() throws Exception {
+                mockMvc.perform(post("/api/profile-analyses/preview/documents/{id}", UUID.randomUUID()))
+                                .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        void parsesAStoredCvForTheCaller() throws Exception {
+                UUID documentId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+                when(profileAnalysisService.parseStoredCvPreview(
+                                any(), eq(documentId), eq("individual_mentee"), eq(true), eq("auto")))
+                                .thenReturn(java.util.Map.of("current_role", "Ürün Yöneticisi"));
+
+                mockMvc.perform(post("/api/profile-analyses/preview/documents/{id}", documentId)
+                                .param("consentAccepted", "true")
+                                .with(user("test-user")))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.current_role").value("Ürün Yöneticisi"));
+        }
+
+        @Test
         void returnsRecommendationsForConfirmedProfile() throws Exception {
                 UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000205");
                 ObjectMapper objectMapper = new ObjectMapper();

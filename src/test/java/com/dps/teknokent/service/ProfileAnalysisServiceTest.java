@@ -125,6 +125,42 @@ class ProfileAnalysisServiceTest {
 	}
 
 	@Test
+	void parseStoredCvPreviewReadsTheCallersCvAndPersistsNothing() throws Exception {
+		UUID caller = UUID.randomUUID();
+		UUID documentId = UUID.randomUUID();
+		when(documentService.readOwnCv(caller, documentId)).thenReturn(cvPdf().getBytes());
+		stubParser("{\"current_role\":\"Ürün Yöneticisi\"}");
+
+		Map<String, Object> profile = profileAnalysisService.parseStoredCvPreview(
+				caller, documentId, "individual_mentee", true, "auto");
+
+		assertThat(profile).containsEntry("current_role", "Ürün Yöneticisi");
+		verifyNoInteractions(profileAnalysisRepository, organizationRepository, appUserRepository);
+	}
+
+	@Test
+	void parseStoredCvPreviewRejectsACvThatIsNotAPdf() {
+		UUID caller = UUID.randomUUID();
+		UUID documentId = UUID.randomUUID();
+		when(documentService.readOwnCv(caller, documentId)).thenReturn("PKword".getBytes());
+
+		assertThatThrownBy(() -> profileAnalysisService.parseStoredCvPreview(
+				caller, documentId, "individual_mentee", true, "auto"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("PDF");
+		verifyNoInteractions(nativeProfileParserService);
+	}
+
+	@Test
+	void parseStoredCvPreviewRequiresConsentBeforeReadingTheFile() {
+		assertThatThrownBy(() -> profileAnalysisService.parseStoredCvPreview(
+				UUID.randomUUID(), UUID.randomUUID(), "individual_mentee", false, "auto"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("consent");
+		verifyNoInteractions(documentService, nativeProfileParserService);
+	}
+
+	@Test
 	void parsePreviewRejectsAnUnknownOcrMode() {
 		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", true, "sometimes", cvPdf()))
 				.isInstanceOf(InvalidRequestException.class)

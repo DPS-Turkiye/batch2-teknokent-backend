@@ -58,6 +58,7 @@ public class SecurityConfig {
 			"/api/documents",
 			"/api/profile-analyses",
 			"/api/profile-analyses/preview",
+			"/api/profile-analyses/preview/documents/*",
 	};
 
 	private static final String NOTIFICATION_PATH = "/api/notifications/**";

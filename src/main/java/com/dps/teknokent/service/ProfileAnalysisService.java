@@ -120,8 +120,27 @@ public class ProfileAnalysisService {
 		validateProfileType(profileType);
 		validateOcrMode(ocrMode);
 		requireConsent(consentAccepted);
-		byte[] pdfBytes = readPdf(file);
+		return preview(readPdf(file), profileType, ocrMode);
+	}
 
+	/**
+	 * {@link #parsePreview} for a CV the caller already uploaded, so someone who
+	 * skipped parsing at signup can fill their profile from it later without
+	 * sending the file again. Persists nothing, like the upload version.
+	 */
+	public Map<String, Object> parseStoredCvPreview(
+			UUID callerUserId, UUID documentId, String profileType, boolean consentAccepted, String ocrMode) {
+		validateProfileType(profileType);
+		validateOcrMode(ocrMode);
+		requireConsent(consentAccepted);
+		byte[] bytes = documentService.readOwnCv(callerUserId, documentId);
+		if (!hasPdfSignature(bytes) || !hasPdfEofMarker(bytes)) {
+			throw new InvalidRequestException("Only a PDF CV can be read into the profile.");
+		}
+		return preview(bytes, profileType, ocrMode);
+	}
+
+	private Map<String, Object> preview(byte[] pdfBytes, String profileType, String ocrMode) {
 		NativeProfileParserService.ParseResult parseResult = nativeProfileParserService.parse(
 				pdfBytes, profileType, ocrMode);
 		JsonNode profile = parseResult.profile();

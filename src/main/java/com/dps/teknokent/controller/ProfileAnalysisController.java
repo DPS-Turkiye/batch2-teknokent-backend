@@ -92,6 +92,17 @@ public class ProfileAnalysisController {
 		return profileAnalysisService.parsePreview(profileType, consentAccepted, ocrMode, file);
 	}
 
+	/** Parse only, from a CV the signed-in user already uploaded. */
+	@PostMapping("/preview/documents/{documentId}")
+	public Map<String, Object> parseStoredCvPreview(
+			@PathVariable UUID documentId,
+			@RequestParam(defaultValue = "individual_mentee") String profileType,
+			@RequestParam(defaultValue = "false") boolean consentAccepted,
+			@RequestParam(defaultValue = "auto") String ocrMode) {
+		return profileAnalysisService.parseStoredCvPreview(
+				resolveCallerUserId(), documentId, profileType, consentAccepted, ocrMode);
+	}
+
 	@PostMapping("/manual")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ProfileAnalysisResponse createManual(

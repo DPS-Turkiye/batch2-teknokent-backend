@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -67,7 +68,10 @@ public class StartupDocumentService {
 		if (!isTeamMember(actor, organizationId) && !isStaff(actor) && !isMentorForOrganization(actor, organizationId)) {
 			throw new InvalidRequestException("Only the startup's team or related mentor can list its documents");
 		}
-		return describe(storedDocumentRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId));
+		boolean insider = isTeamMember(actor, organizationId) || isStaff(actor);
+		return describe(storedDocumentRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId).stream()
+				.filter(document -> insider || !isCv(document))
+				.toList());
 	}
 
 	@Transactional(readOnly = true)
@@ -183,7 +187,8 @@ public class StartupDocumentService {
 				|| isTeamMember(actor, document.getOrganizationId())) {
 			return true;
 		}
-		if (actor.getRole() != UserRole.MENTOR) {
+		// A CV stays with the person and their startup; mentors see what was read from it, not the file.
+		if (actor.getRole() != UserRole.MENTOR || isCv(document)) {
 			return false;
 		}
 		if (isMentorForOrganization(actor, document.getOrganizationId())) {
@@ -238,6 +243,10 @@ public class StartupDocumentService {
 	private static boolean isTeamMember(AppUser actor, UUID organizationId) {
 		return organizationId != null && actor.getOrganization() != null
 				&& organizationId.equals(actor.getOrganization().getId());
+	}
+
+	private static boolean isCv(StoredDocument document) {
+		return DocumentKind.CV.value().equals(document.getKind());
 	}
 
 	private static boolean isStaff(AppUser actor) {
