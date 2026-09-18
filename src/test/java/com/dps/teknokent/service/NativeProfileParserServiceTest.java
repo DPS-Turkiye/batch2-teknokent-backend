@@ -79,6 +79,29 @@ class NativeProfileParserServiceTest {
     }
 
     @Test
+    void parse_asksForAMentorsCompanyAndPastRoles() {
+        byte[] pdfBytes = "sample-pdf".getBytes();
+        ExtractionResult extraction = new ExtractionResult("Mentor CV", 1, List.of(), false);
+        RedactionResult redaction = new RedactionResult("Mentor CV", Map.of(), 0);
+        when(textExtractor.extract(pdfBytes, "auto")).thenReturn(extraction);
+        JsonNode empty = jsonUtils.readTree("{}");
+        when(piiRedactionService.redact(extraction.text())).thenReturn(redaction);
+        when(aiProviderClient.structuredProfile(eq("mentor"), eq(redaction.text()), any(JsonNode.class)))
+                .thenReturn(empty);
+
+        service.parse(pdfBytes, "mentor", "auto");
+
+        ArgumentCaptor<JsonNode> schemaCaptor = ArgumentCaptor.forClass(JsonNode.class);
+        verify(aiProviderClient).structuredProfile(eq("mentor"), eq(redaction.text()), schemaCaptor.capture());
+        JsonNode properties = schemaCaptor.getValue().get("properties");
+        assertThat(properties.has("current_company")).isTrue();
+        JsonNode role = properties.get("work_history").get("items");
+        assertThat(role.get("additionalProperties").asBoolean()).isFalse();
+        assertThat(role.get("required").toString())
+                .contains("title", "organization", "period", "summary");
+    }
+
+    @Test
     void parse_rejectsUnsupportedProfileType() {
         byte[] pdfBytes = "sample-pdf".getBytes();
         ExtractionResult extraction = new ExtractionResult("Some text", 1, List.of(), false);

@@ -64,6 +64,16 @@ public class NativeProfileParserService {
 					field("career_goals", evidenceArray()), field("skills_to_develop", stringArray()),
 					field("support_needs", stringArray()), field("missing_fields", stringArray()),
 					field("warnings", stringArray())));
+			case "mentor" -> objectSchema(List.of(
+					field("full_name", nullableString()), field("professional_summary", nullableString()),
+					field("current_role", nullableString()), field("current_company", nullableString()),
+					field("experience_level", nullableString()), field("years_of_experience", nullableInteger()),
+					field("professional_functions", stringArray()), field("industries", stringArray()),
+					field("technologies", stringArray()), field("languages", stringArray()),
+					field("work_history", arrayOf(objectSchema(List.of(
+							field("title", string()), field("organization", nullableString()),
+							field("period", nullableString()), field("summary", nullableString()))))),
+					field("missing_fields", stringArray()), field("warnings", stringArray())));
 			default -> throw new IllegalArgumentException("Unsupported profile type: " + profileType);
 		};
 	}

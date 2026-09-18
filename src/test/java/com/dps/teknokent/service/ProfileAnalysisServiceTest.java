@@ -118,10 +118,31 @@ class ProfileAnalysisServiceTest {
 
 	@Test
 	void parsePreviewRejectsAnUnknownProfileType() {
-		assertThatThrownBy(() -> profileAnalysisService.parsePreview("mentor", true, "auto", cvPdf()))
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("investor", true, "auto", cvPdf()))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("mentee");
 		verifyNoInteractions(nativeProfileParserService);
+	}
+
+	@Test
+	void parsePreviewReadsAMentorsCv() {
+		JsonNode parsed = jsonUtils.readTree("{\"current_company\":\"Looply\"}");
+		when(nativeProfileParserService.parse(any(), eq("mentor"), eq("auto")))
+				.thenReturn(new NativeProfileParserService.ParseResult(
+						parsed, objectMapper.createObjectNode(), objectMapper.createObjectNode()));
+		when(technologyInferenceService.enrich(any())).thenAnswer(call -> call.getArgument(0));
+
+		assertThat(profileAnalysisService.parsePreview("mentor", true, "auto", cvPdf()))
+				.containsEntry("current_company", "Looply");
+	}
+
+	// A saved analysis feeds startup matching, which only understands mentee profiles.
+	@Test
+	void parseStillRefusesAMentorProfile() {
+		assertThatThrownBy(() -> profileAnalysisService.parse(
+				null, null, "mentor", true, "auto", cvPdf()))
+				.isInstanceOf(InvalidRequestException.class);
+		verifyNoInteractions(nativeProfileParserService, documentService);
 	}
 
 	@Test
