@@ -3,6 +3,7 @@ package com.dps.teknokent.entity;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
@@ -45,8 +46,8 @@ public class MentorshipRequestRecommendationItem {
 		item.rank = submission.rank();
 		item.selected = submission.selected();
 		item.mentorName = canonicalMentor.fullName();
-		item.professionalTitle = canonicalMentor.professionalTitle();
-		item.company = canonicalMentor.company();
+		item.professionalTitle = Objects.toString(canonicalMentor.professionalTitle(), "");
+		item.company = Objects.toString(canonicalMentor.company(), "");
 		item.reasons = submission.reasons().stream().map(TextUtils::trim).distinct().toList();
 		item.evidence = new ArrayList<>(evidence);
 		return item;

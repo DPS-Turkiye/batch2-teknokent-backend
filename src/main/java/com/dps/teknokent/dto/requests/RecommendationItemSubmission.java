@@ -15,8 +15,9 @@ public record RecommendationItemSubmission(
 		@Min(1) @Max(20) int rank,
 		boolean selected,
 		@NotBlank @Size(max = 500) String mentorName,
-		@NotBlank @Size(max = 500) String professionalTitle,
-		@NotBlank @Size(max = 500) String company,
+		// Optional on a mentor's profile, so a request to a mentor without them must still go through.
+		@Size(max = 500) String professionalTitle,
+		@Size(max = 500) String company,
 		@NotNull @Size(max = 5) List<@NotBlank @Size(max = 1000) String> reasons,
 		@NotNull @Size(max = 3) List<@Valid RecommendationEvidenceSubmission> evidence) {
 }
