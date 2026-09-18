@@ -169,7 +169,7 @@ class StartupDocumentServiceTest {
         assertThatThrownBy(() -> startupDocumentService.downloadUrl(cv.getId(), MENTOR_ID))
                 .isInstanceOf(InvalidRequestException.class);
 
-        verify(objectStorage, never()).presignGet(anyString());
+        verify(objectStorage, never()).presignInline(anyString(), anyString(), anyString());
     }
 
     @Test
@@ -177,7 +177,8 @@ class StartupDocumentServiceTest {
         StoredDocument cv = cv(FOUNDER_ID);
         when(storedDocumentRepository.findById(cv.getId())).thenReturn(Optional.of(cv));
         when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(startup().getFounder());
-        when(objectStorage.presignGet(cv.getS3Key())).thenReturn("https://bucket.s3/cv.pdf?sig");
+        when(objectStorage.presignInline(cv.getS3Key(), cv.getOriginalFilename(), cv.getContentType()))
+                .thenReturn("https://bucket.s3/cv.pdf?sig");
 
         assertThat(startupDocumentService.downloadUrl(cv.getId(), FOUNDER_ID).url()).startsWith("https://");
     }
