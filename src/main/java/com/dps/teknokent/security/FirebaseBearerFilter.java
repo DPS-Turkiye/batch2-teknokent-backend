@@ -115,9 +115,13 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		return ownProfile.equals(uri) || (ownProfile + AVAILABILITY_SETTINGS_SUFFIX).equals(uri);
 	}
 
-	/** The onboarding wizard saves the person's own name, LinkedIn and contact preferences while PENDING. */
+	/**
+	 * The onboarding wizard reads and saves the person's own name, LinkedIn and
+	 * contact preferences while PENDING; reading first keeps what the form does not ask.
+	 */
 	private static boolean isOwnUserProfileUpdate(HttpServletRequest request, AppUser user) {
-		return "PUT".equalsIgnoreCase(request.getMethod())
+		String method = request.getMethod();
+		return ("PUT".equalsIgnoreCase(method) || "GET".equalsIgnoreCase(method))
 				&& (USER_PROFILE_PATH_PREFIX + user.getId() + "/profile").equals(request.getRequestURI());
 	}
 

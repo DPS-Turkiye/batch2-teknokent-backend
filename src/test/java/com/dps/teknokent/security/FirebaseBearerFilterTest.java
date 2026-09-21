@@ -334,6 +334,11 @@ class FirebaseBearerFilterTest {
                 new MockHttpServletResponse(), own);
         assertThat(own.getRequest()).isNotNull();
 
+        MockFilterChain read = new MockFilterChain();
+        filter.doFilter(request("GET", "/api/users/" + USER_ID + "/profile", "Bearer good"),
+                new MockHttpServletResponse(), read);
+        assertThat(read.getRequest()).isNotNull();
+
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain other = new MockFilterChain();
         filter.doFilter(request("PUT", "/api/users/" + OTHER_USER_ID + "/profile", "Bearer good"), response, other);
