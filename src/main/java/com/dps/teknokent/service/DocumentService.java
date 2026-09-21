@@ -37,11 +37,13 @@ public class DocumentService {
 	private static final Set<String> PDF_TYPES = Set.of("application/pdf");
 	private static final String DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 	private static final String XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-	private static final Set<String> DOC_TYPES = Set.of("application/pdf", DOCX_TYPE, XLSX_TYPE);
+	private static final String PPTX_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+	private static final Set<String> DOC_TYPES = Set.of("application/pdf", DOCX_TYPE, XLSX_TYPE, PPTX_TYPE);
 	// Office Open XML formats accepted beside PDF, with the part every genuine file must contain.
 	private static final Map<String, String> OFFICE_MAIN_PARTS = Map.of(
 			"docx", "word/document.xml",
-			"xlsx", "xl/workbook.xml");
+			"xlsx", "xl/workbook.xml",
+			"pptx", "ppt/presentation.xml");
 	private static final Set<String> IMAGE_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
 	private static final Set<String> IMAGE_TYPES = Set.of("image/png", "image/jpeg", "image/webp");
 	private static final byte[] PDF_MAGIC = new byte[] { '%', 'P', 'D', 'F', '-' };
@@ -286,6 +288,7 @@ public class DocumentService {
 		return switch (extension) {
 			case "docx" -> DOCX_TYPE;
 			case "xlsx" -> XLSX_TYPE;
+			case "pptx" -> PPTX_TYPE;
 			case "png" -> "image/png";
 			case "jpg", "jpeg" -> "image/jpeg";
 			case "webp" -> "image/webp";
