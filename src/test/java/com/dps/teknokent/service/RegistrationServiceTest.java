@@ -22,6 +22,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
+import com.dps.teknokent.entity.OrganizationPendingMember;
+import com.dps.teknokent.dto.requests.OnboardingTeamMemberRequest;
+import com.dps.teknokent.domain.ContactPreference;
 import com.dps.teknokent.domain.StartupMaturity;
 import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.StartupSector;
@@ -58,8 +62,8 @@ class RegistrationServiceTest {
                 "Ayşe Demir", "ayse@startup.com", "Döngü", "Gönüllülük platformu", "Kurucu", "+905551112233",
                 null, null, null, null,
                 "dongu.co", "Gönüllüler bulunamıyor", "Beceri bazlı eşleştirme", "Elle tutulan listeler",
-                "STK'lar", "SaaS", "MVP geliştiriliyor", "MVP",
-                java.util.List.of("Finans", "Pazarlama")));
+                "STK'lar", "SaaS", "Prototip", "MVP",
+                java.util.List.of("Finans", "Pazarlama"), null, null, null));
 
         ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
         verify(organizationRepository, atLeastOnce()).saveAndFlush(saved.capture());
@@ -70,7 +74,7 @@ class RegistrationServiceTest {
         assertThat(organization.getCurrentSolution()).isEqualTo("Elle tutulan listeler");
         assertThat(organization.getTargetUser()).isEqualTo("STK'lar");
         assertThat(organization.getSector()).isEqualTo(StartupSector.SAAS);
-        assertThat(organization.getMaturity()).isEqualTo(StartupMaturity.MVP_IN_PROGRESS);
+        assertThat(organization.getMaturity()).isEqualTo(StartupMaturity.PROTOTYPE);
         assertThat(organization.getProgramLevel()).isEqualTo(StartupProgramLevel.MVP);
         assertThat(organization.getSupportAreas()).containsExactly("Finans", "Pazarlama");
     }
@@ -94,7 +98,7 @@ class RegistrationServiceTest {
     void registerFounder_rejectsAnUnknownSector() {
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "Döngü", null, null, null, null, null, null, null,
-                null, null, null, null, null, "Uzay Sektörü", null, null, null)))
+                null, null, null, null, null, "Uzay Sektörü", null, null, null, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("Uzay Sektörü");
     }
@@ -103,7 +107,7 @@ class RegistrationServiceTest {
             String description, String jobTitle, String phone, UUID programId, String bio, String linkedinUrl,
             java.util.List<String> expertise) {
         return new RegisterFounderRequest(fullName, email, organizationName, description, jobTitle, phone, programId,
-                bio, linkedinUrl, expertise, null, null, null, null, null, null, null, null, null);
+                bio, linkedinUrl, expertise, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Mock
@@ -123,6 +127,9 @@ class RegistrationServiceTest {
 
     @Mock
     private OnboardingDraftRepository onboardingDraftRepository;
+
+    @Mock
+    private OrganizationPendingMemberRepository pendingMemberRepository;
 
     @InjectMocks
     private RegistrationService registrationService;
@@ -194,7 +201,7 @@ class RegistrationServiceTest {
                 "Kurucu",
                 "+905551112233",
                 null, null, null, null,
-                null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null));
 
         verify(onboardingDraftRepository).deleteById("uid-1");
     }
@@ -422,6 +429,40 @@ class RegistrationServiceTest {
         assertThat(result.status()).isEqualTo(UserAccountStatus.APPROVED);
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.organizationName()).isEqualTo("GreenLoop");
+        verify(pendingMemberRepository).deleteByOrganizationIdAndEmailIgnoreCase(ORGANIZATION_ID, "elif@startup.com");
+    }
+
+    @Test
+    void registerFounder_savesContactPreferencesMvpLinkAndListedTeammates() {
+        stubFounderSaves();
+
+        registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "Döngü", null, "Kurucu", null,
+                null, null, null, null,
+                null, null, null, null, null, null, "MVP", null, null,
+                List.of(ContactPreference.IN_APP_MESSAGE, ContactPreference.VIDEO_CALL,
+                        ContactPreference.IN_APP_MESSAGE),
+                "  dongu.app  ",
+                List.of(new OnboardingTeamMemberRequest("Sude Arya", "Developer", "sude@dongu.app"),
+                        new OnboardingTeamMemberRequest(" Doğa Çağrı ", null, null))));
+
+        ArgumentCaptor<AppUser> founder = ArgumentCaptor.forClass(AppUser.class);
+        verify(appUserRepository, atLeastOnce()).saveAndFlush(founder.capture());
+        assertThat(founder.getValue().getContactPreferences())
+                .containsExactly(ContactPreference.IN_APP_MESSAGE, ContactPreference.VIDEO_CALL);
+
+        ArgumentCaptor<Organization> organization = ArgumentCaptor.forClass(Organization.class);
+        verify(organizationRepository, atLeastOnce()).saveAndFlush(organization.capture());
+        assertThat(organization.getValue().getMvpUrl()).isEqualTo("dongu.app");
+        assertThat(organization.getValue().getMaturity()).isEqualTo(StartupMaturity.MVP);
+
+        ArgumentCaptor<OrganizationPendingMember> pending = ArgumentCaptor.forClass(OrganizationPendingMember.class);
+        verify(pendingMemberRepository, org.mockito.Mockito.times(2)).save(pending.capture());
+        assertThat(pending.getAllValues()).extracting(OrganizationPendingMember::getFullName)
+                .containsExactly("Sude Arya", "Doğa Çağrı");
+        assertThat(pending.getAllValues()).allSatisfy(member ->
+                assertThat(member.getOrganizationId()).isEqualTo(ORGANIZATION_ID));
+        assertThat(pending.getAllValues().get(0).getEmail()).isEqualTo("sude@dongu.app");
     }
 
     @Test

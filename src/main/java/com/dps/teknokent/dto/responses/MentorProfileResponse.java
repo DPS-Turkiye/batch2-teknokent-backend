@@ -38,7 +38,8 @@ public record MentorProfileResponse(
 		long completedMentorshipCount,
 		List<String> programNames,
 		List<MentorProgramResponse> programs,
-		List<MentorExperienceResponse> experiences) {
+		List<MentorExperienceResponse> experiences,
+		List<String> offerings) {
 
 	// Recommendation ranking and its tests build profiles from the matching fields alone.
 	public MentorProfileResponse(UUID id, String fullName, String email, String initials, String professionalTitle,
@@ -49,7 +50,7 @@ public record MentorProfileResponse(
 		this(id, fullName, email, initials, professionalTitle, company, availabilityLabel, responseTimeLabel,
 				meetingMode, communicationPreference, mentoringStyle, fitLabel, experienceLevel, sectorExperience,
 				startupStages, specialties, recommendationReasons, recommendationEvidence, null, "", 45, 15, null,
-				null, List.of(), 0, 0, List.of(), List.of(), List.of());
+				null, List.of(), 0, 0, List.of(), List.of(), List.of(), List.of());
 	}
 
 	public static MentorProfileResponse fromEntity(MentorProfile profile) {
@@ -64,7 +65,8 @@ public record MentorProfileResponse(
 				profile.getMenteeCapacity(), profile.getAbout(), profile.getDefaultMeetingDurationMinutes(),
 				profile.getMeetingBufferMinutes(), profile.getMeetingFrequency(), profile.getPrepFileRequirement(),
 				List.copyOf(profile.getLanguages()), 0, 0, List.of(), List.of(),
-				profile.getExperiences().stream().map(MentorExperienceResponse::fromEntity).toList());
+				profile.getExperiences().stream().map(MentorExperienceResponse::fromEntity).toList(),
+				List.copyOf(profile.getOfferings()));
 	}
 
 	public MentorProfileResponse withActivity(long activeMentees, long completedMentorships,
@@ -75,7 +77,7 @@ public record MentorProfileResponse(
 				recommendationEvidence, menteeCapacity, about, defaultMeetingDurationMinutes, meetingBufferMinutes,
 				meetingFrequency, prepFileRequirement, languages, activeMentees, completedMentorships,
 				joinedPrograms.stream().map(MentorProgramResponse::name).toList(), List.copyOf(joinedPrograms),
-				experiences);
+				experiences, offerings);
 	}
 
 	public MentorProfileResponse withRecommendation(List<String> reasons, List<MentorEvidenceResponse> evidence) {
@@ -83,6 +85,7 @@ public record MentorProfileResponse(
 				availabilityLabel, responseTimeLabel, meetingMode, communicationPreference, mentoringStyle, fitLabel,
 				experienceLevel, sectorExperience, startupStages, specialties, reasons, evidence, menteeCapacity,
 				about, defaultMeetingDurationMinutes, meetingBufferMinutes, meetingFrequency, prepFileRequirement,
-				languages, activeMenteeCount, completedMentorshipCount, programNames, programs, experiences);
+				languages, activeMenteeCount, completedMentorshipCount, programNames, programs, experiences,
+				offerings);
 	}
 }

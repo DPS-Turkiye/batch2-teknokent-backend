@@ -295,6 +295,32 @@ class MentorProfileServiceTest {
 	}
 
 	@Test
+	void updateProfileReplacesOfferingsOnlyWhenSent() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		profile.getOfferings().add("Eski madde");
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		mentorProfileService.updateProfile(mentorId, updateRequest());
+		assertThat(profile.getOfferings()).containsExactly("Eski madde");
+
+		UpdateMentorProfileRequest request = updateRequest();
+		var response = mentorProfileService.updateProfile(mentorId, new UpdateMentorProfileRequest(
+				request.professionalTitle(), request.company(), request.availabilityLabel(),
+				request.responseTimeLabel(), request.meetingMode(), request.communicationPreference(),
+				request.mentoringStyle(), request.fitLabel(), request.experienceLevel(), request.sectorExperience(),
+				request.startupStages(), request.specialties(), null, null, null, null, null, null, null,
+				List.of(" Değer önerisini netleştirme ", "İlk kullanıcı akışını kurgulama")));
+
+		assertThat(profile.getOfferings())
+				.containsExactly("Değer önerisini netleştirme", "İlk kullanıcı akışını kurgulama");
+		assertThat(response.offerings()).hasSize(2);
+	}
+
+	@Test
 	void findAllAddsMenteeCountsAndProgramsToEachMentor() {
 		MentorProfile profile = new MentorProfile();
 		profile.setId(mentorId);
@@ -371,7 +397,7 @@ class MentorProfileServiceTest {
 				request.mentoringStyle(), request.fitLabel(), request.experienceLevel(), request.sectorExperience(),
 				request.startupStages(), request.specialties(), null, null, null,
 				MeetingFrequency.BIWEEKLY, PrepFileRequirement.REQUIRED,
-				List.of(MentorLanguage.TURKISH, MentorLanguage.ENGLISH, MentorLanguage.TURKISH), programRoles);
+				List.of(MentorLanguage.TURKISH, MentorLanguage.ENGLISH, MentorLanguage.TURKISH), programRoles, null);
 	}
 
 	private MentorProfile editableProfile() {

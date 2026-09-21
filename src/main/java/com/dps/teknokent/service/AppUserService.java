@@ -1,5 +1,8 @@
 package com.dps.teknokent.service;
 
+import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
+import com.dps.teknokent.entity.OrganizationPendingMember;
+import com.dps.teknokent.dto.responses.OrganizationPendingMemberResponse;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -37,6 +40,7 @@ public class AppUserService {
 	private final DomainLookupService domainLookupService;
 	private final InviteCodeGenerator inviteCodeGenerator;
 	private final NotificationService notificationService;
+	private final OrganizationPendingMemberRepository pendingMemberRepository;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -80,6 +84,10 @@ public class AppUserService {
 		user.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
 		user.getExpertise().clear();
 		user.getExpertise().addAll(TextUtils.normalizedList(request.expertise()));
+		if (request.contactPreferences() != null) {
+			user.getContactPreferences().clear();
+			user.getContactPreferences().addAll(request.contactPreferences().stream().distinct().toList());
+		}
 
 		return UserProfileResponse.fromEntity(appUserRepository.save(user));
 	}
@@ -105,6 +113,32 @@ public class AppUserService {
 		member.setFullName(TextUtils.trim(request.fullName()));
 		member.setJobTitle(TextUtils.normalizeOptional(request.jobTitle()));
 		return OrganizationMemberResponse.fromEntity(appUserRepository.save(member), organization);
+	}
+
+	@Transactional(readOnly = true)
+	public List<OrganizationPendingMemberResponse> findPendingMembers(UUID organizationId, UUID actorId) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		AppUser actor = domainLookupService.requireUser(actorId);
+		boolean staff = actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR;
+		boolean teammate = actor.getOrganization() != null
+				&& actor.getOrganization().getId().equals(organization.getId());
+		if (!staff && !teammate) {
+			throw new InvalidRequestException("Only the team or program staff can see pending members");
+		}
+		return pendingMemberRepository.findByOrganizationIdOrderByCreatedAtAsc(organizationId).stream()
+				.map(OrganizationPendingMemberResponse::fromEntity)
+				.toList();
+	}
+
+	@Transactional
+	public void removePendingMember(UUID organizationId, UUID pendingId, UUID actorId) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		if (!isFounder(organization, actorId)) {
+			throw new InvalidRequestException("Only the organization founder can remove pending members");
+		}
+		OrganizationPendingMember pending = pendingMemberRepository.findByIdAndOrganizationId(pendingId, organizationId)
+				.orElseThrow(() -> new ResourceNotFoundException("Pending member not found: " + pendingId));
+		pendingMemberRepository.delete(pending);
 	}
 
 	// Detaches rather than deletes: the account keeps its own history.

@@ -1,5 +1,6 @@
 package com.dps.teknokent.dto.requests;
 
+import com.dps.teknokent.domain.ContactPreference;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,5 +18,7 @@ public record UpdateUserProfileRequest(
 		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone,
 		@Size(max = 5000) String bio,
 		@Size(max = 255) String linkedinUrl,
-		List<@Size(max = 255) String> expertise) {
+		List<@Size(max = 255) String> expertise,
+		// Left out, the stored preferences are kept.
+		@Size(max = 4) List<@NotNull ContactPreference> contactPreferences) {
 }

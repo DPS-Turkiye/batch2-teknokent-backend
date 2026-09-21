@@ -1,5 +1,6 @@
 package com.dps.teknokent.dto.responses;
 
+import com.dps.teknokent.domain.ContactPreference;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,11 +16,13 @@ public record UserProfileResponse(
 		String phone,
 		String bio,
 		String linkedinUrl,
-		List<String> expertise) {
+		List<String> expertise,
+		List<ContactPreference> contactPreferences) {
 
 	public static UserProfileResponse fromEntity(AppUser user) {
 		return new UserProfileResponse(
 				user.getId(), user.getFullName(), user.getEmail(), user.getJobTitle(), user.getPhone(),
-				user.getBio(), user.getLinkedinUrl(), List.copyOf(user.getExpertise()));
+				user.getBio(), user.getLinkedinUrl(), List.copyOf(user.getExpertise()),
+				List.copyOf(user.getContactPreferences()));
 	}
 }

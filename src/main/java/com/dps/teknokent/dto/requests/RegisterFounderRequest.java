@@ -1,5 +1,8 @@
 package com.dps.teknokent.dto.requests;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import com.dps.teknokent.domain.ContactPreference;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,5 +31,8 @@ public record RegisterFounderRequest(
 		@Size(max = 255) String sector,
 		@Size(max = 255) String maturity,
 		@Size(max = 255) String programLevel,
-		List<@Size(max = 255) String> supportAreas) {
+		List<@Size(max = 255) String> supportAreas,
+		@Size(max = 4) List<@NotNull ContactPreference> contactPreferences,
+		@Size(max = 255) String mvpUrl,
+		@Size(max = 20) List<@Valid OnboardingTeamMemberRequest> teamMembers) {
 }

@@ -74,6 +74,9 @@ public class OrganizationService {
 		organization.setProgramLevel(StartupProgramLevel.requireValidOrNull(request.programLevel()));
 		organization.setFundingStage(StartupFundingStage.requireValidOrNull(request.fundingStage()));
 		organization.setFoundedYear(request.foundedYear());
+		if (request.mvpUrl() != null) {
+			organization.setMvpUrl(TextUtils.normalizeOptional(request.mvpUrl()));
+		}
 		// Mutated in place: replacing the list on a managed entity makes Hibernate
 		// clear() the old instance during merge, which threw on an immutable list.
 		organization.getSupportAreas().clear();

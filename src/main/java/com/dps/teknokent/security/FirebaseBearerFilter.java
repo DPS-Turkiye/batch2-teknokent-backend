@@ -31,6 +31,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final String ONBOARDING_PATH_PREFIX = "/api/onboarding/";
 	private static final String STATUS_PATH = "/api/auth/me";
 	private static final String MENTOR_PROFILE_PATH_PREFIX = "/api/mentors/";
+	private static final String AVAILABILITY_SETTINGS_SUFFIX = "/availability-settings";
+	private static final String USER_PROFILE_PATH_PREFIX = "/api/users/";
 	private static final String PROFILE_PARSE_PREVIEW_PATH = "/api/profile-analyses/preview";
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
@@ -82,7 +84,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				&& !STATUS_PATH.equals(request.getRequestURI())
 				&& !isDocumentAccess(request)
 				&& !isProfileParsePreview(request)
-				&& !isOwnMentorProfileUpdate(request, user)) {
+				&& !isOwnMentorProfileUpdate(request, user)
+				&& !isOwnUserProfileUpdate(request, user)) {
 			write(response, HttpServletResponse.SC_FORBIDDEN, "This account is awaiting approval");
 			return;
 		}
@@ -104,9 +107,18 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	 * matching regardless, because MentorProfileService filters to APPROVED.
 	 */
 	private static boolean isOwnMentorProfileUpdate(HttpServletRequest request, AppUser user) {
+		if (!"PUT".equalsIgnoreCase(request.getMethod()) || user.getRole() != UserRole.MENTOR) {
+			return false;
+		}
+		String ownProfile = MENTOR_PROFILE_PATH_PREFIX + user.getId();
+		String uri = request.getRequestURI();
+		return ownProfile.equals(uri) || (ownProfile + AVAILABILITY_SETTINGS_SUFFIX).equals(uri);
+	}
+
+	/** The onboarding wizard saves the person's own name, LinkedIn and contact preferences while PENDING. */
+	private static boolean isOwnUserProfileUpdate(HttpServletRequest request, AppUser user) {
 		return "PUT".equalsIgnoreCase(request.getMethod())
-				&& user.getRole() == UserRole.MENTOR
-				&& (MENTOR_PROFILE_PATH_PREFIX + user.getId()).equals(request.getRequestURI());
+				&& (USER_PROFILE_PATH_PREFIX + user.getId() + "/profile").equals(request.getRequestURI());
 	}
 
 	/**

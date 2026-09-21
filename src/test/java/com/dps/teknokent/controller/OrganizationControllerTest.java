@@ -49,7 +49,7 @@ class OrganizationControllerTest {
     private static OrganizationResponse organizationResponse(UUID id, String name, String description,
             Instant createdAt, Instant updatedAt) {
         return new OrganizationResponse(id, name, description, null, null, null, null, null, null, null, null,
-                List.of(), null, null, null, null, null, createdAt, updatedAt);
+                List.of(), null, null, null, null, null, null, createdAt, updatedAt);
     }
 
     private static OrganizationMemberResponse memberResponse(UUID id, UUID organizationId, String fullName,
@@ -174,8 +174,8 @@ class OrganizationControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000444");
         UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000003");
         OrganizationResponse updated = new OrganizationResponse(organizationId, "Döngü", null, null, null, null,
-                null, null, null, "MVP yayında", null, List.of(), "v0.9.2", "Öğretmen modülü geliştiriliyor.", 72,
-                null, null, Instant.parse("2026-08-20T09:00:00Z"), Instant.parse("2026-09-11T09:00:00Z"));
+                null, null, null, "MVP", null, List.of(), "v0.9.2", "Öğretmen modülü geliştiriliyor.", 72,
+                null, null, null, Instant.parse("2026-08-20T09:00:00Z"), Instant.parse("2026-09-11T09:00:00Z"));
         when(organizationService.updateStatus(eq(organizationId), any(UpdateOrganizationStatusRequest.class)))
                 .thenReturn(updated);
 

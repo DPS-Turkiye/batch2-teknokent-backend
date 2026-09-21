@@ -130,8 +130,8 @@ class OrganizationServiceTest {
 
         var response = organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
                 FOUNDER_ID, "Döngü", "Gönüllülük platformu", "dongu.co", "Gönüllüler bulunamıyor",
-                "Beceri bazlı eşleştirme", "Elle tutulan listeler", "STK'lar", "SaaS", "MVP geliştiriliyor",
-                "MVP", List.of("Finans", "Pazarlama"), "Pre-seed", 2026));
+                "Beceri bazlı eşleştirme", "Elle tutulan listeler", "STK'lar", "SaaS", "Prototip",
+                "MVP", List.of("Finans", "Pazarlama"), "Pre-seed", 2026, null));
 
         assertThat(response.website()).isEqualTo("dongu.co");
         assertThat(response.fundingStage()).isEqualTo("Pre-seed");
@@ -152,7 +152,7 @@ class OrganizationServiceTest {
 
         assertThatThrownBy(() -> organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
                 FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, "Roket aşaması", null, List.of(),
-                null, null)))
+                null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("Roket aşaması");
 
@@ -167,7 +167,7 @@ class OrganizationServiceTest {
 
         assertThatThrownBy(() -> organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
                 FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, null, null, List.of(),
-                "Melek turu", null)))
+                "Melek turu", null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("Melek turu");
 
@@ -184,7 +184,7 @@ class OrganizationServiceTest {
         when(organizationRepository.save(any(Organization.class))).thenAnswer(call -> call.getArgument(0));
 
         var response = organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
-                FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, null, null, List.of(), "  ", null));
+                FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, null, null, List.of(), "  ", null, null));
 
         assertThat(response.fundingStage()).isNull();
         assertThat(response.foundedYear()).isNull();
@@ -198,7 +198,7 @@ class OrganizationServiceTest {
                 .thenReturn(user(OTHER_ID, UserRole.MENTEE, UserAccountStatus.APPROVED));
 
         assertThatThrownBy(() -> organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
-                OTHER_ID, "Döngü", null, null, null, null, null, null, null, null, null, List.of(), null, null)))
+                OTHER_ID, "Döngü", null, null, null, null, null, null, null, null, null, List.of(), null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("founder");
 
@@ -214,7 +214,7 @@ class OrganizationServiceTest {
 
         var response = organizationService.update(ORGANIZATION_ID, new UpdateOrganizationRequest(
                 FOUNDER_ID, "Döngü", null, null, null, null, null, null, null, null, null,
-                java.util.Arrays.asList("Finans", "   ", "Finans", null, "Pazarlama"), null, null));
+                java.util.Arrays.asList("Finans", "   ", "Finans", null, "Pazarlama"), null, null, null));
 
         assertThat(response.supportAreas()).containsExactly("Finans", "Pazarlama");
     }

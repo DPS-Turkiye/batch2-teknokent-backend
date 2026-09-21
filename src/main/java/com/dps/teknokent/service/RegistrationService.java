@@ -1,5 +1,10 @@
 package com.dps.teknokent.service;
 
+import java.util.List;
+import java.util.ArrayList;
+import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
+import com.dps.teknokent.entity.OrganizationPendingMember;
+import com.dps.teknokent.dto.requests.OnboardingTeamMemberRequest;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -43,6 +48,7 @@ public class RegistrationService {
 	private final ProgramRepository programRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final OnboardingDraftRepository onboardingDraftRepository;
+	private final OrganizationPendingMemberRepository pendingMemberRepository;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
@@ -63,6 +69,7 @@ public class RegistrationService {
 		organization.setFounder(founder);
 		attachDeclaredProgram(organization, request.programId());
 		organizationRepository.saveAndFlush(organization);
+		savePendingMembers(organization, request.teamMembers());
 		discardOnboardingDraft();
 
 		return UserResponse.fromEntity(founder);
@@ -74,10 +81,14 @@ public class RegistrationService {
 		if (request.expertise() != null) {
 			founder.setExpertise(TextUtils.normalizedList(request.expertise()));
 		}
+		if (request.contactPreferences() != null) {
+			founder.setContactPreferences(new ArrayList<>(request.contactPreferences().stream().distinct().toList()));
+		}
 	}
 
 	private void applyStartupFields(Organization organization, RegisterFounderRequest request) {
 		organization.setWebsite(TextUtils.normalizeOptional(request.website()));
+		organization.setMvpUrl(TextUtils.normalizeOptional(request.mvpUrl()));
 		organization.setProblem(TextUtils.normalizeOptional(request.problem()));
 		organization.setSolution(TextUtils.normalizeOptional(request.solution()));
 		organization.setCurrentSolution(TextUtils.normalizeOptional(request.currentSolution()));
@@ -87,6 +98,27 @@ public class RegistrationService {
 		organization.setProgramLevel(StartupProgramLevel.requireValidOrNull(request.programLevel()));
 		if (request.supportAreas() != null) {
 			organization.setSupportAreas(TextUtils.normalizedList(request.supportAreas()));
+		}
+	}
+
+	/**
+	 * Teammates listed during signup. They are names only until each person joins
+	 * with the organization's invite code, which removes the matching entry.
+	 */
+	private void savePendingMembers(Organization organization, List<OnboardingTeamMemberRequest> members) {
+		if (members == null) {
+			return;
+		}
+		Instant now = Instant.now();
+		for (OnboardingTeamMemberRequest member : members) {
+			OrganizationPendingMember pending = new OrganizationPendingMember();
+			pending.setId(UUID.randomUUID());
+			pending.setOrganizationId(organization.getId());
+			pending.setFullName(TextUtils.trim(member.fullName()));
+			pending.setJobTitle(TextUtils.normalizeOptional(member.jobTitle()));
+			pending.setEmail(TextUtils.normalizeOptional(member.email()));
+			pending.setCreatedAt(now);
+			pendingMemberRepository.save(pending);
 		}
 	}
 
@@ -160,6 +192,7 @@ public class RegistrationService {
 		AppUser member = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
 				UserAccountStatus.APPROVED, organization);
 		applyFirebaseIdentity(member, email);
+		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), email);
 		return UserResponse.fromEntity(appUserRepository.save(member));
 	}
 

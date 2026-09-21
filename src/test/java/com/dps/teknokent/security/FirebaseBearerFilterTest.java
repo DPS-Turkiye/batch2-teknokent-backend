@@ -300,6 +300,47 @@ class FirebaseBearerFilterTest {
         assertThat(chain.getRequest()).isNull();
     }
 
+    @Test
+    void letsPendingMentorSaveItsOwnAvailabilitySettingsOnly() throws Exception {
+        AppUser mentor = mentor(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
+
+        MockFilterChain own = new MockFilterChain();
+        filter.doFilter(request("PUT", "/api/mentors/" + USER_ID + "/availability-settings", "Bearer good"),
+                new MockHttpServletResponse(), own);
+        assertThat(own.getRequest()).isNotNull();
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain other = new MockFilterChain();
+        filter.doFilter(request("PUT", "/api/mentors/" + OTHER_USER_ID + "/availability-settings", "Bearer good"),
+                response, other);
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(other.getRequest()).isNull();
+    }
+
+    @Test
+    void letsPendingAccountUpdateItsOwnUserProfileOnly() throws Exception {
+        AppUser mentee = user(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentee));
+
+        MockFilterChain own = new MockFilterChain();
+        filter.doFilter(request("PUT", "/api/users/" + USER_ID + "/profile", "Bearer good"),
+                new MockHttpServletResponse(), own);
+        assertThat(own.getRequest()).isNotNull();
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain other = new MockFilterChain();
+        filter.doFilter(request("PUT", "/api/users/" + OTHER_USER_ID + "/profile", "Bearer good"), response, other);
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(other.getRequest()).isNull();
+    }
+
     private static MockHttpServletRequest request(String uri, String authorization) {
         return request("GET", uri, authorization);
     }

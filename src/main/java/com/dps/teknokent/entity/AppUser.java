@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import com.dps.teknokent.domain.ContactPreference;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 
@@ -73,6 +74,14 @@ public class AppUser {
 	@Column(name = "expertise", nullable = false)
 	@BatchSize(size = 50)
 	private List<String> expertise = new ArrayList<>();
+
+	@ElementCollection
+	@CollectionTable(name = "app_user_contact_preference", joinColumns = @JoinColumn(name = "user_id"))
+	@OrderColumn(name = "display_order")
+	@Enumerated(EnumType.STRING)
+	@Column(name = "preference", nullable = false, length = 32)
+	@BatchSize(size = 50)
+	private List<ContactPreference> contactPreferences = new ArrayList<>();
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
