@@ -63,7 +63,7 @@ class RegistrationServiceTest {
                 null, null, null, null,
                 "dongu.co", "Gönüllüler bulunamıyor", "Beceri bazlı eşleştirme", "Elle tutulan listeler",
                 "STK'lar", "SaaS", "Prototip", "MVP",
-                java.util.List.of("Finans", "Pazarlama"), null, null, null));
+                java.util.List.of("Finans", "Pazarlama"), null, null, null, null));
 
         ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
         verify(organizationRepository, atLeastOnce()).saveAndFlush(saved.capture());
@@ -98,7 +98,7 @@ class RegistrationServiceTest {
     void registerFounder_rejectsAnUnknownSector() {
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "Döngü", null, null, null, null, null, null, null,
-                null, null, null, null, null, "Uzay Sektörü", null, null, null, null, null, null)))
+                null, null, null, null, null, "Uzay Sektörü", null, null, null, null, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("Uzay Sektörü");
     }
@@ -107,7 +107,7 @@ class RegistrationServiceTest {
             String description, String jobTitle, String phone, UUID programId, String bio, String linkedinUrl,
             java.util.List<String> expertise) {
         return new RegisterFounderRequest(fullName, email, organizationName, description, jobTitle, phone, programId,
-                bio, linkedinUrl, expertise, null, null, null, null, null, null, null, null, null, null, null, null);
+                bio, linkedinUrl, expertise, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Mock
@@ -201,7 +201,7 @@ class RegistrationServiceTest {
                 "Kurucu",
                 "+905551112233",
                 null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         verify(onboardingDraftRepository).deleteById("uid-1");
     }
@@ -444,7 +444,7 @@ class RegistrationServiceTest {
                         ContactPreference.IN_APP_MESSAGE),
                 "  dongu.app  ",
                 List.of(new OnboardingTeamMemberRequest("Sude Arya", "Developer", "sude@dongu.app"),
-                        new OnboardingTeamMemberRequest(" Doğa Çağrı ", null, null))));
+                        new OnboardingTeamMemberRequest(" Doğa Çağrı ", null, null)), 2026));
 
         ArgumentCaptor<AppUser> founder = ArgumentCaptor.forClass(AppUser.class);
         verify(appUserRepository, atLeastOnce()).saveAndFlush(founder.capture());
@@ -454,6 +454,7 @@ class RegistrationServiceTest {
         ArgumentCaptor<Organization> organization = ArgumentCaptor.forClass(Organization.class);
         verify(organizationRepository, atLeastOnce()).saveAndFlush(organization.capture());
         assertThat(organization.getValue().getMvpUrl()).isEqualTo("dongu.app");
+        assertThat(organization.getValue().getFoundedYear()).isEqualTo(2026);
         assertThat(organization.getValue().getMaturity()).isEqualTo(StartupMaturity.MVP);
 
         ArgumentCaptor<OrganizationPendingMember> pending = ArgumentCaptor.forClass(OrganizationPendingMember.class);

@@ -1,5 +1,7 @@
 package com.dps.teknokent.dto.requests;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.Valid;
 import com.dps.teknokent.domain.ContactPreference;
@@ -34,5 +36,6 @@ public record RegisterFounderRequest(
 		List<@Size(max = 255) String> supportAreas,
 		@Size(max = 4) List<@NotNull ContactPreference> contactPreferences,
 		@Size(max = 255) String mvpUrl,
-		@Size(max = 20) List<@Valid OnboardingTeamMemberRequest> teamMembers) {
+		@Size(max = 20) List<@Valid OnboardingTeamMemberRequest> teamMembers,
+		@Min(1900) @Max(2100) Integer foundedYear) {
 }

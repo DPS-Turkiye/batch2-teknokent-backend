@@ -89,6 +89,7 @@ public class RegistrationService {
 	private void applyStartupFields(Organization organization, RegisterFounderRequest request) {
 		organization.setWebsite(TextUtils.normalizeOptional(request.website()));
 		organization.setMvpUrl(TextUtils.normalizeOptional(request.mvpUrl()));
+		organization.setFoundedYear(request.foundedYear());
 		organization.setProblem(TextUtils.normalizeOptional(request.problem()));
 		organization.setSolution(TextUtils.normalizeOptional(request.solution()));
 		organization.setCurrentSolution(TextUtils.normalizeOptional(request.currentSolution()));
