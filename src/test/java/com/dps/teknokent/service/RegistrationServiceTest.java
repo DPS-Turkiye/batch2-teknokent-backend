@@ -467,6 +467,31 @@ class RegistrationServiceTest {
     }
 
     @Test
+    void registerMember_acceptsAnInviteCodeTypedInLowercase() {
+        Organization organization = new Organization();
+        organization.setId(ORGANIZATION_ID);
+        organization.setName("GreenLoop");
+        organization.setInviteCode("ABCD1234");
+
+        when(appUserRepository.existsByEmailIgnoreCase("elif@startup.com")).thenReturn(false);
+        when(organizationRepository.findByInviteCode("ABCD1234")).thenReturn(Optional.of(organization));
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+
+        var result = registrationService.registerMember(new RegisterMemberRequest(
+                "Elif Demir",
+                "elif@startup.com",
+                "  abcd1234 ",
+                "Ürün tasarımcısı",
+                null));
+
+        assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
+    }
+
+    @Test
     void registerMember_rejectsUnknownInviteCode() {
         when(appUserRepository.existsByEmailIgnoreCase("elif@startup.com")).thenReturn(false);
         when(organizationRepository.findByInviteCode("NOPE")).thenReturn(Optional.empty());

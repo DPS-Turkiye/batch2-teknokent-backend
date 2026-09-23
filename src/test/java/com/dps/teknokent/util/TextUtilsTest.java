@@ -50,4 +50,12 @@ class TextUtilsTest {
         assertThat(TextUtils.initials(null)).isEqualTo("?");
         assertThat(TextUtils.initials("   ")).isEqualTo("?");
     }
+
+    @Test
+    void normalizeInviteCode_trimsAndUppercasesWithoutTurkishI() {
+        assertThat(TextUtils.normalizeInviteCode("  abcd1234 ")).isEqualTo("ABCD1234");
+        assertThat(TextUtils.normalizeInviteCode(null)).isEmpty();
+        // Turkish locale would give "İ" here, which is in no invite code.
+        assertThat(TextUtils.normalizeInviteCode("invite")).isEqualTo("INVITE");
+    }
 }

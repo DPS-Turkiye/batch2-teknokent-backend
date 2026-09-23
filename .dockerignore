@@ -9,3 +9,8 @@ docs/
 *.log
 *.tmp
 *.bak
+
+# iCloud duplicates ("V45__x 2.sql"). Git ignores them, but docker build copies
+# the folder in, and two migrations at one version stop Flyway starting.
+* [0-9].*
+* [0-9]

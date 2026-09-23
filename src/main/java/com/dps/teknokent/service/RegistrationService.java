@@ -186,7 +186,7 @@ public class RegistrationService {
 	@Transactional
 	public UserResponse registerMember(RegisterMemberRequest request) {
 		String email = requireUniqueEmail(request.email());
-		String inviteCode = TextUtils.trim(request.inviteCode());
+		String inviteCode = TextUtils.normalizeInviteCode(request.inviteCode());
 		Organization organization = organizationRepository.findByInviteCode(inviteCode)
 				.orElseThrow(() -> new InvalidRequestException("Invalid invite code."));
 
