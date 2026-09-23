@@ -53,7 +53,10 @@ public class ProgramService {
 
 	@Transactional
 	public ProgramResponse create(UUID actorId, String name) {
-		AppUser actor = requireCoordinator(actorId);
+		AppUser actor = requireActor(actorId);
+		if (actor.getRole() != UserRole.COORDINATOR && actor.getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only a coordinator can manage programs.");
+		}
 		String trimmed = TextUtils.trim(name);
 		if (trimmed == null || trimmed.isBlank()) {
 			throw new InvalidRequestException("A program name is required.");
@@ -79,7 +82,7 @@ public class ProgramService {
 		List<Program> programs;
 		if (actor.getRole() == UserRole.COORDINATOR) {
 			programs = programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId());
-		} else if (actor.getRole() == UserRole.MENTOR) {
+		} else if (actor.getRole() == UserRole.MENTOR || actor.getRole() == UserRole.ADMIN) {
 			programs = programRepository.findAllByOrderByCreatedAtDesc();
 		} else {
 			throw new InvalidRequestException("Only a coordinator or mentor can view programs.");
