@@ -383,6 +383,10 @@ public class MentorProfileService {
 			profile.getLanguages().clear();
 			request.languages().stream().distinct().forEach(profile.getLanguages()::add);
 		}
+		if (request.offerings() != null) {
+			profile.getOfferings().clear();
+			profile.getOfferings().addAll(TextUtils.normalizedList(request.offerings()));
+		}
 		if (request.programRoles() != null) {
 			request.programRoles().forEach(programRole -> updateProgramRole(mentorId, programRole));
 		}

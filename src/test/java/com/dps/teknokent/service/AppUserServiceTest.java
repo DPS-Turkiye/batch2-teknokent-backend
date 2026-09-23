@@ -17,6 +17,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
+import com.dps.teknokent.entity.OrganizationPendingMember;
+import com.dps.teknokent.domain.ContactPreference;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
@@ -48,6 +51,9 @@ class AppUserServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private OrganizationPendingMemberRepository pendingMemberRepository;
 
     @InjectMocks
     private AppUserService appUserService;
@@ -410,7 +416,7 @@ class AppUserServiceTest {
 
         var response = appUserService.updateProfile(id, new UpdateUserProfileRequest(
                 id, "Gülse Buran", "Designer", "+905551112233", "Ürün odaklı kurucu",
-                "linkedin.com/in/gulse", List.of("UI/UX", "Figma")));
+                "linkedin.com/in/gulse", List.of("UI/UX", "Figma"), null));
 
         assertThat(response.bio()).isEqualTo("Ürün odaklı kurucu");
         assertThat(response.linkedinUrl()).isEqualTo("linkedin.com/in/gulse");
@@ -426,7 +432,7 @@ class AppUserServiceTest {
                 .thenReturn(user(id, "gulse@dongu.co", "Gülse Buran", UserRole.MENTEE));
 
         assertThatThrownBy(() -> appUserService.updateProfile(id, new UpdateUserProfileRequest(
-                other, "Gülse Buran", null, null, null, null, List.of())))
+                other, "Gülse Buran", null, null, null, null, List.of(), null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("your own profile");
 
@@ -442,9 +448,76 @@ class AppUserServiceTest {
 
         var response = appUserService.updateProfile(id, new UpdateUserProfileRequest(
                 id, "Gülse Buran", null, null, null, null,
-                java.util.Arrays.asList("UI/UX", "   ", "UI/UX", null, "Figma")));
+                java.util.Arrays.asList("UI/UX", "   ", "UI/UX", null, "Figma"), null));
 
         assertThat(response.expertise()).containsExactly("UI/UX", "Figma");
+    }
+
+    @Test
+    void updateProfile_replacesContactPreferencesOnlyWhenSent() {
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser owner = user(id, "gulse@dongu.co", "Gülse Buran", UserRole.MENTEE);
+        owner.getContactPreferences().add(ContactPreference.EMAIL);
+        when(domainLookupService.requireUser(id)).thenReturn(owner);
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(call -> call.getArgument(0));
+
+        appUserService.updateProfile(id, new UpdateUserProfileRequest(
+                id, "Gülse Buran", null, null, null, null, List.of(), null));
+        assertThat(owner.getContactPreferences()).containsExactly(ContactPreference.EMAIL);
+
+        var response = appUserService.updateProfile(id, new UpdateUserProfileRequest(
+                id, "Gülse Buran", null, null, null, null, List.of(),
+                List.of(ContactPreference.VIDEO_CALL, ContactPreference.IN_PERSON)));
+        assertThat(response.contactPreferences())
+                .containsExactly(ContactPreference.VIDEO_CALL, ContactPreference.IN_PERSON);
+    }
+
+    @Test
+    void findPendingMembers_isForTheTeamAndProgramStaffOnly() {
+        UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
+        Organization dongu = organization(organizationId, "Döngü");
+        AppUser teammate = user(UUID.fromString("00000000-0000-0000-0000-000000000811"), "g@d.co", "Gülse",
+                UserRole.MENTEE, dongu, null);
+        AppUser coordinator = user(UUID.fromString("00000000-0000-0000-0000-000000000812"), "c@d.co", "Koordinatör",
+                UserRole.COORDINATOR);
+        AppUser outsider = user(UUID.fromString("00000000-0000-0000-0000-000000000813"), "o@d.co", "Başka",
+                UserRole.MENTEE, organization(UUID.randomUUID(), "Başka"), null);
+        OrganizationPendingMember pending = new OrganizationPendingMember();
+        pending.setId(UUID.randomUUID());
+        pending.setOrganizationId(organizationId);
+        pending.setFullName("Sude Arya");
+        when(domainLookupService.requireOrganization(organizationId)).thenReturn(dongu);
+        when(domainLookupService.requireUser(teammate.getId())).thenReturn(teammate);
+        when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+        when(domainLookupService.requireUser(outsider.getId())).thenReturn(outsider);
+        when(pendingMemberRepository.findByOrganizationIdOrderByCreatedAtAsc(organizationId))
+                .thenReturn(List.of(pending));
+
+        assertThat(appUserService.findPendingMembers(organizationId, teammate.getId()))
+                .extracting(member -> member.fullName()).containsExactly("Sude Arya");
+        assertThat(appUserService.findPendingMembers(organizationId, coordinator.getId())).hasSize(1);
+        assertThatThrownBy(() -> appUserService.findPendingMembers(organizationId, outsider.getId()))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void removePendingMember_isFounderOnly() {
+        UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
+        Organization dongu = organization(organizationId, "Döngü");
+        AppUser founder = user(UUID.fromString("00000000-0000-0000-0000-000000000811"), "g@d.co", "Gülse",
+                UserRole.MENTEE, dongu, null);
+        dongu.setFounder(founder);
+        OrganizationPendingMember pending = new OrganizationPendingMember();
+        UUID pendingId = UUID.randomUUID();
+        pending.setId(pendingId);
+        when(domainLookupService.requireOrganization(organizationId)).thenReturn(dongu);
+        when(pendingMemberRepository.findByIdAndOrganizationId(pendingId, organizationId))
+                .thenReturn(java.util.Optional.of(pending));
+
+        assertThatThrownBy(() -> appUserService.removePendingMember(organizationId, pendingId, UUID.randomUUID()))
+                .isInstanceOf(InvalidRequestException.class);
+        appUserService.removePendingMember(organizationId, pendingId, founder.getId());
+        verify(pendingMemberRepository).delete(pending);
     }
 
     private static AppUser user(UUID id, String email, String fullName, UserRole role, Organization organization, String jobTitle) {

@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.security.CurrentActor;
 import java.util.List;
 import java.util.UUID;
 
@@ -54,7 +55,9 @@ public class AppUserController {
 	public UserProfileResponse updateProfile(
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateUserProfileRequest request) {
-		return appUserService.updateProfile(id, request);
+		return appUserService.updateProfile(id, new UpdateUserProfileRequest(CurrentActor.resolve(request.actorId()),
+				request.fullName(), request.jobTitle(), request.phone(), request.bio(), request.linkedinUrl(),
+				request.expertise(), request.contactPreferences()));
 	}
 
 	@PatchMapping("/{id}/status")

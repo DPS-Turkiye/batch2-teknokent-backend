@@ -79,6 +79,33 @@ class DocumentServiceTest {
 	}
 
 	@Test
+	void acceptsAPptxPitchDeck() throws Exception {
+		when(storedDocumentRepository.save(any(StoredDocument.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		byte[] pptx = docx(
+				"[Content_Types].xml", "<Types></Types>",
+				"ppt/presentation.xml", "<p:presentation></p:presentation>");
+
+		var response = documentService.store(
+				UUID.randomUUID(), UUID.randomUUID(), "pitch-deck", "deck.pptx", "application/octet-stream", pptx);
+
+		assertThat(response.contentType())
+				.isEqualTo("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+	}
+
+	@Test
+	void rejectsAPptxWithoutAPresentation() throws Exception {
+		byte[] notADeck = docx(
+				"[Content_Types].xml", "<Types></Types>",
+				"word/document.xml", "<w:document></w:document>");
+
+		assertThatThrownBy(() -> documentService.store(
+				UUID.randomUUID(), null, "pitch-deck", "deck.pptx", "application/octet-stream", notADeck))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("PPTX");
+	}
+
+	@Test
 	void attachesAnUploadToAMeetingOfTheSameStartup() throws Exception {
 		UUID userId = UUID.randomUUID();
 		UUID meetingId = UUID.randomUUID();

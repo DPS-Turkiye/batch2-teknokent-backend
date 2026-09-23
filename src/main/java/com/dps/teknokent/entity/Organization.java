@@ -67,6 +67,9 @@ public class Organization {
 	@Column
 	private String website;
 
+	@Column(name = "mvp_url")
+	private String mvpUrl;
+
 	@Column(columnDefinition = "TEXT")
 	private String problem;
 

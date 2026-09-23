@@ -24,5 +24,7 @@ public record UpdateOrganizationRequest(
 		@Size(max = 255) String programLevel,
 		List<@Size(max = 255) String> supportAreas,
 		@Size(max = 64) String fundingStage,
-		@Min(1900) @Max(2100) Integer foundedYear) {
+		@Min(1900) @Max(2100) Integer foundedYear,
+		// Left out, the stored MVP link is kept; blank clears it.
+		@Size(max = 255) String mvpUrl) {
 }

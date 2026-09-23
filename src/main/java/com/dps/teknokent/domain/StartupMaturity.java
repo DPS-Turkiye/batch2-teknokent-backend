@@ -4,10 +4,11 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.TextUtils;
 
 public enum StartupMaturity {
-	IDEA("Fikir aşaması"),
-	MVP_IN_PROGRESS("MVP geliştiriliyor"),
-	MVP_LIVE("MVP yayında"),
-	REVENUE("Gelir elde ediyor");
+	IDEA("Fikir"),
+	PROTOTYPE("Prototip"),
+	MVP("MVP"),
+	REVENUE("Gelir"),
+	GROWTH("Büyüme");
 
 	private final String value;
 

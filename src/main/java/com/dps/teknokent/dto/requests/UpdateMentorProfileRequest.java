@@ -15,15 +15,15 @@ import jakarta.validation.constraints.Size;
 
 public record UpdateMentorProfileRequest(
 		@NotBlank @Size(max = 200) String professionalTitle,
-		@NotBlank @Size(max = 200) String company,
+		@NotNull @Size(max = 200) String company,
 		@NotNull @Size(max = 200) String availabilityLabel,
 		@NotNull @Size(max = 200) String responseTimeLabel,
 		@NotNull @Size(max = 200) String meetingMode,
 		@NotNull @Size(max = 200) String communicationPreference,
-		@NotBlank @Size(max = 200) String mentoringStyle,
+		@NotNull @Size(max = 200) String mentoringStyle,
 		@NotNull @Size(max = 200) String fitLabel,
 		@NotBlank @Size(max = 200) String experienceLevel,
-		@NotBlank @Size(max = 200) String sectorExperience,
+		@NotNull @Size(max = 200) String sectorExperience,
 		@NotBlank @Size(max = 200) String startupStages,
 		@NotNull List<@NotBlank String> specialties,
 		@Min(1) @Max(50) Integer menteeCapacity,
@@ -32,7 +32,8 @@ public record UpdateMentorProfileRequest(
 		MeetingFrequency meetingFrequency,
 		PrepFileRequirement prepFileRequirement,
 		@Size(max = 7) List<@NotNull MentorLanguage> languages,
-		@Size(max = 50) List<@NotNull @Valid MentorProgramRoleRequest> programRoles) {
+		@Size(max = 50) List<@NotNull @Valid MentorProgramRoleRequest> programRoles,
+		@Size(max = 10) List<@NotBlank @Size(max = 255) String> offerings) {
 
 	/** Keeps older clients and focused tests source-compatible while about rolls out. */
 	public UpdateMentorProfileRequest(
@@ -42,6 +43,6 @@ public record UpdateMentorProfileRequest(
 			Integer menteeCapacity, List<MentorExperienceRequest> experiences) {
 		this(professionalTitle, company, availabilityLabel, responseTimeLabel, meetingMode, communicationPreference,
 				mentoringStyle, fitLabel, experienceLevel, sectorExperience, startupStages, specialties,
-				menteeCapacity, experiences, null, null, null, null, null);
+				menteeCapacity, experiences, null, null, null, null, null, null);
 	}
 }

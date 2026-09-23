@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.dto.responses.OrganizationPendingMemberResponse;
 import com.dps.teknokent.security.CurrentActor;
 import java.util.List;
 import java.util.UUID;
@@ -57,7 +58,8 @@ public class OrganizationController {
 		return organizationService.update(id, new UpdateOrganizationRequest(CurrentActor.resolve(request.actorId()),
 				request.name(), request.description(), request.website(), request.problem(), request.solution(),
 				request.currentSolution(), request.targetUser(), request.sector(), request.maturity(),
-				request.programLevel(), request.supportAreas(), request.fundingStage(), request.foundedYear()));
+				request.programLevel(), request.supportAreas(), request.fundingStage(), request.foundedYear(),
+				request.mvpUrl()));
 	}
 
 	@PutMapping("/{id}/status")
@@ -104,6 +106,22 @@ public class OrganizationController {
 			@PathVariable UUID memberId,
 			@RequestParam(required = false) UUID actorId) {
 		appUserService.removeOrganizationMember(id, memberId, CurrentActor.resolve(actorId));
+	}
+
+	@GetMapping("/{id}/pending-members")
+	public List<OrganizationPendingMemberResponse> pendingMembers(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return appUserService.findPendingMembers(id, CurrentActor.resolve(actorId));
+	}
+
+	@DeleteMapping("/{id}/pending-members/{pendingId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void removePendingMember(
+			@PathVariable UUID id,
+			@PathVariable UUID pendingId,
+			@RequestParam(required = false) UUID actorId) {
+		appUserService.removePendingMember(id, pendingId, CurrentActor.resolve(actorId));
 	}
 
 	@GetMapping("/{id}/invite-code")
