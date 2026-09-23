@@ -48,6 +48,16 @@ public final class TextUtils {
 		return builder.isEmpty() ? "?" : builder.toString();
 	}
 
+	/**
+	 * Invite codes are generated from an uppercase alphabet and looked up with an
+	 * exact match, so a code typed in lowercase — or mangled by a phone keyboard's
+	 * auto-capitalisation — has to be folded first. Locale.ROOT because Turkish
+	 * would turn "i" into "İ".
+	 */
+	public static String normalizeInviteCode(String value) {
+		return nullToEmpty(trim(value)).toUpperCase(Locale.ROOT);
+	}
+
 	public static String normalizeForComparison(String value) {
 		return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", "");
 	}
