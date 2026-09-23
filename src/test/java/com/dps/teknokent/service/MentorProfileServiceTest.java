@@ -95,7 +95,8 @@ class MentorProfileServiceTest {
 	@BeforeEach
 	void setUp() {
 		mentorProfileService = new MentorProfileService(
-				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilityExceptionRepository, mentorAvailabilitySlotRepository,
+				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilityExceptionRepository,
+				mentorAvailabilitySlotRepository,
 				meetingRepository, domainLookupService, mentorshipRepository, programMentorRepository);
 	}
 
@@ -109,8 +110,8 @@ class MentorProfileServiceTest {
 	@Test
 	void createAvailabilitySlotRejectsPastStartTime() {
 		lenient().when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
-		CreateMentorAvailabilitySlotRequest request =
-				new CreateMentorAvailabilitySlotRequest(Instant.now().minus(1, ChronoUnit.DAYS), 60);
+		CreateMentorAvailabilitySlotRequest request = new CreateMentorAvailabilitySlotRequest(
+				Instant.now().minus(1, ChronoUnit.DAYS), 60);
 
 		assertThatThrownBy(() -> mentorProfileService.createAvailabilitySlot(mentorId, request))
 				.isInstanceOf(InvalidRequestException.class);
@@ -122,8 +123,8 @@ class MentorProfileServiceTest {
 		mentee.setId(mentorId);
 		mentee.setRole(UserRole.MENTEE);
 		when(domainLookupService.requireUser(mentorId)).thenReturn(mentee);
-		CreateMentorAvailabilitySlotRequest request =
-				new CreateMentorAvailabilitySlotRequest(Instant.now().plus(1, ChronoUnit.DAYS), 60);
+		CreateMentorAvailabilitySlotRequest request = new CreateMentorAvailabilitySlotRequest(
+				Instant.now().plus(1, ChronoUnit.DAYS), 60);
 
 		assertThatThrownBy(() -> mentorProfileService.createAvailabilitySlot(mentorId, request))
 				.isInstanceOf(InvalidRequestException.class);
@@ -532,7 +533,7 @@ class MentorProfileServiceTest {
 				new CreateMentorAvailabilityRuleRequest(DayOfWeek.TUESDAY,
 						LocalTime.of(14, 0), LocalTime.of(17, 0), 60));
 
-		ArgumentCaptor<List<MentorAvailabilitySlot>> captor = ArgumentCaptor.forClass(List.class);
+		ArgumentCaptor<List<MentorAvailabilitySlot>> captor = ArgumentCaptor.captor();
 		verify(mentorAvailabilitySlotRepository).saveAll(captor.capture());
 		List<MentorAvailabilitySlot> slots = captor.getValue();
 
@@ -590,7 +591,7 @@ class MentorProfileServiceTest {
 
 		mentorProfileService.deleteAvailabilityRule(mentorId, ruleId);
 
-		ArgumentCaptor<List<MentorAvailabilitySlot>> captor = ArgumentCaptor.forClass(List.class);
+		ArgumentCaptor<List<MentorAvailabilitySlot>> captor = ArgumentCaptor.captor();
 		verify(mentorAvailabilitySlotRepository).deleteAll(captor.capture());
 		assertThat(captor.getValue()).containsExactly(free);
 		verify(mentorAvailabilityRuleRepository).delete(rule);
@@ -640,8 +641,8 @@ class MentorProfileServiceTest {
 	void updateAvailabilitySettings_rejectsTheSameUnavailableDatesTwice() {
 		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
 		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile()));
-		MentorAvailabilityExceptionRequest dates =
-				new MentorAvailabilityExceptionRequest(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3), null);
+		MentorAvailabilityExceptionRequest dates = new MentorAvailabilityExceptionRequest(LocalDate.of(2026, 10, 1),
+				LocalDate.of(2026, 10, 3), null);
 
 		assertThatThrownBy(() -> mentorProfileService.updateAvailabilitySettings(mentorId,
 				new UpdateMentorAvailabilitySettingsRequest(List.of(), List.of(dates, dates), 5, 45, 15)))

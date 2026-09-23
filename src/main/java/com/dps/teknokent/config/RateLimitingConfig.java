@@ -1,16 +1,13 @@
 package com.dps.teknokent.config;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import lombok.RequiredArgsConstructor;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class RateLimitingConfig {
@@ -18,7 +15,7 @@ public class RateLimitingConfig {
 	// Fallback in-memory cache if Redis is unavailable
 	private final Map<String, TokenBucket> memoryCache = new ConcurrentHashMap<>();
 	private RedisRateLimitingStore redisStore;
-	
+
 	@Autowired(required = false)
 	private StringRedisTemplate redisTemplate;
 
@@ -70,19 +67,21 @@ public class RateLimitingConfig {
 				long tokens = tokensStr != null ? Long.parseLong(tokensStr) : CAPACITY;
 				long lastRefill = lastRefillStr != null ? Long.parseLong(lastRefillStr) : System.currentTimeMillis();
 
-				return new TokenBucket(CAPACITY, REFILL_INTERVAL_MS, tokens, lastRefill, 
-					(bucket) -> saveToRedis(tokensKey, lastRefillKey, bucket));
+				return new TokenBucket(CAPACITY, REFILL_INTERVAL_MS, tokens, lastRefill,
+						(bucket) -> saveToRedis(tokensKey, lastRefillKey, bucket));
 			} catch (Exception e) {
 				// Fallback to memory cache if Redis fails
-				return fallbackCache.computeIfAbsent(ipAddress, 
-					k -> new TokenBucket(CAPACITY, REFILL_INTERVAL_MS));
+				return fallbackCache.computeIfAbsent(ipAddress,
+						k -> new TokenBucket(CAPACITY, REFILL_INTERVAL_MS));
 			}
 		}
 
 		private void saveToRedis(String tokensKey, String lastRefillKey, TokenBucket bucket) {
 			try {
-				redisTemplate.opsForValue().set(tokensKey, String.valueOf(bucket.getTokens()), TTL_SECONDS, TimeUnit.SECONDS);
-				redisTemplate.opsForValue().set(lastRefillKey, String.valueOf(bucket.getLastRefillTime()), TTL_SECONDS, TimeUnit.SECONDS);
+				redisTemplate.opsForValue().set(tokensKey, String.valueOf(bucket.getTokens()),
+						Duration.ofSeconds(TTL_SECONDS));
+				redisTemplate.opsForValue().set(lastRefillKey, String.valueOf(bucket.getLastRefillTime()),
+						Duration.ofSeconds(TTL_SECONDS));
 			} catch (Exception e) {
 				// Log error but don't fail - in-memory fallback will handle it
 			}
@@ -100,8 +99,8 @@ public class RateLimitingConfig {
 			this(capacity, refillIntervalMs, capacity, System.currentTimeMillis(), null);
 		}
 
-		public TokenBucket(long capacity, long refillIntervalMs, long tokens, long lastRefillTime, 
-			PersistenceCallback persistenceCallback) {
+		public TokenBucket(long capacity, long refillIntervalMs, long tokens, long lastRefillTime,
+				PersistenceCallback persistenceCallback) {
 			this.capacity = capacity;
 			this.refillIntervalMs = refillIntervalMs;
 			this.tokens = tokens;
@@ -164,4 +163,3 @@ public class RateLimitingConfig {
 		void onStateChange(TokenBucket bucket);
 	}
 }
-
