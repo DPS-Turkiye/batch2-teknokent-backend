@@ -24,6 +24,7 @@ import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.MentorshipWorkspaceTab;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
@@ -453,6 +454,12 @@ class MentorshipRequestServiceTest {
                                 argThat((MentorshipRequestMessage message) -> message
                                                 .getMessageType() == MentorshipRequestMessageType.MENTOR_MESSAGE
                                                 && message.getBody().equals("Yarın 14:00 uygun mu?")));
+                verify(notificationService).create(
+                                eq(requester),
+                                eq(NotificationCategory.MESSAGE),
+                                eq("Mentorunuzdan yeni mesaj"),
+                                eq("Dr. Kemal Arslan yeni bir mesaj gönderdi."),
+                                eq("/mentor-request/status?request=" + requestId));
         }
 
         @Test

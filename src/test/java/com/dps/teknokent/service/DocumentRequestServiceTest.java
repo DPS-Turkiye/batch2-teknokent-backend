@@ -17,6 +17,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.DocumentRequestItem;
@@ -133,6 +134,7 @@ class DocumentRequestServiceTest {
 
 		verify(notificationService).create(
 				eq(mentee),
+				eq(NotificationCategory.TASK_ASSIGNED),
 				eq("Mentor belgeler istedi"),
 				eq("Mentor Ali şu belgeleri istedi: CV"),
 				eq("/mentorships?tab=active"));

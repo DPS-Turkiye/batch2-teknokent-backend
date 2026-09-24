@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AttachDocumentRequestUploadRequest;
 import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
@@ -459,6 +460,7 @@ public class DocumentRequestService {
 				.filter(user -> user.getRole() == UserRole.MENTEE)
 				.forEach(mentee -> notificationService.create(
 						mentee,
+						NotificationCategory.TASK_ASSIGNED,
 						title,
 						body,
 						href));
@@ -482,6 +484,7 @@ public class DocumentRequestService {
 		}
 		notificationService.create(
 				mentor,
+				NotificationCategory.STARTUP_ACTIVITY,
 				"İstenen belge yüklendi",
 				uploader.getFullName() + " «" + item.getTitle() + "» belgesini yükledi.",
 				href);

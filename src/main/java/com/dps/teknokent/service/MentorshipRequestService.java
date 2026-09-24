@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.domain.MentorshipWorkspaceTab;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
@@ -220,6 +221,7 @@ public class MentorshipRequestService {
 		ensureMeetingForAccepted(savedRequest, MeetingSlotTimes.parseMachineSlot(selectedSlot));
 		notificationService.create(
 				request.getMentor(),
+				NotificationCategory.MEETING_CHANGE,
 				"Mentee görüşme saatini seçti",
 				request.getRequester().getFullName() + " önerdiğiniz saatlerden birini kabul etti.",
 				"/mentorships");
@@ -245,6 +247,7 @@ public class MentorshipRequestService {
 		}
 		notificationService.create(
 				request.getMentor(),
+				NotificationCategory.MESSAGE,
 				"Mentorluk talebinize yanıt geldi",
 				request.getRequester().getFullName() + " yeni bir mesaj gönderdi.",
 				"/mentor-dashboard");
@@ -264,6 +267,7 @@ public class MentorshipRequestService {
 				TextUtils.trim(postMessage.message()));
 		notificationService.create(
 				request.getRequester(),
+				NotificationCategory.MESSAGE,
 				"Mentorunuzdan yeni mesaj",
 				request.getMentor().getFullName() + " yeni bir mesaj gönderdi.",
 				"/mentor-request/status?request=" + request.getId());
@@ -339,6 +343,7 @@ public class MentorshipRequestService {
 		Meeting savedMeeting = meetingRepository.saveAndFlush(Meeting.forMentorshipRequest(request, slot));
 		notificationService.create(
 				request.getMentor(),
+				NotificationCategory.MEETING_CHANGE,
 				"Yeni görüşme planlandı",
 				request.getRequester().getFullName() + " mentorluk görüşmesi için bir zaman seçti.",
 				"/mentor-dashboard/calendar");

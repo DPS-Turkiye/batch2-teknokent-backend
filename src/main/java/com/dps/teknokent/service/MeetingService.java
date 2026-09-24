@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
@@ -120,6 +121,7 @@ public class MeetingService {
 				.filter(user -> user.getRole() == UserRole.MENTEE)
 				.forEach(mentee -> notificationService.create(
 						mentee,
+						NotificationCategory.MEETING_CHANGE,
 						"Yeni görüşme planlandı",
 						body,
 						"/mentorships?tab=active"));

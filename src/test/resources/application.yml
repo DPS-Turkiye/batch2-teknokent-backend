@@ -28,6 +28,9 @@ meeting:
   transcript-bot:
     enabled: false
 app:
+  notifications:
+    reminders:
+      enabled: false
   realtime:
     token-secret: test-secret
     allowed-origins: http://localhost:3000

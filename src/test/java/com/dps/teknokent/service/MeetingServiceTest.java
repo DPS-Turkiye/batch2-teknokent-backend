@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.InviteMeetingGuestRequest;
@@ -412,6 +413,7 @@ class MeetingServiceTest {
 				.isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000401"));
 		verify(notificationService).create(
 				eq(mentee),
+				eq(NotificationCategory.MEETING_CHANGE),
 				eq("Yeni görüşme planlandı"),
 				org.mockito.ArgumentMatchers.contains("Teknokent"),
 				eq("/mentorships?tab=active"));

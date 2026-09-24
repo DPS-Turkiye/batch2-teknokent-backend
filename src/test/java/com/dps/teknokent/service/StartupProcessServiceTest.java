@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
 import com.dps.teknokent.domain.StartupStageState;
 import com.dps.teknokent.domain.UserRole;
@@ -72,6 +74,9 @@ class StartupProcessServiceTest {
 
     @Mock
     private MentorshipRequestRepository mentorshipRequestRepository;
+
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private StartupProcessService startupProcessService;
@@ -265,6 +270,27 @@ class StartupProcessServiceTest {
         assertThat(saved.getValue().getOwner()).isSameAs(organization.getFounder());
         assertThat(saved.getValue().getCreatedBy()).isSameAs(organization.getFounder());
         assertThat(saved.getValue().getStatus()).isEqualTo(ActionItemStatus.OPEN);
+        verify(notificationService, never()).create(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void createAssignment_notifiesTheFounderWhenAMentorAddsIt() {
+        Organization organization = startup();
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(user(MENTOR_ID, UserRole.MENTOR, null));
+        when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+                MENTOR_ID, ORG_ID, MentorshipRequestStatus.ACCEPTED))
+                .thenReturn(Optional.of(new MentorshipRequest()));
+
+        startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
+                MENTOR_ID, null, StartupStage.FINANCE, "Finansal model", null, null));
+
+        verify(notificationService).create(
+                eq(organization.getFounder()),
+                eq(NotificationCategory.TASK_ASSIGNED),
+                eq("Yeni görev"),
+                eq("Demo MENTOR yeni bir görev ekledi: Finansal model"),
+                eq("/startup/process"));
     }
 
     @Test
