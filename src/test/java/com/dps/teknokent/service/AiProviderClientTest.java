@@ -147,6 +147,45 @@ class AiProviderClientTest {
         }
     }
 
+    @Test
+    void meetingReport_retriesWithoutReasoningWhenTheModelDemandsIt() throws Exception {
+        // Google models are sent reasoning:{effort:none} to keep reports cheap, but
+        // newer ones (gemini-3.8-flash) reject the request outright for it. Without
+        // the retry, switching OPENROUTER_REPORT_MODEL to one of those takes report
+        // generation down in production with a one-line env change.
+        List<String> bodies = new java.util.ArrayList<>();
+        HttpServer server = startServer(exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            bodies.add(body);
+            if (body.contains("\"reasoning\"")) {
+                writeJson(exchange, 400,
+                        "{\"error\":{\"message\":\"Reasoning is mandatory for this endpoint and cannot be disabled.\"}}");
+                return;
+            }
+            writeJson(exchange, 200,
+                    "{\"choices\":[{\"message\":{\"content\":\"{\\\"title\\\":\\\"Rapor\\\"}\"}}]}");
+        });
+
+        try {
+            AiProviderClient client = new AiProviderClient(jsonUtils);
+            setField(client, "provider", "openrouter");
+            setField(client, "openRouterApiKey", "test-key");
+            setField(client, "openRouterBaseUrl", "http://localhost:" + server.getAddress().getPort());
+            setField(client, "openRouterReportModel", "google/gemini-3.8-flash");
+            setField(client, "openRouterAppName", "TeamTNT Spring Backend");
+
+            JsonNode schema = jsonUtils.readTree("{\"type\":\"object\"}");
+            JsonNode report = client.generateMeetingReport("Toplanti metni", schema, null);
+
+            assertThat(report.path("title").asText()).isEqualTo("Rapor");
+            assertThat(bodies).hasSize(2);
+            assertThat(bodies.get(0)).contains("\"reasoning\"");
+            assertThat(bodies.get(1)).doesNotContain("\"reasoning\"");
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private static HttpServer startServer(HttpHandler handler) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/chat/completions", handler);

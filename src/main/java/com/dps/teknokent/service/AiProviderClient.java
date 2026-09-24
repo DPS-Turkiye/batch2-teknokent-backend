@@ -128,6 +128,22 @@ public class AiProviderClient {
 			String transcriptText,
 			JsonNode schema,
 			boolean strictSchema) {
+		return completeMeetingReport(
+				model, instructions, transcriptText, schema, strictSchema, model.startsWith("google/"));
+	}
+
+	/**
+	 * Google models are asked to skip reasoning tokens to keep reports cheap, but
+	 * newer ones refuse the request outright when reasoning is switched off. Ask
+	 * again without the field instead of failing the report.
+	 */
+	private JsonNode completeMeetingReport(
+			String model,
+			String instructions,
+			String transcriptText,
+			JsonNode schema,
+			boolean strictSchema,
+			boolean skipReasoning) {
 		Map<String, Object> payload = new java.util.LinkedHashMap<>();
 		payload.put("model", model);
 		payload.put("messages", List.of(
@@ -143,7 +159,7 @@ public class AiProviderClient {
 		} else {
 			payload.put("response_format", Map.of("type", "json_object"));
 		}
-		if (model.startsWith("google/")) {
+		if (skipReasoning) {
 			payload.put("reasoning", Map.of("effort", "none"));
 		}
 
@@ -151,6 +167,10 @@ public class AiProviderClient {
 		try {
 			response = post(baseUrl() + "/chat/completions", payload);
 		} catch (InvalidRequestException error) {
+			if (skipReasoning && requiresReasoning(error)) {
+				return completeMeetingReport(
+						model, instructions, transcriptText, schema, strictSchema, false);
+			}
 			if (strictSchema) {
 				throw error;
 			}
@@ -159,7 +179,7 @@ public class AiProviderClient {
 			plain.put("messages", List.of(
 					Map.of("role", "system", "content", instructions),
 					Map.of("role", "user", "content", transcriptText)));
-			if (model.startsWith("google/")) {
+			if (skipReasoning) {
 				plain.put("reasoning", Map.of("effort", "none"));
 			}
 			response = post(baseUrl() + "/chat/completions", plain);
@@ -174,6 +194,12 @@ public class AiProviderClient {
 		} catch (IllegalStateException error) {
 			throw new InvalidRequestException("The AI provider returned an invalid meeting report.");
 		}
+	}
+
+	/** The provider refused because this model will not run with reasoning disabled. */
+	private static boolean requiresReasoning(InvalidRequestException error) {
+		String message = error.getMessage();
+		return message != null && message.toLowerCase(Locale.ROOT).contains("reasoning");
 	}
 
 	private String extractMessageContent(JsonNode message) {
