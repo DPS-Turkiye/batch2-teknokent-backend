@@ -26,14 +26,13 @@ public record CoordinatorProgramResponse(
 		int awaitingMatchCount,
 		Integer oldestAwaitingMatchDays,
 		ProgramPhaseResponse currentPhase,
-		int phaseCount,
+		List<ProgramPhaseResponse> phases,
 		Integer currentWeek,
 		Integer totalWeeks) {
 
 	public record Detail(
 			CoordinatorProgramResponse program,
 			Rules rules,
-			List<ProgramPhaseResponse> phases,
 			Health health,
 			List<AwaitingTeam> awaitingTeams,
 			List<ProgramEventResponse> upcomingEvents,

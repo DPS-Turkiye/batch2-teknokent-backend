@@ -246,9 +246,6 @@ public class CoordinatorProgramService {
 						program.getStaleAfterDays(),
 						program.isMeetingNoteRequired(),
 						program.isAutoMatchSuggestions()),
-				snapshot.phases().getOrDefault(program.getId(), List.of()).stream()
-						.map(CoordinatorProgramService::toPhase)
-						.toList(),
 				health(program, startups, snapshot),
 				awaitingTeams,
 				upcoming,
@@ -293,7 +290,7 @@ public class CoordinatorProgramService {
 				awaiting.size(),
 				oldestWaiting,
 				current == null ? null : toPhase(current),
-				phases.size(),
+				phases.stream().map(CoordinatorProgramService::toPhase).toList(),
 				ProgramCalendar.currentWeek(program.getStartDate(), program.getEndDate(), snapshot.today()),
 				ProgramCalendar.totalWeeks(program.getStartDate(), program.getEndDate()));
 	}

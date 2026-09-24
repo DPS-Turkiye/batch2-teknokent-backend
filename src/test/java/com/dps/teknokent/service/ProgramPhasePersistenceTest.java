@@ -78,8 +78,8 @@ class ProgramPhasePersistenceTest {
 		assertThat(programPhaseRepository.findByProgramIdOrderByPositionAsc(program.getId()))
 				.extracting(phase -> phase.getPosition() + ":" + phase.getName())
 				.containsExactly("0:Seçim", "1:Eşleşme", "2:Demo Day");
-		assertThat(detail.phases()).hasSize(3);
-		assertThat(detail.program().phaseCount()).isEqualTo(3);
+		assertThat(detail.program().phases()).extracting(phase -> phase.name())
+				.containsExactly("Seçim", "Eşleşme", "Demo Day");
 	}
 
 	@Test

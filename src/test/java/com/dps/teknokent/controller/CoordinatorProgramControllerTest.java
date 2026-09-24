@@ -144,6 +144,6 @@ class CoordinatorProgramControllerTest {
 	private static CoordinatorProgramResponse summary() {
 		return new CoordinatorProgramResponse(
 				PROGRAM_ID, "METU Stars 2026", ProgramStatus.ACTIVE, ProgramLifecycle.ACTIVE, null, null, null,
-				ACTOR_ID, "Elif Demir", 42, 28, 3, 64, 6, 5, 4, null, 0, null, null);
+				ACTOR_ID, "Elif Demir", 42, 28, 3, 64, 6, 5, 4, null, List.of(), null, null);
 	}
 }
