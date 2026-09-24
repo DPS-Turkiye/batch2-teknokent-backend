@@ -50,4 +50,6 @@ public interface ProgramMentorRepository extends JpaRepository<ProgramMentor, UU
 	List<MentorProgramName> findProgramNamesByMentorIds(
 			@Param("mentorIds") Collection<UUID> mentorIds,
 			@Param("status") ProgramMentorStatus status);
+
+	List<ProgramMentor> findByProgramIdIn(Collection<UUID> programIds);
 }

@@ -25,4 +25,8 @@ public interface BottleneckRepository extends JpaRepository<Bottleneck, UUID> {
 			UUID organizationId,
 			Collection<BottleneckSeverity> severities,
 			Collection<BottleneckStatus> statuses);
+
+	List<Bottleneck> findByOrganizationIdInAndStatusIn(
+			Collection<UUID> organizationIds,
+			Collection<BottleneckStatus> statuses);
 }

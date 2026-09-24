@@ -22,4 +22,19 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 	long countByStatusNotInAndDueDateBefore(Collection<ActionItemStatus> statuses, LocalDate threshold);
 	long countByOrganizationIdAndStatusNotInAndDueDateBefore(
 			UUID organizationId, Collection<ActionItemStatus> statuses, LocalDate threshold);
+
+	List<ActionItem> findByOrganizationIdInAndStatusNotInAndDueDateBefore(
+			Collection<UUID> organizationIds,
+			Collection<ActionItemStatus> statuses,
+			LocalDate threshold);
+
+	List<ActionItem> findByOrganizationIdInAndStatusNotIn(
+			Collection<UUID> organizationIds,
+			Collection<ActionItemStatus> statuses);
+
+	List<ActionItem> findByOrganizationIdInAndStatusNotInAndDueDateBetween(
+			Collection<UUID> organizationIds,
+			Collection<ActionItemStatus> statuses,
+			LocalDate from,
+			LocalDate to);
 }

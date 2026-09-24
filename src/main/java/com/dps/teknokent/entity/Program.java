@@ -1,6 +1,7 @@
 package com.dps.teknokent.entity;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.ProgramStatus;
@@ -37,4 +38,25 @@ public class Program {
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 32)
 	private ProgramStatus status = ProgramStatus.ACTIVE;
+
+	@Column(columnDefinition = "TEXT")
+	private String description;
+
+	@Column(name = "start_date")
+	private LocalDate startDate;
+
+	@Column(name = "end_date")
+	private LocalDate endDate;
+
+	@Column(name = "meeting_frequency_days", nullable = false)
+	private int meetingFrequencyDays = 14;
+
+	@Column(name = "stale_after_days", nullable = false)
+	private int staleAfterDays = 14;
+
+	@Column(name = "meeting_note_required", nullable = false)
+	private boolean meetingNoteRequired = true;
+
+	@Column(name = "auto_match_suggestions", nullable = false)
+	private boolean autoMatchSuggestions = true;
 }

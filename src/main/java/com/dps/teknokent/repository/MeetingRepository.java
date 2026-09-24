@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -43,4 +44,6 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 			MeetingStatus status, Instant from, Instant until);
 
 	List<Meeting> findByTranscribeRequestedTrueAndBotDispatchedAtIsNotNullAndStatus(MeetingStatus status);
+
+	List<Meeting> findByOrganizationIdInOrderByScheduledAtDesc(Collection<UUID> organizationIds);
 }

@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,4 +31,8 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 			MentorshipRequestStatus status);
 
 	boolean existsByMentorIdAndOrganizationId(UUID mentorId, UUID organizationId);
+
+	List<MentorshipRequest> findByOrganizationIdInAndStatus(
+			Collection<UUID> organizationIds,
+			MentorshipRequestStatus status);
 }
