@@ -106,7 +106,7 @@ public class CoordinatorProgramService {
 	private final MeetingNoteRepository meetingNoteRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 
-	enum HealthBucket {
+	public enum HealthBucket {
 		HEALTHY,
 		FOLLOW_UP,
 		RISKY
@@ -116,7 +116,7 @@ public class CoordinatorProgramService {
 	 * Risky once the team has gone {@code staleAfterDays} without meeting its mentor; needs follow-up once
 	 * the target meeting interval has passed or the team has an open bottleneck or overdue action.
 	 */
-	static HealthBucket classify(long daysSinceContact, boolean hasOpenIssue, int meetingFrequencyDays, int staleAfterDays) {
+	public static HealthBucket classify(long daysSinceContact, boolean hasOpenIssue, int meetingFrequencyDays, int staleAfterDays) {
 		if (daysSinceContact >= staleAfterDays) {
 			return HealthBucket.RISKY;
 		}
@@ -128,10 +128,7 @@ public class CoordinatorProgramService {
 
 	@Transactional(readOnly = true)
 	public List<CoordinatorProgramResponse> list(UUID actorId) {
-		AppUser actor = requireCoordinatorOrAdmin(actorId);
-		List<Program> programs = actor.getRole() == UserRole.ADMIN
-				? programRepository.findAllByOrderByCreatedAtDesc()
-				: programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId());
+		List<Program> programs = managedPrograms(requireCoordinatorOrAdmin(actorId));
 		Snapshot snapshot = snapshot(programs);
 		return programs.stream().map(program -> summarize(program, snapshot)).toList();
 	}
@@ -239,13 +236,8 @@ public class CoordinatorProgramService {
 	 */
 	@Transactional(readOnly = true)
 	public CoordinatorOverviewResponse overview(UUID actorId, UUID programId) {
-		AppUser actor = requireCoordinatorOrAdmin(actorId);
-		List<Program> managed = actor.getRole() == UserRole.ADMIN
-				? programRepository.findAllByOrderByCreatedAtDesc()
-				: programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId());
-		List<Program> scope = programId != null
-				? List.of(requireManagedProgram(actorId, programId))
-				: managed.stream().filter(program -> program.getStatus() != ProgramStatus.COMPLETED).toList();
+		List<Program> managed = managedPrograms(requireCoordinatorOrAdmin(actorId));
+		List<Program> scope = scopeOf(actorId, managed, programId);
 		Snapshot snapshot = snapshot(scope);
 		List<CoordinatorOverviewResponse.ProgramOption> options = managed.stream()
 				.map(program -> new CoordinatorOverviewResponse.ProgramOption(
@@ -494,11 +486,11 @@ public class CoordinatorProgramService {
 				.toList();
 	}
 
-	private static String meetingTitle(Meeting meeting) {
+	static String meetingTitle(Meeting meeting) {
 		return isBlank(meeting.getAgenda()) ? "Mentorluk görüşmesi" : meeting.getAgenda().trim();
 	}
 
-	private static boolean isBlank(String value) {
+	static boolean isBlank(String value) {
 		return value == null || value.isBlank();
 	}
 
@@ -658,7 +650,7 @@ public class CoordinatorProgramService {
 				.toList();
 	}
 
-	private static long daysSinceContact(Mentorship mentorship, Snapshot snapshot) {
+	static long daysSinceContact(Mentorship mentorship, Snapshot snapshot) {
 		Instant lastMeeting = snapshot.lastMeetingByPair().get(
 				pairKey(mentorship.getMentor().getId(), mentorship.getOrganization().getId()));
 		if (lastMeeting != null) {
@@ -673,12 +665,12 @@ public class CoordinatorProgramService {
 		return (int) Math.max(0, ChronoUnit.DAYS.between(joined, today));
 	}
 
-	private Snapshot snapshot(List<Program> programs) {
+	public Snapshot snapshot(List<Program> programs) {
 		Instant now = Instant.now();
 		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
 		if (programs.isEmpty()) {
 			return new Snapshot(today, now, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
-					Map.of(), Set.of());
+					Map.of(), Map.of(), Set.of());
 		}
 		List<UUID> programIds = programs.stream().map(Program::getId).toList();
 		Map<UUID, AppUser> coordinators = appUserRepository
@@ -698,14 +690,15 @@ public class CoordinatorProgramService {
 				.collect(Collectors.toSet());
 		if (organizationIds.isEmpty()) {
 			return new Snapshot(today, now, coordinators, phases, startups, mentors, Map.of(), Map.of(), Map.of(),
-					Map.of(), Set.of());
+					Map.of(), Map.of(), Set.of());
 		}
 		Map<UUID, Organization> organizations = organizationRepository.findAllById(organizationIds).stream()
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
 		Map<UUID, List<Mentorship>> mentorships = mentorshipRepository.findByOrganizationIdIn(organizationIds).stream()
 				.collect(Collectors.groupingBy(mentorship -> mentorship.getOrganization().getId()));
 		Map<String, Instant> lastMeeting = new HashMap<>();
-		for (Meeting meeting : meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds)) {
+		List<Meeting> meetings = meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds);
+		for (Meeting meeting : meetings) {
 			if (meeting.getStatus() == MeetingStatus.CANCELLED || meeting.getScheduledAt() == null
 					|| meeting.getScheduledAt().isAfter(now) || meeting.getMentor() == null) {
 				continue;
@@ -724,10 +717,24 @@ public class CoordinatorProgramService {
 				.map(item -> item.getOrganization().getId())
 				.collect(Collectors.toSet());
 		return new Snapshot(today, now, coordinators, phases, startups, mentors, organizations, mentorships,
-				lastMeeting, openBottlenecks, overdue);
+				lastMeeting, meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
+				openBottlenecks, overdue);
 	}
 
-	private AppUser requireCoordinatorOrAdmin(UUID actorId) {
+	public List<Program> managedPrograms(AppUser actor) {
+		return actor.getRole() == UserRole.ADMIN
+				? programRepository.findAllByOrderByCreatedAtDesc()
+				: programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId());
+	}
+
+	/** The one program asked for, or every managed program that has not completed. */
+	public List<Program> scopeOf(UUID actorId, List<Program> managed, UUID programId) {
+		return programId != null
+				? List.of(requireManagedProgram(actorId, programId))
+				: managed.stream().filter(program -> program.getStatus() != ProgramStatus.COMPLETED).toList();
+	}
+
+	public AppUser requireCoordinatorOrAdmin(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		if (actor.getRole() != UserRole.COORDINATOR && actor.getRole() != UserRole.ADMIN) {
 			throw new InvalidRequestException("Only a coordinator can manage programs.");
@@ -735,7 +742,7 @@ public class CoordinatorProgramService {
 		return actor;
 	}
 
-	private Program requireManagedProgram(UUID actorId, UUID programId) {
+	public Program requireManagedProgram(UUID actorId, UUID programId) {
 		AppUser actor = requireCoordinatorOrAdmin(actorId);
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
@@ -751,11 +758,11 @@ public class CoordinatorProgramService {
 		}
 	}
 
-	private static List<Mentorship> mentorshipsOf(Snapshot snapshot, UUID organizationId) {
+	static List<Mentorship> mentorshipsOf(Snapshot snapshot, UUID organizationId) {
 		return snapshot.mentorships().getOrDefault(organizationId, List.of());
 	}
 
-	private static String organizationName(Snapshot snapshot, UUID organizationId) {
+	static String organizationName(Snapshot snapshot, UUID organizationId) {
 		Organization organization = snapshot.organizations().get(organizationId);
 		return organization == null ? "Takım" : organization.getName();
 	}
@@ -764,7 +771,7 @@ public class CoordinatorProgramService {
 		return value == null || value.isBlank() ? null : value.trim();
 	}
 
-	private static String pairKey(UUID mentorId, UUID organizationId) {
+	static String pairKey(UUID mentorId, UUID organizationId) {
 		return mentorId + ":" + organizationId;
 	}
 
@@ -785,7 +792,7 @@ public class CoordinatorProgramService {
 	}
 
 	/** Everything the summaries need, fetched once per call for a set of programs. */
-	private record Snapshot(
+	public record Snapshot(
 			LocalDate today,
 			Instant now,
 			Map<UUID, AppUser> coordinators,
@@ -795,6 +802,7 @@ public class CoordinatorProgramService {
 			Map<UUID, Organization> organizations,
 			Map<UUID, List<Mentorship>> mentorships,
 			Map<String, Instant> lastMeetingByPair,
+			Map<UUID, List<Meeting>> meetingsByOrganization,
 			Map<UUID, List<Bottleneck>> openBottlenecks,
 			Set<UUID> overdueActionOrganizations) {
 	}
