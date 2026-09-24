@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,4 +15,6 @@ public interface ProgramStartupRepository extends JpaRepository<ProgramStartup, 
 	Optional<ProgramStartup> findByProgramIdAndOrganizationId(UUID programId, UUID organizationId);
 
 	List<ProgramStartup> findByOrganizationIdOrderByCreatedAtAsc(UUID organizationId);
+
+	List<ProgramStartup> findByProgramIdIn(Collection<UUID> programIds);
 }
