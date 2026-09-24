@@ -18,4 +18,9 @@ public interface ProgramEventRepository extends JpaRepository<ProgramEvent, UUID
 			Instant from);
 
 	Optional<ProgramEvent> findByIdAndProgramId(UUID id, UUID programId);
+
+	List<ProgramEvent> findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(
+			Collection<UUID> programIds,
+			Instant from,
+			Instant to);
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,7 +27,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.BottleneckStatus;
+import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
@@ -41,6 +44,7 @@ import com.dps.teknokent.entity.Bottleneck;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Mentorship;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramEvent;
@@ -52,10 +56,12 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
+import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorCount;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramEventRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
@@ -94,6 +100,10 @@ class CoordinatorProgramServiceTest {
 	private ActionItemRepository actionItemRepository;
 	@Mock
 	private MentorProfileRepository mentorProfileRepository;
+	@Mock
+	private MeetingNoteRepository meetingNoteRepository;
+	@Mock
+	private MentorshipRequestRepository mentorshipRequestRepository;
 	@InjectMocks
 	private CoordinatorProgramService service;
 
@@ -321,6 +331,67 @@ class CoordinatorProgramServiceTest {
 
 		assertThatThrownBy(() -> service.deleteEvent(COORDINATOR_ID, PROGRAM_ID, eventId))
 				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	void theHomeSumsUpTheWeekAndWhatNeedsADecision() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR));
+		when(programRepository.findByCreatedByOrderByCreatedAtDesc(COORDINATOR_ID)).thenReturn(List.of(program(COORDINATOR_ID)));
+		stubProgramRows(
+				List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 1), startup(KAVUN_ID, 6)),
+				List.of(membership(MENTOR_ID, ProgramMentorStatus.ACCEPTED),
+						membership(PENDING_MENTOR_ID, ProgramMentorStatus.PENDING)),
+				List.of());
+		Meeting terraPast = meeting(TERRA_ID, 20);
+		Meeting lumenRecent = meeting(LUMEN_ID, 3);
+		lumenRecent.setId(UUID.randomUUID());
+		Meeting terraNext = meeting(TERRA_ID, 0);
+		terraNext.setId(UUID.randomUUID());
+		terraNext.setStatus(MeetingStatus.SCHEDULED);
+		terraNext.setScheduledAt(Instant.now().plus(2, ChronoUnit.DAYS));
+		stubTeamData(
+				List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"), organization(KAVUN_ID, "Kavun")),
+				List.of(mentorship(TERRA_ID, MentorshipStatus.ACTIVE, today.minusDays(40)),
+						mentorship(LUMEN_ID, MentorshipStatus.ACTIVE, today.minusDays(40))),
+				List.of(terraNext, lumenRecent, terraPast),
+				List.of(bottleneck(TERRA_ID, "Pazarlama stratejisi")),
+				List.of(actionItem(LUMEN_ID)));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(
+				user(COORDINATOR_ID, UserRole.COORDINATOR), user(PENDING_MENTOR_ID, UserRole.MENTOR)));
+		MentorshipRequest slow = new MentorshipRequest();
+		slow.setMentor(user(MENTOR_ID, UserRole.MENTOR));
+		slow.setCreatedAt(Instant.now().minus(5, ChronoUnit.DAYS));
+		when(mentorshipRequestRepository.findByOrganizationIdInAndStatus(anyCollection(), eq(MentorshipRequestStatus.PENDING)))
+				.thenReturn(List.of(slow));
+		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(anyCollection(), any(), any()))
+				.thenReturn(List.of());
+		when(actionItemRepository.findByOrganizationIdInAndStatusNotInAndDueDateBetween(
+				anyCollection(), anyCollection(), any(), any()))
+				.thenReturn(List.of());
+		when(meetingNoteRepository.findByMeetingIdIn(anyCollection())).thenReturn(List.of());
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		assertThat(home.programs()).extracting(option -> option.name()).containsExactly("METU Stars 2026");
+		var metrics = home.metrics();
+		assertThat(metrics.activeMentorships()).isEqualTo(2);
+		assertThat(metrics.mentoredTeams()).isEqualTo(2);
+		assertThat(metrics.activeMentors()).isEqualTo(1);
+		assertThat(metrics.staleMentorships()).isEqualTo(1);
+		assertThat(metrics.overdueActions()).isEqualTo(1);
+		assertThat(metrics.openBottlenecks()).isEqualTo(1);
+		assertThat(metrics.slowMentors()).isEqualTo(1);
+		assertThat(home.nextMeeting().meetingId()).isEqualTo(terraNext.getId());
+		assertThat(home.nextMeeting().sequence()).isEqualTo(2);
+		assertThat(home.nextMeeting().title()).isEqualTo("Mentorluk görüşmesi");
+		assertThat(home.agenda()).singleElement()
+				.satisfies(item -> assertThat(item.kind()).isEqualTo(CoordinatorAgendaKind.MEETING));
+		assertThat(home.actions().awaitingTeams()).singleElement()
+				.satisfies(team -> assertThat(team.name()).isEqualTo("Kavun"));
+		assertThat(home.actions().pendingMentors()).singleElement()
+				.satisfies(mentor -> assertThat(mentor.mentorId()).isEqualTo(PENDING_MENTOR_ID));
+		assertThat(home.actions().missingNotes()).singleElement()
+				.satisfies(note -> assertThat(note.meetingId()).isEqualTo(lumenRecent.getId()));
 	}
 
 	private void stubManagedProgram(Program program) {

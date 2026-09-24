@@ -27,4 +27,10 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 			Collection<UUID> organizationIds,
 			Collection<ActionItemStatus> statuses,
 			LocalDate threshold);
+
+	List<ActionItem> findByOrganizationIdInAndStatusNotInAndDueDateBetween(
+			Collection<UUID> organizationIds,
+			Collection<ActionItemStatus> statuses,
+			LocalDate from,
+			LocalDate to);
 }

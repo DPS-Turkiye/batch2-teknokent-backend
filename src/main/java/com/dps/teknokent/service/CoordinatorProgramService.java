@@ -21,16 +21,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.BottleneckStatus;
+import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
+import com.dps.teknokent.dto.responses.CoordinatorOverviewResponse;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramPhaseResponse;
+import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Bottleneck;
 import com.dps.teknokent.entity.Meeting;
@@ -47,10 +53,12 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
+import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorCount;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramEventRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
@@ -77,6 +85,10 @@ public class CoordinatorProgramService {
 	private static final int RISKY_TOPIC_LIMIT = 3;
 	private static final int AWAITING_TEAM_LIMIT = 5;
 	private static final int UPCOMING_EVENT_LIMIT = 6;
+	private static final int AGENDA_DAYS = 7;
+	private static final int AGENDA_LIMIT = 20;
+	private static final int SLOW_REPLY_DAYS = 3;
+	private static final int MISSING_NOTE_DAYS = 14;
 
 	private final DomainLookupService domainLookupService;
 	private final AppUserRepository appUserRepository;
@@ -91,6 +103,8 @@ public class CoordinatorProgramService {
 	private final BottleneckRepository bottleneckRepository;
 	private final ActionItemRepository actionItemRepository;
 	private final MentorProfileRepository mentorProfileRepository;
+	private final MeetingNoteRepository meetingNoteRepository;
+	private final MentorshipRequestRepository mentorshipRequestRepository;
 
 	enum HealthBucket {
 		HEALTHY,
@@ -217,6 +231,275 @@ public class CoordinatorProgramService {
 		ProgramEvent event = programEventRepository.findByIdAndProgramId(eventId, programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program event not found: " + eventId));
 		programEventRepository.delete(event);
+	}
+
+	/**
+	 * The coordinator home for one program, or for all of the actor's running programs (completed ones are left
+	 * out; an admin sees every program).
+	 */
+	@Transactional(readOnly = true)
+	public CoordinatorOverviewResponse overview(UUID actorId, UUID programId) {
+		AppUser actor = requireCoordinatorOrAdmin(actorId);
+		List<Program> managed = actor.getRole() == UserRole.ADMIN
+				? programRepository.findAllByOrderByCreatedAtDesc()
+				: programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId());
+		List<Program> scope = programId != null
+				? List.of(requireManagedProgram(actorId, programId))
+				: managed.stream().filter(program -> program.getStatus() != ProgramStatus.COMPLETED).toList();
+		Snapshot snapshot = snapshot(scope);
+		List<CoordinatorOverviewResponse.ProgramOption> options = managed.stream()
+				.map(program -> new CoordinatorOverviewResponse.ProgramOption(
+						program.getId(),
+						program.getName(),
+						ProgramCalendar.lifecycle(program.getStatus(), program.getStartDate(), snapshot.today())))
+				.toList();
+		Map<UUID, Program> programOf = new LinkedHashMap<>();
+		for (Program program : scope) {
+			for (ProgramStartup startup : snapshot.startups().getOrDefault(program.getId(), List.of())) {
+				programOf.putIfAbsent(startup.getOrganizationId(), program);
+			}
+		}
+		Set<UUID> organizationIds = programOf.keySet();
+		List<Meeting> meetings = organizationIds.isEmpty()
+				? List.of()
+				: meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds);
+		return new CoordinatorOverviewResponse(
+				options,
+				overviewMetrics(programOf, snapshot),
+				nextMeeting(meetings, snapshot.now()),
+				agenda(scope, organizationIds, meetings, snapshot),
+				new CoordinatorOverviewResponse.Actions(
+						pendingMentors(scope, snapshot),
+						awaitingTeamsAcross(scope, snapshot),
+						missingNotes(meetings, snapshot.now())));
+	}
+
+	private CoordinatorOverviewResponse.Metrics overviewMetrics(Map<UUID, Program> programOf, Snapshot snapshot) {
+		Set<UUID> matchedMentorships = new HashSet<>();
+		Set<UUID> mentoredTeams = new HashSet<>();
+		Set<UUID> activeMentors = new HashSet<>();
+		int stale = 0;
+		int bottlenecks = 0;
+		for (Map.Entry<UUID, Program> entry : programOf.entrySet()) {
+			UUID organizationId = entry.getKey();
+			bottlenecks += snapshot.openBottlenecks().getOrDefault(organizationId, List.of()).size();
+			for (Mentorship mentorship : mentorshipsOf(snapshot, organizationId)) {
+				if (!MATCHED.contains(mentorship.getStatus())) {
+					continue;
+				}
+				matchedMentorships.add(mentorship.getId());
+				mentoredTeams.add(organizationId);
+				activeMentors.add(mentorship.getMentor().getId());
+				if (mentorship.getStatus() == MentorshipStatus.ACTIVE
+						&& daysSinceContact(mentorship, snapshot) >= entry.getValue().getStaleAfterDays()) {
+					stale++;
+				}
+			}
+		}
+		Set<UUID> organizationIds = programOf.keySet();
+		int overdue = organizationIds.isEmpty()
+				? 0
+				: actionItemRepository
+						.findByOrganizationIdInAndStatusNotInAndDueDateBefore(organizationIds, CLOSED_ACTIONS, snapshot.today())
+						.size();
+		Instant slowAfter = snapshot.now().minus(SLOW_REPLY_DAYS, ChronoUnit.DAYS);
+		int slowMentors = organizationIds.isEmpty()
+				? 0
+				: (int) mentorshipRequestRepository
+						.findByOrganizationIdInAndStatus(organizationIds, MentorshipRequestStatus.PENDING)
+						.stream()
+						.filter(request -> request.getCreatedAt() != null && request.getCreatedAt().isBefore(slowAfter))
+						.map(request -> request.getMentor().getId())
+						.distinct()
+						.count();
+		return new CoordinatorOverviewResponse.Metrics(
+				matchedMentorships.size(),
+				mentoredTeams.size(),
+				activeMentors.size(),
+				stale,
+				overdue,
+				bottlenecks,
+				slowMentors);
+	}
+
+	private static CoordinatorOverviewResponse.NextMeeting nextMeeting(List<Meeting> meetings, Instant now) {
+		Meeting next = meetings.stream()
+				.filter(meeting -> meeting.getStatus() == MeetingStatus.SCHEDULED
+						&& meeting.getScheduledAt() != null
+						&& !meeting.getScheduledAt().isBefore(now)
+						&& meeting.getMentor() != null)
+				.min(Comparator.comparing(Meeting::getScheduledAt))
+				.orElse(null);
+		if (next == null) {
+			return null;
+		}
+		UUID mentorId = next.getMentor().getId();
+		UUID organizationId = next.getOrganization().getId();
+		int sequence = (int) meetings.stream()
+				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+						&& meeting.getScheduledAt() != null
+						&& !meeting.getScheduledAt().isAfter(next.getScheduledAt())
+						&& meeting.getMentor() != null
+						&& meeting.getMentor().getId().equals(mentorId)
+						&& meeting.getOrganization().getId().equals(organizationId))
+				.count();
+		AppUser founder = next.getOrganization().getFounder();
+		return new CoordinatorOverviewResponse.NextMeeting(
+				next.getId(),
+				meetingTitle(next),
+				next.getScheduledAt(),
+				next.getDurationMinutes(),
+				next.getMeetLink(),
+				sequence,
+				mentorId,
+				next.getMentor().getFullName(),
+				next.getMentor().getJobTitle(),
+				organizationId,
+				next.getOrganization().getName(),
+				founder == null ? null : founder.getFullName());
+	}
+
+	private List<CoordinatorOverviewResponse.AgendaItem> agenda(
+			List<Program> scope,
+			Set<UUID> organizationIds,
+			List<Meeting> meetings,
+			Snapshot snapshot) {
+		Instant from = snapshot.today().atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant();
+		Instant to = snapshot.today().plusDays(AGENDA_DAYS).atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant();
+		List<CoordinatorOverviewResponse.AgendaItem> items = new ArrayList<>();
+		for (Meeting meeting : meetings) {
+			Instant at = meeting.getScheduledAt();
+			if (meeting.getStatus() != MeetingStatus.SCHEDULED || at == null || at.isBefore(from) || !at.isBefore(to)) {
+				continue;
+			}
+			String mentor = meeting.getMentor() == null ? "Mentor" : meeting.getMentor().getFullName();
+			items.add(new CoordinatorOverviewResponse.AgendaItem(
+					CoordinatorAgendaKind.MEETING,
+					meetingTitle(meeting),
+					mentor + " ↔ " + meeting.getOrganization().getName(),
+					at,
+					false));
+		}
+		Map<UUID, String> programNames = scope.stream().collect(Collectors.toMap(Program::getId, Program::getName));
+		if (!scope.isEmpty()) {
+			for (ProgramEvent event : programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(
+					programNames.keySet(), from, to.minusMillis(1))) {
+				items.add(new CoordinatorOverviewResponse.AgendaItem(
+						event.getKind() == ProgramEventKind.DEADLINE
+								? CoordinatorAgendaKind.DEADLINE
+								: CoordinatorAgendaKind.EVENT,
+						event.getTitle(),
+						programNames.get(event.getProgramId()),
+						event.getStartsAt(),
+						false));
+			}
+		}
+		if (!organizationIds.isEmpty()) {
+			for (ActionItem item : actionItemRepository.findByOrganizationIdInAndStatusNotInAndDueDateBetween(
+					organizationIds, CLOSED_ACTIONS, snapshot.today(), snapshot.today().plusDays(AGENDA_DAYS - 1))) {
+				items.add(new CoordinatorOverviewResponse.AgendaItem(
+						CoordinatorAgendaKind.ACTION,
+						item.getTitle(),
+						item.getOrganization().getName(),
+						item.getDueDate().atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant(),
+						true));
+			}
+		}
+		return items.stream()
+				.sorted(Comparator.comparing(CoordinatorOverviewResponse.AgendaItem::at))
+				.limit(AGENDA_LIMIT)
+				.toList();
+	}
+
+	private List<CoordinatorOverviewResponse.PendingMentor> pendingMentors(List<Program> scope, Snapshot snapshot) {
+		List<ProgramMentor> pending = new ArrayList<>();
+		Map<UUID, Program> programById = new HashMap<>();
+		for (Program program : scope) {
+			programById.put(program.getId(), program);
+			for (ProgramMentor membership : snapshot.mentors().getOrDefault(program.getId(), List.of())) {
+				if (membership.getStatus() == ProgramMentorStatus.PENDING) {
+					pending.add(membership);
+				}
+			}
+		}
+		if (pending.isEmpty()) {
+			return List.of();
+		}
+		Map<UUID, AppUser> mentors = appUserRepository
+				.findAllById(pending.stream().map(ProgramMentor::getMentorId).collect(Collectors.toSet()))
+				.stream()
+				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		return pending.stream()
+				.map(membership -> {
+					AppUser mentor = mentors.get(membership.getMentorId());
+					Program program = programById.get(membership.getProgramId());
+					LocalDate since = membership.getCreatedAt() == null
+							? snapshot.today()
+							: membership.getCreatedAt().atZone(MeetingSlotTimes.APP_ZONE).toLocalDate();
+					return new CoordinatorOverviewResponse.PendingMentor(
+							membership.getMentorId(),
+							mentor == null ? "Mentor" : mentor.getFullName(),
+							program.getId(),
+							program.getName(),
+							(int) Math.max(0, ChronoUnit.DAYS.between(since, snapshot.today())));
+				})
+				.sorted(Comparator.comparingInt(CoordinatorOverviewResponse.PendingMentor::waitingDays).reversed())
+				.toList();
+	}
+
+	private List<CoordinatorOverviewResponse.AwaitingTeam> awaitingTeamsAcross(List<Program> scope, Snapshot snapshot) {
+		List<CoordinatorOverviewResponse.AwaitingTeam> teams = new ArrayList<>();
+		for (Program program : scope) {
+			for (ProgramStartup startup : awaitingMatch(
+					snapshot.startups().getOrDefault(program.getId(), List.of()), snapshot)) {
+				teams.add(new CoordinatorOverviewResponse.AwaitingTeam(
+						startup.getOrganizationId(),
+						organizationName(snapshot, startup.getOrganizationId()),
+						program.getId(),
+						program.getName(),
+						waitingDays(startup, snapshot.today())));
+			}
+		}
+		teams.sort(Comparator.comparingInt(CoordinatorOverviewResponse.AwaitingTeam::waitingDays).reversed());
+		return teams;
+	}
+
+	/** Meetings of the last two weeks that happened but left no written trace: no notes, outcomes or live note. */
+	private List<CoordinatorOverviewResponse.MissingNote> missingNotes(List<Meeting> meetings, Instant now) {
+		Instant since = now.minus(MISSING_NOTE_DAYS, ChronoUnit.DAYS);
+		List<Meeting> recent = meetings.stream()
+				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+						&& meeting.getScheduledAt() != null
+						&& meeting.getScheduledAt().isBefore(now)
+						&& !meeting.getScheduledAt().isBefore(since)
+						&& isBlank(meeting.getNotes())
+						&& isBlank(meeting.getOutcomes()))
+				.toList();
+		if (recent.isEmpty()) {
+			return List.of();
+		}
+		Set<UUID> withLiveNotes = meetingNoteRepository
+				.findByMeetingIdIn(recent.stream().map(Meeting::getId).toList())
+				.stream()
+				.filter(note -> !isBlank(note.getContent()))
+				.map(note -> note.getMeeting().getId())
+				.collect(Collectors.toSet());
+		return recent.stream()
+				.filter(meeting -> !withLiveNotes.contains(meeting.getId()))
+				.map(meeting -> new CoordinatorOverviewResponse.MissingNote(
+						meeting.getId(),
+						meeting.getScheduledAt(),
+						meeting.getMentor() == null ? "Mentor" : meeting.getMentor().getFullName(),
+						meeting.getOrganization().getName()))
+				.toList();
+	}
+
+	private static String meetingTitle(Meeting meeting) {
+		return isBlank(meeting.getAgenda()) ? "Mentorluk görüşmesi" : meeting.getAgenda().trim();
+	}
+
+	private static boolean isBlank(String value) {
+		return value == null || value.isBlank();
 	}
 
 	private CoordinatorProgramResponse.Detail detailOf(Program program) {
