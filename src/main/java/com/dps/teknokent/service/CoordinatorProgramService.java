@@ -60,6 +60,7 @@ import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramEventRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
@@ -67,6 +68,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
+import com.dps.teknokent.util.ProgramCoordination;
 
 import lombok.RequiredArgsConstructor;
 
@@ -93,6 +95,7 @@ public class CoordinatorProgramService {
 	private final DomainLookupService domainLookupService;
 	private final AppUserRepository appUserRepository;
 	private final ProgramRepository programRepository;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramPhaseRepository programPhaseRepository;
 	private final ProgramEventRepository programEventRepository;
 	private final ProgramStartupRepository programStartupRepository;
@@ -144,7 +147,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			UpdateProgramDetailsRequest request) {
-		Program program = requireManagedProgram(actorId, programId);
+		Program program = requireEditableProgram(actorId, programId);
 		requireOrderedDates(request.startDate(), request.endDate(), "The program cannot end before it starts.");
 		program.setName(request.name().trim());
 		program.setDescription(blankToNull(request.description()));
@@ -171,7 +174,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			ReplaceProgramPhasesRequest request) {
-		Program program = requireManagedProgram(actorId, programId);
+		Program program = requireEditableProgram(actorId, programId);
 		for (ReplaceProgramPhasesRequest.PhaseInput input : request.phases()) {
 			requireOrderedDates(input.startDate(), input.endDate(), "A phase cannot end before it starts.");
 		}
@@ -195,6 +198,18 @@ public class CoordinatorProgramService {
 		return detailOf(program);
 	}
 
+	/**
+	 * Archiving marks the program COMPLETED, which makes it read-only here. Mentorships are not closed:
+	 * they belong to the team and mentor, and may continue in another program.
+	 */
+	@Transactional
+	public CoordinatorProgramResponse.Detail setArchived(UUID actorId, UUID programId, boolean archived) {
+		Program program = requireManagedProgram(actorId, programId);
+		program.setStatus(archived ? ProgramStatus.COMPLETED : ProgramStatus.ACTIVE);
+		programRepository.save(program);
+		return detailOf(program);
+	}
+
 	@Transactional(readOnly = true)
 	public List<ProgramEventResponse> listEvents(UUID actorId, UUID programId) {
 		requireManagedProgram(actorId, programId);
@@ -205,7 +220,7 @@ public class CoordinatorProgramService {
 
 	@Transactional
 	public ProgramEventResponse createEvent(UUID actorId, UUID programId, CreateProgramEventRequest request) {
-		requireManagedProgram(actorId, programId);
+		requireEditableProgram(actorId, programId);
 		if (request.endsAt() != null && request.endsAt().isBefore(request.startsAt())) {
 			throw new InvalidRequestException("An event cannot end before it starts.");
 		}
@@ -224,7 +239,7 @@ public class CoordinatorProgramService {
 
 	@Transactional
 	public void deleteEvent(UUID actorId, UUID programId, UUID eventId) {
-		requireManagedProgram(actorId, programId);
+		requireEditableProgram(actorId, programId);
 		ProgramEvent event = programEventRepository.findByIdAndProgramId(eventId, programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program event not found: " + eventId));
 		programEventRepository.delete(event);
@@ -525,7 +540,26 @@ public class CoordinatorProgramService {
 				awaitingTeams,
 				upcoming,
 				new CoordinatorProgramResponse.TeamDistribution(startups.size() - awaiting.size(), awaiting.size()),
-				mentorDistribution(snapshot.mentors().getOrDefault(program.getId(), List.of())));
+				mentorDistribution(snapshot.mentors().getOrDefault(program.getId(), List.of())),
+				coordinatorsOf(program),
+				missingNotes(
+						startups.stream()
+								.flatMap(startup -> snapshot.meetingsByOrganization()
+										.getOrDefault(startup.getOrganizationId(), List.of()).stream())
+								.toList(),
+						snapshot.now()).size());
+	}
+
+	/** The creator first, then the coordinators added to the program. */
+	public List<CoordinatorProgramResponse.CoordinatorRef> coordinatorsOf(Program program) {
+		List<UUID> ids = ProgramCoordination.coordinatorIds(program, programCoordinatorRepository);
+		Map<UUID, AppUser> users = appUserRepository.findAllById(ids).stream()
+				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		return ids.stream()
+				.filter(users::containsKey)
+				.map(id -> new CoordinatorProgramResponse.CoordinatorRef(
+						id, users.get(id).getFullName(), id.equals(program.getCreatedBy())))
+				.toList();
 	}
 
 	private CoordinatorProgramResponse summarize(Program program, Snapshot snapshot) {
@@ -724,7 +758,7 @@ public class CoordinatorProgramService {
 	public List<Program> managedPrograms(AppUser actor) {
 		return actor.getRole() == UserRole.ADMIN
 				? programRepository.findAllByOrderByCreatedAtDesc()
-				: programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId());
+				: ProgramCoordination.programsOf(actor.getId(), programRepository, programCoordinatorRepository);
 	}
 
 	/** The one program asked for, or every managed program that has not completed. */
@@ -742,11 +776,20 @@ public class CoordinatorProgramService {
 		return actor;
 	}
 
+	private Program requireEditableProgram(UUID actorId, UUID programId) {
+		Program program = requireManagedProgram(actorId, programId);
+		if (program.getStatus() == ProgramStatus.COMPLETED) {
+			throw new InvalidRequestException("This program is archived; restore it before changing it.");
+		}
+		return program;
+	}
+
 	public Program requireManagedProgram(UUID actorId, UUID programId) {
 		AppUser actor = requireCoordinatorOrAdmin(actorId);
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
-		if (actor.getRole() == UserRole.COORDINATOR && !program.getCreatedBy().equals(actor.getId())) {
+		if (actor.getRole() == UserRole.COORDINATOR
+				&& !ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("Only the program coordinator can change this program.");
 		}
 		return program;

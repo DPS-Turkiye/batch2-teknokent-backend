@@ -31,6 +31,7 @@ import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 
@@ -39,6 +40,8 @@ class ProgramServiceTest {
 
 	@Mock
 	private ProgramRepository programRepository;
+	@Mock
+	private ProgramCoordinatorRepository programCoordinatorRepository;
 	@Mock
 	private ProgramStartupRepository programStartupRepository;
 	@Mock

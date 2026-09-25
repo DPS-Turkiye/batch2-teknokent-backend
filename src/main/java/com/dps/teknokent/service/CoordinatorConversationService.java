@@ -31,9 +31,11 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.CoordinatorConversationRepository;
 import com.dps.teknokent.repository.CoordinatorMessageRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.util.ProgramCoordination;
 
 import lombok.RequiredArgsConstructor;
 
@@ -51,6 +53,7 @@ public class CoordinatorConversationService {
 	private final CoordinatorConversationRepository conversationRepository;
 	private final CoordinatorMessageRepository messageRepository;
 	private final ProgramRepository programRepository;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final OrganizationRepository organizationRepository;
@@ -68,7 +71,8 @@ public class CoordinatorConversationService {
 		List<CoordinatorConversation> conversations = switch (actor.getRole()) {
 			case ADMIN -> conversationRepository.findAll();
 			case COORDINATOR -> {
-				List<UUID> programIds = programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId()).stream()
+				List<UUID> programIds = ProgramCoordination.programsOf(
+						actor.getId(), programRepository, programCoordinatorRepository).stream()
 						.map(Program::getId)
 						.toList();
 				yield programIds.isEmpty() ? List.of() : conversationRepository.findByProgramIdIn(programIds);
@@ -155,8 +159,10 @@ public class CoordinatorConversationService {
 	private void notifyOtherSide(CoordinatorConversation conversation, Side senderSide, AppUser sender) {
 		if (senderSide == Side.COUNTERPART) {
 			programRepository.findById(conversation.getProgramId())
-					.flatMap(program -> appUserRepository.findById(program.getCreatedBy()))
-					.ifPresent(coordinator -> notificationService.create(
+					.map(program -> appUserRepository.findAllById(
+							ProgramCoordination.coordinatorIds(program, programCoordinatorRepository)))
+					.orElse(List.of())
+					.forEach(coordinator -> notificationService.create(
 							coordinator,
 							NotificationCategory.MESSAGE,
 							"Yeni mesaj",
@@ -207,9 +213,10 @@ public class CoordinatorConversationService {
 		throw new InvalidRequestException("You are not part of this conversation.");
 	}
 
-	private static boolean coordinates(AppUser actor, Program program) {
+	private boolean coordinates(AppUser actor, Program program) {
 		return actor.getRole() == UserRole.ADMIN
-				|| (actor.getRole() == UserRole.COORDINATOR && program.getCreatedBy().equals(actor.getId()));
+				|| (actor.getRole() == UserRole.COORDINATOR
+						&& ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository));
 	}
 
 	private static void markRead(CoordinatorConversation conversation, Side side, Instant at) {

@@ -29,6 +29,7 @@ import com.dps.teknokent.repository.DocumentRequestItemRepository;
 import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
@@ -59,6 +60,8 @@ class DocumentRequestServiceTest {
 	private NotificationService notificationService;
 	@Mock
 	private ProgramRepository programRepository;
+	@Mock
+	private ProgramCoordinatorRepository programCoordinatorRepository;
 	@Mock
 	private ProgramStartupRepository programStartupRepository;
 

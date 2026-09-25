@@ -15,13 +15,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.dto.requests.AddProgramCoordinatorRequest;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
+import com.dps.teknokent.dto.requests.SetProgramArchivedRequest;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
+import com.dps.teknokent.service.ProgramCoordinatorService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -34,6 +37,7 @@ import lombok.RequiredArgsConstructor;
 public class CoordinatorProgramController {
 
 	private final CoordinatorProgramService coordinatorProgramService;
+	private final ProgramCoordinatorService programCoordinatorService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -83,5 +87,41 @@ public class CoordinatorProgramController {
 			@PathVariable UUID eventId,
 			@RequestParam(required = false) UUID actorId) {
 		coordinatorProgramService.deleteEvent(CurrentActor.resolve(actorId), id, eventId);
+	}
+
+	@PutMapping("/{id}/archive")
+	public CoordinatorProgramResponse.Detail setArchived(
+			@PathVariable UUID id,
+			@Valid @RequestBody SetProgramArchivedRequest request) {
+		return coordinatorProgramService.setArchived(CurrentActor.resolve(request.actorId()), id, request.archived());
+	}
+
+	@GetMapping("/{id}/coordinators")
+	public List<CoordinatorProgramResponse.CoordinatorRef> coordinators(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return programCoordinatorService.list(CurrentActor.resolve(actorId), id);
+	}
+
+	@GetMapping("/{id}/coordinators/candidates")
+	public List<CoordinatorProgramResponse.CoordinatorRef> coordinatorCandidates(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return programCoordinatorService.candidates(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/coordinators")
+	public List<CoordinatorProgramResponse.CoordinatorRef> addCoordinator(
+			@PathVariable UUID id,
+			@Valid @RequestBody AddProgramCoordinatorRequest request) {
+		return programCoordinatorService.add(CurrentActor.resolve(request.actorId()), id, request.userId());
+	}
+
+	@DeleteMapping("/{id}/coordinators/{userId}")
+	public List<CoordinatorProgramResponse.CoordinatorRef> removeCoordinator(
+			@PathVariable UUID id,
+			@PathVariable UUID userId,
+			@RequestParam(required = false) UUID actorId) {
+		return programCoordinatorService.remove(CurrentActor.resolve(actorId), id, userId);
 	}
 }

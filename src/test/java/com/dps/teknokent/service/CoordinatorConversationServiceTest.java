@@ -39,6 +39,7 @@ import com.dps.teknokent.repository.CoordinatorConversationRepository;
 import com.dps.teknokent.repository.CoordinatorMessageRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 
@@ -53,6 +54,8 @@ class CoordinatorConversationServiceTest {
 	private CoordinatorMessageRepository messageRepository;
 	@Mock
 	private ProgramRepository programRepository;
+	@Mock
+	private ProgramCoordinatorRepository programCoordinatorRepository;
 	@Mock
 	private ProgramStartupRepository programStartupRepository;
 	@Mock
@@ -113,7 +116,7 @@ class CoordinatorConversationServiceTest {
 		CoordinatorConversation conversation = teamConversation();
 		when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
-		when(appUserRepository.findById(COORDINATOR_ID)).thenReturn(Optional.of(user(COORDINATOR_ID, UserRole.COORDINATOR, null)));
+		when(appUserRepository.findAllById(List.of(COORDINATOR_ID))).thenReturn(List.of(user(COORDINATOR_ID, UserRole.COORDINATOR, null)));
 
 		var message = service.send(FOUNDER_ID, CONVERSATION_ID, new SendCoordinatorMessageRequest(null, "  Merhaba  "));
 

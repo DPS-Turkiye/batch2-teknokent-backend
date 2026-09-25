@@ -34,9 +34,11 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.DocumentRequestItemRepository;
 import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -52,6 +54,7 @@ public class DocumentRequestService {
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final MentorshipRepository mentorshipRepository;
 	private final ProgramRepository programRepository;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final AppUserRepository appUserRepository;
 	private final DomainLookupService domainLookupService;
@@ -177,7 +180,8 @@ public class DocumentRequestService {
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.COORDINATOR || !actor.getId().equals(program.getCreatedBy())) {
+		if (actor.getRole() != UserRole.COORDINATOR
+				|| !ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("Only the program coordinator can request documents from its startups");
 		}
 		List<String> normalized = normalizeTitles(titles);

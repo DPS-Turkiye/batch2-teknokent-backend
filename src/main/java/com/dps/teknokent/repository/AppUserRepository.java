@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 
 public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
@@ -16,4 +18,6 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	Optional<AppUser> findByEmailIgnoreCase(String email);
 
 	Optional<AppUser> findByFirebaseUid(String firebaseUid);
+
+	List<AppUser> findByRoleAndStatusOrderByFullNameAsc(UserRole role, UserAccountStatus status);
 }
