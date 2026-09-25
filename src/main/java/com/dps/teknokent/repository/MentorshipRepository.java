@@ -83,4 +83,6 @@ public interface MentorshipRepository extends JpaRepository<Mentorship, UUID> {
 			@Param("status") MentorshipStatus status);
 
 	List<Mentorship> findByOrganizationIdIn(Collection<UUID> organizationIds);
+
+	long countByMentorIdAndStatusIn(UUID mentorId, Collection<MentorshipStatus> statuses);
 }

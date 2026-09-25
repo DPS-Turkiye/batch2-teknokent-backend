@@ -114,6 +114,47 @@ class FirebaseBearerFilterTest {
     }
 
     @Test
+    void neverHandsAnAdminOrCoordinatorRowToALoginThatOnlyMatchesByEmail() throws Exception {
+        for (UserRole role : new UserRole[] { UserRole.ADMIN, UserRole.COORDINATOR }) {
+            AppUser privileged = user(UserAccountStatus.APPROVED);
+            privileged.setRole(role);
+            privileged.setFirebaseUid(null);
+            when(firebaseTokenVerifier.enabled()).thenReturn(true);
+            when(firebaseTokenVerifier.verify("good"))
+                    .thenReturn(Optional.of(new FirebaseIdentity("uid-stranger", "ayse@startup.com")));
+            when(appUserRepository.findByFirebaseUid("uid-stranger")).thenReturn(Optional.empty());
+            when(appUserRepository.findByEmailIgnoreCase("ayse@startup.com")).thenReturn(Optional.of(privileged));
+
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            MockFilterChain chain = new MockFilterChain();
+            filter.doFilter(request("/api/users", "Bearer good"), response, chain);
+
+            assertThat(response.getStatus()).isEqualTo(401);
+            assertThat(chain.getRequest()).isNull();
+            assertThat(privileged.getFirebaseUid()).isNull();
+            SecurityContextHolder.clearContext();
+        }
+        verify(appUserRepository, never()).save(any());
+    }
+
+    @Test
+    void anAdminLinkedByUidSignsIn() throws Exception {
+        AppUser admin = user(UserAccountStatus.APPROVED);
+        admin.setRole(UserRole.ADMIN);
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "it@menton.test")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(admin));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request("/api/users", "Bearer good"), response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        assertThat(((AppUserPrincipal) principal).role()).isEqualTo(UserRole.ADMIN);
+    }
+
+    @Test
     void forbidsPendingAccount() throws Exception {
         AppUser user = user(UserAccountStatus.PENDING);
 
