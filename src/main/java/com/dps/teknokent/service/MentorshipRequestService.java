@@ -248,7 +248,7 @@ public class MentorshipRequestService {
 		notificationService.create(
 				request.getMentor(),
 				NotificationCategory.MESSAGE,
-				"Mentorluk talebinize yanıt geldi",
+				isReplyingToInfoRequest ? "Ek bilgi talebinize yanıt geldi" : "Startup'tan yeni mesaj",
 				request.getRequester().getFullName() + " yeni bir mesaj gönderdi.",
 				"/mentor-dashboard");
 		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
