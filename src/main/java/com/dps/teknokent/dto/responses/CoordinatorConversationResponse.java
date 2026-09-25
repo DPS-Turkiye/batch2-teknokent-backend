@@ -16,5 +16,7 @@ public record CoordinatorConversationResponse(
 		String coordinatorName,
 		String lastMessagePreview,
 		Instant lastMessageAt,
-		boolean unread) {
+		boolean unread,
+		long unreadCount,
+		Instant otherSideReadAt) {
 }

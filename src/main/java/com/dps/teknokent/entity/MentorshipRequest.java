@@ -150,6 +150,20 @@ public class MentorshipRequest {
 		this.plannedSessionCount = plannedSessionCount;
 	}
 
+	@Column(name = "mentor_read_at")
+	private Instant mentorReadAt;
+
+	@Column(name = "mentee_read_at")
+	private Instant menteeReadAt;
+
+	public void markReadBy(AppUser reader, Instant at) {
+		if (reader.getId().equals(mentor.getId())) {
+			mentorReadAt = at;
+		} else {
+			menteeReadAt = at;
+		}
+	}
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;

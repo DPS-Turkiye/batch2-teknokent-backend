@@ -288,6 +288,17 @@ public class MentorshipRequestService {
 	}
 
 	@Transactional
+	public MentorshipRequestResponse markRead(UUID id, UUID actorId) {
+		MentorshipRequest request = requireRequest(id);
+		AppUser reader = domainLookupService.requireUser(actorId);
+		if (!takesPartIn(request, reader)) {
+			throw new InvalidRequestException("You are not part of this conversation");
+		}
+		request.markReadBy(reader, Instant.now());
+		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
+	}
+
+	@Transactional
 	public MentorshipRequestResponse withdraw(UUID id, WithdrawMentorshipRequest withdrawal) {
 		MentorshipRequest request = requireRequest(id);
 		if (!request.getRequester().getId().equals(withdrawal.requesterId())) {
@@ -427,6 +438,17 @@ public class MentorshipRequestService {
 			String body) {
 		mentorshipRequestMessageRepository.saveAndFlush(
 				MentorshipRequestMessage.create(request, author, messageType, body));
+		// Writing a message means the author has read everything before it.
+		request.markReadBy(author, Instant.now());
+	}
+
+	// The mentor, or anyone on the startup's team: the team shares one read mark.
+	private static boolean takesPartIn(MentorshipRequest request, AppUser user) {
+		if (user.getId().equals(request.getMentor().getId())) {
+			return true;
+		}
+		return user.getOrganization() != null
+				&& user.getOrganization().getId().equals(request.getOrganization().getId());
 	}
 
 	private void ensureMeetingForAccepted(MentorshipRequest request, Instant scheduledAt) {
