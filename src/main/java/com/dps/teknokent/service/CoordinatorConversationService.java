@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.CoordinatorConversationCounterpart;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.SendCoordinatorMessageRequest;
 import com.dps.teknokent.dto.requests.StartCoordinatorConversationRequest;
@@ -157,6 +158,7 @@ public class CoordinatorConversationService {
 					.flatMap(program -> appUserRepository.findById(program.getCreatedBy()))
 					.ifPresent(coordinator -> notificationService.create(
 							coordinator,
+							NotificationCategory.MESSAGE,
 							"Yeni mesaj",
 							sender.getFullName() + " sana bir mesaj gönderdi.",
 							"/coordinator/messages?conversation=" + conversation.getId()));
@@ -166,11 +168,11 @@ public class CoordinatorConversationService {
 		if (conversation.getMentorId() != null) {
 			appUserRepository.findById(conversation.getMentorId())
 					.ifPresent(mentor -> notificationService.create(
-							mentor, "Koordinatörden mesaj", body, "/mentor-dashboard/messages"));
+							mentor, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body, "/mentor-dashboard/messages"));
 			return;
 		}
 		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(conversation.getOrganizationId())) {
-			notificationService.create(member, "Koordinatörden mesaj", body, "/messages");
+			notificationService.create(member, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body, "/messages");
 		}
 	}
 

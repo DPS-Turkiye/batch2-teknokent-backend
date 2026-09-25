@@ -23,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.CoordinatorConversationCounterpart;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.SendCoordinatorMessageRequest;
 import com.dps.teknokent.dto.requests.StartCoordinatorConversationRequest;
@@ -123,6 +124,7 @@ class CoordinatorConversationServiceTest {
 		verify(messageRepository).save(any(CoordinatorMessage.class));
 		verify(notificationService).create(
 				argThat(user -> user != null && COORDINATOR_ID.equals(user.getId())),
+				eq(NotificationCategory.MESSAGE),
 				eq("Yeni mesaj"),
 				anyString(),
 				eq("/coordinator/messages?conversation=" + CONVERSATION_ID));
@@ -138,7 +140,8 @@ class CoordinatorConversationServiceTest {
 
 		service.send(COORDINATOR_ID, CONVERSATION_ID, new SendCoordinatorMessageRequest(null, "Ara rapor hatırlatması"));
 
-		verify(notificationService, times(2)).create(any(), eq("Koordinatörden mesaj"), anyString(), eq("/messages"));
+		verify(notificationService, times(2))
+				.create(any(), eq(NotificationCategory.MESSAGE), eq("Koordinatörden mesaj"), anyString(), eq("/messages"));
 	}
 
 	@Test

@@ -20,6 +20,7 @@ import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
@@ -144,9 +145,12 @@ public class CoordinatorMentorshipService {
 		Mentorship mentorship = scoped.mentorship();
 		String pair = mentorship.getMentor().getFullName() + " ↔ " + mentorship.getOrganization().getName();
 		String body = scoped.program().getName() + " · " + pair + " için sıradaki görüşmeyi planlayın.";
-		notificationService.create(mentorship.getMentor(), "Koordinatör hatırlatması", body, "/mentor-dashboard/calendar");
+		notificationService.create(
+				mentorship.getMentor(), NotificationCategory.MEETING_REMINDER, "Koordinatör hatırlatması", body,
+				"/mentor-dashboard/calendar");
 		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(mentorship.getOrganization().getId())) {
-			notificationService.create(member, "Koordinatör hatırlatması", body, "/mentorships?tab=active");
+			notificationService.create(
+					member, NotificationCategory.MEETING_REMINDER, "Koordinatör hatırlatması", body, "/mentorships?tab=active");
 		}
 	}
 
