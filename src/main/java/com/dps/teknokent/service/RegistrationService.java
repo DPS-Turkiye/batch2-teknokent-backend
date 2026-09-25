@@ -6,6 +6,7 @@ import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.entity.OrganizationPendingMember;
 import com.dps.teknokent.dto.requests.OnboardingTeamMemberRequest;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.security.core.Authentication;
@@ -37,6 +38,8 @@ import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
+import com.dps.teknokent.entity.ProgramTeamInvite;
+import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +52,7 @@ public class RegistrationService {
 	private final ProgramStartupRepository programStartupRepository;
 	private final OnboardingDraftRepository onboardingDraftRepository;
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
+	private final ProgramTeamInviteRepository programTeamInviteRepository;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
@@ -73,6 +77,42 @@ public class RegistrationService {
 		discardOnboardingDraft();
 
 		return UserResponse.fromEntity(founder);
+	}
+
+	/**
+	 * A coordinator put this team into a program and handed its lead the code (flow 03.3). The lead's signup
+	 * creates the team, already approved and in the program; the code then serves the members as the team's
+	 * invite code. Only the lead's own address can claim it, so a forwarded code alone takes nothing.
+	 */
+	private UserResponse claimTeam(ProgramTeamInvite invite, RegisterMemberRequest request, String email) {
+		if (!invite.getLeadEmail().equalsIgnoreCase(email)) {
+			throw new InvalidRequestException(
+					"This code is for the team's lead; members can use it once the lead has joined.");
+		}
+		Organization organization = new Organization();
+		organization.setName(invite.getTeamName());
+		organization.setInviteCode(invite.getCode());
+		organization.setActiveProgramId(invite.getProgramId());
+		organizationRepository.saveAndFlush(organization);
+
+		AppUser lead = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
+				UserAccountStatus.APPROVED, organization);
+		applyFirebaseIdentity(lead, email);
+		appUserRepository.saveAndFlush(lead);
+		organization.setFounder(lead);
+		organizationRepository.saveAndFlush(organization);
+
+		ProgramStartup membership = new ProgramStartup();
+		membership.setId(UUID.randomUUID());
+		membership.setProgramId(invite.getProgramId());
+		membership.setOrganizationId(organization.getId());
+		membership.setCreatedAt(Instant.now());
+		programStartupRepository.save(membership);
+
+		invite.setOrganizationId(organization.getId());
+		invite.setJoinedAt(Instant.now());
+		programTeamInviteRepository.save(invite);
+		return UserResponse.fromEntity(lead);
 	}
 
 	private void applyProfileFields(AppUser founder, RegisterFounderRequest request) {
@@ -187,6 +227,11 @@ public class RegistrationService {
 	public UserResponse registerMember(RegisterMemberRequest request) {
 		String email = requireUniqueEmail(request.email());
 		String inviteCode = TextUtils.normalizeInviteCode(request.inviteCode());
+		Optional<ProgramTeamInvite> teamInvite = programTeamInviteRepository.findByCode(inviteCode)
+				.filter(invite -> invite.getOrganizationId() == null);
+		if (teamInvite.isPresent()) {
+			return claimTeam(teamInvite.get(), request, email);
+		}
 		Organization organization = organizationRepository.findByInviteCode(inviteCode)
 				.orElseThrow(() -> new InvalidRequestException("Invalid invite code."));
 

@@ -165,6 +165,15 @@ public class CoordinatorProgramService {
 		if (request.autoMatchSuggestions() != null) {
 			program.setAutoMatchSuggestions(request.autoMatchSuggestions());
 		}
+		if (request.defaultMentorCapacity() != null) {
+			program.setDefaultMentorCapacity(request.defaultMentorCapacity());
+		}
+		if (request.communicationGapDays() != null) {
+			program.setCommunicationGapDays(request.communicationGapDays());
+		}
+		if (request.bottleneckFlagDays() != null) {
+			program.setBottleneckFlagDays(request.bottleneckFlagDays());
+		}
 		programRepository.save(program);
 		return detailOf(program);
 	}
@@ -535,7 +544,10 @@ public class CoordinatorProgramService {
 						program.getMeetingFrequencyDays(),
 						program.getStaleAfterDays(),
 						program.isMeetingNoteRequired(),
-						program.isAutoMatchSuggestions()),
+						program.isAutoMatchSuggestions(),
+						program.getDefaultMentorCapacity(),
+						program.getCommunicationGapDays(),
+						program.getBottleneckFlagDays()),
 				health(program, startups, snapshot),
 				awaitingTeams,
 				upcoming,
