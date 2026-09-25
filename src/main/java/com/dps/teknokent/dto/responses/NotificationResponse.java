@@ -3,6 +3,7 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.entity.Notification;
 
 public record NotificationResponse(
@@ -10,6 +11,7 @@ public record NotificationResponse(
 		String title,
 		String body,
 		String href,
+		NotificationCategory category,
 		Instant readAt,
 		Instant createdAt) {
 
@@ -19,6 +21,7 @@ public record NotificationResponse(
 				notification.getTitle(),
 				notification.getBody(),
 				notification.getHref(),
+				notification.getCategory(),
 				notification.getReadAt(),
 				notification.getCreatedAt());
 	}

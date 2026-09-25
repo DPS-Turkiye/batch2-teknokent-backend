@@ -32,6 +32,7 @@ import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
@@ -159,7 +160,7 @@ class CoordinatorMentorshipServiceTest {
 				.isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> service.remind(COORDINATOR_ID, lumen.getId()))
 				.isInstanceOf(InvalidRequestException.class);
-		verify(notificationService, never()).create(any(), anyString(), anyString(), anyString());
+		verify(notificationService, never()).create(any(), any(NotificationCategory.class), anyString(), anyString(), anyString());
 	}
 
 	@Test
@@ -203,9 +204,12 @@ class CoordinatorMentorshipServiceTest {
 
 		service.remind(COORDINATOR_ID, lumen.getId());
 
-		verify(notificationService).create(eq(ayse), eq("Koordinatör hatırlatması"), anyString(), eq("/mentor-dashboard/calendar"));
+		verify(notificationService).create(
+				eq(ayse), eq(NotificationCategory.MEETING_REMINDER), eq("Koordinatör hatırlatması"), anyString(),
+				eq("/mentor-dashboard/calendar"));
 		verify(notificationService, times(2))
-				.create(any(), eq("Koordinatör hatırlatması"), anyString(), eq("/mentorships?tab=active"));
+				.create(any(), eq(NotificationCategory.MEETING_REMINDER), eq("Koordinatör hatırlatması"), anyString(),
+						eq("/mentorships?tab=active"));
 	}
 
 	private void stubList(List<Mentorship> mentorships, List<Meeting> meetings, Set<UUID> overdueOrganizations) {

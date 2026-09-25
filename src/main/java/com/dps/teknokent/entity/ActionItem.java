@@ -89,6 +89,9 @@ public class ActionItem {
 	@Column(name = "completion_notes", columnDefinition = "TEXT")
 	private String completionNotes;
 
+	@Column(name = "deadline_reminded_at")
+	private Instant deadlineRemindedAt;
+
 	// The four below are only set on Süreç "Ödevler"; plain action items leave them null.
 	@Enumerated(EnumType.STRING)
 	@Column(length = 32)

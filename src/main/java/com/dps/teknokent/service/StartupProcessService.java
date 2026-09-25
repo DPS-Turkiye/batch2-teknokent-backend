@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
 import com.dps.teknokent.domain.StartupStageState;
 import com.dps.teknokent.domain.UserRole;
@@ -61,6 +62,7 @@ public class StartupProcessService {
 	private final ActionItemRepository actionItemRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
+	private final NotificationService notificationService;
 
 	@Transactional(readOnly = true)
 	public StartupProcessResponse get(UUID organizationId, UUID actorId) {
@@ -124,6 +126,14 @@ public class StartupProcessService {
 		item.setRound(round);
 		item.setCreatedBy(actor);
 		actionItemRepository.saveAndFlush(item);
+		if (!actor.getId().equals(item.getOwner().getId())) {
+			notificationService.create(
+					item.getOwner(),
+					NotificationCategory.TASK_ASSIGNED,
+					"Yeni görev",
+					actor.getFullName() + " yeni bir görev ekledi: " + item.getTitle(),
+					"/startup/process");
+		}
 		return describe(organization, today());
 	}
 

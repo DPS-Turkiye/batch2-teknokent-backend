@@ -2,6 +2,8 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,7 +18,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -27,6 +31,9 @@ class NotificationServiceTest {
 
 	@Mock
 	private NotificationRepository notificationRepository;
+
+	@Mock
+	private ApplicationEventPublisher eventPublisher;
 
 	@InjectMocks
 	private NotificationService notificationService;
@@ -85,6 +92,42 @@ class NotificationServiceTest {
 		assertThat(captor.getValue().getTitle()).isEqualTo("Başlık");
 		assertThat(captor.getValue().getBody()).isEqualTo("İçerik");
 		assertThat(captor.getValue().getHref()).isEqualTo("/dashboard");
+		assertThat(captor.getValue().getCategory()).isEqualTo(NotificationCategory.GENERAL);
+	}
+
+	@Test
+	void createAnnouncesTheNotificationForPushWithItsCategory() {
+		AppUser recipient = new AppUser();
+		recipient.setId(UUID.randomUUID());
+		ArgumentCaptor<Notification> saved = ArgumentCaptor.forClass(Notification.class);
+		ArgumentCaptor<NotificationCreatedEvent> event = ArgumentCaptor.forClass(NotificationCreatedEvent.class);
+
+		notificationService.create(recipient, NotificationCategory.MESSAGE, "Yeni mesaj", "Merhaba", "/mentorships");
+
+		verify(notificationRepository).save(saved.capture());
+		verify(eventPublisher).publishEvent(event.capture());
+		assertThat(saved.getValue().getCategory()).isEqualTo(NotificationCategory.MESSAGE);
+		assertThat(event.getValue().recipientId()).isEqualTo(recipient.getId());
+		assertThat(event.getValue().message().notificationId()).isEqualTo(saved.getValue().getId());
+		assertThat(event.getValue().message().category()).isEqualTo(NotificationCategory.MESSAGE);
+		assertThat(event.getValue().message().href()).isEqualTo("/mentorships");
+	}
+
+	@Test
+	void unreadCountCountsOnlyTheRecipientsUnreadNotifications() {
+		UUID recipientId = UUID.randomUUID();
+		when(notificationRepository.countByRecipientIdAndReadAtIsNull(recipientId)).thenReturn(3L);
+
+		assertThat(notificationService.unreadCount(recipientId).unread()).isEqualTo(3L);
+	}
+
+	@Test
+	void markAllReadStampsOnlyTheRecipientsNotifications() {
+		UUID recipientId = UUID.randomUUID();
+
+		notificationService.markAllRead(recipientId);
+
+		verify(notificationRepository).markAllRead(eq(recipientId), any(Instant.class));
 	}
 
 	private Notification notification(UUID recipientId) {

@@ -5,8 +5,12 @@ import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import com.dps.teknokent.domain.NotificationCategory;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -38,6 +42,10 @@ public class Notification {
 
 	@Column(length = 500)
 	private String href;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 32)
+	private NotificationCategory category = NotificationCategory.GENERAL;
 
 	@Column(name = "read_at")
 	private Instant readAt;

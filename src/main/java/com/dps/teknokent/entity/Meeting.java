@@ -140,6 +140,9 @@ public class Meeting {
 	@Column(name = "bot_dispatched_at")
 	private Instant botDispatchedAt;
 
+	@Column(name = "reminder_sent_at")
+	private Instant reminderSentAt;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private MeetingStatus status;

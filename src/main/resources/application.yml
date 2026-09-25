@@ -86,6 +86,10 @@ app:
   firebase:
     project-id: ${FIREBASE_PROJECT_ID:}
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
+  notifications:
+    reminders:
+      enabled: ${NOTIFICATION_REMINDERS_ENABLED:true}
+      interval-ms: ${NOTIFICATION_REMINDERS_INTERVAL_MS:60000}
   s3:
     region: ${AWS_REGION:}
     bucket: ${AWS_S3_BUCKET:}
