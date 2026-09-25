@@ -59,4 +59,13 @@ public class Program {
 
 	@Column(name = "auto_match_suggestions", nullable = false)
 	private boolean autoMatchSuggestions = true;
+
+	@Column(name = "default_mentor_capacity", nullable = false)
+	private int defaultMentorCapacity = 4;
+
+	@Column(name = "communication_gap_days", nullable = false)
+	private int communicationGapDays = 14;
+
+	@Column(name = "bottleneck_flag_days", nullable = false)
+	private int bottleneckFlagDays = 21;
 }

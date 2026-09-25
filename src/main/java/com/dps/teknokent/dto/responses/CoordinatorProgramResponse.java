@@ -50,7 +50,10 @@ public record CoordinatorProgramResponse(
 			int meetingFrequencyDays,
 			int staleAfterDays,
 			boolean meetingNoteRequired,
-			boolean autoMatchSuggestions) {
+			boolean autoMatchSuggestions,
+			int defaultMentorCapacity,
+			int communicationGapDays,
+			int bottleneckFlagDays) {
 	}
 
 	/** Active mentorships by how recently the team met its mentor; see CoordinatorProgramService#classify. */
