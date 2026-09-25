@@ -6,10 +6,13 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.dto.requests.CreateActionItemRequest;
 import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
 import com.dps.teknokent.dto.responses.ActionItemResponse;
 import com.dps.teknokent.entity.ActionItem;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -24,6 +27,7 @@ public class ActionItemService {
 
 	private final ActionItemRepository actionItemRepository;
 	private final DomainLookupService domainLookupService;
+	private final NotificationService notificationService;
 
 	@Transactional(readOnly = true)
 	public UUID resolveOrganizationId(UUID organizationId, UUID mentorshipRequestId) {
@@ -66,8 +70,29 @@ public class ActionItemService {
 				.findByIdAndOrganizationId(id, resolveOrganizationId(organizationId, mentorshipRequestId))
 				.orElseThrow(() -> new ResourceNotFoundException("Action item not found: " + id));
 
+		boolean wasCompleted = actionItem.getStatus() == ActionItemStatus.COMPLETED;
 		actionItem.apply(request,
 				request.ownerId() == null ? null : domainLookupService.requireUser(request.ownerId()));
-		return ActionItemResponse.fromEntity(actionItemRepository.saveAndFlush(actionItem));
+		ActionItem saved = actionItemRepository.saveAndFlush(actionItem);
+		if (!wasCompleted && saved.getStatus() == ActionItemStatus.COMPLETED) {
+			notifyMentorOfCompletion(saved, mentorshipRequestId);
+		}
+		return ActionItemResponse.fromEntity(saved);
+	}
+
+	// The mentor who set the task hears when the startup finishes it.
+	private void notifyMentorOfCompletion(ActionItem item, UUID mentorshipRequestId) {
+		AppUser mentor = mentorshipRequestId != null
+				? domainLookupService.requireMentorshipRequest(mentorshipRequestId).getMentor()
+				: item.getMeeting() == null ? null : item.getMeeting().getMentor();
+		if (mentor == null) {
+			return;
+		}
+		notificationService.create(
+				mentor,
+				NotificationCategory.STARTUP_ACTIVITY,
+				"Görev tamamlandı",
+				item.getOrganization().getName() + " «" + item.getTitle() + "» görevini tamamladı.",
+				"/mentor-dashboard");
 	}
 }
