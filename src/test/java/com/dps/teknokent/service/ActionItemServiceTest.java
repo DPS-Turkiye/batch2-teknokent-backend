@@ -3,6 +3,9 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -18,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.dto.requests.CreateActionItemRequest;
 import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
 import com.dps.teknokent.entity.ActionItem;
@@ -37,6 +41,9 @@ class ActionItemServiceTest {
 
     @Mock
     private DomainLookupService domainLookupService;
+
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private ActionItemService actionItemService;
@@ -207,6 +214,61 @@ class ActionItemServiceTest {
         assertThatThrownBy(() -> actionItemService.update(actionItemId, otherOrganizationId, null, request))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Action item not found");
+    }
+
+    @Test
+    void update_tellsTheMentorWhenTheStartupCompletesTheirTask() {
+        UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "Atlas AI");
+        AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000501"), "Nihan Öztürk");
+        MentorshipRequest mentorshipRequest = new MentorshipRequest();
+        mentorshipRequest.setId(requestId);
+        mentorshipRequest.setOrganization(organization);
+        mentorshipRequest.setMentor(mentor);
+        ActionItem actionItem = openItem(actionItemId, organization);
+        when(domainLookupService.requireMentorshipRequest(requestId)).thenReturn(mentorshipRequest);
+        when(actionItemRepository.findByIdAndOrganizationId(actionItemId, organization.getId()))
+                .thenReturn(Optional.of(actionItem));
+        when(actionItemRepository.saveAndFlush(actionItem)).thenReturn(actionItem);
+
+        actionItemService.update(actionItemId, null, requestId, completion());
+
+        verify(notificationService).create(
+                eq(mentor),
+                eq(NotificationCategory.STARTUP_ACTIVITY),
+                eq("Görev tamamlandı"),
+                eq("Atlas AI «Rakip analizi» görevini tamamladı."),
+                eq("/mentor-dashboard"));
+    }
+
+    @Test
+    void update_doesNotRepeatTheNoticeForAnAlreadyCompletedTask() {
+        UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "Atlas AI");
+        ActionItem actionItem = openItem(actionItemId, organization);
+        actionItem.setStatus(ActionItemStatus.COMPLETED);
+        when(actionItemRepository.findByIdAndOrganizationId(actionItemId, organization.getId()))
+                .thenReturn(Optional.of(actionItem));
+        when(actionItemRepository.saveAndFlush(actionItem)).thenReturn(actionItem);
+
+        actionItemService.update(actionItemId, organization.getId(), null, completion());
+
+        verify(notificationService, never()).create(any(), any(), any(), any(), any());
+    }
+
+    private static ActionItem openItem(UUID id, Organization organization) {
+        ActionItem item = new ActionItem();
+        item.setId(id);
+        item.setOrganization(organization);
+        item.setOwner(user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "Gamze Kozak"));
+        item.setTitle("Rakip analizi");
+        item.setStatus(ActionItemStatus.OPEN);
+        return item;
+    }
+
+    private static UpdateActionItemRequest completion() {
+        return new UpdateActionItemRequest(null, null, null, ActionItemStatus.COMPLETED, null, null);
     }
 
     @Test
