@@ -367,6 +367,12 @@ class MentorshipRequestServiceTest {
                                 argThat((MentorshipRequestMessage message) -> message
                                                 .getMessageType() == MentorshipRequestMessageType.MENTEE_REPLY
                                                 && message.getBody().equals("Bütçemiz 50.000 TL")));
+                verify(notificationService).create(
+                                eq(mentor),
+                                eq(NotificationCategory.MESSAGE),
+                                eq("Ek bilgi talebinize yanıt geldi"),
+                                eq("Ayşe Demir yeni bir mesaj gönderdi."),
+                                eq("/mentor-dashboard"));
         }
 
         @Test
@@ -397,6 +403,12 @@ class MentorshipRequestServiceTest {
                                 argThat((MentorshipRequestMessage message) -> message
                                                 .getMessageType() == MentorshipRequestMessageType.MENTEE_MESSAGE
                                                 && message.getBody().equals("Salı uygun mu?")));
+                verify(notificationService).create(
+                                eq(mentor),
+                                eq(NotificationCategory.MESSAGE),
+                                eq("Startup'tan yeni mesaj"),
+                                eq("Ayşe Demir yeni bir mesaj gönderdi."),
+                                eq("/mentor-dashboard"));
         }
 
         @Test
