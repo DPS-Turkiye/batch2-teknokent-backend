@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -26,7 +25,10 @@ import com.dps.teknokent.repository.ProgramStartupRepository;
 
 import lombok.RequiredArgsConstructor;
 
-/** Program events as a member sees them: a startup's team or an accepted mentor, never the roster. */
+/**
+ * Program events as a member sees them: a startup's team or an accepted mentor,
+ * never the roster.
+ */
 @Service
 @RequiredArgsConstructor
 public class ProgramCalendarService {
