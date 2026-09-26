@@ -74,6 +74,7 @@ public class MentorshipRequestService {
 	private final DomainLookupService domainLookupService;
 	private final MentorProfileService mentorProfileService;
 	private final NotificationService notificationService;
+	private final MailService mailService;
 	private final DocumentRequestService documentRequestService;
 
 	@Transactional(readOnly = true)
@@ -143,11 +144,15 @@ public class MentorshipRequestService {
 		if (request.recommendationSnapshot() != null) {
 			saveRecommendationSnapshot(savedRequest, request.recommendationSnapshot());
 		}
-		notificationService.create(
-				mentor,
-				"Yeni mentorluk talebi",
-				requester.getFullName() + " size " + savedRequest.getSupportArea() + " konusunda bir talep gönderdi.",
-				"/mentor-dashboard");
+		String title = "Yeni mentorluk talebi";
+		String body = requester.getFullName() + " size " + savedRequest.getSupportArea()
+				+ " konusunda bir talep gönderdi.";
+		notificationService.create(mentor, title, body, "/mentor-dashboard");
+		mailService.sendAfterCommit(
+				mentor.getEmail(),
+				title,
+				"Merhaba " + mentor.getFullName() + ",\n\n" + body
+						+ "\n\nTalebi görmek için: " + mailService.link("/mentor-dashboard") + "\n\nMenton");
 		return toResponse(savedRequest);
 	}
 

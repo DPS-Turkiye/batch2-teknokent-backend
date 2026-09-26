@@ -95,6 +95,10 @@ app:
     bucket: ${AWS_S3_BUCKET:}
     access-key-id: ${AWS_ACCESS_KEY_ID:}
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+  mail:
+    region: ${AWS_REGION:eu-central-1}
+    from: ${MAIL_FROM:}
+    public-url: ${APP_PUBLIC_URL:https://menton.com.tr}
   realtime:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}
