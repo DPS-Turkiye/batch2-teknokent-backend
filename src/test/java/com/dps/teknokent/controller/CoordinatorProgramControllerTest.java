@@ -40,6 +40,7 @@ import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
+import com.dps.teknokent.service.MentorPoolService;
 import com.dps.teknokent.service.ProgramLaunchService;
 
 @WebMvcTest(CoordinatorProgramController.class)
@@ -55,6 +56,8 @@ class CoordinatorProgramControllerTest {
 	private ProgramCoordinatorService programCoordinatorService;
 	@MockitoBean
 	private ProgramLaunchService programLaunchService;
+	@MockitoBean
+	private MentorPoolService mentorPoolService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");
@@ -188,6 +191,30 @@ class CoordinatorProgramControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(body.formatted("can@tohum")))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void invitesAMentorByEmailAndDecidesAsTheSignedInUser() throws Exception {
+		mockMvc.perform(post("/api/coordinator/programs/{id}/mentors", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"cagri@yilmazfinans.com\",\"actorId\":\"" + ACTOR_ID + "\"}"))
+				.andExpect(status().isOk());
+		verify(mentorPoolService).invite(SIGNED_IN_ID, PROGRAM_ID, "cagri@yilmazfinans.com");
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/mentors", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"cagri@yilmaz\"}"))
+				.andExpect(status().isBadRequest());
+
+		UUID mentorId = UUID.randomUUID();
+		mockMvc.perform(post("/api/coordinator/programs/{id}/mentors/{mentorId}/decision", PROGRAM_ID, mentorId)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"accepted\":true}"))
+				.andExpect(status().isOk());
+		verify(mentorPoolService).decide(SIGNED_IN_ID, PROGRAM_ID, mentorId, true);
 	}
 
 	@Test

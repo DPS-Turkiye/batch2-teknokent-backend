@@ -40,6 +40,12 @@ import com.dps.teknokent.util.TextUtils;
 import lombok.RequiredArgsConstructor;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
+import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.ProgramMentorInvite;
+import com.dps.teknokent.repository.ProgramMentorInviteRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -53,6 +59,8 @@ public class RegistrationService {
 	private final OnboardingDraftRepository onboardingDraftRepository;
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final ProgramTeamInviteRepository programTeamInviteRepository;
+	private final ProgramMentorInviteRepository programMentorInviteRepository;
+	private final ProgramMentorRepository programMentorRepository;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
@@ -191,12 +199,46 @@ public class RegistrationService {
 	@Transactional
 	public UserResponse registerMentor(RegisterMentorRequest request) {
 		String email = requireUniqueEmail(request.email());
+		Optional<ProgramMentorInvite> programInvite = programMentorInvite(request.programInvite(), email);
 		AppUser mentor = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTOR,
 				UserAccountStatus.PENDING, null);
 		applyFirebaseIdentity(mentor, email);
 		appUserRepository.saveAndFlush(mentor);
 		mentorProfileRepository.save(newMentorProfile(mentor));
+		programInvite.ifPresent(invite -> joinProgramPool(invite, mentor));
 		return UserResponse.fromEntity(mentor);
+	}
+
+	/** A mentor signing up with a program's link (flow 03.1) must use the address the coordinator invited. */
+	private Optional<ProgramMentorInvite> programMentorInvite(String code, String email) {
+		if (code == null || code.isBlank()) {
+			return Optional.empty();
+		}
+		ProgramMentorInvite invite = programMentorInviteRepository.findByCode(code.trim())
+				.filter(value -> value.getMentorId() == null)
+				.orElseThrow(() -> new InvalidRequestException("Invalid program invite."));
+		if (!invite.getExpiresAt().isAfter(Instant.now())) {
+			throw new InvalidRequestException("This program invite has expired.");
+		}
+		if (!invite.getEmail().equalsIgnoreCase(email)) {
+			throw new InvalidRequestException("Sign up with the email address the invite was sent to.");
+		}
+		return Optional.of(invite);
+	}
+
+	/** Leaves the mentor waiting for the coordinator's expertise check, like a mentor asking to join. */
+	private void joinProgramPool(ProgramMentorInvite invite, AppUser mentor) {
+		ProgramMentor membership = new ProgramMentor();
+		membership.setId(UUID.randomUUID());
+		membership.setProgramId(invite.getProgramId());
+		membership.setMentorId(mentor.getId());
+		membership.setStatus(ProgramMentorStatus.PENDING);
+		membership.setInvitedBy(ProgramMentorInvitedBy.MENTOR);
+		membership.setCreatedAt(Instant.now());
+		programMentorRepository.save(membership);
+		invite.setMentorId(mentor.getId());
+		invite.setJoinedAt(Instant.now());
+		programMentorInviteRepository.save(invite);
 	}
 
 	/**

@@ -9,5 +9,6 @@ public record RegisterMentorRequest(
 		@NotBlank @Size(max = 255) String fullName,
 		@NotBlank @Email @Size(max = 255) String email,
 		@Size(max = 255) String jobTitle,
-		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone) {
+		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone,
+		@Size(max = 64) String programInvite) {
 }

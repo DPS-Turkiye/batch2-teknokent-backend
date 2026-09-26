@@ -19,15 +19,19 @@ import com.dps.teknokent.dto.requests.AddProgramCoordinatorRequest;
 import com.dps.teknokent.dto.requests.AddProgramTeamsRequest;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
+import com.dps.teknokent.dto.requests.DecideProgramMentorRequest;
+import com.dps.teknokent.dto.requests.InviteProgramMentorRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.SetProgramArchivedRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
+import com.dps.teknokent.dto.responses.MentorPoolResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
+import com.dps.teknokent.service.MentorPoolService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
 
@@ -44,6 +48,7 @@ public class CoordinatorProgramController {
 	private final CoordinatorProgramService coordinatorProgramService;
 	private final ProgramCoordinatorService programCoordinatorService;
 	private final ProgramLaunchService programLaunchService;
+	private final MentorPoolService mentorPoolService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -167,5 +172,59 @@ public class CoordinatorProgramController {
 			@PathVariable UUID inviteId,
 			@RequestParam(required = false) UUID actorId) {
 		return programLaunchService.removeTeam(CurrentActor.resolve(actorId), id, inviteId);
+	}
+
+	@GetMapping("/{id}/mentors")
+	public List<MentorPoolResponse.Row> mentorPool(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return mentorPoolService.pool(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/mentors")
+	public List<MentorPoolResponse.Row> inviteMentor(
+			@PathVariable UUID id,
+			@Valid @RequestBody InviteProgramMentorRequest request) {
+		return mentorPoolService.invite(CurrentActor.resolve(request.actorId()), id, request.email());
+	}
+
+	@DeleteMapping("/{id}/mentors/{mentorId}")
+	public List<MentorPoolResponse.Row> withdrawMentorInvite(
+			@PathVariable UUID id,
+			@PathVariable UUID mentorId,
+			@RequestParam(required = false) UUID actorId) {
+		return mentorPoolService.withdraw(CurrentActor.resolve(actorId), id, mentorId);
+	}
+
+	@GetMapping("/{id}/mentors/{mentorId}/review")
+	public MentorPoolResponse.Review reviewMentor(
+			@PathVariable UUID id,
+			@PathVariable UUID mentorId,
+			@RequestParam(required = false) UUID actorId) {
+		return mentorPoolService.review(CurrentActor.resolve(actorId), id, mentorId);
+	}
+
+	@PostMapping("/{id}/mentors/{mentorId}/decision")
+	public List<MentorPoolResponse.Row> decideMentor(
+			@PathVariable UUID id,
+			@PathVariable UUID mentorId,
+			@Valid @RequestBody DecideProgramMentorRequest request) {
+		return mentorPoolService.decide(CurrentActor.resolve(request.actorId()), id, mentorId, request.accepted());
+	}
+
+	@PostMapping("/{id}/mentor-invites/{inviteId}/renew")
+	public List<MentorPoolResponse.Row> renewMentorInvite(
+			@PathVariable UUID id,
+			@PathVariable UUID inviteId,
+			@RequestParam(required = false) UUID actorId) {
+		return mentorPoolService.renewInvite(CurrentActor.resolve(actorId), id, inviteId);
+	}
+
+	@DeleteMapping("/{id}/mentor-invites/{inviteId}")
+	public List<MentorPoolResponse.Row> cancelMentorInvite(
+			@PathVariable UUID id,
+			@PathVariable UUID inviteId,
+			@RequestParam(required = false) UUID actorId) {
+		return mentorPoolService.cancelInvite(CurrentActor.resolve(actorId), id, inviteId);
 	}
 }
