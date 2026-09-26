@@ -33,6 +33,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.TextUtils;
 
 @Service
@@ -110,7 +111,7 @@ public class MeetingService {
 				: meeting.getMentor().getFullName();
 		String when = meeting.getScheduledAt() == null
 				? ""
-				: " · " + meeting.getScheduledAt().toString();
+				: " · " + MeetingSlotTimes.formatForPeople(meeting.getScheduledAt());
 		String body = mentorName
 				+ ", "
 				+ meeting.getOrganization().getName()

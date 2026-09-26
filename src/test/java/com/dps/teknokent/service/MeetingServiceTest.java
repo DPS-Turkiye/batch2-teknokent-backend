@@ -415,7 +415,7 @@ class MeetingServiceTest {
 				eq(mentee),
 				eq(NotificationCategory.MEETING_CHANGE),
 				eq("Yeni görüşme planlandı"),
-				org.mockito.ArgumentMatchers.contains("Teknokent"),
+				org.mockito.ArgumentMatchers.contains("Teknokent için yeni bir görüşme planladı · 15 Eylül Salı · 19:00."),
 				eq("/mentorships?tab=active"));
 	}
 
