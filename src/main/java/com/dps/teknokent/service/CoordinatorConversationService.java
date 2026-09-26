@@ -226,6 +226,17 @@ public class CoordinatorConversationService {
 				&& (readAt == null || conversation.getLastMessageAt().isAfter(readAt));
 	}
 
+	// Sending marks the sender's side read, so everything after a side's mark came from the other side.
+	private long unreadCount(CoordinatorConversation conversation, Side side) {
+		if (!unread(conversation, side)) {
+			return 0;
+		}
+		Instant readAt = side == Side.COORDINATOR ? conversation.getCoordinatorReadAt() : conversation.getCounterpartReadAt();
+		return readAt == null
+				? messageRepository.countByConversationId(conversation.getId())
+				: messageRepository.countByConversationIdAndCreatedAtAfter(conversation.getId(), readAt);
+	}
+
 	private List<CoordinatorConversationResponse> toResponses(List<CoordinatorConversation> conversations, Side side) {
 		if (conversations.isEmpty()) {
 			return List.of();
@@ -269,7 +280,11 @@ public class CoordinatorConversationService {
 							coordinator == null ? null : coordinator.getFullName(),
 							conversation.getLastMessagePreview(),
 							conversation.getLastMessageAt(),
-							unread(conversation, side));
+							unread(conversation, side),
+							unreadCount(conversation, side),
+							side == Side.COORDINATOR
+									? conversation.getCounterpartReadAt()
+									: conversation.getCoordinatorReadAt());
 				})
 				.toList();
 	}

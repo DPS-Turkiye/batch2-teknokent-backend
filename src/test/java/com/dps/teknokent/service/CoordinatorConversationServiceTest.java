@@ -165,7 +165,10 @@ class CoordinatorConversationServiceTest {
 		conversation.setCreatedAt(Instant.parse("2026-09-20T09:00:00Z"));
 		conversation.setLastMessageAt(Instant.parse("2026-09-24T09:00:00Z"));
 		conversation.setCounterpartReadAt(Instant.parse("2026-09-23T09:00:00Z"));
+		conversation.setCoordinatorReadAt(Instant.parse("2026-09-24T09:00:00Z"));
 		when(conversationRepository.findByMentorId(MENTOR_ID)).thenReturn(List.of(conversation));
+		when(messageRepository.countByConversationIdAndCreatedAtAfter(
+				CONVERSATION_ID, Instant.parse("2026-09-23T09:00:00Z"))).thenReturn(2L);
 		when(programRepository.findAllById(any())).thenReturn(List.of(program()));
 		when(appUserRepository.findAllById(any())).thenReturn(List.of(
 				user(COORDINATOR_ID, UserRole.COORDINATOR, null), user(MENTOR_ID, UserRole.MENTOR, null)));
@@ -177,7 +180,28 @@ class CoordinatorConversationServiceTest {
 			assertThat(item.counterpartType()).isEqualTo(CoordinatorConversationCounterpart.MENTOR);
 			assertThat(item.coordinatorName()).isEqualTo("Elif Demir");
 			assertThat(item.unread()).isTrue();
+			assertThat(item.unreadCount()).isEqualTo(2);
+			assertThat(item.otherSideReadAt()).isEqualTo(Instant.parse("2026-09-24T09:00:00Z"));
 		});
+	}
+
+	@Test
+	void aThreadNeverOpenedCountsEveryMessageAsUnread() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(user(MENTOR_ID, UserRole.MENTOR, null));
+		CoordinatorConversation conversation = new CoordinatorConversation();
+		conversation.setId(CONVERSATION_ID);
+		conversation.setProgramId(PROGRAM_ID);
+		conversation.setMentorId(MENTOR_ID);
+		conversation.setCreatedAt(Instant.parse("2026-09-20T09:00:00Z"));
+		conversation.setLastMessageAt(Instant.parse("2026-09-24T09:00:00Z"));
+		when(conversationRepository.findByMentorId(MENTOR_ID)).thenReturn(List.of(conversation));
+		when(messageRepository.countByConversationId(CONVERSATION_ID)).thenReturn(3L);
+		when(programRepository.findAllById(any())).thenReturn(List.of(program()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(user(COORDINATOR_ID, UserRole.COORDINATOR, null)));
+		when(organizationRepository.findAllById(any())).thenReturn(List.of());
+
+		assertThat(service.list(MENTOR_ID)).singleElement()
+				.satisfies(item -> assertThat(item.unreadCount()).isEqualTo(3));
 	}
 
 	private void stubNames() {

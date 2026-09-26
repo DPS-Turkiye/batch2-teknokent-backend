@@ -454,6 +454,7 @@ class MentorshipRequestServiceTest {
                                 argThat((MentorshipRequestMessage message) -> message
                                                 .getMessageType() == MentorshipRequestMessageType.MENTOR_MESSAGE
                                                 && message.getBody().equals("Yarın 14:00 uygun mu?")));
+                assertThat(request.getMentorReadAt()).isNotNull();
                 verify(notificationService).create(
                                 eq(requester),
                                 eq(NotificationCategory.MESSAGE),
@@ -598,6 +599,77 @@ class MentorshipRequestServiceTest {
                                 new PostMentorMessageRequest(mentorId, "Merhaba")))
                                 .isInstanceOf(InvalidRequestException.class)
                                 .hasMessageContaining("open mentorship request");
+        }
+
+        @Test
+        void markRead_stampsTheMentorsSideWhenTheMentorOpensTheThread() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com",
+                                "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                                "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+                requester.setOrganization(organization);
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.ACCEPTED);
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(mentor.getId())).thenReturn(mentor);
+                when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+
+                var result = mentorshipRequestService.markRead(requestId, mentor.getId());
+
+                assertThat(result.mentorReadAt()).isNotNull();
+                assertThat(result.menteeReadAt()).isNull();
+        }
+
+        @Test
+        void markRead_letsAnyTeammateMarkTheStartupsSideRead() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com",
+                                "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                                "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+                AppUser teammate = user(UUID.fromString("00000000-0000-0000-0000-000000000102"),
+                                "teammate@tekno.com", "Can Yılmaz", UserRole.MENTEE);
+                requester.setOrganization(organization);
+                teammate.setOrganization(organization);
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.ACCEPTED);
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(teammate.getId())).thenReturn(teammate);
+                when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+
+                var result = mentorshipRequestService.markRead(requestId, teammate.getId());
+
+                assertThat(result.menteeReadAt()).isNotNull();
+                assertThat(result.mentorReadAt()).isNull();
+        }
+
+        @Test
+        void markRead_rejectsSomeoneOutsideTheConversation() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com",
+                                "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                                "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+                AppUser outsider = user(UUID.fromString("00000000-0000-0000-0000-000000000999"),
+                                "outsider@tekno.com", "Başka Biri", UserRole.MENTEE);
+                outsider.setOrganization(organization(UUID.fromString("00000000-0000-0000-0000-000000000399"),
+                                "Başka Startup"));
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.ACCEPTED);
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(outsider.getId())).thenReturn(outsider);
+
+                assertThatThrownBy(() -> mentorshipRequestService.markRead(requestId, outsider.getId()))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("not part of this conversation");
+                assertThat(request.getMenteeReadAt()).isNull();
         }
 
         private static MentorshipRequest mentorshipRequest(UUID id, AppUser requester, Organization organization,

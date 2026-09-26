@@ -2,6 +2,7 @@ package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -83,6 +84,8 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-20T08:05:00Z"),
                 List.of(),
                 null,
+                null,
+                null,
                 null
         )));
 
@@ -123,6 +126,8 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-21T10:00:00Z"),
                 Instant.parse("2026-08-21T10:05:00Z"),
                 List.of(),
+                null,
+                null,
                 null,
                 null
         ));
@@ -177,6 +182,8 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-21T12:10:00Z"),
                 List.of(),
                 null,
+                null,
+                null,
                 null
         ));
 
@@ -223,6 +230,8 @@ class MentorshipRequestControllerTest {
                 Instant.parse("2026-08-21T14:05:00Z"),
                 List.of(),
                 null,
+                null,
+                null,
                 null
         ));
 
@@ -268,7 +277,9 @@ class MentorshipRequestControllerTest {
                         Instant.parse("2026-08-21T14:05:00Z"),
                         List.of(),
                         null,
-                        6
+                        6,
+                        null,
+                        null
                 ));
 
         mockMvc.perform(patch("/api/mentorship-requests/{id}/planned-sessions", requestId)
@@ -317,6 +328,31 @@ class MentorshipRequestControllerTest {
                                   "meetingMode": "ONLINE"
                                 }
                                 """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void marksTheConversationReadForTheCaller() throws Exception {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+
+        mockMvc.perform(post("/api/mentorship-requests/{id}/read", requestId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "actorId": "00000000-0000-0000-0000-000000000201" }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(mentorshipRequestService).markRead(requestId, actorId);
+    }
+
+    @Test
+    void rejectsMarkingReadWithoutAnActor() throws Exception {
+        mockMvc.perform(post("/api/mentorship-requests/{id}/read", UUID.randomUUID())
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
                 .andExpect(status().isBadRequest());
     }
 }

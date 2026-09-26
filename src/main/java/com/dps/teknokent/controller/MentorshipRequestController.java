@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.domain.MentorshipWorkspaceTab;
 import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
+import com.dps.teknokent.dto.requests.ActorRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.LogMeetingRequest;
@@ -115,6 +116,13 @@ public class MentorshipRequestController {
 			@Valid @RequestBody UpdatePlannedSessionsRequest request) {
 		return mentorshipRequestService.updatePlannedSessions(id, new UpdatePlannedSessionsRequest(
 				CurrentActor.resolve(request.mentorId()), request.plannedSessionCount()));
+	}
+
+	@PostMapping("/{id}/read")
+	public MentorshipRequestResponse markRead(
+			@PathVariable UUID id,
+			@Valid @RequestBody ActorRequest request) {
+		return mentorshipRequestService.markRead(id, CurrentActor.resolve(request.actorId()));
 	}
 
 	@PatchMapping("/{id}/withdrawal")
