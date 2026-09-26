@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -37,6 +39,7 @@ import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
@@ -45,6 +48,7 @@ import com.dps.teknokent.repository.OnboardingDraftRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 
 @ExtendWith(MockitoExtension.class)
@@ -130,6 +134,8 @@ class RegistrationServiceTest {
 
     @Mock
     private OrganizationPendingMemberRepository pendingMemberRepository;
+    @Mock
+    private ProgramTeamInviteRepository programTeamInviteRepository;
 
     @InjectMocks
     private RegistrationService registrationService;
@@ -430,6 +436,50 @@ class RegistrationServiceTest {
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.organizationName()).isEqualTo("GreenLoop");
         verify(pendingMemberRepository).deleteByOrganizationIdAndEmailIgnoreCase(ORGANIZATION_ID, "elif@startup.com");
+    }
+
+    @Test
+    void registerMember_theLeadsCodeCreatesTheTeamApprovedAndInItsProgram() {
+        UUID programId = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
+        ProgramTeamInvite invite = new ProgramTeamInvite();
+        invite.setId(UUID.randomUUID());
+        invite.setProgramId(programId);
+        invite.setTeamName("Kavşak");
+        invite.setLeadEmail("deniz@kavsak.co");
+        invite.setCode("BIGG26-K4TX");
+        when(appUserRepository.existsByEmailIgnoreCase("deniz@kavsak.co")).thenReturn(false);
+        when(programTeamInviteRepository.findByCode("BIGG26-K4TX")).thenReturn(Optional.of(invite));
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            organization.setId(ORGANIZATION_ID);
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = registrationService.registerMember(new RegisterMemberRequest(
+                "Deniz Arı", "deniz@kavsak.co", "bigg26-k4tx", null, null));
+
+        assertThat(result.status()).isEqualTo(UserAccountStatus.APPROVED);
+        assertThat(result.organizationName()).isEqualTo("Kavşak");
+        assertThat(invite.getOrganizationId()).isEqualTo(ORGANIZATION_ID);
+        assertThat(invite.getJoinedAt()).isNotNull();
+        verify(programStartupRepository).save(argThat(startup ->
+                startup.getProgramId().equals(programId) && startup.getOrganizationId().equals(ORGANIZATION_ID)));
+        verify(organizationRepository, never()).findByInviteCode(any());
+    }
+
+    @Test
+    void registerMember_someoneElseCannotClaimATeamWithItsLeadsCode() {
+        ProgramTeamInvite invite = new ProgramTeamInvite();
+        invite.setLeadEmail("deniz@kavsak.co");
+        invite.setCode("BIGG26-K4TX");
+        when(appUserRepository.existsByEmailIgnoreCase("stranger@mail.com")).thenReturn(false);
+        when(programTeamInviteRepository.findByCode("BIGG26-K4TX")).thenReturn(Optional.of(invite));
+
+        assertThatThrownBy(() -> registrationService.registerMember(new RegisterMemberRequest(
+                "Stranger", "stranger@mail.com", "BIGG26-K4TX", null, null)))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(organizationRepository, never()).saveAndFlush(any());
     }
 
     @Test

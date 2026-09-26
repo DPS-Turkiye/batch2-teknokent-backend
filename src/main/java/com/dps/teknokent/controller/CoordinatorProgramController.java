@@ -16,15 +16,20 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.AddProgramCoordinatorRequest;
+import com.dps.teknokent.dto.requests.AddProgramTeamsRequest;
+import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.SetProgramArchivedRequest;
+import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
+import com.dps.teknokent.dto.responses.ProgramTeamResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
+import com.dps.teknokent.service.ProgramLaunchService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -38,6 +43,7 @@ public class CoordinatorProgramController {
 
 	private final CoordinatorProgramService coordinatorProgramService;
 	private final ProgramCoordinatorService programCoordinatorService;
+	private final ProgramLaunchService programLaunchService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -123,5 +129,43 @@ public class CoordinatorProgramController {
 			@PathVariable UUID userId,
 			@RequestParam(required = false) UUID actorId) {
 		return programCoordinatorService.remove(CurrentActor.resolve(actorId), id, userId);
+	}
+
+	/** The "Yeni program" wizard: basic info, rules and teams with their leads, in one request. */
+	@PostMapping
+	@ResponseStatus(HttpStatus.CREATED)
+	public CoordinatorProgramResponse.Detail create(@Valid @RequestBody CreateCoordinatorProgramRequest request) {
+		return programLaunchService.create(CurrentActor.resolve(request.actorId()), request);
+	}
+
+	@GetMapping("/{id}/teams")
+	public List<ProgramTeamResponse> teams(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return programLaunchService.teams(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/teams")
+	public List<ProgramTeamResponse> addTeams(
+			@PathVariable UUID id,
+			@Valid @RequestBody AddProgramTeamsRequest request) {
+		return programLaunchService.addTeams(CurrentActor.resolve(request.actorId()), id, request.teams());
+	}
+
+	@PutMapping("/{id}/teams/{inviteId}")
+	public List<ProgramTeamResponse> updateTeam(
+			@PathVariable UUID id,
+			@PathVariable UUID inviteId,
+			@Valid @RequestBody TeamInviteInput input,
+			@RequestParam(required = false) UUID actorId) {
+		return programLaunchService.updateTeam(CurrentActor.resolve(actorId), id, inviteId, input);
+	}
+
+	@DeleteMapping("/{id}/teams/{inviteId}")
+	public List<ProgramTeamResponse> removeTeam(
+			@PathVariable UUID id,
+			@PathVariable UUID inviteId,
+			@RequestParam(required = false) UUID actorId) {
+		return programLaunchService.removeTeam(CurrentActor.resolve(actorId), id, inviteId);
 	}
 }

@@ -40,6 +40,7 @@ import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
+import com.dps.teknokent.service.ProgramLaunchService;
 
 @WebMvcTest(CoordinatorProgramController.class)
 @Import(SecurityConfig.class)
@@ -52,6 +53,8 @@ class CoordinatorProgramControllerTest {
 	private CoordinatorProgramService coordinatorProgramService;
 	@MockitoBean
 	private ProgramCoordinatorService programCoordinatorService;
+	@MockitoBean
+	private ProgramLaunchService programLaunchService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");
@@ -164,6 +167,27 @@ class CoordinatorProgramControllerTest {
 						.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programCoordinatorService).remove(SIGNED_IN_ID, PROGRAM_ID, other);
+	}
+
+	@Test
+	void launchesAProgramAndRejectsABadLeadEmail() throws Exception {
+		String body = """
+				{"name":"METU BİGG 2026","coordinatorIds":[],"defaultMentorCapacity":4,"meetingFrequencyDays":14,
+				 "communicationGapDays":14,"bottleneckFlagDays":21,
+				 "teams":[{"teamName":"Kavşak","leadEmail":"%s"}]}
+				""";
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(body.formatted("deniz@kavsak.co")))
+				.andExpect(status().isCreated());
+		verify(programLaunchService).create(eq(SIGNED_IN_ID), any());
+
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(body.formatted("can@tohum")))
+				.andExpect(status().isBadRequest());
 	}
 
 	@Test

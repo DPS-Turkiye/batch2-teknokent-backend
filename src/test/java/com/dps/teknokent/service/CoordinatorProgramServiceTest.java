@@ -288,7 +288,7 @@ class CoordinatorProgramServiceTest {
 		stubManagedProgram(program);
 
 		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "Yeni ad", null, null, null, null, null, null, null)))
+				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null)))
 				.isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> service.deleteEvent(COORDINATOR_ID, PROGRAM_ID, UUID.randomUUID()))
 				.isInstanceOf(InvalidRequestException.class);
@@ -321,7 +321,7 @@ class CoordinatorProgramServiceTest {
 				.thenReturn(List.of());
 
 		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, " METU Stars 2026 ", "  ", today, today.plusDays(100), 10, null, false, null));
+				null, " METU Stars 2026 ", "  ", today, today.plusDays(100), 10, null, false, null, null, null, null));
 
 		assertThat(program.getName()).isEqualTo("METU Stars 2026");
 		assertThat(program.getDescription()).isNull();
@@ -337,7 +337,7 @@ class CoordinatorProgramServiceTest {
 		stubManagedProgram(program(COORDINATOR_ID));
 
 		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "METU Stars", null, today, today.minusDays(1), null, null, null, null)))
+				null, "METU Stars", null, today, today.minusDays(1), null, null, null, null, null, null, null)))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programRepository, never()).save(any());
 	}

@@ -18,5 +18,8 @@ public record UpdateProgramDetailsRequest(
 		@Min(1) @Max(90) Integer meetingFrequencyDays,
 		@Min(1) @Max(180) Integer staleAfterDays,
 		Boolean meetingNoteRequired,
-		Boolean autoMatchSuggestions) {
+		Boolean autoMatchSuggestions,
+		@Min(1) @Max(20) Integer defaultMentorCapacity,
+		@Min(1) @Max(180) Integer communicationGapDays,
+		@Min(1) @Max(365) Integer bottleneckFlagDays) {
 }
