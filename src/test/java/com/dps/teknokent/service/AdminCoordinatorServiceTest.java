@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,10 +44,13 @@ class AdminCoordinatorServiceTest {
 	private LoginProvisioner loginProvisioner;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private MailService mailService;
 	@InjectMocks
 	private AdminCoordinatorService service;
 
 	private static final UUID ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
+	private static final String LOGIN = "https://menton.com.tr/login";
 	private static final UUID MENTOR_ID = UUID.fromString("00000000-0000-0000-0000-000000000006");
 
 	@Test
@@ -54,6 +58,9 @@ class AdminCoordinatorServiceTest {
 		stubAdmin();
 		when(appUserRepository.findByEmailIgnoreCase("elif@teknokent.org")).thenReturn(Optional.empty());
 		when(loginProvisioner.loginFor("elif@teknokent.org", "Elif Demir")).thenReturn("uid-elif");
+		when(mailService.link("/login")).thenReturn(LOGIN);
+		when(loginProvisioner.passwordSetupLink("elif@teknokent.org", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/reset?oobCode=1"));
 
 		var result = service.add(ADMIN_ID, new AddCoordinatorRequest(null, " Elif Demir ", "  Elif@Teknokent.org "));
 
@@ -67,6 +74,37 @@ class AdminCoordinatorServiceTest {
 		assertThat(saved.getValue().getFirebaseUid()).isEqualTo("uid-elif");
 		assertThat(result.outcome()).isEqualTo(CoordinatorCandidateStatus.NEW);
 		verify(notificationService, never()).create(any(), anyString(), anyString(), anyString());
+		verify(mailService).sendAfterCommit(
+				eq("elif@teknokent.org"),
+				eq("menton koordinatör hesabınız hazır"),
+				contains("https://auth.example/reset?oobCode=1"));
+	}
+
+	@Test
+	void anAdminResendsThePasswordSetupEmailOnlyToAnActiveCoordinator() {
+		stubAdmin();
+		UUID coordinatorId = UUID.randomUUID();
+		AppUser coordinator = user(coordinatorId, "elif@teknokent.org", UserRole.COORDINATOR);
+		when(domainLookupService.requireUser(coordinatorId)).thenReturn(coordinator);
+		when(mailService.link("/login")).thenReturn(LOGIN);
+		when(loginProvisioner.passwordSetupLink("elif@teknokent.org", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/reset?oobCode=2"));
+
+		service.resendPasswordSetup(ADMIN_ID, coordinatorId);
+
+		verify(mailService).sendAfterCommit(
+				eq("elif@teknokent.org"),
+				anyString(),
+				contains("https://auth.example/reset?oobCode=2"));
+
+		when(loginProvisioner.passwordSetupLink("elif@teknokent.org", LOGIN)).thenReturn(Optional.empty());
+		assertThatThrownBy(() -> service.resendPasswordSetup(ADMIN_ID, coordinatorId))
+				.isInstanceOf(InvalidRequestException.class);
+
+		UUID mentorId = UUID.randomUUID();
+		when(domainLookupService.requireUser(mentorId)).thenReturn(user(mentorId, "m@x.co", UserRole.MENTOR));
+		assertThatThrownBy(() -> service.resendPasswordSetup(ADMIN_ID, mentorId))
+				.isInstanceOf(InvalidRequestException.class);
 	}
 
 	@Test
