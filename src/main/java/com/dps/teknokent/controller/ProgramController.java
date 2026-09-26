@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,12 +24,15 @@ import com.dps.teknokent.dto.requests.CreateProgramRequest;
 import com.dps.teknokent.dto.requests.DecideProgramMembershipRequest;
 import com.dps.teknokent.dto.requests.SetActiveProgramRequest;
 import com.dps.teknokent.dto.requests.SetProgramStatusRequest;
+import com.dps.teknokent.dto.responses.MemberProgramEventResponse;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
 import com.dps.teknokent.dto.responses.ProgramDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.security.AppUserPrincipal;
+import com.dps.teknokent.service.ProgramCalendarService;
 import com.dps.teknokent.service.ProgramService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,6 +46,7 @@ import lombok.RequiredArgsConstructor;
 public class ProgramController {
 
 	private final ProgramService programService;
+	private final ProgramCalendarService programCalendarService;
 
 	@GetMapping
 	public List<ProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -65,6 +70,19 @@ public class ProgramController {
 	@GetMapping("/mine")
 	public OrganizationProgramsResponse mine(@RequestParam(required = false) UUID actorId) {
 		return programService.listForOrganization(resolveActorId(actorId));
+	}
+
+	/** Events and deadlines of the programs the caller's startup is in, or the caller mentors in. */
+	@GetMapping("/events")
+	public List<MemberProgramEventResponse> events(
+			@RequestParam Instant from,
+			@RequestParam Instant to,
+			@RequestParam(required = false) UUID actorId) {
+		UUID resolved = resolveActorId(actorId);
+		if (resolved == null) {
+			throw new InvalidRequestException("actorId is required");
+		}
+		return programCalendarService.eventsFor(resolved, from, to);
 	}
 
 	@PutMapping("/mine/active")

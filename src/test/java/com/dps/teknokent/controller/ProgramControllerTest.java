@@ -23,9 +23,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.dto.responses.MemberProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
+import com.dps.teknokent.service.ProgramCalendarService;
 import com.dps.teknokent.service.ProgramService;
 
 @WebMvcTest(ProgramController.class)
@@ -37,6 +40,9 @@ class ProgramControllerTest {
 
 	@MockitoBean
 	private ProgramService programService;
+
+	@MockitoBean
+	private ProgramCalendarService programCalendarService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
@@ -110,6 +116,33 @@ class ProgramControllerTest {
 						.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].programName").value("Seed 2026"));
+	}
+
+	@Test
+	void listsTheCallersProgramEventsInARange() throws Exception {
+		Instant from = Instant.parse("2026-09-21T00:00:00Z");
+		Instant to = Instant.parse("2026-09-28T00:00:00Z");
+		when(programCalendarService.eventsFor(ACTOR_ID, from, to)).thenReturn(List.of(
+				new MemberProgramEventResponse(UUID.randomUUID(), PROGRAM_ID, "Seed 2026", "Ara rapor teslimi",
+						ProgramEventKind.DEADLINE, Instant.parse("2026-09-25T20:59:00Z"), null, null)));
+
+		mockMvc.perform(get("/api/programs/events")
+						.param("from", from.toString())
+						.param("to", to.toString())
+						.param("actorId", ACTOR_ID.toString())
+						.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].programName").value("Seed 2026"))
+				.andExpect(jsonPath("$[0].kind").value("DEADLINE"));
+	}
+
+	@Test
+	void requiresAnActorForProgramEvents() throws Exception {
+		mockMvc.perform(get("/api/programs/events")
+						.param("from", "2026-09-21T00:00:00Z")
+						.param("to", "2026-09-28T00:00:00Z")
+						.with(user("test-user")))
+				.andExpect(status().isBadRequest());
 	}
 
 	private static ProgramResponse program() {
