@@ -39,6 +39,7 @@ import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
+import com.dps.teknokent.service.ProgramCoordinatorService;
 
 @WebMvcTest(CoordinatorProgramController.class)
 @Import(SecurityConfig.class)
@@ -49,6 +50,8 @@ class CoordinatorProgramControllerTest {
 
 	@MockitoBean
 	private CoordinatorProgramService coordinatorProgramService;
+	@MockitoBean
+	private ProgramCoordinatorService programCoordinatorService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");
@@ -133,6 +136,44 @@ class CoordinatorProgramControllerTest {
 				.andExpect(status().isNoContent());
 
 		verify(coordinatorProgramService).deleteEvent(SIGNED_IN_ID, PROGRAM_ID, eventId);
+	}
+
+	@Test
+	void archivesAndManagesCoordinatorsAsTheSignedInUser() throws Exception {
+		UUID other = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+		when(programCoordinatorService.add(SIGNED_IN_ID, PROGRAM_ID, other)).thenReturn(List.of(
+				new CoordinatorProgramResponse.CoordinatorRef(SIGNED_IN_ID, "Elif Demir", true),
+				new CoordinatorProgramResponse.CoordinatorRef(other, "Burcu Şen", false)));
+
+		mockMvc.perform(put("/api/coordinator/programs/{id}/archive", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"archived\":true}"))
+				.andExpect(status().isOk());
+		verify(coordinatorProgramService).setArchived(SIGNED_IN_ID, PROGRAM_ID, true);
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/coordinators", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"userId\":\"" + other + "\",\"actorId\":\"" + ACTOR_ID + "\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[1].fullName").value("Burcu Şen"))
+				.andExpect(jsonPath("$[0].owner").value(true));
+
+		mockMvc.perform(delete("/api/coordinator/programs/{id}/coordinators/{userId}", PROGRAM_ID, other)
+						.with(authentication(signedIn())))
+				.andExpect(status().isOk());
+		verify(programCoordinatorService).remove(SIGNED_IN_ID, PROGRAM_ID, other);
+	}
+
+	@Test
+	void archivingNeedsAnAnswer() throws Exception {
+		mockMvc.perform(put("/api/coordinator/programs/{id}/archive", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{}"))
+				.andExpect(status().isBadRequest());
+		verifyNoInteractions(coordinatorProgramService);
 	}
 
 	private static UsernamePasswordAuthenticationToken signedIn() {

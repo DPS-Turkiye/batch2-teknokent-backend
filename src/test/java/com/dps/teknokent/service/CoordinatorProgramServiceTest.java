@@ -34,6 +34,7 @@ import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -66,6 +67,7 @@ import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramEventRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.service.CoordinatorProgramService.HealthBucket;
@@ -80,6 +82,8 @@ class CoordinatorProgramServiceTest {
 	private AppUserRepository appUserRepository;
 	@Mock
 	private ProgramRepository programRepository;
+	@Mock
+	private ProgramCoordinatorRepository programCoordinatorRepository;
 	@Mock
 	private ProgramPhaseRepository programPhaseRepository;
 	@Mock
@@ -265,6 +269,46 @@ class CoordinatorProgramServiceTest {
 				null, List.of(new ReplaceProgramPhasesRequest.PhaseInput("Seçim", today, today.minusDays(1))))))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programPhaseRepository, never()).deleteByProgramId(any());
+	}
+
+	@Test
+	void aCoordinatorAddedToTheProgramCanOpenIt() {
+		when(domainLookupService.requireUser(OTHER_COORDINATOR_ID))
+				.thenReturn(user(OTHER_COORDINATOR_ID, UserRole.COORDINATOR));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(COORDINATOR_ID)));
+		when(programCoordinatorRepository.existsByProgramIdAndUserId(PROGRAM_ID, OTHER_COORDINATOR_ID)).thenReturn(true);
+
+		assertThat(service.requireManagedProgram(OTHER_COORDINATOR_ID, PROGRAM_ID).getId()).isEqualTo(PROGRAM_ID);
+	}
+
+	@Test
+	void anArchivedProgramCannotBeChangedUntilRestored() {
+		Program program = program(COORDINATOR_ID);
+		program.setStatus(ProgramStatus.COMPLETED);
+		stubManagedProgram(program);
+
+		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "Yeni ad", null, null, null, null, null, null, null)))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.deleteEvent(COORDINATOR_ID, PROGRAM_ID, UUID.randomUUID()))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void archivingCompletesTheProgramAndRestoringReopensIt() {
+		Program program = program(COORDINATOR_ID);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(), List.of(), List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+
+		var archived = service.setArchived(COORDINATOR_ID, PROGRAM_ID, true);
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.COMPLETED);
+		assertThat(archived.program().status()).isEqualTo(ProgramStatus.COMPLETED);
+
+		service.setArchived(COORDINATOR_ID, PROGRAM_ID, false);
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.ACTIVE);
 	}
 
 	@Test

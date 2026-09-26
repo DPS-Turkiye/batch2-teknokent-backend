@@ -12,8 +12,8 @@ import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
-import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse.OrganizationProgramResponse;
+import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.ProgramDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
@@ -32,9 +32,11 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -44,6 +46,7 @@ import lombok.RequiredArgsConstructor;
 public class ProgramService {
 
 	private final ProgramRepository programRepository;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final OrganizationRepository organizationRepository;
@@ -81,7 +84,7 @@ public class ProgramService {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		List<Program> programs;
 		if (actor.getRole() == UserRole.COORDINATOR) {
-			programs = programRepository.findByCreatedByOrderByCreatedAtDesc(actor.getId());
+			programs = ProgramCoordination.programsOf(actor.getId(), programRepository, programCoordinatorRepository);
 		} else if (actor.getRole() == UserRole.MENTOR || actor.getRole() == UserRole.ADMIN) {
 			programs = programRepository.findAllByOrderByCreatedAtDesc();
 		} else {
@@ -324,7 +327,7 @@ public class ProgramService {
 	private Program requireOwnedProgram(UUID actorId, UUID programId) {
 		AppUser actor = requireCoordinator(actorId);
 		Program program = requireProgram(programId);
-		if (!program.getCreatedBy().equals(actor.getId())) {
+		if (!ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("Only the program coordinator can change this program.");
 		}
 		return program;
@@ -344,7 +347,7 @@ public class ProgramService {
 			return;
 		}
 		if (actor.getRole() == UserRole.COORDINATOR
-				&& program.getCreatedBy().equals(actor.getId())) {
+				&& ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			return;
 		}
 		if (actor.getRole() == UserRole.MENTOR

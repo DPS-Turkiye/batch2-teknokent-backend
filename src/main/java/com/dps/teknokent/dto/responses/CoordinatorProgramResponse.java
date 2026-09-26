@@ -37,7 +37,13 @@ public record CoordinatorProgramResponse(
 			List<AwaitingTeam> awaitingTeams,
 			List<ProgramEventResponse> upcomingEvents,
 			TeamDistribution teams,
-			MentorDistribution mentors) {
+			MentorDistribution mentors,
+			List<CoordinatorRef> coordinators,
+			int missingNoteMeetings) {
+	}
+
+	/** {@code owner} is the coordinator who created the program; the others were added to it. */
+	public record CoordinatorRef(UUID id, String fullName, boolean owner) {
 	}
 
 	public record Rules(
