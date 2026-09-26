@@ -49,6 +49,12 @@ import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
+import com.dps.teknokent.repository.ProgramMentorInviteRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.ProgramMentorInvite;
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
+import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.security.FirebaseIdentity;
 
 @ExtendWith(MockitoExtension.class)
@@ -136,6 +142,10 @@ class RegistrationServiceTest {
     private OrganizationPendingMemberRepository pendingMemberRepository;
     @Mock
     private ProgramTeamInviteRepository programTeamInviteRepository;
+    @Mock
+    private ProgramMentorInviteRepository programMentorInviteRepository;
+    @Mock
+    private ProgramMentorRepository programMentorRepository;
 
     @InjectMocks
     private RegistrationService registrationService;
@@ -373,7 +383,7 @@ class RegistrationServiceTest {
                 "Dr. Kemal Arslan",
                 "kemal@mentor.com",
                 "Ürün direktörü",
-                null));
+                null, null));
 
         assertThat(result.id()).isEqualTo(USER_ID);
         assertThat(result.role()).isEqualTo(UserRole.MENTOR);
@@ -396,7 +406,7 @@ class RegistrationServiceTest {
                 "Dr. Kemal Arslan",
                 "kemal@mentor.com",
                 "Ürün direktörü",
-                null));
+                null, null));
 
         ArgumentCaptor<MentorProfile> captor = ArgumentCaptor.forClass(MentorProfile.class);
         verify(mentorProfileRepository).save(captor.capture());
@@ -572,7 +582,7 @@ class RegistrationServiceTest {
                 "Dr. Kemal Arslan",
                 "kemal@mentor.com",
                 null,
-                null));
+                null, null));
 
         var saved = org.mockito.ArgumentCaptor.forClass(AppUser.class);
         verify(appUserRepository).saveAndFlush(saved.capture());
@@ -588,7 +598,7 @@ class RegistrationServiceTest {
                 "Dr. Kemal Arslan",
                 "kemal@mentor.com",
                 null,
-                "  +90 555 111 22 33  "));
+                "  +90 555 111 22 33  ", null));
 
         var saved = org.mockito.ArgumentCaptor.forClass(AppUser.class);
         verify(appUserRepository).saveAndFlush(saved.capture());
@@ -605,7 +615,7 @@ class RegistrationServiceTest {
                 "Dr. Kemal Arslan",
                 "kemal@mentor.com",
                 null,
-                null)))
+                null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("does not match");
     }
@@ -629,5 +639,59 @@ class RegistrationServiceTest {
     private static void signIn(FirebaseIdentity identity) {
         SecurityContextHolder.getContext().setAuthentication(
                 UsernamePasswordAuthenticationToken.authenticated(identity, "firebase", List.of()));
+    }
+
+    @Test
+    void registerMentor_withAProgramInviteWaitsInThatProgramsPoolForTheCoordinator() {
+        UUID programId = UUID.randomUUID();
+        ProgramMentorInvite invite = mentorInvite(programId, "cagri@yilmazfinans.com", java.time.Instant.now().plusSeconds(3600));
+        when(programMentorInviteRepository.findByCode("abc123")).thenReturn(java.util.Optional.of(invite));
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+        when(mentorProfileRepository.findMaxSortOrder()).thenReturn(1);
+
+        var result = registrationService.registerMentor(new RegisterMentorRequest(
+                "Çağrı Yılmaz", "Cagri@YilmazFinans.com", null, null, "abc123"));
+
+        assertThat(result.status()).isEqualTo(UserAccountStatus.PENDING);
+        ArgumentCaptor<ProgramMentor> membership = ArgumentCaptor.forClass(ProgramMentor.class);
+        verify(programMentorRepository).save(membership.capture());
+        assertThat(membership.getValue().getProgramId()).isEqualTo(programId);
+        assertThat(membership.getValue().getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
+        assertThat(membership.getValue().getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.MENTOR);
+        assertThat(invite.getMentorId()).isEqualTo(USER_ID);
+        assertThat(invite.getJoinedAt()).isNotNull();
+    }
+
+    @Test
+    void registerMentor_refusesAnExpiredInviteOrAnotherEmail() {
+        UUID programId = UUID.randomUUID();
+        when(programMentorInviteRepository.findByCode("old")).thenReturn(java.util.Optional.of(
+                mentorInvite(programId, "cagri@yilmazfinans.com", java.time.Instant.now().minusSeconds(60))));
+        when(programMentorInviteRepository.findByCode("other")).thenReturn(java.util.Optional.of(
+                mentorInvite(programId, "cagri@yilmazfinans.com", java.time.Instant.now().plusSeconds(3600))));
+
+        assertThatThrownBy(() -> registrationService.registerMentor(new RegisterMentorRequest(
+                "Çağrı Yılmaz", "cagri@yilmazfinans.com", null, null, "old")))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("expired");
+        assertThatThrownBy(() -> registrationService.registerMentor(new RegisterMentorRequest(
+                "Çağrı Yılmaz", "someone@else.com", null, null, "other")))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("email address");
+        verify(appUserRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+    }
+
+    private static ProgramMentorInvite mentorInvite(UUID programId, String email, java.time.Instant expiresAt) {
+        ProgramMentorInvite invite = new ProgramMentorInvite();
+        invite.setId(UUID.randomUUID());
+        invite.setProgramId(programId);
+        invite.setEmail(email);
+        invite.setCode("abc123");
+        invite.setExpiresAt(expiresAt);
+        return invite;
     }
 }
