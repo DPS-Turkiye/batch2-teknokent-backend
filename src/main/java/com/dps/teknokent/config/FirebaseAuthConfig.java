@@ -7,9 +7,13 @@ import org.springframework.context.annotation.Configuration;
 
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.security.DisabledFirebaseTokenVerifier;
+import com.dps.teknokent.security.DisabledLoginProvisioner;
 import com.dps.teknokent.security.FirebaseAdminTokenVerifier;
 import com.dps.teknokent.security.FirebaseBearerFilter;
+import com.dps.teknokent.security.FirebaseLoginProvisioner;
 import com.dps.teknokent.security.FirebaseTokenVerifier;
+import com.dps.teknokent.security.LoginProvisioner;
+import com.google.firebase.auth.FirebaseAuth;
 
 @Configuration
 @EnableConfigurationProperties(FirebaseProperties.class)
@@ -21,6 +25,14 @@ public class FirebaseAuthConfig {
 			return new DisabledFirebaseTokenVerifier();
 		}
 		return new FirebaseAdminTokenVerifier(properties);
+	}
+
+	@Bean
+	LoginProvisioner loginProvisioner(FirebaseProperties properties) {
+		if (!properties.enabled()) {
+			return new DisabledLoginProvisioner();
+		}
+		return new FirebaseLoginProvisioner(FirebaseAuth.getInstance(FirebaseApps.named(properties)));
 	}
 
 	@Bean

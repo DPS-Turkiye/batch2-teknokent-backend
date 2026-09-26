@@ -68,7 +68,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		}
 
 		Optional<AppUser> account = appUserRepository.findByFirebaseUid(identity.get().uid())
-				.or(() -> appUserRepository.findByEmailIgnoreCase(identity.get().email()));
+				.or(() -> appUserRepository.findByEmailIgnoreCase(identity.get().email())
+						.filter(FirebaseBearerFilter::claimableByEmail));
 		if (account.isEmpty()) {
 			if (isProfileParsePreview(request)) {
 				authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
@@ -98,6 +99,15 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getFirebaseUid());
 		authenticate(principal, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
 		filterChain.doFilter(request, response);
+	}
+
+	/**
+	 * Linking a login to an existing row by email trusts whoever signs up with that address first, and
+	 * nothing here checks the address is verified. That is tolerable for mentors and mentees but not for
+	 * admins and coordinators, whose rows are seeded or created by an admin already linked to their uid.
+	 */
+	private static boolean claimableByEmail(AppUser user) {
+		return user.getRole() != UserRole.ADMIN && user.getRole() != UserRole.COORDINATOR;
 	}
 
 	/**
