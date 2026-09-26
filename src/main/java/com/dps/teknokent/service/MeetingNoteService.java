@@ -1,6 +1,9 @@
 package com.dps.teknokent.service;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -19,12 +22,15 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingTodoRepository;
 import com.dps.teknokent.util.TextUtils;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
 public class MeetingNoteService {
+
+	private static final int MAX_TODO_TITLE = 1000;
 
 	private final DomainLookupService domainLookupService;
 	private final MeetingNoteRepository meetingNoteRepository;
@@ -91,6 +97,70 @@ public class MeetingNoteService {
 		meetingTodoRepository.delete(requireTodo(meetingId, todoId));
 		meetingTodoRepository.flush();
 		return publishTodos(meetingId);
+	}
+
+	/**
+	 * Puts the meeting report's action items on the Yapılacaklar list as AI tasks, as "task — owner · due" with
+	 * the owner and the date left out when the report does not name them. A task already on the list is skipped,
+	 * so the same report stored again, or copied to a group session's other meetings, adds nothing twice.
+	 */
+	@Transactional
+	public List<MeetingTodoResponse> addReportActionItems(UUID meetingId, JsonNode report) {
+		JsonNode items = report == null ? null : report.path("actionItems");
+		if (items == null || !items.isArray() || items.isEmpty()) {
+			return List.of();
+		}
+		Meeting meeting = domainLookupService.requireMeeting(meetingId);
+		List<MeetingTodo> existing = meetingTodoRepository.findByMeetingIdOrderByDisplayOrderAsc(meetingId);
+		Set<String> titles = new HashSet<>();
+		existing.forEach(todo -> titles.add(titleKey(todo.getTitle())));
+		int displayOrder = existing.size();
+		boolean added = false;
+		for (JsonNode item : items) {
+			String title = actionItemTitle(item);
+			if (title == null || !titles.add(titleKey(title))) {
+				continue;
+			}
+			meetingTodoRepository.save(MeetingTodo.fromReport(meeting, title, displayOrder++));
+			added = true;
+		}
+		if (!added) {
+			return List.of();
+		}
+		meetingTodoRepository.flush();
+		return publishTodos(meetingId);
+	}
+
+	static String actionItemTitle(JsonNode item) {
+		String task = item.isTextual() ? item.asText() : firstText(item, "task", "title");
+		task = TextUtils.normalizeOptional(task);
+		if (task == null) {
+			return null;
+		}
+		StringBuilder title = new StringBuilder(task);
+		String owner = TextUtils.normalizeOptional(firstText(item, "owner"));
+		if (owner != null) {
+			title.append(" — ").append(owner);
+		}
+		String due = TextUtils.normalizeOptional(firstText(item, "due"));
+		if (due != null) {
+			title.append(" · ").append(due);
+		}
+		return title.length() > MAX_TODO_TITLE ? title.substring(0, MAX_TODO_TITLE) : title.toString();
+	}
+
+	private static String firstText(JsonNode item, String... fields) {
+		for (String field : fields) {
+			JsonNode value = item.path(field);
+			if (value.isTextual() && !value.asText().isBlank()) {
+				return value.asText();
+			}
+		}
+		return null;
+	}
+
+	private static String titleKey(String title) {
+		return title.trim().toLowerCase(Locale.ROOT);
 	}
 
 	private List<MeetingTodoResponse> publishTodos(UUID meetingId) {

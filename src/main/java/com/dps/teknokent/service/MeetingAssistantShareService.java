@@ -35,6 +35,7 @@ public class MeetingAssistantShareService {
 	private final MeetingRepository meetingRepository;
 	private final JsonUtils jsonUtils;
 	private final ObjectStorage objectStorage;
+	private final MeetingNoteService meetingNoteService;
 
 	@Transactional(readOnly = true)
 	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId) {
@@ -70,6 +71,7 @@ public class MeetingAssistantShareService {
 		share.setPublishedBy(actor);
 
 		String kind = request.kind() == null ? "" : request.kind().trim().toUpperCase();
+		JsonNode report = null;
 		if ("TRANSCRIPT".equals(kind)) {
 			JsonNode transcript = request.transcript();
 			if (transcript == null || !transcript.isArray() || transcript.isEmpty()) {
@@ -81,14 +83,14 @@ public class MeetingAssistantShareService {
 			publishUploadedTranscript(share, meeting.getId());
 			share.setTranscriptPublishedAt(Instant.now());
 		} else if ("REPORT".equals(kind)) {
-			JsonNode report = request.report();
+			report = request.report();
 			if (report == null || !report.isObject()) {
 				throw new InvalidRequestException("Report is required.");
 			}
 			storeReport(share, meeting.getId(), jsonUtils.writeValue(report));
 			share.setReportPublishedAt(Instant.now());
 		} else if ("REPORT_S3".equals(kind)) {
-			publishUploadedReport(share, meeting.getId());
+			report = publishUploadedReport(share, meeting.getId());
 			share.setReportPublishedAt(Instant.now());
 		} else {
 			throw new InvalidRequestException("kind must be TRANSCRIPT, TRANSCRIPT_S3, REPORT or REPORT_S3.");
@@ -96,6 +98,11 @@ public class MeetingAssistantShareService {
 
 		MeetingAssistantShare saved = shareRepository.saveAndFlush(share);
 		copyPublishedShareToRoommates(meeting, saved, kind);
+		if (report != null) {
+			for (Meeting mate : roommates(meeting)) {
+				meetingNoteService.addReportActionItems(mate.getId(), report);
+			}
+		}
 		return toResponse(meeting.getId(), saved, true);
 	}
 
@@ -152,6 +159,7 @@ public class MeetingAssistantShareService {
 		storeReport(share, meeting.getId(), jsonUtils.writeValue(report));
 		share.setReportPublishedAt(Instant.now());
 		shareRepository.saveAndFlush(share);
+		meetingNoteService.addReportActionItems(meeting.getId(), jsonUtils.valueToTree(report));
 		return true;
 	}
 
@@ -194,7 +202,7 @@ public class MeetingAssistantShareService {
 		share.setReport(json);
 	}
 
-	private void publishUploadedReport(MeetingAssistantShare share, UUID meetingId) {
+	private JsonNode publishUploadedReport(MeetingAssistantShare share, UUID meetingId) {
 		if (!objectStorage.isConfigured()) {
 			throw new InvalidRequestException("Object storage is not configured.");
 		}
@@ -209,6 +217,7 @@ public class MeetingAssistantShareService {
 		}
 		share.setReportS3Key(key);
 		share.setReport(null);
+		return parsed;
 	}
 
 	static String transcriptObjectKey(UUID meetingId) {

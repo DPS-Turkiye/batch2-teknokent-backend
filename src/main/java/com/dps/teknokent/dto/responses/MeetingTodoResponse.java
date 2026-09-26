@@ -3,6 +3,7 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.MeetingTodoSource;
 import com.dps.teknokent.entity.MeetingTodo;
 
 public record MeetingTodoResponse(
@@ -12,6 +13,7 @@ public record MeetingTodoResponse(
 		Boolean done,
 		Integer displayOrder,
 		String createdByName,
+		MeetingTodoSource source,
 		Instant updatedAt) {
 
 	public static MeetingTodoResponse fromEntity(MeetingTodo todo) {
@@ -22,6 +24,7 @@ public record MeetingTodoResponse(
 				todo.getDone(),
 				todo.getDisplayOrder(),
 				todo.getCreatedBy() == null ? null : todo.getCreatedBy().getFullName(),
+				todo.getSource(),
 				todo.getUpdatedAt());
 	}
 }

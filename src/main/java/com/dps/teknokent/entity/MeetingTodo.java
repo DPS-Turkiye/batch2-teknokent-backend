@@ -6,8 +6,12 @@ import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.dps.teknokent.domain.MeetingTodoSource;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -36,6 +40,13 @@ public class MeetingTodo {
 		return todo;
 	}
 
+	/** An action item from the meeting report; nobody typed it, so it has no author. */
+	public static MeetingTodo fromReport(Meeting meeting, String title, int displayOrder) {
+		MeetingTodo todo = of(meeting, title, null, displayOrder);
+		todo.source = MeetingTodoSource.AI;
+		return todo;
+	}
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
 	private UUID id;
@@ -52,6 +63,10 @@ public class MeetingTodo {
 
 	@Column(name = "display_order", nullable = false)
 	private Integer displayOrder;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 16)
+	private MeetingTodoSource source = MeetingTodoSource.MANUAL;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "created_by_id")
