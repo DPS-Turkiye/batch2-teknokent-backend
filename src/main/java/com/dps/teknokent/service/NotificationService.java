@@ -45,7 +45,8 @@ public class NotificationService {
 
 	@Transactional(readOnly = true)
 	public NotificationUnreadCountResponse unreadCount(UUID recipientId) {
-		return new NotificationUnreadCountResponse(notificationRepository.countByRecipientIdAndReadAtIsNull(recipientId));
+		return new NotificationUnreadCountResponse(
+				notificationRepository.countByRecipientIdAndReadAtIsNull(recipientId));
 	}
 
 	@Transactional
@@ -59,12 +60,13 @@ public class NotificationService {
 	}
 
 	@Transactional
-	public void create(AppUser recipient, String title, String body, String href) {
-		create(recipient, NotificationCategory.GENERAL, title, body, href);
+	public Notification create(AppUser recipient, String title, String body, String href) {
+		return create(recipient, NotificationCategory.GENERAL, title, body, href);
 	}
 
 	@Transactional
-	public void create(AppUser recipient, NotificationCategory category, String title, String body, String href) {
+	public Notification create(AppUser recipient, NotificationCategory category, String title, String body,
+			String href) {
 		Notification notification = new Notification();
 		notification.setId(UUID.randomUUID());
 		notification.setRecipient(recipient);
@@ -79,6 +81,7 @@ public class NotificationService {
 				notification.getTitle(),
 				notification.getBody(),
 				notification.getHref())));
+		return notification;
 	}
 
 	private Notification requireOwned(UUID recipientId, UUID notificationId) {
