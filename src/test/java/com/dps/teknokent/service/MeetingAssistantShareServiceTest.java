@@ -32,6 +32,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -49,6 +50,8 @@ class MeetingAssistantShareServiceTest {
 	private MeetingRepository meetingRepository;
 	@Mock
 	private ObjectStorage objectStorage;
+	@Mock
+	private MeetingNoteService meetingNoteService;
 
 	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
 	private final UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000301");
@@ -57,7 +60,8 @@ class MeetingAssistantShareServiceTest {
 
 	private MeetingAssistantShareService service() {
 		return new MeetingAssistantShareService(
-				domainLookupService, shareRepository, meetingRepository, jsonUtils, objectStorage);
+				domainLookupService, shareRepository, meetingRepository, jsonUtils, objectStorage,
+				meetingNoteService);
 	}
 
 	@Test
@@ -488,6 +492,7 @@ class MeetingAssistantShareServiceTest {
 		assertThat(saved.getValue().getReport()).contains("Otomatik rapor");
 		assertThat(saved.getValue().getReportPublishedAt()).isNotNull();
 		assertThat(saved.getValue().getPublishedBy()).isNull();
+		verify(meetingNoteService).addReportActionItems(eq(meetingId), any());
 	}
 
 	@Test
@@ -550,6 +555,8 @@ class MeetingAssistantShareServiceTest {
 		assertThat(saved.getValue().getReportPublishedAt()).isNotNull();
 		assertThat(response.report()).isNull();
 		assertThat(response.reportUrl()).isEqualTo("https://s3.example/report");
+		verify(meetingNoteService).addReportActionItems(
+				eq(meetingId), argThat(report -> "S3 raporu".equals(report.path("title").asText())));
 	}
 
 	@Test
@@ -563,6 +570,7 @@ class MeetingAssistantShareServiceTest {
 		assertThat(service().storeGeneratedReport(meetingId, Map.of("title", "Otomatik rapor"))).isFalse();
 
 		verify(shareRepository, never()).saveAndFlush(any());
+		verify(meetingNoteService, never()).addReportActionItems(any(), any());
 	}
 
 	@Test

@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingRoomEventType;
+import com.dps.teknokent.domain.MeetingTodoSource;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.dto.requests.CreateMeetingTodoRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
@@ -25,13 +26,17 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingTodoRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -137,6 +142,44 @@ class MeetingNoteServiceTest {
 
 	private static <T> org.mockito.stubbing.Answer<T> returnsArgument() {
 		return invocation -> invocation.getArgument(0);
+	}
+
+	@Test
+	void addsTheReportsActionItemsAsEditableAiTasksWithoutRepeatingOnes() throws Exception {
+		Meeting meeting = meeting();
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		MeetingTodo typed = MeetingTodo.of(meeting, "Pitch deck güncelle", null, 0);
+		when(meetingTodoRepository.findByMeetingIdOrderByDisplayOrderAsc(meetingId)).thenReturn(List.of(typed));
+		JsonNode report = new ObjectMapper().readTree("""
+				{"actionItems": [
+				  {"task": "Finansal modeli tamamla", "owner": "Ayşe", "due": "3 Ekim"},
+				  {"task": "Kullanıcı görüşmelerini planla", "owner": null, "due": null},
+				  {"task": " pitch deck güncelle ", "owner": "", "due": ""},
+				  {"task": "", "owner": "Kerem"}
+				]}
+				""");
+
+		service().addReportActionItems(meetingId, report);
+
+		ArgumentCaptor<MeetingTodo> saved = ArgumentCaptor.forClass(MeetingTodo.class);
+		verify(meetingTodoRepository, times(2)).save(saved.capture());
+		assertThat(saved.getAllValues()).extracting(MeetingTodo::getTitle)
+				.containsExactly("Finansal modeli tamamla — Ayşe · 3 Ekim", "Kullanıcı görüşmelerini planla");
+		assertThat(saved.getAllValues()).extracting(MeetingTodo::getDisplayOrder).containsExactly(1, 2);
+		assertThat(saved.getAllValues()).allSatisfy(todo -> {
+			assertThat(todo.getSource()).isEqualTo(MeetingTodoSource.AI);
+			assertThat(todo.getDone()).isFalse();
+			assertThat(todo.getCreatedBy()).isNull();
+		});
+		verify(realtimePublisher).publish(eq(meetingId), any(MeetingRoomEvent.class));
+	}
+
+	@Test
+	void aReportWithoutActionItemsLeavesTheListAlone() throws Exception {
+		service().addReportActionItems(meetingId, new ObjectMapper().readTree("{\"summary\":\"Kısa\"}"));
+		service().addReportActionItems(meetingId, null);
+
+		verifyNoInteractions(meetingTodoRepository, realtimePublisher);
 	}
 
 	private Meeting meeting() {
