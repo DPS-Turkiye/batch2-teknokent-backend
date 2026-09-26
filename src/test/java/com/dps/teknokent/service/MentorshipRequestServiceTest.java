@@ -79,6 +79,9 @@ class MentorshipRequestServiceTest {
     private NotificationService notificationService;
 
         @Mock
+        private MailService mailService;
+
+        @Mock
         private DocumentRequestService documentRequestService;
 
     @InjectMocks
@@ -246,6 +249,11 @@ class MentorshipRequestServiceTest {
                 assertThat(result.status()).isEqualTo(MentorshipRequestStatus.PENDING);
                 assertThat(result.mentorId()).isEqualTo(mentorId);
                 assertThat(result.summary()).isEqualTo("We need help validating our roadmap.");
+                verify(mailService).sendAfterCommit(
+                                eq("mentor@tekno.com"),
+                                eq("Yeni mentorluk talebi"),
+                                argThat((String body) -> body.contains("Ayşe Demir")
+                                                && body.contains("Product strategy")));
         }
 
         @Test
