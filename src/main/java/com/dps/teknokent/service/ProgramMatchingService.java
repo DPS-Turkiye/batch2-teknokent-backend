@@ -13,7 +13,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.MatchNeedSource;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -72,39 +74,26 @@ public class ProgramMatchingService {
 	private final AppUserRepository appUserRepository;
 	private final MentorRecommendationService recommendationService;
 	private final NotificationService notificationService;
+	private final PlatformTransactionManager transactionManager;
 
 	@Transactional(readOnly = true)
 	public ProgramMatchingResponse.Overview overview(UUID actorId, UUID programId) {
 		return overviewOf(coordinatorProgramService.requireManagedProgram(actorId, programId));
 	}
 
-	@Transactional(readOnly = true)
+	/**
+	 * Not one transaction: the recommendation engine caches mentor embeddings as it ranks, and those writes must
+	 * commit on their own, as they do on the mentee side. Only the reads before it share a read-only transaction.
+	 */
 	public ProgramMatchingResponse.Suggestions suggestions(UUID actorId, UUID programId, UUID organizationId) {
-		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
-		Organization team = requireTeam(program, organizationId);
-		Set<UUID> matchedMentors = mentorshipRepository.findByOrganizationIdIn(List.of(team.getId())).stream()
-				.filter(mentorship -> MATCHED.contains(mentorship.getStatus()))
-				.map(mentorship -> mentorship.getMentor().getId())
-				.collect(Collectors.toSet());
-		List<UUID> pool = poolOf(program).stream().filter(id -> !matchedMentors.contains(id)).toList();
-		if (pool.isEmpty()) {
+		SuggestionInput input = readOnly().execute(status -> suggestionInput(actorId, programId, organizationId));
+		if (input.pool().isEmpty()) {
 			return new ProgramMatchingResponse.Suggestions(null, List.of(), List.of());
 		}
-		Need need = needOf(team);
-		var ranked = recommendationService.recommendAmong(new RecommendMentorsRequest(
-				need.topic() == null ? GENERAL_TOPIC : need.topic(),
-				firstPresent(need.text(), need.topic(), team.getDescription(), team.getName()),
-				null,
-				null,
-				null,
-				team.getSector() == null ? null : team.getSector().value(),
-				team.getMaturity() == null ? null : team.getMaturity().value(),
-				team.getDescription(),
-				List.of(),
-				null), pool);
-		Map<UUID, Long> load = mentorshipRepository.countOrganizationsByMentor(pool, MATCHED).stream()
+		var ranked = recommendationService.recommendAmong(input.request(), input.pool());
+		Map<UUID, Long> load = mentorshipRepository.countOrganizationsByMentor(input.pool(), MATCHED).stream()
 				.collect(Collectors.toMap(MentorCount::getMentorId, MentorCount::getTotal));
-		Map<UUID, Integer> capacity = mentorProfileRepository.findAllById(pool).stream()
+		Map<UUID, Integer> capacity = mentorProfileRepository.findAllById(input.pool()).stream()
 				.filter(profile -> profile.getMenteeCapacity() != null)
 				.collect(Collectors.toMap(profile -> profile.getId(), profile -> profile.getMenteeCapacity()));
 		Function<MentorProfileResponse, ProgramMatchingResponse.Candidate> candidate = mentor -> new ProgramMatchingResponse.Candidate(
@@ -114,14 +103,43 @@ public class ProgramMatchingService {
 				mentor.specialties(),
 				mentor.availabilityLabel() == null || mentor.availabilityLabel().isBlank() ? null : mentor.availabilityLabel(),
 				load.getOrDefault(mentor.id(), 0L).intValue(),
-				capacity.getOrDefault(mentor.id(), program.getDefaultMentorCapacity()),
+				capacity.getOrDefault(mentor.id(), input.defaultCapacity()),
 				mentor.recommendationReasons() == null ? List.of() : mentor.recommendationReasons());
 		List<ProgramMatchingResponse.Candidate> recommended = ranked.mentors().stream().map(candidate).toList();
-		List<ProgramMatchingResponse.Candidate> everyone = recommendationService.poolProfiles(pool).stream()
+		List<ProgramMatchingResponse.Candidate> everyone = recommendationService.poolProfiles(input.pool()).stream()
 				.map(mentor -> candidate.apply(mentor.withRecommendation(List.of(), List.of())))
 				.sorted(Comparator.comparing(ProgramMatchingResponse.Candidate::fullName))
 				.toList();
 		return new ProgramMatchingResponse.Suggestions(ranked.matchingMethod(), recommended, everyone);
+	}
+
+	private SuggestionInput suggestionInput(UUID actorId, UUID programId, UUID organizationId) {
+		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		Organization team = requireTeam(program, organizationId);
+		Set<UUID> matchedMentors = mentorshipRepository.findByOrganizationIdIn(List.of(team.getId())).stream()
+				.filter(mentorship -> MATCHED.contains(mentorship.getStatus()))
+				.map(mentorship -> mentorship.getMentor().getId())
+				.collect(Collectors.toSet());
+		List<UUID> pool = poolOf(program).stream().filter(id -> !matchedMentors.contains(id)).toList();
+		Need need = needOf(team);
+		RecommendMentorsRequest request = new RecommendMentorsRequest(
+				need.topic() == null ? GENERAL_TOPIC : need.topic(),
+				firstPresent(need.text(), need.topic(), team.getDescription(), team.getName()),
+				null,
+				null,
+				null,
+				team.getSector() == null ? null : team.getSector().value(),
+				team.getMaturity() == null ? null : team.getMaturity().value(),
+				team.getDescription(),
+				List.of(),
+				null);
+		return new SuggestionInput(pool, request, program.getDefaultMentorCapacity());
+	}
+
+	private TransactionTemplate readOnly() {
+		TransactionTemplate template = new TransactionTemplate(transactionManager);
+		template.setReadOnly(true);
+		return template;
 	}
 
 	/** "Eşleşmeyi onayla": the mentorship starts today; a full mentor is allowed, the screen warned about it. */
@@ -280,5 +298,8 @@ public class ProgramMatchingService {
 	}
 
 	private record Need(MatchNeedSource source, String topic, String text) {
+	}
+
+	private record SuggestionInput(List<UUID> pool, RecommendMentorsRequest request, int defaultCapacity) {
 	}
 }
