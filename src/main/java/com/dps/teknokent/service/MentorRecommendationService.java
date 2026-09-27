@@ -3,11 +3,13 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -55,9 +57,22 @@ public class MentorRecommendationService {
 	private String openAiModel;
 
 	public MentorRecommendationResult recommend(RecommendMentorsRequest request) {
-		List<MentorProfileResponse> mentors = request.excludedMentorId() == null
+		return rank(request, request.excludedMentorId() == null
 				? mentorProfileService.findAll()
-				: mentorProfileService.findAllExcept(request.excludedMentorId());
+				: mentorProfileService.findAllExcept(request.excludedMentorId()));
+	}
+
+	/** Ranks only {@code mentorIds}: a program's mentor pool when a coordinator matches one of its teams. */
+	public MentorRecommendationResult recommendAmong(RecommendMentorsRequest request, Collection<UUID> mentorIds) {
+		return rank(request, poolProfiles(mentorIds));
+	}
+
+	/** The profiles of {@code mentorIds}, unranked, for picking a mentor by hand. */
+	public List<MentorProfileResponse> poolProfiles(Collection<UUID> mentorIds) {
+		return mentorProfileService.findAll().stream().filter(mentor -> mentorIds.contains(mentor.id())).toList();
+	}
+
+	private MentorRecommendationResult rank(RecommendMentorsRequest request, List<MentorProfileResponse> mentors) {
 		if (mentors.isEmpty()) {
 			return new MentorRecommendationResult("DETERMINISTIC", null, Instant.now(), List.of());
 		}
