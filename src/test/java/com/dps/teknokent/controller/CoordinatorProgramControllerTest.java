@@ -41,6 +41,7 @@ import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.MentorPoolService;
+import com.dps.teknokent.service.ProgramMatchingService;
 import com.dps.teknokent.service.ProgramLaunchService;
 
 @WebMvcTest(CoordinatorProgramController.class)
@@ -58,6 +59,8 @@ class CoordinatorProgramControllerTest {
 	private ProgramLaunchService programLaunchService;
 	@MockitoBean
 	private MentorPoolService mentorPoolService;
+	@MockitoBean
+	private ProgramMatchingService programMatchingService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");
@@ -215,6 +218,24 @@ class CoordinatorProgramControllerTest {
 						.content("{\"accepted\":true}"))
 				.andExpect(status().isOk());
 		verify(mentorPoolService).decide(SIGNED_IN_ID, PROGRAM_ID, mentorId, true);
+	}
+
+	@Test
+	void matchesATeamAsTheSignedInUserAndNeedsBothIds() throws Exception {
+		UUID team = UUID.randomUUID();
+		UUID mentor = UUID.randomUUID();
+		mockMvc.perform(post("/api/coordinator/programs/{id}/matching", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"organizationId\":\"" + team + "\",\"mentorId\":\"" + mentor + "\"}"))
+				.andExpect(status().isOk());
+		verify(programMatchingService).match(SIGNED_IN_ID, PROGRAM_ID, team, mentor);
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/matching", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"organizationId\":\"" + team + "\"}"))
+				.andExpect(status().isBadRequest());
 	}
 
 	@Test
