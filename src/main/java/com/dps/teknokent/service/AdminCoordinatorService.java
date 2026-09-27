@@ -44,6 +44,7 @@ public class AdminCoordinatorService {
 	private final MentorshipRepository mentorshipRepository;
 	private final LoginProvisioner loginProvisioner;
 	private final NotificationService notificationService;
+	private final MailService mailService;
 
 	@Transactional(readOnly = true)
 	public CoordinatorCandidateResponse candidate(UUID actorId, String email) {
@@ -74,14 +75,37 @@ public class AdminCoordinatorService {
 		coordinator.setRole(UserRole.COORDINATOR);
 		coordinator.setStatus(UserAccountStatus.APPROVED);
 		appUserRepository.save(coordinator);
-		if (outcome != CoordinatorCandidateStatus.NEW) {
+		if (outcome == CoordinatorCandidateStatus.NEW) {
+			sendPasswordSetup(coordinator);
+		} else {
 			notificationService.create(
 					coordinator,
 					"Koordinatör olarak atandınız",
 					"Artık programları koordinatör olarak yönetebilirsiniz.",
 					"/coordinator");
+			mailService.sendAfterCommit(
+					coordinator.getEmail(),
+					"menton'da koordinatör olarak atandınız",
+					"Merhaba " + coordinator.getFullName() + ",\n\n"
+							+ "menton'da (ODTÜ Teknokent) artık programları koordinatör olarak yönetebilirsiniz. "
+							+ "Mevcut şifrenizle giriş yapabilirsiniz: " + mailService.link("/login")
+							+ "\n\nmenton");
 		}
 		return toResponse(coordinator, outcome);
+	}
+
+	/** "Şifre belirleme e-postasını tekrar gönder": a fresh link for a coordinator who lost or never got it. */
+	@Transactional(readOnly = true)
+	public CoordinatorAccountResponse resendPasswordSetup(UUID actorId, UUID coordinatorId) {
+		requireAdmin(actorId);
+		AppUser coordinator = domainLookupService.requireUser(coordinatorId);
+		if (coordinator.getRole() != UserRole.COORDINATOR || coordinator.getStatus() != UserAccountStatus.APPROVED) {
+			throw new InvalidRequestException("Only an active coordinator can be sent a password setup email.");
+		}
+		if (!sendPasswordSetup(coordinator)) {
+			throw new InvalidRequestException("The password setup email could not be prepared.");
+		}
+		return toResponse(coordinator, null);
 	}
 
 	/** Deactivating keeps the row, since programs and messages still point at the coordinator. */
@@ -98,6 +122,29 @@ public class AdminCoordinatorService {
 		coordinator.setStatus(active ? UserAccountStatus.APPROVED : UserAccountStatus.REJECTED);
 		appUserRepository.save(coordinator);
 		return toResponse(coordinator, null);
+	}
+
+	/**
+	 * A new coordinator's login has no password, so they get the same reset link Firebase's "Şifremi unuttum"
+	 * sends, but from our own domain: university mail filters tend to drop Firebase's sender.
+	 */
+	private boolean sendPasswordSetup(AppUser coordinator) {
+		String login = mailService.link("/login");
+		return loginProvisioner.passwordSetupLink(coordinator.getEmail(), login)
+				.map(link -> {
+					mailService.sendAfterCommit(
+							coordinator.getEmail(),
+							"menton koordinatör hesabınız hazır",
+							"Merhaba " + coordinator.getFullName() + ",\n\n"
+									+ "menton'da (ODTÜ Teknokent) sizin için bir koordinatör hesabı açıldı. "
+									+ "Şifrenizi belirlemek için bu bağlantıyı açın:\n\n" + link
+									+ "\n\nŞifrenizi belirledikten sonra " + login + " adresinden giriş yapabilirsiniz. "
+									+ "Bağlantının süresi dolarsa giriş sayfasındaki \"Şifremi unuttum\" ile yenisini "
+									+ "isteyebilir ya da yöneticinizden e-postayı tekrar göndermesini isteyebilirsiniz."
+									+ "\n\nmenton");
+					return true;
+				})
+				.orElse(false);
 	}
 
 	private CoordinatorCandidateStatus classify(Optional<AppUser> existing) {

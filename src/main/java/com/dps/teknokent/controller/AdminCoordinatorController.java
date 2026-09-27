@@ -51,4 +51,11 @@ public class AdminCoordinatorController {
 			@Valid @RequestBody SetCoordinatorAccessRequest request) {
 		return adminCoordinatorService.setAccess(CurrentActor.resolve(request.actorId()), id, request.active());
 	}
+
+	@PostMapping("/{id}/password-setup")
+	public CoordinatorAccountResponse resendPasswordSetup(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return adminCoordinatorService.resendPasswordSetup(CurrentActor.resolve(actorId), id);
+	}
 }
