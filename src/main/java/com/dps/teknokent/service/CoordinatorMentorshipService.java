@@ -259,7 +259,8 @@ public class CoordinatorMentorshipService {
 		return new Context(programOf, openActions, liveNoted, topics);
 	}
 
-	private Scoped requireManagedMentorship(UUID actorId, UUID mentorshipId) {
+	/** The mentorship, and the actor's program it belongs to; rejects mentorships outside their programs. */
+	public Scoped requireManagedMentorship(UUID actorId, UUID mentorshipId) {
 		AppUser actor = programService.requireCoordinatorOrAdmin(actorId);
 		Mentorship mentorship = mentorshipRepository.findById(mentorshipId)
 				.orElseThrow(() -> new ResourceNotFoundException("Mentorship not found: " + mentorshipId));
@@ -305,6 +306,6 @@ public class CoordinatorMentorshipService {
 			Map<String, String> topics) {
 	}
 
-	private record Scoped(Mentorship mentorship, Program program) {
+	public record Scoped(Mentorship mentorship, Program program) {
 	}
 }
