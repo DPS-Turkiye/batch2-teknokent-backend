@@ -75,7 +75,7 @@ public class MentorPoolService {
 		if (existing.isPresent()) {
 			AppUser user = existing.get();
 			if (user.getRole() != UserRole.MENTOR) {
-				throw new InvalidRequestException("This email belongs to an account that is not a mentor.");
+				throw new InvalidRequestException("Bu e-posta mentor olmayan bir hesaba ait.");
 			}
 			programService.inviteMentor(actorId, programId, user.getId());
 			return rows(program);
@@ -90,7 +90,7 @@ public class MentorPoolService {
 			invite.setCreatedBy(actorId);
 			invite.setCreatedAt(Instant.now());
 		} else if (invite.getMentorId() != null) {
-			throw new ConflictException("This mentor has already signed up with the invite.");
+			throw new ConflictException("Bu mentor davetle zaten kayıt oldu.");
 		}
 		invite.setExpiresAt(Instant.now().plus(INVITE_VALIDITY));
 		inviteRepository.save(invite);
@@ -121,7 +121,7 @@ public class MentorPoolService {
 		ProgramMentor membership = requireMembership(programId, mentorId);
 		if (membership.getStatus() != ProgramMentorStatus.PENDING
 				|| membership.getInvitedBy() != ProgramMentorInvitedBy.COORDINATOR) {
-			throw new InvalidRequestException("Only an unanswered invitation can be taken back.");
+			throw new InvalidRequestException("Yalnızca yanıtlanmamış bir davet geri alınabilir.");
 		}
 		programMentorRepository.delete(membership);
 		return rows(program);
@@ -132,7 +132,7 @@ public class MentorPoolService {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
 		ProgramMentor membership = requireAwaitingApproval(programId, mentorId);
 		AppUser mentor = appUserRepository.findById(mentorId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor not found: " + mentorId));
+				.orElseThrow(() -> new ResourceNotFoundException("Mentor bulunamadı: " + mentorId));
 		Optional<ProgramMentorInvite> invite = inviteRepository.findByProgramIdAndMentorId(programId, mentorId);
 		Optional<MentorProfile> profile = mentorProfileRepository.findById(mentorId);
 		String invitedBy = invite.flatMap(value -> appUserRepository.findById(value.getCreatedBy()))
@@ -162,10 +162,10 @@ public class MentorPoolService {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
 		requireAwaitingApproval(programId, mentorId);
 		AppUser mentor = appUserRepository.findById(mentorId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor not found: " + mentorId));
+				.orElseThrow(() -> new ResourceNotFoundException("Mentor bulunamadı: " + mentorId));
 		if (mentor.getStatus() == UserAccountStatus.PENDING) {
 			if (inviteRepository.findByProgramIdAndMentorId(programId, mentorId).isEmpty()) {
-				throw new InvalidRequestException("An administrator has to approve this mentor's account first.");
+				throw new InvalidRequestException("Bu mentorun hesabını önce bir yönetici onaylamalı.");
 			}
 			mentor.setStatus(accepted ? UserAccountStatus.APPROVED : UserAccountStatus.REJECTED);
 			appUserRepository.save(mentor);
@@ -264,23 +264,23 @@ public class MentorPoolService {
 
 	private ProgramMentor requireMembership(UUID programId, UUID mentorId) {
 		return programMentorRepository.findByProgramIdAndMentorId(programId, mentorId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor is not in this program: " + mentorId));
+				.orElseThrow(() -> new ResourceNotFoundException("Mentor bu programda değil: " + mentorId));
 	}
 
 	private ProgramMentor requireAwaitingApproval(UUID programId, UUID mentorId) {
 		ProgramMentor membership = requireMembership(programId, mentorId);
 		if (membership.getStatus() != ProgramMentorStatus.PENDING
 				|| membership.getInvitedBy() != ProgramMentorInvitedBy.MENTOR) {
-			throw new InvalidRequestException("This mentor is not waiting for a decision.");
+			throw new InvalidRequestException("Bu mentor bir karar beklemiyor.");
 		}
 		return membership;
 	}
 
 	private ProgramMentorInvite requireOpenInvite(UUID programId, UUID inviteId) {
 		ProgramMentorInvite invite = inviteRepository.findByIdAndProgramId(inviteId, programId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor invite not found: " + inviteId));
+				.orElseThrow(() -> new ResourceNotFoundException("Mentor daveti bulunamadı: " + inviteId));
 		if (invite.getMentorId() != null) {
-			throw new InvalidRequestException("This mentor has already signed up.");
+			throw new InvalidRequestException("Bu mentor zaten kayıt oldu.");
 		}
 		return invite;
 	}
