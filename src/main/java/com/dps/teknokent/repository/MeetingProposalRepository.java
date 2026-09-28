@@ -17,9 +17,10 @@ public interface MeetingProposalRepository extends JpaRepository<MeetingProposal
 
 	boolean existsByMentorshipIdAndStatus(UUID mentorshipId, MeetingProposalStatus status);
 
-	List<MeetingProposal> findByStatusAndMentorshipMentorIdOrderByScheduledAtAsc(
-			MeetingProposalStatus status, UUID mentorId);
+	boolean existsByReplacesMeetingIdAndStatus(UUID meetingId, MeetingProposalStatus status);
 
-	List<MeetingProposal> findByStatusAndMentorshipOrganizationIdOrderByScheduledAtAsc(
+	List<MeetingProposal> findByStatusAndMentorIdOrderByScheduledAtAsc(MeetingProposalStatus status, UUID mentorId);
+
+	List<MeetingProposal> findByStatusAndOrganizationIdOrderByScheduledAtAsc(
 			MeetingProposalStatus status, UUID organizationId);
 }

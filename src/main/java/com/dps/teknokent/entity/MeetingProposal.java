@@ -31,12 +31,21 @@ public class MeetingProposal {
 	@Id
 	private UUID id;
 
-	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "mentorship_id", nullable = false)
+	/** Set for a coordinator's proposal; null when a mentor or a team proposes a new time for their meeting. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "mentorship_id")
 	private Mentorship mentorship;
 
-	@Column(name = "program_id", nullable = false)
+	@Column(name = "program_id")
 	private UUID programId;
+
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "organization_id", nullable = false)
+	private Organization organization;
+
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "mentor_id", nullable = false)
+	private AppUser mentor;
 
 	@Column(name = "proposed_by", nullable = false)
 	private UUID proposedBy;
