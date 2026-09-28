@@ -13,9 +13,11 @@ public record CoordinatorCalendarResponse(
 		LocalDate to,
 		List<Item> items,
 		List<Conflict> conflicts,
-		Summary summary) {
+		Summary summary,
+		int recordingCapacity) {
 
-	/** {@code id} is the meeting's id for MEETING and the program event's id otherwise. */
+	/** {@code id} is the meeting's id for MEETING and the program event's id otherwise.
+	 * {@code recordingLoad}: most meeting rooms the transcript bot records at once during a MEETING, platform-wide. */
 	public record Item(
 			UUID id,
 			CoordinatorAgendaKind kind,
@@ -33,7 +35,8 @@ public record CoordinatorCalendarResponse(
 			Integer sequence,
 			String meetLink,
 			String description,
-			boolean conflict) {
+			boolean conflict,
+			Integer recordingLoad) {
 	}
 
 	/** Meetings of one mentor that overlap in time. */

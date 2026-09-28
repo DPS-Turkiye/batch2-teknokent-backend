@@ -14,6 +14,8 @@ public final class TranscriptBotConstants {
 	public static final int MAX_WAIT_FOR_ADMISSION_MS = 15 * 60 * 1000;
 	public static final int MAX_TIME_LEFT_ALONE_MS = 90_000;
 	public static final Duration EMPTY_ROOM = Duration.ofMillis(MAX_TIME_LEFT_ALONE_MS);
+	public static final String CAPACITY_FULL_MESSAGE =
+			"Özür dileriz, sitedeki yoğun kullanım nedeniyle kayıt botu şu anda bu görüşmeye katılamıyor.";
 
 	private TranscriptBotConstants() {
 	}
