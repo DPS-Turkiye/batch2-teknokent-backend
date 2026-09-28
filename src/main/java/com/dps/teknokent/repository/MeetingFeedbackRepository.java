@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -8,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.Query;
 
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.MeetingFeedback;
 
 public interface MeetingFeedbackRepository extends JpaRepository<MeetingFeedback, UUID> {
@@ -30,4 +32,6 @@ public interface MeetingFeedbackRepository extends JpaRepository<MeetingFeedback
 	List<MentorshipRating> ratingsByMentorship(@Param("mentorId") UUID mentorId);
 
 	Optional<MeetingFeedback> findByMeetingIdAndAuthorId(UUID meetingId, UUID authorId);
+
+	List<MeetingFeedback> findByMeetingIdInAndAuthorRole(Collection<UUID> meetingIds, UserRole role);
 }
