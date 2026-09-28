@@ -13,10 +13,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
@@ -88,6 +92,48 @@ class AdminOverviewServiceTest {
 				.containsExactly("Elif Demir, Burcu Şen", "Elif Demir", null);
 		assertThat(programs.get(0).coordinatorId()).isEqualTo(elif.getId());
 		assertThat(programs.get(2).coordinatorId()).isNull();
+	}
+
+	@Test
+	void programReportKeepsOnlyThatProgramsTeamsAndLeavesOutUsersAndRequests() {
+		AppUser elif = person("Elif Demir", UserRole.COORDINATOR);
+		AppUser mentor = person("Kemal Arslan", UserRole.MENTOR);
+		Program stars = program("METU Stars 2026", elif.getId());
+		Organization inProgram = organization("Vega");
+		Organization elsewhere = organization("Başka takım");
+		ProgramStartup startup = new ProgramStartup();
+		startup.setProgramId(stars.getId());
+		startup.setOrganizationId(inProgram.getId());
+		when(appUserRepository.findAll()).thenReturn(List.of(elif, mentor));
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(stars.getId())).thenReturn(List.of(startup));
+		when(organizationRepository.findAll()).thenReturn(List.of(inProgram, elsewhere));
+		when(meetingRepository.findAllByOrderByScheduledAtDesc()).thenReturn(List.of(
+				meeting(mentor, inProgram), meeting(mentor, elsewhere)));
+
+		var report = service.programReport(stars);
+
+		assertThat(report.programs()).extracting(row -> row.name()).containsExactly("METU Stars 2026");
+		assertThat(report.meetings()).extracting(mark -> mark.organizationId()).containsExactly(inProgram.getId());
+		assertThat(report.meetingsLast8Weeks()).isEqualTo(1);
+		assertThat(report.users()).isEmpty();
+		assertThat(report.requests()).isEmpty();
+	}
+
+	private static Organization organization(String name) {
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		organization.setName(name);
+		return organization;
+	}
+
+	private static Meeting meeting(AppUser mentor, Organization organization) {
+		Meeting meeting = new Meeting();
+		meeting.setId(UUID.randomUUID());
+		meeting.setMentor(mentor);
+		meeting.setOrganization(organization);
+		meeting.setScheduledAt(java.time.Instant.now().minus(java.time.Duration.ofDays(3)));
+		meeting.setStatus(MeetingStatus.COMPLETED);
+		return meeting;
 	}
 
 	private static AppUser person(String name, UserRole role) {
