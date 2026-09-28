@@ -63,6 +63,18 @@ class MailServiceTest {
 	}
 
 	@Test
+	void sendNowSaysWhetherSesAcceptedTheEmail() {
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr");
+		assertThat(mailService.sendNow("lead@team.co", "Konu", "Metin")).isTrue();
+
+		when(sesClient.sendEmail(any(SendEmailRequest.class)))
+				.thenThrow(SesV2Exception.builder().message("Email address is not verified.").build());
+		assertThat(mailService.sendNow("lead@team.co", "Konu", "Metin")).isFalse();
+		assertThat(new MailService(sesClient, "", "https://menton.com.tr").sendNow("lead@team.co", "Konu", "Metin"))
+				.isFalse();
+	}
+
+	@Test
 	void buildsLinksWithoutADoubleSlash() {
 		MailService mailService = new MailService(sesClient, "", "https://menton.com.tr/");
 

@@ -197,6 +197,22 @@ class CoordinatorProgramControllerTest {
 	}
 
 	@Test
+	void emailsATeamCodeAndOpensATeamAsTheSignedInCoordinator() throws Exception {
+		UUID inviteId = UUID.randomUUID();
+		UUID organizationId = UUID.randomUUID();
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/teams/{inviteId}/send-code", PROGRAM_ID, inviteId)
+						.with(authentication(signedIn())))
+				.andExpect(status().isOk());
+		verify(programLaunchService).sendCode(SIGNED_IN_ID, PROGRAM_ID, inviteId);
+
+		mockMvc.perform(get("/api/coordinator/programs/{id}/team-details/{organizationId}", PROGRAM_ID, organizationId)
+						.with(authentication(signedIn())))
+				.andExpect(status().isOk());
+		verify(programLaunchService).teamDetail(SIGNED_IN_ID, PROGRAM_ID, organizationId);
+	}
+
+	@Test
 	void invitesAMentorByEmailAndDecidesAsTheSignedInUser() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/{id}/mentors", PROGRAM_ID)
 						.with(authentication(signedIn()))

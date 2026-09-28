@@ -21,6 +21,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
+import com.dps.teknokent.dto.responses.ProgramTeamDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
@@ -42,7 +43,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Flow 03.3: a coordinator launches a program with its rules and teams, and follows which team leads have
- * joined with their code. Codes are copied and shared by the coordinator; nothing here sends email.
+ * joined with their code. The coordinator copies a code or emails it to the lead through SES.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,6 +58,8 @@ public class ProgramLaunchService {
 	private final ProgramStartupRepository programStartupRepository;
 	private final OrganizationRepository organizationRepository;
 	private final AppUserRepository appUserRepository;
+	private final MailService mailService;
+	private final CoordinatorMentorshipService mentorshipService;
 
 	@Transactional
 	public CoordinatorProgramResponse.Detail create(UUID actorId, CreateCoordinatorProgramRequest request) {
@@ -124,10 +127,72 @@ public class ProgramLaunchService {
 				&& inviteRepository.existsByProgramIdAndLeadEmailIgnoreCase(programId, email)) {
 			throw new InvalidRequestException("Another team in this program already has this lead email.");
 		}
+		if (!email.equalsIgnoreCase(invite.getLeadEmail())) {
+			invite.setCodeSentAt(null);
+			invite.setCodeSendFailed(false);
+		}
 		invite.setTeamName(input.teamName().trim());
 		invite.setLeadEmail(email);
 		inviteRepository.save(invite);
 		return rows(programId);
+	}
+
+	/** "Kodu gönder" / "Kodu tekrar gönder": emails the code to the lead, and marks the team "Sorunlu" if SES refuses. */
+	@Transactional
+	public List<ProgramTeamResponse> sendCode(UUID actorId, UUID programId, UUID inviteId) {
+		Program program = programService.requireManagedProgram(actorId, programId);
+		ProgramTeamInvite invite = requireWaitingInvite(programId, inviteId);
+		if (!mailService.isConfigured()) {
+			throw new InvalidRequestException("E-posta gönderimi bu ortamda açık değil; kodu kopyalayıp paylaşın.");
+		}
+		boolean sent = mailService.sendNow(
+				invite.getLeadEmail(),
+				"menton: " + program.getName() + " takım kodunuz",
+				"Merhaba,\n\n" + program.getName() + " programına " + invite.getTeamName()
+						+ " takımının yetkilisi olarak davet edildiniz.\n\nTakım kodunuz: " + invite.getCode()
+						+ "\n\n" + mailService.link("/invite") + " adresinden bu kodla kayıt olun. Kayıt olduktan sonra aynı kodu"
+						+ " ekip arkadaşlarınızla paylaşabilirsiniz.\n\nmenton");
+		invite.setCodeSendFailed(!sent);
+		if (sent) {
+			invite.setCodeSentAt(Instant.now());
+		}
+		inviteRepository.save(invite);
+		return rows(programId);
+	}
+
+	/** The Takımlar drawer for a team that has joined the program. */
+	@Transactional(readOnly = true)
+	public ProgramTeamDetailResponse teamDetail(UUID actorId, UUID programId, UUID organizationId) {
+		programService.requireManagedProgram(actorId, programId);
+		boolean inProgram = programStartupRepository.findByProgramIdIn(List.of(programId)).stream()
+				.anyMatch(startup -> organizationId.equals(startup.getOrganizationId()));
+		Organization organization = organizationRepository.findById(organizationId)
+				.filter(found -> inProgram)
+				.orElseThrow(() -> new ResourceNotFoundException("Team not found in this program: " + organizationId));
+		String code = inviteRepository.findByProgramIdOrderByCreatedAtAsc(programId).stream()
+				.filter(invite -> organizationId.equals(invite.getOrganizationId()))
+				.map(ProgramTeamInvite::getCode)
+				.findFirst()
+				.orElse(organization.getInviteCode());
+		List<ProgramTeamDetailResponse.Person> members = appUserRepository
+				.findByOrganizationIdOrderByFullNameAsc(organizationId).stream()
+				.map(ProgramLaunchService::person)
+				.toList();
+		return new ProgramTeamDetailResponse(
+				organization.getId(),
+				organization.getName(),
+				organization.getSector() == null ? null : organization.getSector().value(),
+				organization.getFounder() == null ? null : person(organization.getFounder()),
+				code,
+				members,
+				mentorshipService.list(actorId, programId).stream()
+						.filter(row -> organizationId.equals(row.organizationId()))
+						.toList());
+	}
+
+	private static ProgramTeamDetailResponse.Person person(AppUser user) {
+		return new ProgramTeamDetailResponse.Person(
+				user.getId(), user.getFullName(), user.getJobTitle(), user.getEmail(), user.getCreatedAt());
 	}
 
 	@Transactional
@@ -192,7 +257,9 @@ public class ProgramLaunchService {
 					invite.getCode(),
 					invite.getCreatedAt(),
 					invite.getJoinedAt(),
-					organization == null ? 0 : memberCount(organization)));
+					organization == null ? 0 : memberCount(organization),
+					invite.getCodeSentAt(),
+					invite.isCodeSendFailed()));
 		}
 		for (ProgramStartup startup : startups) {
 			Organization organization = organizations.get(startup.getOrganizationId());
@@ -210,7 +277,9 @@ public class ProgramLaunchService {
 					organization.getInviteCode(),
 					startup.getCreatedAt(),
 					startup.getCreatedAt(),
-					memberCount(organization)));
+					memberCount(organization),
+					null,
+					false));
 		}
 		return rows;
 	}
