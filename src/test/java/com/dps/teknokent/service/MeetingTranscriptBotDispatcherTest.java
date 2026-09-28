@@ -46,7 +46,7 @@ class MeetingTranscriptBotDispatcherTest {
 		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
 				any(), any(), any())).thenReturn(List.of(first, copy));
 		when(assistantService.addBot(any())).thenReturn(
-				new AddBotResponse("bot-1", "google_meet", "aaa-bbbb-ccc", "joining", "Mentor Bot"));
+				new AddBotResponse("bot-1", null, "google_meet", "joining", "Mentor Bot"));
 
 		int sent = dispatcher.dispatchDueMeetings(now);
 
@@ -120,9 +120,24 @@ class MeetingTranscriptBotDispatcherTest {
 		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
 				any(), any(), any())).thenReturn(List.of(meeting));
 		when(assistantService.addBot(any())).thenReturn(
-				new AddBotResponse("bot-1", "google_meet", "aaa-bbbb-ccc", "joining", "Mentor Bot"));
+				new AddBotResponse("bot-1", null, "google_meet", "joining", "Mentor Bot"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isEqualTo(1);
+		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
+	}
+
+	@Test
+	void reusesExistingScheduledSessionInsteadOfStartingADuplicateBot() {
+		Instant now = Instant.parse("2026-09-02T12:00:00Z");
+		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of(meeting));
+		when(assistantService.hasProviderSession(meeting.getMeetLink())).thenReturn(true);
+
+		assertThat(dispatcher.dispatchDueMeetings(now)).isEqualTo(1);
+
+		verify(assistantService, never()).addBot(any());
+		verify(assistantService).registerScheduledBot(meeting.getMeetLink(), List.of(meeting));
 		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
 	}
 

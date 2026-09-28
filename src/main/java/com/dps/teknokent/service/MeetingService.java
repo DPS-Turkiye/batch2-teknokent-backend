@@ -337,6 +337,21 @@ public class MeetingService {
 		return stopped.stream().map(Meeting::getId).toList();
 	}
 
+	@Transactional
+	public List<UUID> markScheduledBotStopped(UUID meetingId) {
+		if (meetingId == null) return List.of();
+		Meeting meeting = meetingRepository.findById(meetingId).orElse(null);
+		if (meeting == null || meeting.getStatus() != MeetingStatus.SCHEDULED
+				|| !isRunningSlot(meeting, Instant.now())) {
+			return List.of();
+		}
+		Instant now = Instant.now();
+		meeting.setStatus(MeetingStatus.COMPLETED);
+		if (meeting.getBotDispatchedAt() == null) meeting.setBotDispatchedAt(now);
+		meetingRepository.save(meeting);
+		return List.of(meeting.getId());
+	}
+
 	private static String nativeMeetingIdOf(Meeting meeting) {
 		String meetLink = meeting.getMeetLink();
 		if (meetLink == null || meetLink.isBlank()) {

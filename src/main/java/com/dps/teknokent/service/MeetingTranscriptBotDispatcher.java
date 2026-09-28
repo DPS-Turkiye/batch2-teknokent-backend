@@ -56,7 +56,11 @@ public class MeetingTranscriptBotDispatcher {
 		Instant dispatchedAt = now;
 		for (Map.Entry<String, List<Meeting>> entry : byLink.entrySet()) {
 			try {
-				assistantService.addBot(new AddBotRequest(entry.getKey()));
+				assistantService.reserveProviderMeeting(entry.getKey());
+				if (!assistantService.hasProviderSession(entry.getKey())) {
+					assistantService.addBot(new AddBotRequest(entry.getKey()));
+				}
+				assistantService.registerScheduledBot(entry.getKey(), entry.getValue());
 				for (Meeting meeting : entry.getValue()) {
 					meeting.setBotDispatchedAt(dispatchedAt);
 				}

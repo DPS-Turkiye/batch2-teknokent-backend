@@ -2,6 +2,8 @@ package com.dps.teknokent.service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +27,12 @@ import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
+import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.AssistantReportGenerationRepository;
+import com.dps.teknokent.repository.AssistantSessionRepository;
+import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.AssistantSession;
 
 @ExtendWith(MockitoExtension.class)
 class AssistantServiceTest {
@@ -34,6 +42,18 @@ class AssistantServiceTest {
 
   @Mock
   private MeetingReportService meetingReportService;
+
+  @Mock
+  private AssistantSessionRepository sessionRepository;
+
+  @Mock
+  private AssistantReportGenerationRepository reportGenerationRepository;
+
+  @Mock
+  private AppUserRepository appUserRepository;
+
+  @Mock
+  private MeetingRepository meetingRepository;
 
   @InjectMocks
   private AssistantService assistantService;
@@ -48,7 +68,7 @@ class AssistantServiceTest {
 
     assertThat(response.id()).isEqualTo("bot-1");
     assertThat(response.platform()).isEqualTo("google_meet");
-    assertThat(response.nativeMeetingId()).isEqualTo("abc-defg-hij");
+    assertThat(response.assistantSessionId()).isNull();
     assertThat(response.status()).isEqualTo("joining");
     assertThat(response.title()).isEqualTo("Mentor Bot");
     verify(providerClient).sendBot("google_meet", "abc-defg-hij", url);
@@ -135,6 +155,27 @@ class AssistantServiceTest {
         new GenerateMeetingReportRequest(null, List.of()));
 
     verify(providerClient).getTranscript("google_meet", "abc-defg-hij");
+  }
+
+  @Test
+  void reportGenerationStopsAtTwentyAndLocksActorBeforeCounting() {
+    UUID actorId = UUID.randomUUID();
+    UUID sessionId = UUID.randomUUID();
+    AppUser actor = new AppUser();
+    actor.setId(actorId);
+    AssistantSession session = new AssistantSession();
+    session.setId(sessionId);
+    session.setOwner(actor);
+    when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+    when(appUserRepository.findByIdForUpdate(actorId)).thenReturn(Optional.of(actor));
+    when(reportGenerationRepository.countByActorIdAndCreatedAtAfter(eq(actorId), any()))
+        .thenReturn(20L);
+
+    assertThatThrownBy(() -> assistantService.generateMeetingReport(sessionId, actorId, null))
+        .isInstanceOf(AssistantService.ReportLimitExceededException.class);
+
+    verify(appUserRepository).findByIdForUpdate(actorId);
+    verify(meetingReportService, never()).generate(any(), any());
   }
 
   private static MeetingReportResponse report(String title) {

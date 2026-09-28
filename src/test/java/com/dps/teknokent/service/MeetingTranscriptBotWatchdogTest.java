@@ -52,7 +52,8 @@ class MeetingTranscriptBotWatchdogTest {
 
 	@BeforeEach
 	void setUp() {
-		AssistantService assistantService = new AssistantService(providerClient, meetingReportService);
+		AssistantService assistantService = new AssistantService(
+				providerClient, meetingReportService, null, null, null, null);
 		watchdog = new MeetingTranscriptBotWatchdog(
 				meetingRepository, meetingService, assistantService, shareService);
 	}

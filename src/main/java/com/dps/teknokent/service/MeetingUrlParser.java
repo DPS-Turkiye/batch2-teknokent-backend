@@ -28,16 +28,22 @@ public final class MeetingUrlParser {
     String input = raw.trim();
     String lower = input.toLowerCase(Locale.ROOT);
 
-    if (GMEET.matcher(lower).matches()) {
-      return new Parsed("google_meet", lower);
-    }
-
     URI uri = URI.create(input);
     String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
 
-    if (host.contains("meet.google.com")) {
-      String[] parts = uri.getPath().split("/");
-      String code = parts[parts.length - 1].toLowerCase(Locale.ROOT);
+    if ("https".equalsIgnoreCase(uri.getScheme())
+        && "meet.google.com".equals(host)
+        && uri.getUserInfo() == null
+        && (uri.getPort() == -1 || uri.getPort() == 443)) {
+      String path = uri.getPath();
+      if (path == null) {
+        throw new IllegalArgumentException("Invalid Google Meet link");
+      }
+      String[] parts = path.split("/");
+      if (parts.length != 2 || !parts[0].isEmpty()) {
+        throw new IllegalArgumentException("Invalid Google Meet link");
+      }
+      String code = parts[1].toLowerCase(Locale.ROOT);
       if (!GMEET.matcher(code).matches()) {
         throw new IllegalArgumentException("Invalid Google Meet link");
       }
