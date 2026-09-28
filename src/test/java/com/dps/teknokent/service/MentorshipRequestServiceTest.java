@@ -692,6 +692,28 @@ class MentorshipRequestServiceTest {
                 assertThat(request.getMenteeReadAt()).isNull();
         }
 
+        @Test
+        void findByIdForActorHidesRequestsFromUsersOutsideTheOrganization() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                AppUser mentor = user(UUID.fromString("00000000-0000-0000-0000-000000000201"),
+                                "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                                "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);
+                AppUser outsider = user(UUID.fromString("00000000-0000-0000-0000-000000000999"),
+                                "outsider@tekno.com", "Başka Biri", UserRole.MENTEE);
+                outsider.setOrganization(organization(UUID.fromString("00000000-0000-0000-0000-000000000399"),
+                                "Başka Startup"));
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.ACCEPTED);
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(outsider.getId())).thenReturn(outsider);
+
+                assertThatThrownBy(() -> mentorshipRequestService.findByIdForActor(requestId, outsider.getId()))
+                                .isInstanceOf(com.dps.teknokent.exception.ResourceNotFoundException.class);
+        }
+
         private static MentorshipRequest mentorshipRequest(UUID id, AppUser requester, Organization organization,
                         AppUser mentor,
                         String summary, MentorshipRequestStatus status) {

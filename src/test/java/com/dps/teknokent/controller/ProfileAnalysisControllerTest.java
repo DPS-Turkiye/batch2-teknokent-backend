@@ -54,7 +54,8 @@ class ProfileAnalysisControllerTest {
                 UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
                 UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000201");
 
-                when(profileAnalysisService.findLatest(organizationId, null)).thenReturn(new ProfileAnalysisResponse(
+                UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000151");
+                when(profileAnalysisService.findLatestForCaller(actorId, null)).thenReturn(new ProfileAnalysisResponse(
                                 analysisId,
                                 organizationId,
                                 null,
@@ -69,6 +70,7 @@ class ProfileAnalysisControllerTest {
 
                 mockMvc.perform(get("/api/profile-analyses/latest")
                                 .param("organizationId", organizationId.toString())
+                                .param("actorId", actorId.toString())
                                 .with(user("test-user")))
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.id").value(analysisId.toString()))
@@ -81,7 +83,8 @@ class ProfileAnalysisControllerTest {
                 UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000102");
                 UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000202");
 
-                when(profileAnalysisService.findLatestConfirmedStartup(organizationId))
+                UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000152");
+                when(profileAnalysisService.findLatestConfirmedStartupForCaller(actorId))
                                 .thenReturn(new ProfileAnalysisResponse(
                                                 analysisId,
                                                 organizationId,
@@ -97,6 +100,7 @@ class ProfileAnalysisControllerTest {
 
                 mockMvc.perform(get("/api/profile-analyses/latest/confirmed")
                                 .param("organizationId", organizationId.toString())
+                                .param("actorId", actorId.toString())
                                 .with(user("test-user")))
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.id").value(analysisId.toString()))
@@ -108,8 +112,8 @@ class ProfileAnalysisControllerTest {
                 UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000103");
                 UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000203");
 
-                when(profileAnalysisService.parse(
-                                eq(organizationId),
+								when(profileAnalysisService.parseForCaller(
+							eq(UUID.fromString("00000000-0000-0000-0000-000000000153")),
                                 eq((UUID) null),
                                 eq("mentee"),
                                 eq(true),
@@ -134,6 +138,7 @@ class ProfileAnalysisControllerTest {
                                                 "application/pdf",
                                                 "dummy pdf bytes".getBytes(StandardCharsets.UTF_8)))
                                 .param("organizationId", organizationId.toString())
+                                .param("actorId", "00000000-0000-0000-0000-000000000153")
                                 .param("profileType", "mentee")
                                 .param("consentAccepted", "true")
                                 .param("ocrMode", "auto")
@@ -160,7 +165,7 @@ class ProfileAnalysisControllerTest {
                                                 }
                                                 """));
 
-                when(profileAnalysisService.createManual(eq(organizationId), eq((UUID) null),
+                when(profileAnalysisService.createManualForCaller(eq(UUID.fromString("00000000-0000-0000-0000-000000000154")), eq((UUID) null),
                                 any(CreateManualProfileRequest.class)))
                                 .thenReturn(new ProfileAnalysisResponse(
                                                 analysisId,
@@ -176,7 +181,7 @@ class ProfileAnalysisControllerTest {
                                                 Instant.parse("2026-08-20T10:58:00Z")));
 
                 ProfileAnalysisResponse response = new ProfileAnalysisController(profileAnalysisService)
-                                .createManual(organizationId, null, request);
+                                .createManual(UUID.fromString("00000000-0000-0000-0000-000000000154"), organizationId, null, request);
 
                 assertThat(response.id()).isEqualTo(analysisId);
                 assertThat(response.profileType()).isEqualTo("individual_mentee");
@@ -215,9 +220,11 @@ class ProfileAnalysisControllerTest {
                 var second = items.addObject();
                 second.put("mentorId", "00000000-0000-0000-0000-000000000901");
 
-                when(profileAnalysisService.recommendations(analysisId)).thenReturn(responseBody);
+                UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000155");
+                when(profileAnalysisService.recommendationsForCaller(actorId, analysisId)).thenReturn(responseBody);
 
                 mockMvc.perform(post("/api/profile-analyses/{id}/recommendations", analysisId)
+                                .param("actorId", actorId.toString())
                                 .with(user("test-user")))
                                 .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
                                 .andExpect(status().isOk())
@@ -228,7 +235,8 @@ class ProfileAnalysisControllerTest {
         void confirmsProfileAnalysis() throws Exception {
                 UUID analysisId = UUID.fromString("00000000-0000-0000-0000-000000000206");
 
-                when(profileAnalysisService.confirm(eq(analysisId), anyString()))
+                UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000156");
+                when(profileAnalysisService.confirmForCaller(eq(actorId), eq(analysisId), anyString()))
                                 .thenReturn(new ProfileAnalysisResponse(
                                                 analysisId,
                                                 UUID.fromString("00000000-0000-0000-0000-000000000103"),
@@ -243,6 +251,7 @@ class ProfileAnalysisControllerTest {
                                                 Instant.parse("2026-08-20T11:55:00Z")));
 
                 mockMvc.perform(patch("/api/profile-analyses/{id}/confirmation", analysisId)
+                                .param("actorId", actorId.toString())
                                 .with(user("test-user"))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""

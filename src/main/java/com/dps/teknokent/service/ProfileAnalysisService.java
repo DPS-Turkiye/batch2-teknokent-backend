@@ -222,6 +222,33 @@ public class ProfileAnalysisService {
 		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
 	}
 
+	public ProfileAnalysisResponse createManualForCaller(
+			UUID callerUserId, UUID appUserId, CreateManualProfileRequest request) {
+		AppUser caller = requireCallerInOrganization(callerUserId);
+		return createManual(caller.getOrganization().getId(), appUserId, request);
+	}
+
+	public ProfileAnalysisResponse findLatestForCaller(UUID callerUserId, UUID appUserId) {
+		AppUser caller = requireCallerInOrganization(callerUserId);
+		if (appUserId == null) return findLatest(caller.getOrganization().getId(), null);
+		requireMemberOfOrganization(appUserId, caller.getOrganization().getId());
+		return findLatest(caller.getOrganization().getId(), appUserId);
+	}
+
+	public ProfileAnalysisResponse findLatestConfirmedStartupForCaller(UUID callerUserId) {
+		AppUser caller = requireCallerInOrganization(callerUserId);
+		return findLatestConfirmedStartup(caller.getOrganization().getId());
+	}
+
+	private AppUser requireCallerInOrganization(UUID callerUserId) {
+		AppUser caller = appUserRepository.findById(callerUserId)
+				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + callerUserId));
+		if (caller.getOrganization() == null) {
+			throw new ResourceNotFoundException("Profile analysis not found");
+		}
+		return caller;
+	}
+
 	public ProfileAnalysisResponse findLatest(UUID organizationId, UUID appUserId) {
 		if (appUserId != null) {
 			return profileAnalysisRepository.findFirstByAppUserIdOrderByCreatedAtDesc(appUserId)
@@ -269,6 +296,11 @@ public class ProfileAnalysisService {
 		return jsonUtils.valueToTree(mentorRecommendationService.recommend(request));
 	}
 
+	public JsonNode recommendationsForCaller(UUID callerUserId, UUID id) {
+		ProfileAnalysis analysis = requireAnalysisForCaller(callerUserId, id);
+		return recommendations(analysis.getId());
+	}
+
 	public ProfileAnalysisResponse confirm(UUID id, String payload) {
 		ProfileAnalysis analysis = profileAnalysisRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Parsed startup profile not found."));
@@ -279,6 +311,21 @@ public class ProfileAnalysisService {
 		}
 		analysis.confirm(jsonUtils.writeValue(profile), Instant.now());
 		return ProfileAnalysisResponse.fromEntity(profileAnalysisRepository.save(analysis));
+	}
+
+	public ProfileAnalysisResponse confirmForCaller(UUID callerUserId, UUID id, String payload) {
+		ProfileAnalysis analysis = requireAnalysisForCaller(callerUserId, id);
+		return confirm(analysis.getId(), payload);
+	}
+
+	private ProfileAnalysis requireAnalysisForCaller(UUID callerUserId, UUID id) {
+		AppUser caller = requireCallerInOrganization(callerUserId);
+		ProfileAnalysis analysis = profileAnalysisRepository.findById(id)
+				.orElseThrow(() -> new ResourceNotFoundException("Profile analysis not found"));
+		if (!analysis.getOrganizationId().equals(caller.getOrganization().getId())) {
+			throw new ResourceNotFoundException("Profile analysis not found");
+		}
+		return analysis;
 	}
 
 	private String firstText(JsonNode profile, String... fields) {

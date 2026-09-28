@@ -54,7 +54,8 @@ class ActionItemControllerTest {
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(actionItemService.findByScope(organizationId, null)).thenReturn(List.of(new ActionItemResponse(
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000091");
+        when(actionItemService.findByScopeForActor(actorId, organizationId, null)).thenReturn(List.of(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -72,6 +73,7 @@ class ActionItemControllerTest {
 
         mockMvc.perform(get("/api/actions")
                         .param("organizationId", organizationId.toString())
+                        .param("actorId", actorId.toString())
                         .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(actionItemId.toString()))
@@ -83,20 +85,23 @@ class ActionItemControllerTest {
     void returnsActionItemsScopedToAMentorshipRequest() throws Exception {
         UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
 
-        when(actionItemService.findByScope(null, mentorshipRequestId)).thenReturn(List.of());
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000092");
+        when(actionItemService.findByScopeForActor(actorId, null, mentorshipRequestId)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/actions")
                         .param("mentorshipRequestId", mentorshipRequestId.toString())
+                        .param("actorId", actorId.toString())
                         .with(user("test-user")))
                 .andExpect(status().isOk());
     }
 
     @Test
     void rejectsListWithoutAScope() throws Exception {
-        when(actionItemService.findByScope(null, null))
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000093");
+        when(actionItemService.findByScopeForActor(actorId, null, null))
                 .thenThrow(new InvalidRequestException("Provide exactly one of organizationId or mentorshipRequestId"));
 
-        mockMvc.perform(get("/api/actions").with(user("test-user")))
+        mockMvc.perform(get("/api/actions").param("actorId", actorId.toString()).with(user("test-user")))
                 .andExpect(status().isBadRequest());
     }
 
@@ -107,7 +112,7 @@ class ActionItemControllerTest {
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(actionItemService.create(any(CreateActionItemRequest.class))).thenReturn(new ActionItemResponse(
+        when(actionItemService.createForActor(any(), any(CreateActionItemRequest.class))).thenReturn(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -124,7 +129,8 @@ class ActionItemControllerTest {
         ));
 
         mockMvc.perform(post("/api/actions")
-                        .with(user("test-user"))
+                .with(user("test-user"))
+                        .param("actorId", UUID.fromString("00000000-0000-0000-0000-000000000094").toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -145,6 +151,7 @@ class ActionItemControllerTest {
     @Test
     void rejectsCreateActionItemWhenTitleIsBlank() throws Exception {
         mockMvc.perform(post("/api/actions")
+                        .param("actorId", UUID.fromString("00000000-0000-0000-0000-000000000094").toString())
                         .with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -164,7 +171,7 @@ class ActionItemControllerTest {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-        when(actionItemService.update(eq(actionItemId), eq(organizationId), eq(null), any(UpdateActionItemRequest.class))).thenReturn(new ActionItemResponse(
+        when(actionItemService.updateForActor(any(), eq(actionItemId), eq(organizationId), eq(null), any(UpdateActionItemRequest.class))).thenReturn(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -182,6 +189,7 @@ class ActionItemControllerTest {
 
         mockMvc.perform(patch("/api/actions/{id}", actionItemId)
                         .param("organizationId", organizationId.toString())
+                        .param("actorId", UUID.fromString("00000000-0000-0000-0000-000000000095").toString())
                         .with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

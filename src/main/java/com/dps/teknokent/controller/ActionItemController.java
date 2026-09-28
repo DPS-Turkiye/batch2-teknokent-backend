@@ -18,6 +18,7 @@ import com.dps.teknokent.dto.requests.CreateActionItemRequest;
 import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
 import com.dps.teknokent.dto.responses.ActionItemResponse;
 import com.dps.teknokent.service.ActionItemService;
+import com.dps.teknokent.security.CurrentActor;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -33,23 +34,29 @@ public class ActionItemController {
 
 	@GetMapping
 	public List<ActionItemResponse> findByScope(
+			@RequestParam(required = false) UUID actorId,
 			@RequestParam(required = false) UUID organizationId,
 			@RequestParam(required = false) UUID mentorshipRequestId) {
-		return actionItemService.findByScope(organizationId, mentorshipRequestId);
+		return actionItemService.findByScopeForActor(
+				CurrentActor.resolve(actorId), organizationId, mentorshipRequestId);
 	}
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public ActionItemResponse create(@Valid @RequestBody CreateActionItemRequest request) {
-		return actionItemService.create(request);
+	public ActionItemResponse create(
+			@RequestParam(required = false) UUID actorId,
+			@Valid @RequestBody CreateActionItemRequest request) {
+		return actionItemService.createForActor(CurrentActor.resolve(actorId), request);
 	}
 
 	@PatchMapping("/{id}")
 	public ActionItemResponse update(
 			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId,
 			@RequestParam(required = false) UUID organizationId,
 			@RequestParam(required = false) UUID mentorshipRequestId,
 			@Valid @RequestBody UpdateActionItemRequest request) {
-		return actionItemService.update(id, organizationId, mentorshipRequestId, request);
+		return actionItemService.updateForActor(
+				CurrentActor.resolve(actorId), id, organizationId, mentorshipRequestId, request);
 	}
 }

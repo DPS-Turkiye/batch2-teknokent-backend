@@ -52,19 +52,23 @@ public class MentorshipRequestController {
 
 	@GetMapping
 	public List<MentorshipRequestResponse> findAll(
+			@RequestParam(required = false) UUID actorId,
 			@RequestParam(required = false) UUID requesterId,
 			@RequestParam(required = false) UUID mentorId,
 			@RequestParam(required = false) UUID organizationId) {
-		return mentorshipRequestService.findAll(requesterId, mentorId, organizationId);
+		return mentorshipRequestService.findAllForActor(
+				CurrentActor.resolve(actorId), requesterId, mentorId, organizationId);
 	}
 
 	@GetMapping(params = "tab")
 	public PageResponse<MentorshipRequestResponse> findWorkspacePage(
+			@RequestParam(required = false) UUID actorId,
 			@RequestParam String tab,
 			@RequestParam(required = false) UUID mentorId,
 			@RequestParam(required = false) UUID organizationId,
 			@PageableDefault(size = 7) Pageable pageable) {
-		return mentorshipRequestService.findWorkspacePage(
+		return mentorshipRequestService.findWorkspacePageForActor(
+				CurrentActor.resolve(actorId),
 				mentorId,
 				organizationId,
 				MentorshipWorkspaceTab.fromParam(tab),
@@ -72,8 +76,10 @@ public class MentorshipRequestController {
 	}
 
 	@GetMapping("/{id}")
-	public MentorshipRequestResponse findById(@PathVariable UUID id) {
-		return mentorshipRequestService.findById(id);
+	public MentorshipRequestResponse findById(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return mentorshipRequestService.findByIdForActor(id, CurrentActor.resolve(actorId));
 	}
 
 	@PostMapping
@@ -86,28 +92,32 @@ public class MentorshipRequestController {
 	public MentorshipRequestResponse decide(
 			@PathVariable UUID id,
 			@Valid @RequestBody DecideMentorshipRequest decision) {
-		return mentorshipRequestService.decide(id, decision);
+		return mentorshipRequestService.decide(id, new DecideMentorshipRequest(
+				CurrentActor.resolve(decision.mentorId()), decision.status(), decision.message(), decision.requestedDocuments()));
 	}
 
 	@PatchMapping("/{id}/accept-proposal")
 	public MentorshipRequestResponse acceptProposedSlot(
 			@PathVariable UUID id,
 			@Valid @RequestBody AcceptProposedSlotRequest acceptance) {
-		return mentorshipRequestService.acceptProposedSlot(id, acceptance);
+		return mentorshipRequestService.acceptProposedSlot(id, new com.dps.teknokent.dto.requests.AcceptProposedSlotRequest(
+				CurrentActor.resolve(acceptance.requesterId()), acceptance.selectedSlot()));
 	}
 
 	@PostMapping("/{id}/messages")
 	public MentorshipRequestResponse reply(
 			@PathVariable UUID id,
 			@Valid @RequestBody ReplyToMentorshipRequest reply) {
-		return mentorshipRequestService.reply(id, reply);
+		return mentorshipRequestService.reply(id, new ReplyToMentorshipRequest(
+				CurrentActor.resolve(reply.requesterId()), reply.message()));
 	}
 
 	@PostMapping("/{id}/mentor-messages")
 	public MentorshipRequestResponse postMentorMessage(
 			@PathVariable UUID id,
 			@Valid @RequestBody PostMentorMessageRequest request) {
-		return mentorshipRequestService.postMentorMessage(id, request);
+		return mentorshipRequestService.postMentorMessage(id, new PostMentorMessageRequest(
+				CurrentActor.resolve(request.mentorId()), request.message()));
 	}
 
 	@PatchMapping("/{id}/planned-sessions")
@@ -129,11 +139,15 @@ public class MentorshipRequestController {
 	public MentorshipRequestResponse withdraw(
 			@PathVariable UUID id,
 			@Valid @RequestBody WithdrawMentorshipRequest withdrawal) {
-		return mentorshipRequestService.withdraw(id, withdrawal);
+		return mentorshipRequestService.withdraw(id, new WithdrawMentorshipRequest(
+				CurrentActor.resolve(withdrawal.requesterId())));
 	}
 
 	@GetMapping("/{id}/availability")
-	public List<MentorAvailabilitySlotResponse> findAvailability(@PathVariable UUID id) {
+	public List<MentorAvailabilitySlotResponse> findAvailability(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		mentorshipRequestService.findByIdForActor(id, CurrentActor.resolve(actorId));
 		return mentorshipRequestService.findAvailability(id);
 	}
 
@@ -142,16 +156,23 @@ public class MentorshipRequestController {
 	public MeetingResponse scheduleMeeting(
 			@PathVariable UUID id,
 			@Valid @RequestBody ScheduleMentorshipRequest request) {
-		return mentorshipRequestService.scheduleMeeting(id, request);
+		return mentorshipRequestService.scheduleMeeting(id, new ScheduleMentorshipRequest(
+				CurrentActor.resolve(request.requesterId()), request.slotId()));
 	}
 
 	@GetMapping("/{id}/alternatives")
-	public List<MentorProfileResponse> findAlternatives(@PathVariable UUID id) {
+	public List<MentorProfileResponse> findAlternatives(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		mentorshipRequestService.findByIdForActor(id, CurrentActor.resolve(actorId));
 		return mentorshipRequestService.findAlternatives(id);
 	}
 
 	@GetMapping("/{id}/meetings")
-	public List<MeetingResponse> findMeetings(@PathVariable UUID id) {
+	public List<MeetingResponse> findMeetings(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		mentorshipRequestService.findByIdForActor(id, CurrentActor.resolve(actorId));
 		return meetingService.findTimelineForRequest(id);
 	}
 
@@ -160,6 +181,9 @@ public class MentorshipRequestController {
 	public MeetingResponse logMeeting(
 			@PathVariable UUID id,
 			@Valid @RequestBody LogMeetingRequest request) {
-		return meetingService.logMeeting(id, request);
+		return meetingService.logMeeting(id, new LogMeetingRequest(
+				CurrentActor.resolve(request.mentorId()), request.scheduledAt(), request.durationMinutes(),
+				request.agenda(), request.notes(), request.outcomes(), request.status(), request.meetLink(),
+				request.transcribeRequested()));
 	}
 }

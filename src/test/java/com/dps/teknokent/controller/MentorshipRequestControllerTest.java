@@ -62,7 +62,7 @@ class MentorshipRequestControllerTest {
         UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
         UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000301");
 
-        when(mentorshipRequestService.findAll(requesterId, null, null)).thenReturn(List.of(new MentorshipRequestResponse(
+        when(mentorshipRequestService.findAllForActor(requesterId, requesterId, null, null)).thenReturn(List.of(new MentorshipRequestResponse(
                 requestId,
                 requesterId,
                 "Ayşe Demir",
@@ -91,11 +91,25 @@ class MentorshipRequestControllerTest {
 
         mockMvc.perform(get("/api/mentorship-requests")
                         .param("requesterId", requesterId.toString())
+                        .param("actorId", requesterId.toString())
                         .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(requestId.toString()))
                 .andExpect(jsonPath("$[0].requestedForName").value("Arda Demir"))
                 .andExpect(jsonPath("$[0].status").value("PENDING"));
+    }
+
+    @Test
+    void detailPassesSessionActorToOwnershipCheck() throws Exception {
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000399");
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000398");
+        when(mentorshipRequestService.findByIdForActor(requestId, actorId))
+                .thenThrow(new com.dps.teknokent.exception.ResourceNotFoundException("Mentorship request not found"));
+
+        mockMvc.perform(get("/api/mentorship-requests/{id}", requestId)
+                        .param("actorId", actorId.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isNotFound());
     }
 
     @Test

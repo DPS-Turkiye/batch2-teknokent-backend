@@ -95,6 +95,20 @@ public class MentorshipRequestService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<MentorshipRequestResponse> findAllForActor(
+			UUID actorId, UUID requesterId, UUID mentorId, UUID organizationId) {
+		AppUser actor = domainLookupService.requireUser(actorId);
+		if (actor.getRole() == UserRole.MENTOR) {
+			return findAll(null, actorId, null);
+		}
+		if (actor.getRole() == UserRole.MENTEE && actor.getOrganization() != null) {
+			return findAll(null, null, actor.getOrganization().getId());
+		}
+		if (actor.getRole() == UserRole.ADMIN) return findAll(requesterId, mentorId, organizationId);
+		throw new ResourceNotFoundException("Mentorship request scope not found");
+	}
+
+	@Transactional(readOnly = true)
 	public PageResponse<MentorshipRequestResponse> findWorkspacePage(
 			UUID mentorId,
 			UUID organizationId,
@@ -117,10 +131,35 @@ public class MentorshipRequestService {
 	}
 
 	@Transactional(readOnly = true)
+	public PageResponse<MentorshipRequestResponse> findWorkspacePageForActor(
+			UUID actorId, UUID mentorId, UUID organizationId, MentorshipWorkspaceTab tab, Pageable pageable) {
+		AppUser actor = domainLookupService.requireUser(actorId);
+		if (actor.getRole() == UserRole.MENTOR) return findWorkspacePage(actorId, null, tab, pageable);
+		if (actor.getRole() == UserRole.MENTEE && actor.getOrganization() != null) {
+			return findWorkspacePage(null, actor.getOrganization().getId(), tab, pageable);
+		}
+		if (actor.getRole() == UserRole.ADMIN) return findWorkspacePage(mentorId, organizationId, tab, pageable);
+		throw new ResourceNotFoundException("Mentorship request scope not found");
+	}
+
+	@Transactional(readOnly = true)
 	public MentorshipRequestResponse findById(UUID id) {
 		return mentorshipRequestRepository.findById(id)
 				.map(this::toResponse)
 				.orElseThrow(() -> new ResourceNotFoundException("Mentorship request not found: " + id));
+	}
+
+	@Transactional(readOnly = true)
+	public MentorshipRequestResponse findByIdForActor(UUID id, UUID actorId) {
+		MentorshipRequest request = requireRequest(id);
+		AppUser actor = domainLookupService.requireUser(actorId);
+		boolean participant = actor.getRole() == UserRole.ADMIN
+				|| request.getRequester().getId().equals(actorId)
+				|| request.getMentor().getId().equals(actorId)
+				|| actor.getOrganization() != null
+						&& actor.getOrganization().getId().equals(request.getOrganization().getId());
+		if (!participant) throw new ResourceNotFoundException("Mentorship request not found: " + id);
+		return toResponse(request);
 	}
 
 	@Transactional

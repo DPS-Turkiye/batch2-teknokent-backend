@@ -301,6 +301,30 @@ class ActionItemServiceTest {
     }
 
     @Test
+    void updateForActorCannotUseAnotherRequestsItemId() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID otherRequestItemId = UUID.fromString("00000000-0000-0000-0000-000000000601");
+        AppUser mentor = user(actorId, "Mentor");
+        Organization organization = organization(organizationId, "GreenLoop");
+        MentorshipRequest request = new MentorshipRequest();
+        request.setId(requestId);
+        request.setOrganization(organization);
+        request.setMentor(mentor);
+        when(domainLookupService.requireUser(actorId)).thenReturn(mentor);
+        when(domainLookupService.requireMentorshipRequest(requestId)).thenReturn(request);
+
+        assertThatThrownBy(() -> actionItemService.updateForActor(
+                actorId, otherRequestItemId, null, requestId, completion()))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(actionItemRepository).findByIdAndOrganizationIdAndMentorshipRequest_Id(
+                otherRequestItemId, organizationId, requestId);
+        verify(actionItemRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void resolveOrganizationId_throwsWhenNeitherScopeIsGiven() {
         assertThatThrownBy(() -> actionItemService.resolveOrganizationId(null, null))
                 .isInstanceOf(InvalidRequestException.class)

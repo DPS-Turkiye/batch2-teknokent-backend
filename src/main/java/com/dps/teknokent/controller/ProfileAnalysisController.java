@@ -23,6 +23,7 @@ import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.security.AppUserPrincipal;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.ProfileAnalysisService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,14 +39,18 @@ public class ProfileAnalysisController {
 
 	@GetMapping("/latest")
 	public ProfileAnalysisResponse latest(
+			@RequestParam(required = false) UUID actorId,
 			@RequestParam(required = false) UUID organizationId,
 			@RequestParam(required = false) UUID appUserId) {
-		return profileAnalysisService.findLatest(organizationId, appUserId);
+		UUID callerId = CurrentActor.resolve(actorId);
+		return profileAnalysisService.findLatestForCaller(callerId, appUserId);
 	}
 
 	@GetMapping("/latest/confirmed")
-	public ProfileAnalysisResponse latestConfirmedStartup(@RequestParam(required = false) UUID organizationId) {
-		return profileAnalysisService.findLatestConfirmedStartup(organizationId);
+	public ProfileAnalysisResponse latestConfirmedStartup(
+			@RequestParam(required = false) UUID actorId,
+			@RequestParam(required = false) UUID organizationId) {
+		return profileAnalysisService.findLatestConfirmedStartupForCaller(CurrentActor.resolve(actorId));
 	}
 
 	@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -53,16 +58,14 @@ public class ProfileAnalysisController {
 	public ProfileAnalysisResponse parse(
 			@RequestParam(required = false) UUID organizationId,
 			@RequestParam(required = false) UUID appUserId,
+			@RequestParam(required = false) UUID actorId,
 			@RequestParam(defaultValue = "mentee") String profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
 			@RequestParam(defaultValue = "auto") String ocrMode,
 			@RequestPart("file") MultipartFile file) {
-		UUID callerUserId = resolveCallerUserId();
-		return callerUserId == null
-				? profileAnalysisService.parse(
-						organizationId, appUserId, profileType, consentAccepted, ocrMode, file)
-				: profileAnalysisService.parseForCaller(
-						callerUserId, appUserId, profileType, consentAccepted, ocrMode, file);
+		UUID callerUserId = CurrentActor.resolve(actorId);
+		return profileAnalysisService.parseForCaller(
+				callerUserId, appUserId, profileType, consentAccepted, ocrMode, file);
 	}
 
 	/**
@@ -106,19 +109,25 @@ public class ProfileAnalysisController {
 	@PostMapping("/manual")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ProfileAnalysisResponse createManual(
+			@RequestParam(required = false) UUID actorId,
 			@RequestParam(required = false) UUID organizationId,
 			@RequestParam(required = false) UUID appUserId,
 			@jakarta.validation.Valid @RequestBody CreateManualProfileRequest request) {
-		return profileAnalysisService.createManual(organizationId, appUserId, request);
+		return profileAnalysisService.createManualForCaller(CurrentActor.resolve(actorId), appUserId, request);
 	}
 
 	@PostMapping("/{id}/recommendations")
-	public JsonNode recommendations(@PathVariable UUID id) {
-		return profileAnalysisService.recommendations(id);
+	public JsonNode recommendations(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return profileAnalysisService.recommendationsForCaller(CurrentActor.resolve(actorId), id);
 	}
 
 	@PatchMapping("/{id}/confirmation")
-	public ProfileAnalysisResponse confirm(@PathVariable UUID id, @RequestBody String payload) {
-		return profileAnalysisService.confirm(id, payload);
+	public ProfileAnalysisResponse confirm(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId,
+			@RequestBody String payload) {
+		return profileAnalysisService.confirmForCaller(CurrentActor.resolve(actorId), id, payload);
 	}
 }
