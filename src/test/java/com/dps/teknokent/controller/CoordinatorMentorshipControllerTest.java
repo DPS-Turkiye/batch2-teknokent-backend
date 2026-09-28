@@ -83,7 +83,7 @@ class CoordinatorMentorshipControllerTest {
 		LocalDate from = LocalDate.of(2026, 9, 14);
 		LocalDate to = LocalDate.of(2026, 9, 20);
 		when(coordinatorCalendarService.calendar(SIGNED_IN_ID, null, from, to)).thenReturn(new CoordinatorCalendarResponse(
-				from, to, List.of(), List.of(), new CoordinatorCalendarResponse.Summary(18, 2, 2, 2)));
+				from, to, List.of(), List.of(), new CoordinatorCalendarResponse.Summary(18, 2, 2, 2), 2));
 
 		mockMvc.perform(get("/api/coordinator/calendar")
 						.param("from", "2026-09-14")

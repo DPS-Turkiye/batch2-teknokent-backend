@@ -45,6 +45,9 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
 	List<Meeting> findByTranscribeRequestedTrueAndBotDispatchedAtIsNotNullAndStatus(MeetingStatus status);
 
+	List<Meeting> findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(
+			MeetingStatus status, Instant from, Instant to);
+
 	List<Meeting> findByOrganizationIdInOrderByScheduledAtDesc(Collection<UUID> organizationIds);
 
 	List<Meeting> findByStatusAndReminderSentAtIsNullAndScheduledAtBetween(

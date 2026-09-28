@@ -48,6 +48,7 @@ public class CoordinatorCalendarService {
 	private final CoordinatorProgramService programService;
 	private final CoordinatorMentorshipService mentorshipService;
 	private final ProgramEventRepository programEventRepository;
+	private final TranscriptBotCapacityService transcriptBotCapacity;
 
 	@Transactional(readOnly = true)
 	public CoordinatorCalendarResponse calendar(UUID actorId, UUID programId, LocalDate from, LocalDate to) {
@@ -91,6 +92,7 @@ public class CoordinatorCalendarService {
 				.flatMap(conflict -> conflict.meetingIds().stream())
 				.collect(Collectors.toSet());
 
+		List<Meeting> recorded = transcriptBotCapacity.recordedAround(rangeStart, rangeEnd);
 		List<CoordinatorCalendarResponse.Item> items = new ArrayList<>();
 		for (Meeting meeting : meetings) {
 			Program program = programOf.get(meeting.getOrganization().getId());
@@ -115,7 +117,8 @@ public class CoordinatorCalendarService {
 					sequence(meeting, snapshot),
 					meeting.getMeetLink(),
 					null,
-					conflicting.contains(meeting.getId())));
+					conflicting.contains(meeting.getId()),
+					TranscriptBotCapacityService.peak(recorded, meeting.getScheduledAt(), endOf(meeting), null)));
 		}
 		Map<UUID, String> programNames = scope.stream().collect(Collectors.toMap(Program::getId, Program::getName));
 		List<ProgramEvent> events = scope.isEmpty()
@@ -140,7 +143,8 @@ public class CoordinatorCalendarService {
 					null,
 					null,
 					event.getDescription(),
-					false));
+					false,
+					null));
 		}
 		items.sort(Comparator.comparing(CoordinatorCalendarResponse.Item::startsAt));
 
@@ -153,7 +157,8 @@ public class CoordinatorCalendarService {
 				to,
 				items,
 				conflicts,
-				new CoordinatorCalendarResponse.Summary(meetings.size(), events.size() - deadlines, deadlines, unscheduledRisky));
+				new CoordinatorCalendarResponse.Summary(meetings.size(), events.size() - deadlines, deadlines, unscheduledRisky),
+				transcriptBotCapacity.capacity());
 	}
 
 	/** Groups each mentor's meetings into runs that overlap in time; every run of two or more is a conflict. */

@@ -50,6 +50,8 @@ class CoordinatorCalendarServiceTest {
 	private CoordinatorMentorshipService mentorshipService;
 	@Mock
 	private ProgramEventRepository programEventRepository;
+	@Mock
+	private TranscriptBotCapacityService transcriptBotCapacity;
 	@InjectMocks
 	private CoordinatorCalendarService service;
 
@@ -79,6 +81,23 @@ class CoordinatorCalendarServiceTest {
 			assertThat(conflict.mentorName()).isEqualTo("Ahmet Can");
 			assertThat(conflict.meetingIds()).containsExactly(first.getId(), overlapping.getId());
 		});
+	}
+
+	@Test
+	void eachMeetingShowsHowManyRoomsTheBotRecordsAtOncePlatformWide() {
+		Meeting novaMeeting = meeting(ahmet, nova, at(MONDAY.plusDays(2), 11, 0));
+		Meeting elsewhere = meeting(ayse, lumen, at(MONDAY.plusDays(2), 11, 30));
+		novaMeeting.setTranscribeRequested(true);
+		elsewhere.setTranscribeRequested(true);
+		stubScope(List.of(novaMeeting));
+		when(transcriptBotCapacity.recordedAround(any(), any())).thenReturn(List.of(novaMeeting, elsewhere));
+		when(transcriptBotCapacity.capacity()).thenReturn(2);
+
+		var calendar = service.calendar(COORDINATOR_ID, null, MONDAY, MONDAY.plusDays(6));
+
+		assertThat(calendar.recordingCapacity()).isEqualTo(2);
+		assertThat(calendar.items()).singleElement()
+				.satisfies(item -> assertThat(item.recordingLoad()).isEqualTo(2));
 	}
 
 	@Test
