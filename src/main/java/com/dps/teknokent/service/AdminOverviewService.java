@@ -41,9 +41,11 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.util.ProgramCoordination;
 
 import lombok.RequiredArgsConstructor;
 
@@ -61,6 +63,7 @@ public class AdminOverviewService {
 	private final MentorshipService mentorshipService;
 	private final MentorshipRequestService mentorshipRequestService;
 	private final ProgramRepository programRepository;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final OrganizationRepository organizationRepository;
@@ -140,7 +143,12 @@ public class AdminOverviewService {
 			Program program,
 			Map<UUID, AppUser> usersById,
 			Map<UUID, Organization> organizations) {
-		AppUser coordinator = usersById.get(program.getCreatedBy());
+		// The program's coordinators: its creator when that is a coordinator, then the ones added in its settings.
+		// An admin who created the program is not its coordinator.
+		List<AppUser> coordinators = ProgramCoordination.coordinatorIds(program, programCoordinatorRepository).stream()
+				.map(usersById::get)
+				.filter(user -> user != null && user.getRole() == UserRole.COORDINATOR)
+				.toList();
 		List<StartupRow> startups = programStartupRepository
 				.findByProgramIdOrderByCreatedAtAsc(program.getId())
 				.stream()
@@ -182,8 +190,10 @@ public class AdminOverviewService {
 				program.getName(),
 				program.getStatus().name(),
 				program.getCreatedAt(),
-				coordinator == null ? program.getCreatedBy() : coordinator.getId(),
-				coordinator == null ? "Koordinatör" : coordinator.getFullName(),
+				coordinators.isEmpty() ? null : coordinators.get(0).getId(),
+				coordinators.isEmpty()
+						? null
+						: coordinators.stream().map(AppUser::getFullName).collect(Collectors.joining(", ")),
 				startups.size(),
 				accepted,
 				pending,
