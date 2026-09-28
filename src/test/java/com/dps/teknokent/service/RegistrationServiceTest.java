@@ -677,11 +677,11 @@ class RegistrationServiceTest {
         assertThatThrownBy(() -> registrationService.registerMentor(new RegisterMentorRequest(
                 "Çağrı Yılmaz", "cagri@yilmazfinans.com", null, null, "old")))
                 .isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("expired");
+                .hasMessageContaining("süresi dolmuş");
         assertThatThrownBy(() -> registrationService.registerMentor(new RegisterMentorRequest(
                 "Çağrı Yılmaz", "someone@else.com", null, null, "other")))
                 .isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("email address");
+                .hasMessageContaining("e-posta adresiyle");
         verify(appUserRepository, org.mockito.Mockito.never()).saveAndFlush(any());
     }
 

@@ -46,6 +46,7 @@ public class MeetingService {
 	private final AppUserRepository appUserRepository;
 	private final NotificationService notificationService;
 	private final DocumentRequestService documentRequestService;
+	private final TranscriptBotCapacityService transcriptBotCapacity;
 
 	public MeetingService(
 			MeetingRepository meetingRepository,
@@ -54,7 +55,8 @@ public class MeetingService {
 			MeetingFeedbackRepository meetingFeedbackRepository,
 			AppUserRepository appUserRepository,
 			NotificationService notificationService,
-			DocumentRequestService documentRequestService) {
+			DocumentRequestService documentRequestService,
+			TranscriptBotCapacityService transcriptBotCapacity) {
 		this.meetingRepository = meetingRepository;
 		this.mentorshipRequestRepository = mentorshipRequestRepository;
 		this.domainLookupService = domainLookupService;
@@ -62,6 +64,7 @@ public class MeetingService {
 		this.appUserRepository = appUserRepository;
 		this.notificationService = notificationService;
 		this.documentRequestService = documentRequestService;
+		this.transcriptBotCapacity = transcriptBotCapacity;
 	}
 
 	@Transactional(readOnly = true)
@@ -94,6 +97,7 @@ public class MeetingService {
 			meeting.setMentorshipRequest(resolveAcceptedMentorship(organization, mentor, request.agenda()));
 		}
 		copyBotDispatchIfSameLink(meeting);
+		transcriptBotCapacity.releaseIfFull(meeting);
 		Meeting saved = meetingRepository.save(meeting);
 		notifyOrgMentees(saved);
 		if (mentor != null) {
@@ -257,9 +261,17 @@ public class MeetingService {
 			}
 		}
 		copyBotDispatchIfSameLink(meeting);
+		if (Boolean.TRUE.equals(logRequest.transcribeRequested())) {
+			transcriptBotCapacity.releaseIfFull(meeting);
+		}
 		Meeting saved = meetingRepository.saveAndFlush(meeting);
 		documentRequestService.copyFromRequestToMeeting(request, saved);
 		return MeetingResponse.fromEntity(saved);
+	}
+
+	/** For a meeting moved outside this service: drops its bot when the new slot is already full. */
+	public boolean releaseTranscriptBotIfFull(Meeting meeting) {
+		return transcriptBotCapacity.releaseIfFull(meeting);
 	}
 
 	@Transactional
@@ -281,6 +293,7 @@ public class MeetingService {
 		}
 		if (request.transcribeRequested() != null) {
 			meeting.setTranscribeRequested(Boolean.TRUE.equals(request.transcribeRequested()));
+			transcriptBotCapacity.releaseIfFull(meeting);
 		}
 		if (Boolean.TRUE.equals(request.transcriptBotDispatched())
 				|| request.status() == MeetingStatus.COMPLETED) {

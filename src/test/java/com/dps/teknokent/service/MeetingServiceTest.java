@@ -78,7 +78,8 @@ class MeetingServiceTest {
 				meetingFeedbackRepository,
 				appUserRepository,
 				notificationService,
-				documentRequestService);
+				documentRequestService,
+				new TranscriptBotCapacityService(meetingRepository, 2));
 		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(any()))
 				.thenReturn(List.of());
 	}

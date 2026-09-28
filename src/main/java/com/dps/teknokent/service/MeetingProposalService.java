@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.MeetingProposalStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
@@ -208,11 +209,13 @@ public class MeetingProposalService {
 				: meetingRepository.findById(proposal.getReplacesMeetingId())
 						.filter(meeting -> meeting.getStatus() == MeetingStatus.SCHEDULED)
 						.orElse(null);
+		boolean botReleased = false;
 		if (replaced != null) {
 			// ponytail: moves only this meeting, not guest copies in a shared room; add roommates if group reschedules matter.
 			replaced.setScheduledAt(proposal.getScheduledAt());
 			replaced.setDurationMinutes(proposal.getDurationMinutes());
 			replaced.setReminderSentAt(null);
+			botReleased = meetingService.releaseTranscriptBotIfFull(replaced);
 			meetingRepository.save(replaced);
 			proposal.setMeetingId(replaced.getId());
 		} else {
@@ -233,6 +236,9 @@ public class MeetingProposalService {
 		proposal.setStatus(MeetingProposalStatus.CONFIRMED);
 
 		String body = pairLine(proposal) + " · " + MeetingSlotTimes.formatForPeople(proposal.getScheduledAt());
+		if (botReleased) {
+			body += " " + TranscriptBotConstants.CAPACITY_FULL_MESSAGE;
+		}
 		notifyCoordinator(proposal, "Görüşme onaylandı", body);
 		notificationService.create(mentorship.getMentor(), NotificationCategory.MEETING_CHANGE, "Görüşme onaylandı",
 				body, "/mentor-dashboard/calendar");

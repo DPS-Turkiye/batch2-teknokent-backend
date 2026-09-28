@@ -144,6 +144,10 @@ public class MeetingAssistantShareService {
 			return false;
 		}
 		storeTranscript(share, meeting.getId(), jsonUtils.writeValue(segments));
+		// "Transkript gönderilsin" was the mentor's go-ahead to share it, so the team sees it without a second step.
+		if (meeting.isTranscribeRequested()) {
+			share.setTranscriptPublishedAt(Instant.now());
+		}
 		shareRepository.saveAndFlush(share);
 		return true;
 	}
