@@ -171,14 +171,16 @@ public class CoordinatorConversationService {
 			return;
 		}
 		String body = sender.getFullName() + " (koordinatör) sana bir mesaj gönderdi.";
+		String thread = "?conversation=" + conversation.getId();
 		if (conversation.getMentorId() != null) {
 			appUserRepository.findById(conversation.getMentorId())
 					.ifPresent(mentor -> notificationService.create(
-							mentor, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body, "/mentor-dashboard/messages"));
+							mentor, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body,
+							"/mentor-dashboard/messages" + thread));
 			return;
 		}
 		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(conversation.getOrganizationId())) {
-			notificationService.create(member, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body, "/messages");
+			notificationService.create(member, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body, "/messages" + thread);
 		}
 	}
 
