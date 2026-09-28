@@ -144,7 +144,8 @@ class CoordinatorConversationServiceTest {
 		service.send(COORDINATOR_ID, CONVERSATION_ID, new SendCoordinatorMessageRequest(null, "Ara rapor hatırlatması"));
 
 		verify(notificationService, times(2))
-				.create(any(), eq(NotificationCategory.MESSAGE), eq("Koordinatörden mesaj"), anyString(), eq("/messages"));
+				.create(any(), eq(NotificationCategory.MESSAGE), eq("Koordinatörden mesaj"), anyString(),
+						eq("/messages?conversation=" + CONVERSATION_ID));
 	}
 
 	@Test
@@ -205,6 +206,23 @@ class CoordinatorConversationServiceTest {
 
 		assertThat(service.list(MENTOR_ID)).singleElement()
 				.satisfies(item -> assertThat(item.unreadCount()).isEqualTo(3));
+	}
+
+	@Test
+	void aCoordinatorMessageLinksTheMentorToTheThread() {
+		CoordinatorConversation conversation = teamConversation();
+		conversation.setOrganizationId(null);
+		conversation.setMentorId(MENTOR_ID);
+		AppUser mentor = user(MENTOR_ID, UserRole.MENTOR, null);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR, null));
+		when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(appUserRepository.findById(MENTOR_ID)).thenReturn(Optional.of(mentor));
+
+		service.send(COORDINATOR_ID, CONVERSATION_ID, new SendCoordinatorMessageRequest(null, "Perşembe uygun mu?"));
+
+		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MESSAGE), eq("Koordinatörden mesaj"),
+				anyString(), eq("/mentor-dashboard/messages?conversation=" + CONVERSATION_ID));
 	}
 
 	private void stubNames() {
