@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -192,7 +193,8 @@ public class MentorshipRequestService {
 			documentRequestService.saveTitlesOnRequest(savedRequest, mentor, decision.requestedDocuments());
 		}
 		if (decision.status() == MentorshipRequestStatus.ACCEPTED) {
-			ensureMeetingForAccepted(savedRequest, MeetingSlotTimes.parseFromDecisionMessage(message));
+			Instant chosen = MeetingSlotTimes.parseFromDecisionMessage(message);
+			ensureMeetingForAccepted(savedRequest, chosen != null ? chosen : firstOpenPreferredSlot(savedRequest));
 		}
 		notificationService.create(
 				request.getRequester(),
@@ -454,6 +456,22 @@ public class MentorshipRequestService {
 		}
 		return user.getOrganization() != null
 				&& user.getOrganization().getId().equals(request.getOrganization().getId());
+	}
+
+	/**
+	 * An accept that names no time (the quick accept on the mentor home) books the first time the mentee picked
+	 * that is still ahead and free on the mentor's calendar, so the mentee isn't asked to pick again.
+	 */
+	private Instant firstOpenPreferredSlot(MentorshipRequest request) {
+		Instant now = Instant.now();
+		return ProposedSlots.preferred(request.getRequesterMessage()).stream()
+				.map(MeetingSlotTimes::parseMachineSlot)
+				.filter(Objects::nonNull)
+				.filter(startsAt -> startsAt.isAfter(now))
+				.filter(startsAt -> !meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
+						request.getMentor().getId(), startsAt, MeetingStatus.SCHEDULED))
+				.findFirst()
+				.orElse(null);
 	}
 
 	private void ensureMeetingForAccepted(MentorshipRequest request, Instant scheduledAt) {

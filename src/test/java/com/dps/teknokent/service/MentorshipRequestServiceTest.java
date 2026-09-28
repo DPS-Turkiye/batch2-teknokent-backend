@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingMode;
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
@@ -34,6 +35,7 @@ import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
 import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.Organization;
@@ -44,6 +46,7 @@ import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestWorkspaceQuery;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.util.MeetingSlotTimes;
 
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -283,6 +286,41 @@ class MentorshipRequestServiceTest {
                 assertThat(result.status()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
                 assertThat(result.mentorMessage()).isEqualTo("Let's meet");
                 assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+        }
+
+        @Test
+        void decide_acceptWithoutATimeBooksTheFirstOpenTimeTheMenteePicked() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com",
+                                "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.PENDING);
+                request.setRequesterMessage("Tercih edilen saatler: …\n"
+                                + "preferredSlots:2020-01-01T10:00,2099-01-05T10:00,2099-01-06T14:00");
+                Instant taken = MeetingSlotTimes.parseMachineSlot("2099-01-05T10:00");
+                Instant open = MeetingSlotTimes.parseMachineSlot("2099-01-06T14:00");
+
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+                when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+                when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.empty());
+                when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentorId, taken, MeetingStatus.SCHEDULED))
+                                .thenReturn(true);
+                when(meetingRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+                mentorshipRequestService.decide(requestId,
+                                new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.ACCEPTED,
+                                                "Talebiniz kabul edildi.", null));
+
+                verify(meetingRepository).saveAndFlush(argThat((Meeting meeting) -> open.equals(meeting.getScheduledAt())
+                                && meeting.getStatus() == MeetingStatus.SCHEDULED));
         }
 
         @Test
