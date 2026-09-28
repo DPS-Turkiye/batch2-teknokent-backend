@@ -29,7 +29,7 @@ public class FirebaseAdminTokenVerifier implements FirebaseTokenVerifier {
 			if (email == null || email.isBlank()) {
 				return Optional.empty();
 			}
-			return Optional.of(new FirebaseIdentity(decoded.getUid(), email));
+			return Optional.of(new FirebaseIdentity(decoded.getUid(), email, decoded.isEmailVerified()));
 		} catch (FirebaseAuthException | IllegalArgumentException exception) {
 			return Optional.empty();
 		}

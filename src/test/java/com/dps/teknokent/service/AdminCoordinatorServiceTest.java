@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,6 +30,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.security.LoginProvisioner;
+import com.dps.teknokent.security.LoginProvisioner.LoginProvisioning;
 
 @ExtendWith(MockitoExtension.class)
 class AdminCoordinatorServiceTest {
@@ -57,10 +58,13 @@ class AdminCoordinatorServiceTest {
 	void aNewEmailGetsAFirebaseLoginAndAnApprovedCoordinatorAccount() {
 		stubAdmin();
 		when(appUserRepository.findByEmailIgnoreCase("elif@teknokent.org")).thenReturn(Optional.empty());
-		when(loginProvisioner.loginFor("elif@teknokent.org", "Elif Demir")).thenReturn("uid-elif");
+		when(loginProvisioner.loginFor("elif@teknokent.org", "Elif Demir"))
+				.thenReturn(new LoginProvisioning("uid-elif", false));
 		when(mailService.link("/login")).thenReturn(LOGIN);
 		when(loginProvisioner.passwordSetupLink("elif@teknokent.org", LOGIN))
 				.thenReturn(Optional.of("https://auth.example/reset?oobCode=1"));
+		when(loginProvisioner.emailVerificationLink("elif@teknokent.org", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/verify?oobCode=1"));
 
 		var result = service.add(ADMIN_ID, new AddCoordinatorRequest(null, " Elif Demir ", "  Elif@Teknokent.org "));
 
@@ -77,7 +81,8 @@ class AdminCoordinatorServiceTest {
 		verify(mailService).sendAfterCommit(
 				eq("elif@teknokent.org"),
 				eq("menton koordinatör hesabınız hazır"),
-				contains("https://auth.example/reset?oobCode=1"));
+				argThat(body -> body.contains("https://auth.example/verify?oobCode=1")
+						&& body.contains("https://auth.example/reset?oobCode=1")));
 	}
 
 	@Test
@@ -89,13 +94,16 @@ class AdminCoordinatorServiceTest {
 		when(mailService.link("/login")).thenReturn(LOGIN);
 		when(loginProvisioner.passwordSetupLink("elif@teknokent.org", LOGIN))
 				.thenReturn(Optional.of("https://auth.example/reset?oobCode=2"));
+		when(loginProvisioner.emailVerificationLink("elif@teknokent.org", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/verify?oobCode=2"));
 
 		service.resendPasswordSetup(ADMIN_ID, coordinatorId);
 
 		verify(mailService).sendAfterCommit(
 				eq("elif@teknokent.org"),
 				anyString(),
-				contains("https://auth.example/reset?oobCode=2"));
+				argThat(body -> body.contains("https://auth.example/verify?oobCode=2")
+						&& body.contains("https://auth.example/reset?oobCode=2")));
 
 		when(loginProvisioner.passwordSetupLink("elif@teknokent.org", LOGIN)).thenReturn(Optional.empty());
 		assertThatThrownBy(() -> service.resendPasswordSetup(ADMIN_ID, coordinatorId))
@@ -114,6 +122,9 @@ class AdminCoordinatorServiceTest {
 		mentor.setFirebaseUid("uid-ayse");
 		when(appUserRepository.findByEmailIgnoreCase("ayse@mentor.com")).thenReturn(Optional.of(mentor));
 		when(mentorshipRepository.countByMentorIdAndStatusIn(eq(MENTOR_ID), any())).thenReturn(0L);
+		when(mailService.link("/login")).thenReturn(LOGIN);
+		when(loginProvisioner.emailVerificationLink("ayse@mentor.com", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/verify?oobCode=mentor"));
 
 		var result = service.add(ADMIN_ID, new AddCoordinatorRequest(null, "Başka İsim", "ayse@mentor.com"));
 
@@ -122,6 +133,9 @@ class AdminCoordinatorServiceTest {
 		assertThat(result.outcome()).isEqualTo(CoordinatorCandidateStatus.PROMOTABLE);
 		verify(loginProvisioner, never()).loginFor(anyString(), anyString());
 		verify(notificationService).create(eq(mentor), anyString(), anyString(), eq("/coordinator"));
+		verify(mailService).sendAfterCommit(
+				eq("ayse@mentor.com"), anyString(),
+				argThat(body -> body.contains("https://auth.example/verify?oobCode=mentor")));
 	}
 
 	@Test
@@ -129,12 +143,23 @@ class AdminCoordinatorServiceTest {
 		stubAdmin();
 		AppUser mentee = user(UUID.randomUUID(), "can@solo.com", UserRole.MENTEE);
 		when(appUserRepository.findByEmailIgnoreCase("can@solo.com")).thenReturn(Optional.of(mentee));
-		when(loginProvisioner.loginFor("can@solo.com", "Ayşe Demir")).thenReturn("uid-can");
+		when(loginProvisioner.loginFor("can@solo.com", "Ayşe Demir"))
+				.thenReturn(new LoginProvisioning("uid-can", true));
+		when(mailService.link("/login")).thenReturn(LOGIN);
+		when(loginProvisioner.passwordSetupLink("can@solo.com", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/reset?oobCode=3"));
+		when(loginProvisioner.emailVerificationLink("can@solo.com", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/verify?oobCode=3"));
 
 		service.add(ADMIN_ID, new AddCoordinatorRequest(null, "Can", "can@solo.com"));
 
 		assertThat(mentee.getFirebaseUid()).isEqualTo("uid-can");
 		assertThat(mentee.getRole()).isEqualTo(UserRole.COORDINATOR);
+		verify(mailService).sendAfterCommit(
+				eq("can@solo.com"),
+				eq("menton koordinatör hesabınız hazır"),
+				argThat(body -> body.contains("https://auth.example/verify?oobCode=3")
+						&& body.contains("https://auth.example/reset?oobCode=3")));
 	}
 
 	@Test
@@ -144,6 +169,9 @@ class AdminCoordinatorServiceTest {
 		coordinator.setStatus(UserAccountStatus.REJECTED);
 		coordinator.setFirebaseUid("uid-old");
 		when(appUserRepository.findByEmailIgnoreCase("old@teknokent.org")).thenReturn(Optional.of(coordinator));
+		when(mailService.link("/login")).thenReturn(LOGIN);
+		when(loginProvisioner.emailVerificationLink("old@teknokent.org", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/verify?oobCode=old"));
 
 		var candidate = service.candidate(ADMIN_ID, "old@teknokent.org");
 		var result = service.add(ADMIN_ID, new AddCoordinatorRequest(null, "Old", "old@teknokent.org"));
@@ -151,6 +179,9 @@ class AdminCoordinatorServiceTest {
 		assertThat(candidate.status()).isEqualTo(CoordinatorCandidateStatus.REACTIVATABLE);
 		assertThat(result.outcome()).isEqualTo(CoordinatorCandidateStatus.REACTIVATABLE);
 		assertThat(coordinator.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
+		verify(mailService).sendAfterCommit(
+				eq("old@teknokent.org"), anyString(),
+				argThat(body -> body.contains("https://auth.example/verify?oobCode=old")));
 	}
 
 	@Test

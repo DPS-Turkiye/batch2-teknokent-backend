@@ -7,12 +7,17 @@ import com.dps.teknokent.exception.InvalidRequestException;
 public class DisabledLoginProvisioner implements LoginProvisioner {
 
 	@Override
-	public String loginFor(String email, String displayName) {
+	public LoginProvisioning loginFor(String email, String displayName) {
 		throw new InvalidRequestException("Firebase is not configured, so no login can be created.");
 	}
 
 	@Override
 	public Optional<String> passwordSetupLink(String email, String continueUrl) {
+		return Optional.empty();
+	}
+
+	@Override
+	public Optional<String> emailVerificationLink(String email, String continueUrl) {
 		return Optional.empty();
 	}
 }

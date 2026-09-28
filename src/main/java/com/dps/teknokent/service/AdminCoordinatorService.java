@@ -21,6 +21,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.security.LoginProvisioner;
+import com.dps.teknokent.security.LoginProvisioner.LoginProvisioning;
 
 import lombok.RequiredArgsConstructor;
 
@@ -69,15 +70,24 @@ public class AdminCoordinatorService {
 			throw new InvalidRequestException(refusal(outcome));
 		}
 		AppUser coordinator = existing.orElseGet(() -> newCoordinator(email, request.fullName().trim()));
+		LoginProvisioning provisionedLogin = null;
 		if (coordinator.getFirebaseUid() == null) {
-			coordinator.setFirebaseUid(loginProvisioner.loginFor(email, coordinator.getFullName()));
+			provisionedLogin = loginProvisioner.loginFor(email, coordinator.getFullName());
+			coordinator.setFirebaseUid(provisionedLogin.uid());
 		}
 		coordinator.setRole(UserRole.COORDINATOR);
 		coordinator.setStatus(UserAccountStatus.APPROVED);
 		appUserRepository.save(coordinator);
-		if (outcome == CoordinatorCandidateStatus.NEW) {
-			sendPasswordSetup(coordinator);
-		} else {
+		boolean needsPasswordSetup = provisionedLogin != null
+				&& (provisionedLogin.created() || outcome == CoordinatorCandidateStatus.NEW);
+		if (provisionedLogin != null && !sendAccountSetup(coordinator, needsPasswordSetup)) {
+			throw new InvalidRequestException("The coordinator account setup email could not be prepared.");
+		}
+		if (provisionedLogin == null && outcome != CoordinatorCandidateStatus.NEW
+				&& !sendAccountSetup(coordinator, false)) {
+			throw new InvalidRequestException("The coordinator email verification could not be prepared.");
+		}
+		if (outcome != CoordinatorCandidateStatus.NEW) {
 			notificationService.create(
 					coordinator,
 					"Koordinatör olarak atandınız",
@@ -94,7 +104,7 @@ public class AdminCoordinatorService {
 		return toResponse(coordinator, outcome);
 	}
 
-	/** "Şifre belirleme e-postasını tekrar gönder": a fresh link for a coordinator who lost or never got it. */
+	/** Resend the setup links for a coordinator who lost or never received them. */
 	@Transactional(readOnly = true)
 	public CoordinatorAccountResponse resendPasswordSetup(UUID actorId, UUID coordinatorId) {
 		requireAdmin(actorId);
@@ -102,8 +112,8 @@ public class AdminCoordinatorService {
 		if (coordinator.getRole() != UserRole.COORDINATOR || coordinator.getStatus() != UserAccountStatus.APPROVED) {
 			throw new InvalidRequestException("Only an active coordinator can be sent a password setup email.");
 		}
-		if (!sendPasswordSetup(coordinator)) {
-			throw new InvalidRequestException("The password setup email could not be prepared.");
+		if (!sendAccountSetup(coordinator, true)) {
+			throw new InvalidRequestException("The coordinator account setup email could not be prepared.");
 		}
 		return toResponse(coordinator, null);
 	}
@@ -125,26 +135,37 @@ public class AdminCoordinatorService {
 	}
 
 	/**
-	 * A new coordinator's login has no password, so they get the same reset link Firebase's "Şifremi unuttum"
-	 * sends, but from our own domain: university mail filters tend to drop Firebase's sender.
+	 * A new coordinator needs both a password and a verified email. Firebase password setup does not verify the
+	 * address, so send its verification action link as part of the same email.
 	 */
-	private boolean sendPasswordSetup(AppUser coordinator) {
+	private boolean sendAccountSetup(AppUser coordinator, boolean includePasswordSetup) {
 		String login = mailService.link("/login");
-		return loginProvisioner.passwordSetupLink(coordinator.getEmail(), login)
-				.map(link -> {
+		Optional<String> verificationLink = loginProvisioner.emailVerificationLink(coordinator.getEmail(), login);
+		Optional<String> passwordLink = includePasswordSetup
+				? loginProvisioner.passwordSetupLink(coordinator.getEmail(), login)
+				: Optional.empty();
+		if ((includePasswordSetup && passwordLink.isEmpty()) || verificationLink.isEmpty()) {
+			return false;
+		}
+		return verificationLink.map(verification -> {
 					mailService.sendAfterCommit(
 							coordinator.getEmail(),
 							"menton koordinatör hesabınız hazır",
 							"Merhaba " + coordinator.getFullName() + ",\n\n"
-									+ "menton'da (ODTÜ Teknokent) sizin için bir koordinatör hesabı açıldı. "
-									+ "Şifrenizi belirlemek için bu bağlantıyı açın:\n\n" + link
-									+ "\n\nŞifrenizi belirledikten sonra " + login + " adresinden giriş yapabilirsiniz. "
+									+ "menton'da (ODTÜ Teknokent) koordinatör erişiminiz etkinleştirildi. "
+									+ "E-posta adresinizi doğrulamak için bu bağlantıyı açın:\n\n" + verification
+									+ (includePasswordSetup
+											? "\n\nŞifrenizi belirlemek için bu bağlantıyı açın:\n\n"
+													+ passwordLink.orElseThrow()
+											: "")
+									+ "\n\nE-postanızı doğrulayıp"
+									+ (includePasswordSetup ? " şifrenizi belirledikten" : "")
+									+ " sonra " + login + " adresinden giriş yapabilirsiniz. "
 									+ "Bağlantının süresi dolarsa giriş sayfasındaki \"Şifremi unuttum\" ile yenisini "
 									+ "isteyebilir ya da yöneticinizden e-postayı tekrar göndermesini isteyebilirsiniz."
 									+ "\n\nmenton");
 					return true;
-				})
-				.orElse(false);
+				}).orElse(false);
 	}
 
 	private CoordinatorCandidateStatus classify(Optional<AppUser> existing) {

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -23,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.core.env.Environment;
 
 import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.entity.OrganizationPendingMember;
@@ -147,8 +150,44 @@ class RegistrationServiceTest {
     @Mock
     private ProgramMentorRepository programMentorRepository;
 
+    @Mock
+    private Environment environment;
+
     @InjectMocks
     private RegistrationService registrationService;
+
+    @BeforeEach
+    void allowServiceProxyCallsInUnitTests() {
+        lenient().when(environment.matchesProfiles("dev | local")).thenReturn(true);
+    }
+
+    @Test
+    void rejectsBasicAuthenticatedRegistrationOutsideLocalAndDevProfiles() {
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated("basic-user", "password", List.of()));
+        when(environment.matchesProfiles("dev | local")).thenReturn(false);
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Firebase authentication is required");
+
+        verify(organizationRepository, never()).saveAndFlush(any(Organization.class));
+    }
+
+    @Test
+    void allowsBasicAuthenticatedRegistrationOnlyInLocalOrDevProfiles() {
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated("basic-user", "password", List.of()));
+        when(environment.matchesProfiles("dev | local")).thenReturn(true);
+        stubFounderSaves();
+
+        var result = registrationService.registerFounder(founderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null, null));
+
+        assertThat(result.status()).isEqualTo(UserAccountStatus.PENDING);
+    }
 
     @AfterEach
     void clearContext() {
@@ -193,7 +232,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerFounder_discardsTheOnboardingDraftForTheSignedInFirebaseUser() {
-        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com"));
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", true));
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
@@ -220,6 +259,20 @@ class RegistrationServiceTest {
                 null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         verify(onboardingDraftRepository).deleteById("uid-1");
+    }
+
+    @Test
+    void registerFounderRejectsAnUnverifiedFirebaseEmailBeforeCreatingAnAccount() {
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", false));
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Verify your email");
+
+        verify(organizationRepository, never()).saveAndFlush(any(Organization.class));
+        verify(appUserRepository, never()).saveAndFlush(any(AppUser.class));
     }
 
     @Test
@@ -568,7 +621,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerMentor_linksSignedInFirebaseAccount() {
-        signIn(new FirebaseIdentity("uid-1", "kemal@mentor.com"));
+        signIn(new FirebaseIdentity("uid-1", "kemal@mentor.com", true));
 
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
@@ -607,7 +660,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerMentor_rejectsEmailThatDoesNotMatchTheToken() {
-        signIn(new FirebaseIdentity("uid-1", "baskasi@mentor.com"));
+        signIn(new FirebaseIdentity("uid-1", "baskasi@mentor.com", true));
 
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
 

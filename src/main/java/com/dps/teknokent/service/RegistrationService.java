@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,10 +62,12 @@ public class RegistrationService {
 	private final ProgramTeamInviteRepository programTeamInviteRepository;
 	private final ProgramMentorInviteRepository programMentorInviteRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final Environment environment;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
 		String email = requireUniqueEmail(request.email());
+		validateFirebaseIdentity(email);
 
 		Organization organization = new Organization();
 		organization.setName(TextUtils.trim(request.organizationName()));
@@ -199,6 +202,7 @@ public class RegistrationService {
 	@Transactional
 	public UserResponse registerMentor(RegisterMentorRequest request) {
 		String email = requireUniqueEmail(request.email());
+		validateFirebaseIdentity(email);
 		Optional<ProgramMentorInvite> programInvite = programMentorInvite(request.programInvite(), email);
 		AppUser mentor = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTOR,
 				UserAccountStatus.PENDING, null);
@@ -268,6 +272,7 @@ public class RegistrationService {
 	@Transactional
 	public UserResponse registerMember(RegisterMemberRequest request) {
 		String email = requireUniqueEmail(request.email());
+		validateFirebaseIdentity(email);
 		String inviteCode = TextUtils.normalizeInviteCode(request.inviteCode());
 		Optional<ProgramTeamInvite> teamInvite = programTeamInviteRepository.findByCode(inviteCode)
 				.filter(invite -> invite.getOrganizationId() == null);
@@ -289,6 +294,9 @@ public class RegistrationService {
 		if (authentication == null || !(authentication.getPrincipal() instanceof FirebaseIdentity identity)) {
 			return;
 		}
+		if (!identity.emailVerified()) {
+			throw new InvalidRequestException("Verify your email before registering.");
+		}
 		if (!email.equalsIgnoreCase(identity.email())) {
 			throw new InvalidRequestException("Email does not match the signed-in account.");
 		}
@@ -296,6 +304,31 @@ public class RegistrationService {
 			throw new InvalidRequestException("This account is already registered.");
 		}
 		user.setFirebaseUid(identity.uid());
+	}
+
+	private void validateFirebaseIdentity(String email) {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication == null) {
+			if (environment.matchesProfiles("dev | local")) {
+				return;
+			}
+			throw new InvalidRequestException("Firebase authentication is required to register.");
+		}
+		if (!(authentication.getPrincipal() instanceof FirebaseIdentity identity)) {
+			if (environment.matchesProfiles("dev | local")) {
+				return;
+			}
+			throw new InvalidRequestException("Firebase authentication is required to register.");
+		}
+		if (!identity.emailVerified()) {
+			throw new InvalidRequestException("Verify your email before registering.");
+		}
+		if (!email.equalsIgnoreCase(identity.email())) {
+			throw new InvalidRequestException("Email does not match the signed-in account.");
+		}
+		if (appUserRepository.findByFirebaseUid(identity.uid()).isPresent()) {
+			throw new InvalidRequestException("This account is already registered.");
+		}
 	}
 
 	private void discardOnboardingDraft() {

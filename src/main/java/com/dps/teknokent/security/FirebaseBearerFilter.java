@@ -60,6 +60,10 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 			write(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid Firebase token");
 			return;
 		}
+		if (!identity.get().emailVerified()) {
+			write(response, HttpServletResponse.SC_UNAUTHORIZED, "Verify your email before using this account");
+			return;
+		}
 
 		if (isPreAccountPath(request.getRequestURI())) {
 			authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
@@ -102,12 +106,13 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	}
 
 	/**
-	 * Linking a login to an existing row by email trusts whoever signs up with that address first, and
-	 * nothing here checks the address is verified. That is tolerable for mentors and mentees but not for
-	 * admins and coordinators, whose rows are seeded or created by an admin already linked to their uid.
+	 * Email-based linking is only available to user accounts. Privileged rows are provisioned by an admin
+	 * and must be reached through their already-linked Firebase UID.
 	 */
 	private static boolean claimableByEmail(AppUser user) {
-		return user.getRole() != UserRole.ADMIN && user.getRole() != UserRole.COORDINATOR;
+		return user.getFirebaseUid() == null
+				&& user.getRole() != UserRole.ADMIN
+				&& user.getRole() != UserRole.COORDINATOR;
 	}
 
 	/**

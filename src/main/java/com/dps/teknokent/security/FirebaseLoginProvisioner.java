@@ -25,20 +25,20 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
-	public String loginFor(String email, String displayName) {
+	public LoginProvisioning loginFor(String email, String displayName) {
 		try {
-			return firebaseAuth.getUserByEmail(email).getUid();
+			return new LoginProvisioning(firebaseAuth.getUserByEmail(email).getUid(), false);
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() != AuthErrorCode.USER_NOT_FOUND) {
 				throw new IllegalStateException("Could not look up the Firebase login for " + email, exception);
 			}
 		}
 		try {
-			return firebaseAuth.createUser(new UserRecord.CreateRequest()
+			return new LoginProvisioning(firebaseAuth.createUser(new UserRecord.CreateRequest()
 					.setEmail(email)
 					.setDisplayName(displayName)
 					.setEmailVerified(false))
-					.getUid();
+					.getUid(), true);
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {
 				throw new InvalidRequestException("A login for this email was created at the same time; try again.");
@@ -62,6 +62,22 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 				return Optional.of(firebaseAuth.generatePasswordResetLink(email));
 			} catch (FirebaseAuthException exception) {
 				log.warn("No password setup link for {}: {}", email, exception.getMessage());
+				return Optional.empty();
+			}
+		}
+	}
+
+	@Override
+	public Optional<String> emailVerificationLink(String email, String continueUrl) {
+		try {
+			return Optional.of(firebaseAuth.generateEmailVerificationLink(
+					email,
+					ActionCodeSettings.builder().setUrl(continueUrl).build()));
+		} catch (FirebaseAuthException | IllegalArgumentException withContinueUrl) {
+			try {
+				return Optional.of(firebaseAuth.generateEmailVerificationLink(email));
+			} catch (FirebaseAuthException exception) {
+				log.warn("No email verification link for {}: {}", email, exception.getMessage());
 				return Optional.empty();
 			}
 		}
