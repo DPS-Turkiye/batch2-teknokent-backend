@@ -21,6 +21,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.DeclineMeetingProposalRequest;
 import com.dps.teknokent.dto.requests.ProposeMeetingRequest;
+import com.dps.teknokent.dto.requests.RescheduleMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingProposalResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
@@ -44,6 +45,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * Item 9: a coordinator proposes a meeting time for a mentorship. The mentor and the team lead each accept it;
  * once both have, it becomes a normal meeting (or moves the meeting it replaces). One decline closes it.
+ * A mentor or a team member can also propose a new time for one of their meetings: their side counts as
+ * accepted, and the other side confirms.
  */
 @Service
 @RequiredArgsConstructor
@@ -92,6 +95,8 @@ public class MeetingProposalService {
 		proposal.setId(UUID.randomUUID());
 		proposal.setMentorship(mentorship);
 		proposal.setProgramId(scoped.program().getId());
+		proposal.setOrganization(mentorship.getOrganization());
+		proposal.setMentor(mentorship.getMentor());
 		proposal.setProposedBy(actorId);
 		proposal.setScheduledAt(request.scheduledAt());
 		proposal.setDurationMinutes(request.durationMinutes());
@@ -104,6 +109,55 @@ public class MeetingProposalService {
 		notifyUnanswered(saved, title, pairLine(saved) + " · " + MeetingSlotTimes.formatForPeople(saved.getScheduledAt())
 				+ ". Uygunsan onayla.");
 		return response(saved, scoped.program(), null);
+	}
+
+	/** "Yeni saat öner" from the mentor or a team member: the proposer's side has already said yes. */
+	@Transactional
+	public MeetingProposalResponse proposeReschedule(UUID actorId, UUID meetingId, RescheduleMeetingRequest request) {
+		AppUser actor = requireUser(actorId);
+		Meeting meeting = meetingRepository.findById(meetingId)
+				.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
+		if (meeting.getStatus() != MeetingStatus.SCHEDULED || meeting.getOrganization() == null
+				|| meeting.getMentor() == null) {
+			throw new InvalidRequestException("Yalnızca planlanmış bir görüşme için yeni saat önerilebilir.");
+		}
+		boolean mentorSide = meeting.getMentor().getId().equals(actorId);
+		boolean teamSide = actor.getRole() == UserRole.MENTEE && actor.getOrganization() != null
+				&& actor.getOrganization().getId().equals(meeting.getOrganization().getId());
+		if (!mentorSide && !teamSide) {
+			throw new InvalidRequestException("Bu görüşme için yalnızca mentor ve takım yeni saat önerebilir.");
+		}
+		if (!request.scheduledAt().isAfter(Instant.now())) {
+			throw new InvalidRequestException("Görüşme zamanı gelecekte olmalı.");
+		}
+		if (proposalRepository.existsByReplacesMeetingIdAndStatus(meetingId, MeetingProposalStatus.PENDING)) {
+			throw new ConflictException("Bu görüşme için yanıt bekleyen bir öneri var.");
+		}
+
+		Instant now = Instant.now();
+		MeetingProposal proposal = new MeetingProposal();
+		proposal.setId(UUID.randomUUID());
+		proposal.setOrganization(meeting.getOrganization());
+		proposal.setMentor(meeting.getMentor());
+		proposal.setProposedBy(actorId);
+		proposal.setScheduledAt(request.scheduledAt());
+		proposal.setDurationMinutes(request.durationMinutes() == null
+				? meeting.getDurationMinutes()
+				: request.durationMinutes());
+		proposal.setAgenda(TextUtils.normalizeOptional(meeting.getAgenda()));
+		proposal.setReplacesMeetingId(meetingId);
+		proposal.setStatus(MeetingProposalStatus.PENDING);
+		if (mentorSide) {
+			proposal.setMentorAcceptedAt(now);
+		} else {
+			proposal.setTeamAcceptedAt(now);
+			proposal.setTeamResponderId(actorId);
+		}
+		MeetingProposal saved = proposalRepository.save(proposal);
+
+		notifyUnanswered(saved, actor.getFullName() + " yeni saat önerdi", pairLine(saved) + " · "
+				+ MeetingSlotTimes.formatForPeople(saved.getScheduledAt()) + ". Uygunsan onayla.");
+		return response(saved, null, actor);
 	}
 
 	/** The coordinator's view: one mentorship's proposals, or every proposal in their programs. Newest first. */
@@ -132,16 +186,17 @@ public class MeetingProposalService {
 		AppUser actor = requireUser(actorId);
 		List<MeetingProposal> proposals;
 		if (actor.getRole() == UserRole.MENTOR) {
-			proposals = proposalRepository.findByStatusAndMentorshipMentorIdOrderByScheduledAtAsc(
+			proposals = proposalRepository.findByStatusAndMentorIdOrderByScheduledAtAsc(
 					MeetingProposalStatus.PENDING, actorId);
 		} else if (actor.getOrganization() != null) {
-			proposals = proposalRepository.findByStatusAndMentorshipOrganizationIdOrderByScheduledAtAsc(
+			proposals = proposalRepository.findByStatusAndOrganizationIdOrderByScheduledAtAsc(
 					MeetingProposalStatus.PENDING, actor.getOrganization().getId());
 		} else {
 			proposals = List.of();
 		}
 		Map<UUID, Program> programs = programRepository
-				.findAllById(proposals.stream().map(MeetingProposal::getProgramId).distinct().toList()).stream()
+				.findAllById(proposals.stream().map(MeetingProposal::getProgramId).filter(java.util.Objects::nonNull)
+						.distinct().toList()).stream()
 				.collect(Collectors.toMap(Program::getId, Function.identity()));
 		return proposals.stream()
 				.map(proposal -> response(proposal, programs.get(proposal.getProgramId()), actor))
@@ -165,7 +220,7 @@ public class MeetingProposalService {
 			confirm(proposal);
 		}
 		MeetingProposal saved = proposalRepository.save(proposal);
-		return response(saved, programRepository.findById(saved.getProgramId()).orElse(null), actor);
+		return response(saved, programOf(saved), actor);
 	}
 
 	@Transactional
@@ -179,9 +234,9 @@ public class MeetingProposalService {
 		MeetingProposal saved = proposalRepository.save(proposal);
 
 		String reason = saved.getDeclineReason() == null ? "" : ": " + saved.getDeclineReason();
-		notifyCoordinator(saved, "Görüşme önerisi reddedildi", actor.getFullName() + " · " + pairLine(saved) + " · "
+		notifyProposer(saved, "Görüşme önerisi reddedildi", actor.getFullName() + " · " + pairLine(saved) + " · "
 				+ MeetingSlotTimes.formatForPeople(saved.getScheduledAt()) + reason);
-		return response(saved, programRepository.findById(saved.getProgramId()).orElse(null), actor);
+		return response(saved, programOf(saved), actor);
 	}
 
 	@Transactional
@@ -203,7 +258,6 @@ public class MeetingProposalService {
 
 	/** Both sides said yes: move the replaced meeting if it is still planned, otherwise book a new one. */
 	private void confirm(MeetingProposal proposal) {
-		Mentorship mentorship = proposal.getMentorship();
 		Meeting replaced = proposal.getReplacesMeetingId() == null
 				? null
 				: meetingRepository.findById(proposal.getReplacesMeetingId())
@@ -221,8 +275,8 @@ public class MeetingProposalService {
 		} else {
 			String agenda = proposal.getAgenda() == null ? "Mentorluk görüşmesi" : proposal.getAgenda();
 			proposal.setMeetingId(meetingService.create(new CreateMeetingRequest(
-					mentorship.getOrganization().getId(),
-					mentorship.getMentor().getId(),
+					proposal.getOrganization().getId(),
+					proposal.getMentor().getId(),
 					proposal.getScheduledAt(),
 					proposal.getDurationMinutes(),
 					agenda,
@@ -239,11 +293,13 @@ public class MeetingProposalService {
 		if (botReleased) {
 			body += " " + TranscriptBotConstants.CAPACITY_FULL_MESSAGE;
 		}
-		notifyCoordinator(proposal, "Görüşme onaylandı", body);
-		notificationService.create(mentorship.getMentor(), NotificationCategory.MEETING_CHANGE, "Görüşme onaylandı",
-				body, "/mentor-dashboard/calendar");
+		notifyProposer(proposal, "Görüşme onaylandı", body);
+		if (!proposal.getMentor().getId().equals(proposal.getProposedBy())) {
+			notificationService.create(proposal.getMentor(), NotificationCategory.MEETING_CHANGE, "Görüşme onaylandı",
+					body, "/mentor-dashboard/calendar");
+		}
 		if (replaced != null) {
-			for (AppUser member : members(mentorship.getOrganization())) {
+			for (AppUser member : members(proposal.getOrganization())) {
 				notificationService.create(member, NotificationCategory.MEETING_CHANGE, "Görüşme yeni saate taşındı",
 						body, "/mentorships?tab=active");
 			}
@@ -251,21 +307,32 @@ public class MeetingProposalService {
 	}
 
 	private void notifyUnanswered(MeetingProposal proposal, String title, String body) {
-		Mentorship mentorship = proposal.getMentorship();
 		if (proposal.getMentorAcceptedAt() == null) {
-			notificationService.create(mentorship.getMentor(), NotificationCategory.MEETING_CHANGE, title, body, MENTOR_HOME);
+			notificationService.create(proposal.getMentor(), NotificationCategory.MEETING_CHANGE, title, body, MENTOR_HOME);
 		}
 		if (proposal.getTeamAcceptedAt() == null) {
-			for (AppUser responder : teamResponders(mentorship.getOrganization())) {
+			for (AppUser responder : teamResponders(proposal.getOrganization())) {
 				notificationService.create(responder, NotificationCategory.MEETING_CHANGE, title, body, TEAM_HOME);
 			}
 		}
 	}
 
-	private void notifyCoordinator(MeetingProposal proposal, String title, String body) {
-		appUserRepository.findById(proposal.getProposedBy()).ifPresent(coordinator -> notificationService.create(
-				coordinator, NotificationCategory.MEETING_CHANGE, title, body,
-				"/coordinator/mentorships?mentorship=" + proposal.getMentorship().getId()));
+	/** The coordinator lands on the mentorship's drawer; a mentor or a team member on their own page. */
+	private void notifyProposer(MeetingProposal proposal, String title, String body) {
+		appUserRepository.findById(proposal.getProposedBy()).ifPresent(proposer -> notificationService.create(
+				proposer, NotificationCategory.MEETING_CHANGE, title, body, proposerLink(proposal, proposer)));
+	}
+
+	private static String proposerLink(MeetingProposal proposal, AppUser proposer) {
+		if (proposal.getMentorship() != null
+				&& (proposer.getRole() == UserRole.COORDINATOR || proposer.getRole() == UserRole.ADMIN)) {
+			return "/coordinator/mentorships?mentorship=" + proposal.getMentorship().getId();
+		}
+		return proposer.getRole() == UserRole.MENTOR ? "/mentor-dashboard/calendar" : TEAM_HOME;
+	}
+
+	private Program programOf(MeetingProposal proposal) {
+		return proposal.getProgramId() == null ? null : programRepository.findById(proposal.getProgramId()).orElse(null);
 	}
 
 	/** The team lead answers for the team; a team without a lead lets any member answer. */
@@ -281,11 +348,10 @@ public class MeetingProposalService {
 	}
 
 	private Side sideOf(AppUser actor, MeetingProposal proposal) {
-		Mentorship mentorship = proposal.getMentorship();
-		if (mentorship.getMentor().getId().equals(actor.getId())) {
+		if (proposal.getMentor().getId().equals(actor.getId())) {
 			return Side.MENTOR;
 		}
-		boolean responder = teamResponders(mentorship.getOrganization()).stream()
+		boolean responder = teamResponders(proposal.getOrganization()).stream()
 				.anyMatch(user -> user.getId().equals(actor.getId()));
 		return responder ? Side.TEAM : null;
 	}
@@ -309,6 +375,9 @@ public class MeetingProposalService {
 
 	private MeetingProposal requireManagedPending(UUID actorId, UUID proposalId) {
 		MeetingProposal proposal = requirePending(proposalId);
+		if (proposal.getMentorship() == null) {
+			throw new InvalidRequestException("Bu öneri bir program mentorluğuna bağlı değil.");
+		}
 		coordinatorMentorshipService.requireManagedMentorship(actorId, proposal.getMentorship().getId());
 		return proposal;
 	}
@@ -326,25 +395,23 @@ public class MeetingProposalService {
 	}
 
 	private static String pairLine(MeetingProposal proposal) {
-		Mentorship mentorship = proposal.getMentorship();
-		return mentorship.getMentor().getFullName() + " ↔ " + mentorship.getOrganization().getName();
+		return proposal.getMentor().getFullName() + " ↔ " + proposal.getOrganization().getName();
 	}
 
 	private MeetingProposalResponse response(MeetingProposal proposal, Program program, AppUser viewer) {
-		Mentorship mentorship = proposal.getMentorship();
 		Side side = viewer == null ? null : sideOf(viewer, proposal);
 		boolean canRespond = proposal.isPending()
 				&& ((side == Side.MENTOR && proposal.getMentorAcceptedAt() == null)
 						|| (side == Side.TEAM && proposal.getTeamAcceptedAt() == null));
 		return new MeetingProposalResponse(
 				proposal.getId(),
-				mentorship.getId(),
+				proposal.getMentorship() == null ? null : proposal.getMentorship().getId(),
 				proposal.getProgramId(),
 				program == null ? null : program.getName(),
-				mentorship.getMentor().getId(),
-				mentorship.getMentor().getFullName(),
-				mentorship.getOrganization().getId(),
-				mentorship.getOrganization().getName(),
+				proposal.getMentor().getId(),
+				proposal.getMentor().getFullName(),
+				proposal.getOrganization().getId(),
+				proposal.getOrganization().getName(),
 				nameOf(proposal.getProposedBy()),
 				proposal.getScheduledAt(),
 				proposal.getDurationMinutes(),

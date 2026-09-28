@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.DeclineMeetingProposalRequest;
 import com.dps.teknokent.dto.requests.ProposeMeetingRequest;
+import com.dps.teknokent.dto.requests.RescheduleMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingProposalResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.MeetingProposalService;
@@ -54,6 +55,14 @@ public class MeetingProposalController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void withdraw(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
 		proposalService.withdraw(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/api/meetings/{id}/reschedule-proposals")
+	@ResponseStatus(HttpStatus.CREATED)
+	public MeetingProposalResponse proposeReschedule(
+			@PathVariable UUID id,
+			@Valid @RequestBody RescheduleMeetingRequest request) {
+		return proposalService.proposeReschedule(CurrentActor.resolve(request.actorId()), id, request);
 	}
 
 	@GetMapping("/api/meeting-proposals")
