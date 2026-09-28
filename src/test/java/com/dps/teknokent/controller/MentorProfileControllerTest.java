@@ -24,7 +24,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.dto.responses.MentorRatingResponse;
 import com.dps.teknokent.service.MentorProfileService;
+import com.dps.teknokent.service.MentorRatingService;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -41,6 +43,8 @@ class MentorProfileControllerTest {
 
 	@MockitoBean
 	private MentorProfileService mentorProfileService;
+	@MockitoBean
+	private MentorRatingService mentorRatingService;
 
 	@Test
 	void requiresAuthentication() throws Exception {
@@ -94,6 +98,18 @@ class MentorProfileControllerTest {
 			  "specialties": []
 			}
 			""";
+
+	@Test
+	void anyoneSignedInCanReadAMentorsRating() throws Exception {
+		UUID mentor = UUID.fromString("00000000-0000-0000-0000-000000000701");
+		when(mentorRatingService.rating(mentor)).thenReturn(new MentorRatingResponse(4.8, 12, java.util.List.of()));
+
+		mockMvc.perform(get("/api/mentors/{id}/rating", mentor)
+						.with(authentication(signedInAs(UUID.fromString("00000000-0000-0000-0000-000000000801")))))
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+				.andExpect(jsonPath("$.average").value(4.8))
+				.andExpect(jsonPath("$.feedbackCount").value(12));
+	}
 
 	private static UsernamePasswordAuthenticationToken signedInAs(UUID userId) {
 		return new UsernamePasswordAuthenticationToken(

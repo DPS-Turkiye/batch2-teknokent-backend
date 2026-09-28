@@ -24,7 +24,9 @@ import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
 import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.dto.responses.MentorRatingResponse;
 import com.dps.teknokent.service.MentorProfileService;
+import com.dps.teknokent.service.MentorRatingService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -37,6 +39,7 @@ import lombok.RequiredArgsConstructor;
 public class MentorProfileController {
 
 	private final MentorProfileService mentorProfileService;
+	private final MentorRatingService mentorRatingService;
 
 	@GetMapping
 	public List<MentorProfileResponse> findAll() {
@@ -46,6 +49,11 @@ public class MentorProfileController {
 	@GetMapping("/{id}")
 	public MentorProfileResponse findById(@PathVariable UUID id) {
 		return mentorProfileService.findById(id);
+	}
+
+	@GetMapping("/{id}/rating")
+	public MentorRatingResponse rating(@PathVariable UUID id) {
+		return mentorRatingService.rating(id);
 	}
 
 	@PutMapping("/{id}")
