@@ -392,6 +392,26 @@ class MeetingAssistantShareServiceTest {
 	}
 
 	@Test
+	void sharesTheGeneratedTranscriptWhenTheMentorAskedForItToBeSent() {
+		Meeting meeting = meeting();
+		meeting.setTranscribeRequested(true);
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
+		when(shareRepository.saveAndFlush(any(MeetingAssistantShare.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThat(service().storeGeneratedTranscript(meetingId, List.of(
+				new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "00:10")))).isTrue();
+
+		ArgumentCaptor<MeetingAssistantShare> saved = ArgumentCaptor.forClass(MeetingAssistantShare.class);
+		verify(shareRepository).saveAndFlush(saved.capture());
+		assertThat(saved.getValue().getTranscriptPublishedAt()).isNotNull();
+		when(shareRepository.findByMeetingId(meetingId)).thenReturn(Optional.of(saved.getValue()));
+		assertThat(service().find(meetingId, organizationId).transcript().get(0).path("text").asText())
+				.isEqualTo("Merhaba");
+	}
+
+	@Test
 	void keepsATranscriptTheMentorAlreadyStored() {
 		Meeting meeting = meeting();
 		MeetingAssistantShare existing = MeetingAssistantShare.emptyFor(meeting);
