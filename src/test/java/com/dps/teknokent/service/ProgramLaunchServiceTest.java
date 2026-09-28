@@ -24,9 +24,12 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
+import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramCoordinator;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
@@ -53,6 +56,10 @@ class ProgramLaunchServiceTest {
 	private OrganizationRepository organizationRepository;
 	@Mock
 	private AppUserRepository appUserRepository;
+	@Mock
+	private MailService mailService;
+	@Mock
+	private CoordinatorMentorshipService mentorshipService;
 	@InjectMocks
 	private ProgramLaunchService service;
 
@@ -132,6 +139,100 @@ class ProgramLaunchServiceTest {
 			assertThat(row.code()).isEqualTo("BIGG26-P8LN");
 			assertThat(row.name()).isEqualTo("Pusula");
 		});
+	}
+
+	@Test
+	void emailingTheCodeRecordsWhenItWentOut() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+		when(mailService.isConfigured()).thenReturn(true);
+		when(mailService.link("/invite")).thenReturn("https://menton.com.tr/invite");
+		when(mailService.sendNow(org.mockito.ArgumentMatchers.eq("ali@pusula.io"), any(),
+				org.mockito.ArgumentMatchers.contains("BIGG26-P8LN"))).thenReturn(true);
+
+		var rows = service.sendCode(ELIF, programId, waiting.getId());
+
+		assertThat(rows).singleElement().satisfies(row -> {
+			assertThat(row.codeSentAt()).isNotNull();
+			assertThat(row.codeSendFailed()).isFalse();
+		});
+	}
+
+	@Test
+	void aRefusedEmailPutsTheTeamUnderSorunluUntilTheEmailIsFixed() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+		when(mailService.isConfigured()).thenReturn(true);
+		when(mailService.sendNow(any(), any(), any())).thenReturn(false);
+
+		assertThat(service.sendCode(ELIF, programId, waiting.getId())).singleElement()
+				.satisfies(row -> assertThat(row.codeSendFailed()).isTrue());
+
+		var fixed = service.updateTeam(ELIF, programId, waiting.getId(), new TeamInviteInput("Pusula", "ali@pusula.com"));
+		assertThat(fixed).singleElement().satisfies(row -> {
+			assertThat(row.codeSendFailed()).isFalse();
+			assertThat(row.codeSentAt()).isNull();
+		});
+	}
+
+	@Test
+	void theCodeCannotBeEmailedWhereEmailIsOff() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+
+		assertThatThrownBy(() -> service.sendCode(ELIF, programId, waiting.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(mailService, never()).sendNow(any(), any(), any());
+	}
+
+	@Test
+	void theTeamDrawerShowsTheLeadMembersAndOnlyThisTeamsMentorships() {
+		UUID programId = UUID.randomUUID();
+		AppUser lead = user(UUID.randomUUID(), UserRole.MENTEE);
+		lead.setFullName("Gamze Kozak");
+		Organization atlas = new Organization();
+		atlas.setId(UUID.randomUUID());
+		atlas.setName("Atlas AI");
+		atlas.setFounder(lead);
+		atlas.setInviteCode("METUSTARS-A82K");
+		ProgramStartup startup = new ProgramStartup();
+		startup.setOrganizationId(atlas.getId());
+		when(programStartupRepository.findByProgramIdIn(List.of(programId))).thenReturn(List.of(startup));
+		when(organizationRepository.findById(atlas.getId())).thenReturn(Optional.of(atlas));
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(atlas.getId())).thenReturn(List.of(lead));
+		CoordinatorMentorshipResponse ours = org.mockito.Mockito.mock(CoordinatorMentorshipResponse.class);
+		CoordinatorMentorshipResponse theirs = org.mockito.Mockito.mock(CoordinatorMentorshipResponse.class);
+		when(ours.organizationId()).thenReturn(atlas.getId());
+		when(theirs.organizationId()).thenReturn(UUID.randomUUID());
+		when(mentorshipService.list(ELIF, programId)).thenReturn(List.of(ours, theirs));
+
+		var detail = service.teamDetail(ELIF, programId, atlas.getId());
+
+		assertThat(detail.lead().name()).isEqualTo("Gamze Kozak");
+		assertThat(detail.code()).isEqualTo("METUSTARS-A82K");
+		assertThat(detail.members()).hasSize(1);
+		assertThat(detail.mentorships()).containsExactly(ours);
+		assertThatThrownBy(() -> service.teamDetail(ELIF, programId, UUID.randomUUID()))
+				.isInstanceOf(com.dps.teknokent.exception.ResourceNotFoundException.class);
+	}
+
+	private ProgramTeamInvite waitingInvite(UUID programId) {
+		Program program = new Program();
+		program.setId(programId);
+		program.setName("METU BİGG 2026");
+		ProgramTeamInvite waiting = new ProgramTeamInvite();
+		waiting.setId(UUID.randomUUID());
+		waiting.setProgramId(programId);
+		waiting.setTeamName("Pusula");
+		waiting.setLeadEmail("ali@pusula.io");
+		waiting.setCode("BIGG26-P8LN");
+		org.mockito.Mockito.lenient().when(programService.requireManagedProgram(ELIF, programId)).thenReturn(program);
+		when(inviteRepository.findByIdAndProgramId(waiting.getId(), programId)).thenReturn(Optional.of(waiting));
+		org.mockito.Mockito.lenient().when(inviteRepository.findByProgramIdOrderByCreatedAtAsc(programId))
+				.thenReturn(List.of(waiting));
+		org.mockito.Mockito.lenient().when(programStartupRepository.findByProgramIdIn(List.of(programId)))
+				.thenReturn(List.of());
+		return waiting;
 	}
 
 	private static CreateCoordinatorProgramRequest request(List<UUID> coordinators, List<TeamInviteInput> teams) {

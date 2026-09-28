@@ -30,6 +30,7 @@ import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.MentorPoolResponse;
 import com.dps.teknokent.dto.responses.ProgramMatchingResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
+import com.dps.teknokent.dto.responses.ProgramTeamDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
@@ -176,6 +177,22 @@ public class CoordinatorProgramController {
 			@PathVariable UUID inviteId,
 			@RequestParam(required = false) UUID actorId) {
 		return programLaunchService.removeTeam(CurrentActor.resolve(actorId), id, inviteId);
+	}
+
+	@PostMapping("/{id}/teams/{inviteId}/send-code")
+	public List<ProgramTeamResponse> sendTeamCode(
+			@PathVariable UUID id,
+			@PathVariable UUID inviteId,
+			@RequestParam(required = false) UUID actorId) {
+		return programLaunchService.sendCode(CurrentActor.resolve(actorId), id, inviteId);
+	}
+
+	@GetMapping("/{id}/team-details/{organizationId}")
+	public ProgramTeamDetailResponse teamDetail(
+			@PathVariable UUID id,
+			@PathVariable UUID organizationId,
+			@RequestParam(required = false) UUID actorId) {
+		return programLaunchService.teamDetail(CurrentActor.resolve(actorId), id, organizationId);
 	}
 
 	@GetMapping("/{id}/mentors")
