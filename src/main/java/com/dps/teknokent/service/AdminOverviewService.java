@@ -6,8 +6,10 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
@@ -76,35 +79,62 @@ public class AdminOverviewService {
 		if (actor.getRole() != UserRole.ADMIN) {
 			throw new InvalidRequestException("Only an admin can view the admin overview.");
 		}
-		Instant now = Instant.now();
 		List<AppUser> userEntities = appUserRepository.findAll();
-		Map<UUID, AppUser> usersById = userEntities.stream()
-				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		List<UserRow> users = userEntities.stream()
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
 				.map(AdminOverviewService::toUser)
-				.toList();
-		Map<UUID, Organization> organizations = new HashMap<>();
-		for (Organization organization : organizationRepository.findAll()) {
-			organizations.put(organization.getId(), organization);
-		}
-		Map<String, Instant> lastMeeting = lastPastMeetingByPair(now);
-		List<ProgramRow> programs = programRepository.findAllByOrderByCreatedAtDesc().stream()
-				.map(program -> toProgram(program, usersById, organizations))
-				.toList();
-		List<MentorshipRow> mentorships = mentorshipService.findAll().stream()
-				.map(mentorship -> toMentorship(mentorship, lastMeeting, now))
 				.toList();
 		List<RequestRow> requests = mentorshipRequestService.findAll(null, null, null).stream()
 				.filter(request -> OPEN_REQUESTS.contains(request.status()))
 				.map(AdminOverviewService::toRequest)
 				.toList();
+		return build(programRepository.findAllByOrderByCreatedAtDesc(), null, userEntities, users, requests);
+	}
+
+	/**
+	 * The Raporlama numbers for one program, for its coordinators' Program raporu; the caller checks access.
+	 * Only that program's teams count, and the user list and open requests are left out.
+	 */
+	@Transactional(readOnly = true)
+	public AdminOverviewResponse programReport(Program program) {
+		Set<UUID> teams = programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId()).stream()
+				.map(ProgramStartup::getOrganizationId)
+				.collect(Collectors.toSet());
+		return build(List.of(program), teams, appUserRepository.findAll(), List.of(), List.of());
+	}
+
+	/** {@code teams} limits mentorships, bottlenecks and meetings to those organizations; null keeps them all. */
+	private AdminOverviewResponse build(
+			List<Program> programEntities,
+			Set<UUID> teams,
+			List<AppUser> userEntities,
+			List<UserRow> users,
+			List<RequestRow> requests) {
+		Instant now = Instant.now();
+		Predicate<UUID> inScope = organizationId -> teams == null || teams.contains(organizationId);
+		Map<UUID, AppUser> usersById = userEntities.stream()
+				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		Map<UUID, Organization> organizations = new HashMap<>();
+		for (Organization organization : organizationRepository.findAll()) {
+			organizations.put(organization.getId(), organization);
+		}
+		Map<String, Instant> lastMeeting = lastPastMeetingByPair(now);
+		List<ProgramRow> programs = programEntities.stream()
+				.map(program -> toProgram(program, usersById, organizations))
+				.toList();
+		List<MentorshipRow> mentorships = mentorshipService.findAll().stream()
+				.filter(mentorship -> inScope.test(mentorship.organizationId()))
+				.map(mentorship -> toMentorship(mentorship, lastMeeting, now))
+				.toList();
 		List<BottleneckRow> bottlenecks = bottleneckRepository.findAll().stream()
 				.filter(item -> item.getStatus() == BottleneckStatus.OPEN
 						|| item.getStatus() == BottleneckStatus.IN_PROGRESS)
+				.filter(item -> inScope.test(item.getOrganization().getId()))
 				.map(AdminOverviewService::toBottleneck)
 				.toList();
-		List<Meeting> meetingEntities = meetingRepository.findAllByOrderByScheduledAtDesc();
+		List<Meeting> meetingEntities = meetingRepository.findAllByOrderByScheduledAtDesc().stream()
+				.filter(meeting -> meeting.getOrganization() != null && inScope.test(meeting.getOrganization().getId()))
+				.toList();
 		long meetingsLast8Weeks = meetingEntities.stream()
 				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED)
 				.filter(meeting -> meeting.getScheduledAt() != null
@@ -112,9 +142,7 @@ public class AdminOverviewService {
 						&& !meeting.getScheduledAt().isAfter(now))
 				.count();
 		List<MeetingMark> meetings = meetingEntities.stream()
-				.filter(meeting -> meeting.getScheduledAt() != null
-						&& meeting.getMentor() != null
-						&& meeting.getOrganization() != null)
+				.filter(meeting -> meeting.getScheduledAt() != null && meeting.getMentor() != null)
 				.map(meeting -> new MeetingMark(
 						meeting.getMentor().getId(),
 						meeting.getOrganization().getId(),
