@@ -14,6 +14,20 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: db
+          POSTGRES_USER: teknokent
+          POSTGRES_PASSWORD: change-me
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U teknokent -d db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@v2.16.0
@@ -22,6 +36,12 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4.1.1
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
 
       - name: Cache Maven dependencies
         uses: actions/cache@v4
@@ -32,6 +52,6 @@ jobs:
             ${{ runner.os }}-maven-
 
       - name: Run tests
-        run: ./mvnw -B clean test
+        run: mvn -B -Dmaven.repo.local=.ci/m2 clean test
         env:
-          MVNW_M2_HOST_DIR: .ci/m2
+          POSTGRES_TEST_ENABLED: 'true'
