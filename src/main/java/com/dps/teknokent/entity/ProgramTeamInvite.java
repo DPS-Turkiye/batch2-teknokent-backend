@@ -44,4 +44,10 @@ public class ProgramTeamInvite {
 
 	@Column(name = "joined_at")
 	private Instant joinedAt;
+
+	@Column(name = "code_sent_at")
+	private Instant codeSentAt;
+
+	@Column(name = "code_send_failed", nullable = false)
+	private boolean codeSendFailed;
 }
