@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -46,6 +47,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingProposalRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.service.CoordinatorMentorshipService.Scoped;
 
@@ -60,6 +62,8 @@ class MeetingProposalServiceTest {
 	private MeetingProposalRepository proposalRepository;
 	@Mock
 	private MeetingRepository meetingRepository;
+	@Mock
+	private MentorshipRepository mentorshipRepository;
 	@Mock
 	private MeetingService meetingService;
 	@Mock
@@ -90,6 +94,8 @@ class MeetingProposalServiceTest {
 		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(lumen.getId()))
 				.thenReturn(List.of(lead, member));
 		lenient().when(proposalRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		lenient().when(mentorshipRepository.findByIdForUpdate(mentorship.getId()))
+				.thenReturn(Optional.of(mentorship));
 		lenient().when(programRepository.findById(program.getId())).thenReturn(Optional.of(program));
 	}
 
@@ -109,6 +115,10 @@ class MeetingProposalServiceTest {
 		verify(notificationService).create(eq(lead), eq(NotificationCategory.MEETING_CHANGE), anyString(), anyString(),
 				eq("/dashboard"));
 		verify(notificationService, never()).create(eq(member), any(), anyString(), anyString(), anyString());
+		InOrder serializedCreation = org.mockito.Mockito.inOrder(mentorshipRepository, proposalRepository);
+		serializedCreation.verify(mentorshipRepository).findByIdForUpdate(mentorship.getId());
+		serializedCreation.verify(proposalRepository)
+				.existsByMentorshipIdAndStatus(mentorship.getId(), MeetingProposalStatus.PENDING);
 	}
 
 	@Test
@@ -124,6 +134,9 @@ class MeetingProposalServiceTest {
 				.thenReturn(true);
 		assertThatThrownBy(() -> service.propose(coordinator.getId(), mentorship.getId(),
 				new ProposeMeetingRequest(null, nextWeek, 45, null, null)))
+				.isInstanceOf(ConflictException.class);
+		assertThatThrownBy(() -> service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(UUID.randomUUID(), nextWeek, 45, null, null)))
 				.isInstanceOf(ConflictException.class);
 	}
 

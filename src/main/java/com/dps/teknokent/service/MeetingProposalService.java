@@ -34,6 +34,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingProposalRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.service.CoordinatorMentorshipService.Scoped;
 import com.dps.teknokent.util.MeetingSlotTimes;
@@ -57,6 +58,7 @@ public class MeetingProposalService {
 	private final CoordinatorProgramService programService;
 	private final MeetingProposalRepository proposalRepository;
 	private final MeetingRepository meetingRepository;
+	private final MentorshipRepository mentorshipRepository;
 	private final MeetingService meetingService;
 	private final AppUserRepository appUserRepository;
 	private final ProgramRepository programRepository;
@@ -70,7 +72,10 @@ public class MeetingProposalService {
 	@Transactional
 	public MeetingProposalResponse propose(UUID actorId, UUID mentorshipId, ProposeMeetingRequest request) {
 		Scoped scoped = coordinatorMentorshipService.requireManagedMentorship(actorId, mentorshipId);
-		Mentorship mentorship = scoped.mentorship();
+		// Serialize proposal creation on the parent row. The partial unique index remains the
+		// database-level guard for all writers, including callers that do not take this lock.
+		Mentorship mentorship = mentorshipRepository.findByIdForUpdate(mentorshipId)
+				.orElseThrow(() -> new ResourceNotFoundException("Mentorship not found: " + mentorshipId));
 		if (!OPEN.contains(mentorship.getStatus())) {
 			throw new InvalidRequestException("Bu mentorluk için görüşme önerilemez.");
 		}
