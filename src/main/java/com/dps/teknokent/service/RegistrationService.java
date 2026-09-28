@@ -216,12 +216,12 @@ public class RegistrationService {
 		}
 		ProgramMentorInvite invite = programMentorInviteRepository.findByCode(code.trim())
 				.filter(value -> value.getMentorId() == null)
-				.orElseThrow(() -> new InvalidRequestException("Invalid program invite."));
+				.orElseThrow(() -> new InvalidRequestException("Program daveti geçersiz."));
 		if (!invite.getExpiresAt().isAfter(Instant.now())) {
-			throw new InvalidRequestException("This program invite has expired.");
+			throw new InvalidRequestException("Bu program davetinin süresi dolmuş.");
 		}
 		if (!invite.getEmail().equalsIgnoreCase(email)) {
-			throw new InvalidRequestException("Sign up with the email address the invite was sent to.");
+			throw new InvalidRequestException("Davetin gönderildiği e-posta adresiyle kayıt olun.");
 		}
 		return Optional.of(invite);
 	}
