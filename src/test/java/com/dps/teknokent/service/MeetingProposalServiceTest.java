@@ -33,6 +33,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.DeclineMeetingProposalRequest;
 import com.dps.teknokent.dto.requests.ProposeMeetingRequest;
+import com.dps.teknokent.dto.requests.RescheduleMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingProposalResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -207,7 +208,7 @@ class MeetingProposalServiceTest {
 	@Test
 	void listsOpenProposalsForTheMentorWithTheirOwnAnswerState() {
 		MeetingProposal proposal = pending(null);
-		when(proposalRepository.findByStatusAndMentorshipMentorIdOrderByScheduledAtAsc(
+		when(proposalRepository.findByStatusAndMentorIdOrderByScheduledAtAsc(
 				MeetingProposalStatus.PENDING, mentor.getId())).thenReturn(List.of(proposal));
 		when(programRepository.findAllById(List.of(program.getId()))).thenReturn(List.of(program));
 
@@ -233,11 +234,80 @@ class MeetingProposalServiceTest {
 				eq("/dashboard"));
 	}
 
+	@Test
+	void theMentorProposesANewTimeAndTheTeamLeadConfirmsIt() {
+		Meeting meeting = scheduledMeeting();
+		when(appUserRepository.findById(mentor.getId())).thenReturn(Optional.of(mentor));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+
+		MeetingProposalResponse proposed = service.proposeReschedule(mentor.getId(), meeting.getId(),
+				new RescheduleMeetingRequest(null, nextWeek, null));
+
+		assertThat(proposed.mentorAcceptedAt()).isNotNull();
+		assertThat(proposed.teamAcceptedAt()).isNull();
+		assertThat(proposed.durationMinutes()).isEqualTo(60);
+		assertThat(proposed.mentorshipId()).isNull();
+		verify(notificationService).create(eq(lead), eq(NotificationCategory.MEETING_CHANGE), anyString(), anyString(),
+				eq("/dashboard"));
+		verify(notificationService, never()).create(eq(mentor), any(), anyString(), anyString(), anyString());
+
+		ArgumentCaptor<MeetingProposal> saved = ArgumentCaptor.forClass(MeetingProposal.class);
+		verify(proposalRepository).save(saved.capture());
+		MeetingProposal proposal = saved.getValue();
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		MeetingProposalResponse confirmed = service.accept(lead.getId(), proposal.getId());
+
+		assertThat(confirmed.status()).isEqualTo(MeetingProposalStatus.CONFIRMED);
+		assertThat(meeting.getScheduledAt()).isEqualTo(nextWeek);
+		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE), eq("Görüşme onaylandı"),
+				anyString(), eq("/mentor-dashboard/calendar"));
+	}
+
+	@Test
+	void aTeamMemberCanProposeButSomeoneElseCannotAndOnlyOneAtATime() {
+		Meeting meeting = scheduledMeeting();
+		member.setOrganization(lumen);
+		AppUser outsider = user("Başka Biri", UserRole.MENTEE);
+		when(appUserRepository.findById(member.getId())).thenReturn(Optional.of(member));
+		when(appUserRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+
+		assertThatThrownBy(() -> service.proposeReschedule(outsider.getId(), meeting.getId(),
+				new RescheduleMeetingRequest(null, nextWeek, 30))).isInstanceOf(InvalidRequestException.class);
+
+		MeetingProposalResponse proposed = service.proposeReschedule(member.getId(), meeting.getId(),
+				new RescheduleMeetingRequest(null, nextWeek, 30));
+		assertThat(proposed.teamAcceptedAt()).isNotNull();
+		assertThat(proposed.mentorAcceptedAt()).isNull();
+		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE), anyString(), anyString(),
+				eq("/mentor-dashboard"));
+
+		when(proposalRepository.existsByReplacesMeetingIdAndStatus(meeting.getId(), MeetingProposalStatus.PENDING))
+				.thenReturn(true);
+		assertThatThrownBy(() -> service.proposeReschedule(member.getId(), meeting.getId(),
+				new RescheduleMeetingRequest(null, nextWeek, 30))).isInstanceOf(ConflictException.class);
+	}
+
+	private Meeting scheduledMeeting() {
+		Meeting meeting = new Meeting();
+		meeting.setId(UUID.randomUUID());
+		meeting.setOrganization(lumen);
+		meeting.setMentor(mentor);
+		meeting.setStatus(MeetingStatus.SCHEDULED);
+		meeting.setScheduledAt(Instant.now().plus(2, ChronoUnit.DAYS));
+		meeting.setDurationMinutes(60);
+		meeting.setAgenda("Finansal model");
+		return meeting;
+	}
+
 	private MeetingProposal pending(UUID replacesMeetingId) {
 		MeetingProposal proposal = new MeetingProposal();
 		proposal.setId(UUID.randomUUID());
 		proposal.setMentorship(mentorship);
 		proposal.setProgramId(program.getId());
+		proposal.setOrganization(lumen);
+		proposal.setMentor(mentor);
 		proposal.setProposedBy(coordinator.getId());
 		proposal.setScheduledAt(nextWeek);
 		proposal.setDurationMinutes(45);
