@@ -38,6 +38,15 @@ public class MailService {
 		return publicUrl + path;
 	}
 
+	public boolean isConfigured() {
+		return !fromAddress.isEmpty();
+	}
+
+	/** Sends right away and says whether SES accepted it; a bounce reported later is not seen here. */
+	public boolean sendNow(String to, String subject, String body) {
+		return isConfigured() && to != null && !to.isBlank() && send(to, subject, body);
+	}
+
 	public void sendAfterCommit(String to, String subject, String body) {
 		if (fromAddress.isEmpty() || to == null || to.isBlank()) {
 			return;
@@ -54,7 +63,7 @@ public class MailService {
 		});
 	}
 
-	private void send(String to, String subject, String body) {
+	private boolean send(String to, String subject, String body) {
 		try {
 			sesClient.sendEmail(SendEmailRequest.builder()
 					.fromEmailAddress(fromAddress)
@@ -66,8 +75,10 @@ public class MailService {
 									.build())
 							.build())
 					.build());
+			return true;
 		} catch (SdkException e) {
 			log.warn("Email to {} could not be sent: {}", to, e.getMessage());
+			return false;
 		}
 	}
 

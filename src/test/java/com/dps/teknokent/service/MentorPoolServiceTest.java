@@ -53,6 +53,8 @@ class MentorPoolServiceTest {
 	private MentorProfileRepository mentorProfileRepository;
 	@Mock
 	private MentorshipRepository mentorshipRepository;
+	@Mock
+	private MailService mailService;
 	@InjectMocks
 	private MentorPoolService service;
 
@@ -62,6 +64,8 @@ class MentorPoolServiceTest {
 	@Test
 	void anEmailWithoutAnAccountGetsASevenDayLinkAndAnExistingMentorTheUsualInvitation() {
 		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program());
+		when(mailService.link(org.mockito.ArgumentMatchers.anyString()))
+				.thenAnswer(call -> "https://menton.com.tr" + call.getArgument(0));
 		when(appUserRepository.findByEmailIgnoreCase("cagri@yilmazfinans.com")).thenReturn(Optional.empty());
 		when(inviteRepository.findByProgramIdAndEmailIgnoreCase(PROGRAM_ID, "cagri@yilmazfinans.com"))
 				.thenReturn(Optional.empty());
@@ -74,6 +78,11 @@ class MentorPoolServiceTest {
 		assertThat(invite.getValue().getCode()).hasSize(32);
 		assertThat(invite.getValue().getExpiresAt())
 				.isBetween(Instant.now().plus(Duration.ofDays(6)), Instant.now().plus(Duration.ofDays(8)));
+		verify(mailService).sendAfterCommit(
+				org.mockito.ArgumentMatchers.eq("cagri@yilmazfinans.com"),
+				org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.contains(
+						"https://menton.com.tr/signup?role=mentor&programInvite=" + invite.getValue().getCode()));
 
 		AppUser mentor = user(UUID.randomUUID(), UserRole.MENTOR, UserAccountStatus.APPROVED);
 		when(appUserRepository.findByEmailIgnoreCase("ayse@salesco.com")).thenReturn(Optional.of(mentor));
