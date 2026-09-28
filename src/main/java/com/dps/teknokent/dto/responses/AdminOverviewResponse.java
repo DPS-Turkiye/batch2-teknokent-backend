@@ -22,7 +22,9 @@ public record AdminOverviewResponse(
 			String name,
 			String status,
 			Instant createdAt,
+			/** The first coordinator; null when the program has none yet ("Atanmadı"). */
 			UUID coordinatorId,
+			/** Every coordinator, comma-separated; an admin who created the program is not listed. */
 			String coordinatorName,
 			int startupCount,
 			int acceptedMentorCount,
