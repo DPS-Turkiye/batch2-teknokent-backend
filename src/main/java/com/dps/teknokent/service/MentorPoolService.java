@@ -43,7 +43,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Flow 03.1: a program's Mentor Havuzu. Mentors with an account get the existing program invitation and accept
- * it themselves; anyone else gets a signup link the coordinator copies, and signing up with it leaves them
+ * it themselves; anyone else gets a signup link, emailed to them and copied for the coordinator, and signing up with it leaves them
  * waiting for the coordinator, whose approval also approves the new account.
  */
 @Service
@@ -61,6 +61,7 @@ public class MentorPoolService {
 	private final AppUserRepository appUserRepository;
 	private final MentorProfileRepository mentorProfileRepository;
 	private final MentorshipRepository mentorshipRepository;
+	private final MailService mailService;
 
 	@Transactional(readOnly = true)
 	public List<MentorPoolResponse.Row> pool(UUID actorId, UUID programId) {
@@ -94,17 +95,29 @@ public class MentorPoolService {
 		}
 		invite.setExpiresAt(Instant.now().plus(INVITE_VALIDITY));
 		inviteRepository.save(invite);
+		emailInviteLink(program, invite);
 		return rows(program);
 	}
 
-	/** "Tekrar gönder": another 7 days on the same link. */
+	/** "Tekrar gönder": another 7 days on the same link, emailed again. */
 	@Transactional
 	public List<MentorPoolResponse.Row> renewInvite(UUID actorId, UUID programId, UUID inviteId) {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
 		ProgramMentorInvite invite = requireOpenInvite(programId, inviteId);
 		invite.setExpiresAt(Instant.now().plus(INVITE_VALIDITY));
 		inviteRepository.save(invite);
+		emailInviteLink(program, invite);
 		return rows(program);
+	}
+
+	private void emailInviteLink(Program program, ProgramMentorInvite invite) {
+		mailService.sendAfterCommit(
+				invite.getEmail(),
+				"menton: " + program.getName() + " mentor havuzuna davet",
+				"Merhaba,\n\n" + program.getName() + " programının mentor havuzuna davet edildiniz.\n\n"
+						+ "Kayıt bağlantınız (7 gün geçerli): "
+						+ mailService.link("/signup?role=mentor&programInvite=" + invite.getCode())
+						+ "\n\nBu e-posta adresiyle kayıt olun; koordinatör onayladığında havuza eklenirsiniz.\n\nmenton");
 	}
 
 	@Transactional
