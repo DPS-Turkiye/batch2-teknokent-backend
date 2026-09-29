@@ -257,6 +257,44 @@ class FirebaseBearerFilterTest {
     }
 
     @Test
+    void letsPendingAccountParseItsUploadedCv() throws Exception {
+        AppUser user = mentor(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(
+                request("POST", "/api/profile-analyses/preview/documents/7f1c0f5e-0000-4000-8000-000000000001", "Bearer good"),
+                response,
+                chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                .isInstanceOf(AppUserPrincipal.class);
+    }
+
+    @Test
+    void stillForbidsPendingAccountOtherProfileAnalysisWrites() throws Exception {
+        AppUser user = mentor(UserAccountStatus.PENDING);
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("POST", "/api/profile-analyses/manual", "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(chain.getRequest()).isNull();
+    }
+
+    @Test
     void letsPendingAccountListItsOwnDocuments() throws Exception {
         AppUser user = user(UserAccountStatus.PENDING);
 
