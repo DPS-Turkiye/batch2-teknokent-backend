@@ -161,10 +161,14 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	 * document, no profile_analysis row — so there is no organization to scope
 	 * and nothing to leak between startups. It is not public, because it runs
 	 * OCR and an LLM call and an open endpoint would be a cost and abuse route.
+	 * The signup wizards upload the CV first and parse it by id, so the
+	 * /documents/{id} form is included; it reads only the caller's own CV.
 	 */
 	private static boolean isProfileParsePreview(HttpServletRequest request) {
+		String uri = request.getRequestURI();
 		return "POST".equalsIgnoreCase(request.getMethod())
-				&& PROFILE_PARSE_PREVIEW_PATH.equals(request.getRequestURI());
+				&& (PROFILE_PARSE_PREVIEW_PATH.equals(uri)
+						|| uri.startsWith(PROFILE_PARSE_PREVIEW_PATH + "/documents/"));
 	}
 
 	private static void authenticate(Object principal, List<GrantedAuthority> authorities) {
