@@ -5,11 +5,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.dto.responses.ApiErrorResponse;
 
@@ -34,6 +36,12 @@ public class GlobalExceptionHandler {
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiErrorResponse handleConflict(ConflictException exception, HttpServletRequest request) {
 		return response(HttpStatus.CONFLICT, exception.getMessage(), request, Map.of());
+	}
+
+	@ExceptionHandler(ResponseStatusException.class)
+	public ResponseEntity<ApiErrorResponse> handleStatus(ResponseStatusException exception, HttpServletRequest request) {
+		HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
+		return ResponseEntity.status(status).body(response(status, exception.getReason(), request, Map.of()));
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)

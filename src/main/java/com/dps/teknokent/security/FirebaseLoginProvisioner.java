@@ -2,6 +2,9 @@ package com.dps.teknokent.security;
 
 import java.util.Optional;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.google.firebase.auth.ActionCodeSettings;
 import com.google.firebase.auth.AuthErrorCode;
@@ -30,7 +33,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 			return firebaseAuth.getUserByEmail(email).getUid();
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() != AuthErrorCode.USER_NOT_FOUND) {
-				throw new IllegalStateException("Could not look up the Firebase login for " + email, exception);
+				throw loginUnavailable(email, exception);
 			}
 		}
 		try {
@@ -43,8 +46,19 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 			if (exception.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {
 				throw new InvalidRequestException("A login for this email was created at the same time; try again.");
 			}
-			throw new IllegalStateException("Could not create a Firebase login for " + email, exception);
+			throw loginUnavailable(email, exception);
 		}
+	}
+
+	/**
+	 * A Firebase failure here is a server-side setup problem (credentials, permissions), not the admin's input.
+	 * The reason is sent back in Turkish with Firebase's own code, so the admin's toast says what to fix
+	 * instead of the generic server-error text.
+	 */
+	private static ResponseStatusException loginUnavailable(String email, FirebaseAuthException exception) {
+		log.error("Could not get a Firebase login for {}: {} {}", email, exception.getErrorCode(), exception.getMessage());
+		return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+				"Koordinatörün giriş hesabı Firebase'de oluşturulamadı (" + exception.getErrorCode() + ").", exception);
 	}
 
 	/**
