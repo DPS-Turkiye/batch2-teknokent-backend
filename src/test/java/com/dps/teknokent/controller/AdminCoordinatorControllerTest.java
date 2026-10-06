@@ -19,10 +19,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.CoordinatorCandidateStatus;
@@ -80,6 +82,20 @@ class AdminCoordinatorControllerTest {
 						.content("{\"fullName\":\"Elif Demir\",\"email\":\"elif@teknokent.org\"}"))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.outcome").value("NEW"));
+	}
+
+	@Test
+	void passesALoginSetupFailureOnWithItsReason() throws Exception {
+		when(adminCoordinatorService.add(eq(ADMIN_ID), any())).thenThrow(new ResponseStatusException(
+				HttpStatus.BAD_GATEWAY, "Koordinatörün giriş hesabı Firebase'de oluşturulamadı (PERMISSION_DENIED)."));
+
+		mockMvc.perform(post("/api/admin/coordinators")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"fullName\":\"Elif Demir\",\"email\":\"elif@teknokent.org\"}"))
+				.andExpect(status().isBadGateway())
+				.andExpect(jsonPath("$.message")
+						.value("Koordinatörün giriş hesabı Firebase'de oluşturulamadı (PERMISSION_DENIED)."));
 	}
 
 	@Test
