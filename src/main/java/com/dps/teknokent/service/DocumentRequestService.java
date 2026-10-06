@@ -227,19 +227,26 @@ public class DocumentRequestService {
 
 	@Transactional
 	public void saveTitlesOnRequest(MentorshipRequest request, AppUser mentor, List<String> titles) {
-		List<String> normalized = normalizeTitles(titles);
-		if (normalized.isEmpty()) {
+		// Appends rather than replaces: an info request can be followed by an accept, and deleting the
+		// earlier items would cascade away what the startup has already uploaded.
+		List<DocumentRequestItem> existing = itemRepository
+				.findByMentorshipRequestIdOrderBySortOrderAscCreatedAtAsc(request.getId());
+		List<String> existingTitles = existing.stream().map(DocumentRequestItem::getTitle).toList();
+		List<String> added = normalizeTitles(titles).stream()
+				.filter(title -> !existingTitles.contains(title))
+				.toList();
+		if (added.isEmpty()) {
 			return;
 		}
-		itemRepository.deleteByMentorshipRequestId(request.getId());
 		List<DocumentRequestItem> saved = insertItems(
 				mentor,
 				request.getOrganization(),
-				normalized,
+				added,
 				null,
 				request,
 				null,
 				null);
+		saved.forEach(item -> item.setSortOrder(existing.size() + item.getSortOrder()));
 		notifyDocumentsRequested(
 				request.getOrganization(), mentor, saved, MENTOR_REQUESTED_TITLE, "/mentorships?tab=active");
 	}

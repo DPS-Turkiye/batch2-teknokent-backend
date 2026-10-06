@@ -144,6 +144,31 @@ class DocumentRequestServiceTest {
 	}
 
 	@Test
+	void saveTitlesOnRequestKeepsEarlierItemsAndAddsOnlyNewTitles() {
+		AppUser mentor = user(UserRole.MENTOR, "Mentor Ali");
+		Organization organization = organization();
+		MentorshipRequest request = new MentorshipRequest();
+		request.setId(UUID.randomUUID());
+		request.setOrganization(organization);
+		DocumentRequestItem earlier = new DocumentRequestItem();
+		earlier.setId(UUID.randomUUID());
+		earlier.setTitle("Pitch deck");
+		earlier.setSortOrder(0);
+
+		when(itemRepository.findByMentorshipRequestIdOrderBySortOrderAscCreatedAtAsc(request.getId()))
+				.thenReturn(List.of(earlier));
+		when(itemRepository.save(any(DocumentRequestItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		documentRequestService.saveTitlesOnRequest(request, mentor, List.of("Pitch deck", "Finansal tablolar"));
+
+		verify(itemRepository, never()).deleteByMentorshipRequestId(any());
+		ArgumentCaptor<DocumentRequestItem> captor = ArgumentCaptor.forClass(DocumentRequestItem.class);
+		verify(itemRepository).save(captor.capture());
+		assertThat(captor.getValue().getTitle()).isEqualTo("Finansal tablolar");
+		assertThat(captor.getValue().getSortOrder()).isEqualTo(1);
+	}
+
+	@Test
 	void replaceOnProgramAsksEveryStartupInTheProgram() {
 		UUID programId = UUID.randomUUID();
 		AppUser coordinator = user(UserRole.COORDINATOR, "Koordinatör Ece");
