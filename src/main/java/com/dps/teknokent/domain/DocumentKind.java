@@ -5,19 +5,19 @@ import java.util.Arrays;
 import com.dps.teknokent.exception.InvalidRequestException;
 
 public enum DocumentKind {
-	CV("cv", 10 * 1024 * 1024, false, false),
-	CANVAS("canvas", 10 * 1024 * 1024, false, false),
-	PITCH_DECK("pitch-deck", 10 * 1024 * 1024, false, false),
-	MVP("mvp", 10 * 1024 * 1024, false, false),
-	VALIDATION("validation", 10 * 1024 * 1024, false, false),
-	HOMEWORK("homework", 10 * 1024 * 1024, false, false),
-	MEETING_FILE("meeting-file", 10 * 1024 * 1024, false, false),
+	CV("cv", 25 * 1024 * 1024, false, false),
+	CANVAS("canvas", 25 * 1024 * 1024, false, false),
+	PITCH_DECK("pitch-deck", 25 * 1024 * 1024, false, false),
+	MVP("mvp", 25 * 1024 * 1024, false, false),
+	VALIDATION("validation", 25 * 1024 * 1024, false, false),
+	HOMEWORK("homework", 25 * 1024 * 1024, false, false),
+	MEETING_FILE("meeting-file", 25 * 1024 * 1024, false, false),
 	NOTE_PHOTO("note-photo", 5 * 1024 * 1024, false, true),
-	OTHER("other", 10 * 1024 * 1024, false, false),
+	OTHER("other", 25 * 1024 * 1024, false, false),
 	LOGO("logo", 5 * 1024 * 1024, false, true),
 	AVATAR("avatar", 5 * 1024 * 1024, false, true),
 	PROFILE_PDF("profile-pdf", 50 * 1024 * 1024, true, false),
-	REQUESTED_DOC("requested-doc", 10 * 1024 * 1024, false, false);
+	REQUESTED_DOC("requested-doc", 25 * 1024 * 1024, false, false);
 
 	private final String value;
 	private final long maxBytes;

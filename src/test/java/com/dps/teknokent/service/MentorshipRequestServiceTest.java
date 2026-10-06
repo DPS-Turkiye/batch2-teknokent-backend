@@ -356,6 +356,33 @@ class MentorshipRequestServiceTest {
         }
 
         @Test
+        void decide_moreInfoSavesTheRequestedDocuments() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com",
+                                "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.PENDING);
+
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+                when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+                mentorshipRequestService.decide(requestId,
+                                new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.MORE_INFO_REQUESTED,
+                                                "Gelir modelinizi paylaşır mısınız?", List.of("Pitch deck")));
+
+                assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.MORE_INFO_REQUESTED);
+                verify(documentRequestService).saveTitlesOnRequest(request, mentor, List.of("Pitch deck"));
+        }
+
+        @Test
         void acceptProposedSlot_acceptsWhenMenteePicksAProposedTime() {
                 UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
                 UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");

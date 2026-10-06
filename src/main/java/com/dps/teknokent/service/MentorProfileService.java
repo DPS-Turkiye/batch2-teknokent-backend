@@ -222,11 +222,15 @@ public class MentorProfileService {
 				.findByIdAndMentorId(ruleId, mentorId)
 				.orElseThrow(() -> new ResourceNotFoundException("Availability rule not found: " + ruleId));
 
-		List<MentorAvailabilitySlot> generated =
-				mentorAvailabilitySlotRepository.findByRuleIdAndStartsAtAfter(ruleId, Instant.now());
-		List<MentorAvailabilitySlot> removable = generated.stream()
-				.filter(slot -> !isBooked(slot))
-				.toList();
+		List<MentorAvailabilitySlot> removable = new ArrayList<>();
+		for (MentorAvailabilitySlot slot : mentorAvailabilitySlotRepository.findByRuleIdAndStartsAtAfter(ruleId, Instant.now())) {
+			if (isBooked(slot)) {
+				// A kept slot still pointing at the deleted rule makes Hibernate refuse the flush.
+				slot.setRule(null);
+			} else {
+				removable.add(slot);
+			}
+		}
 		mentorAvailabilitySlotRepository.deleteAll(removable);
 		mentorAvailabilityRuleRepository.delete(rule);
 	}

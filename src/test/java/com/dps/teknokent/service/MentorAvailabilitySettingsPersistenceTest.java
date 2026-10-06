@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -13,14 +14,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
 import com.dps.teknokent.dto.requests.MentorAvailabilityExceptionRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorProfile;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
 import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
+import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 
 import jakarta.persistence.EntityManager;
 
@@ -40,6 +46,9 @@ class MentorAvailabilitySettingsPersistenceTest {
 
 	@Autowired
 	private MentorAvailabilityRuleRepository ruleRepository;
+
+	@Autowired
+	private MentorAvailabilitySlotRepository slotRepository;
 
 	@Autowired
 	private EntityManager entityManager;
@@ -94,6 +103,36 @@ class MentorAvailabilitySettingsPersistenceTest {
 		MentorProfile saved = entityManager.find(MentorProfile.class, mentor.getId());
 		assertThat(saved.getMenteeCapacity()).isEqualTo(3);
 		assertThat(saved.getDefaultMeetingDurationMinutes()).isEqualTo(60);
+	}
+
+	@Test
+	void resavingKeepsABookedSlotAndUnlinksItFromTheReplacedRule() {
+		List<CreateMentorAvailabilityRuleRequest> rules = List.of(new CreateMentorAvailabilityRuleRequest(
+				DayOfWeek.TUESDAY, LocalTime.of(10, 0), LocalTime.of(12, 0), 60));
+		mentorProfileService.updateAvailabilitySettings(mentor.getId(),
+				new UpdateMentorAvailabilitySettingsRequest(rules, List.of(), null, 60, 15));
+		MentorAvailabilitySlot booked = slotRepository
+				.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(mentor.getId(), Instant.now()).getFirst();
+		Organization startup = new Organization();
+		startup.setName("Startup");
+		entityManager.persist(startup);
+		Meeting meeting = new Meeting();
+		meeting.setOrganization(startup);
+		meeting.setMentor(mentor);
+		meeting.setScheduledAt(booked.getStartsAt());
+		meeting.setDurationMinutes(60);
+		meeting.setStatus(MeetingStatus.SCHEDULED);
+		entityManager.persist(meeting);
+		entityManager.flush();
+
+		mentorProfileService.updateAvailabilitySettings(mentor.getId(),
+				new UpdateMentorAvailabilitySettingsRequest(rules, List.of(), null, 60, 15));
+		entityManager.flush();
+		entityManager.clear();
+
+		MentorAvailabilitySlot kept = entityManager.find(MentorAvailabilitySlot.class, booked.getId());
+		assertThat(kept).isNotNull();
+		assertThat(kept.getRule()).isNull();
 	}
 
 	@Test

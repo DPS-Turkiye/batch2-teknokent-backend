@@ -188,8 +188,7 @@ public class MentorshipRequestService {
 			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_MESSAGE, message);
 		}
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
-		if (decision.status() == MentorshipRequestStatus.ACCEPTED
-				|| decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED) {
+		if (decision.status() != MentorshipRequestStatus.DECLINED) {
 			documentRequestService.saveTitlesOnRequest(savedRequest, mentor, decision.requestedDocuments());
 		}
 		if (decision.status() == MentorshipRequestStatus.ACCEPTED) {
