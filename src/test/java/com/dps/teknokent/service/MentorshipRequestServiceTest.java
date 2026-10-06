@@ -334,7 +334,7 @@ class MentorshipRequestServiceTest {
                                 "Teknokent");
                 MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
                                 "Roadmap help", MentorshipRequestStatus.PENDING);
-                String message = "Alternatif öneriyorum.\nproposedSlots:2026-09-12T15:00,2026-09-13T10:30";
+                String message = "Alternatif öneriyorum.\nproposedSlots:2099-09-12T15:00,2099-09-13T10:30";
 
                 when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
                 when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
@@ -349,10 +349,34 @@ class MentorshipRequestServiceTest {
 
                 assertThat(result.status()).isEqualTo(MentorshipRequestStatus.COUNTER_PROPOSED);
                 assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.COUNTER_PROPOSED);
-                assertThat(request.getMentorMessage()).contains("proposedSlots:2026-09-12T15:00");
+                assertThat(request.getMentorMessage()).contains("proposedSlots:2099-09-12T15:00");
                 verify(mentorshipRequestMessageRepository).saveAndFlush(
                                 argThat((MentorshipRequestMessage saved) -> saved
                                                 .getMessageType() == MentorshipRequestMessageType.MENTOR_MESSAGE));
+        }
+
+        @Test
+        void decide_refusesAProposedTimeSoonerThanFourHours() {
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                AppUser requester = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "requester@tekno.com",
+                                "Ayşe Demir", UserRole.MENTEE);
+                AppUser mentor = user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+                Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                                "Teknokent");
+                MentorshipRequest request = mentorshipRequest(requestId, requester, organization, mentor,
+                                "Roadmap help", MentorshipRequestStatus.PENDING);
+                String inAnHour = java.time.LocalDateTime.now(MeetingSlotTimes.APP_ZONE).plusHours(1)
+                                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"));
+                when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+                when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+
+                assertThatThrownBy(() -> mentorshipRequestService.decide(requestId,
+                                new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.COUNTER_PROPOSED,
+                                                "Alternatif.\nproposedSlots:" + inAnHour, null)))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessage(MeetingSlotTimes.TOO_SOON_MESSAGE);
+                assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.PENDING);
         }
 
         @Test
