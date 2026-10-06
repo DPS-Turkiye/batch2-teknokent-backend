@@ -135,6 +135,9 @@ public class MentorshipRequestService {
 		if (mentor.getRole() != UserRole.MENTOR) {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
+		if (!MeetingSlotTimes.allBookable(ProposedSlots.preferred(request.requesterMessage()))) {
+			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
+		}
 
 		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(
 				request,
@@ -178,6 +181,10 @@ public class MentorshipRequestService {
 		if (decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED
 				&& ProposedSlots.parse(decision.message()).isEmpty()) {
 			throw new InvalidRequestException("At least one proposed slot is required");
+		}
+		if (decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED
+				&& !MeetingSlotTimes.allBookable(ProposedSlots.parse(decision.message()))) {
+			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
 		}
 
 		String message = TextUtils.trim(decision.message());
@@ -326,7 +333,8 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Availability is available after the request is accepted");
 		}
 		return mentorAvailabilitySlotRepository
-				.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(request.getMentor().getId(), Instant.now())
+				.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(
+						request.getMentor().getId(), MeetingSlotTimes.earliestBookable())
 				.stream()
 				.filter(slot -> !meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 						request.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED))
@@ -349,8 +357,11 @@ public class MentorshipRequestService {
 
 		MentorAvailabilitySlot slot = mentorAvailabilitySlotRepository.findById(booking.slotId())
 				.orElseThrow(() -> new ResourceNotFoundException("Availability slot not found: " + booking.slotId()));
-		if (!slot.getMentor().getId().equals(request.getMentor().getId()) || !slot.getStartsAt().isAfter(Instant.now())) {
+		if (!slot.getMentor().getId().equals(request.getMentor().getId())) {
 			throw new InvalidRequestException("The selected slot is not available for this request");
+		}
+		if (slot.getStartsAt().isBefore(MeetingSlotTimes.earliestBookable())) {
+			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
 		}
 		if (meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 				request.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED)) {
