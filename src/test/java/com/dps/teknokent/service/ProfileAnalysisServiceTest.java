@@ -338,7 +338,14 @@ class ProfileAnalysisServiceTest {
 
 	@Test
 	void findLatestScopesToAppUserWhenProvided() {
+		UUID organizationId = UUID.randomUUID();
 		UUID appUserId = UUID.randomUUID();
+		Organization organization = new Organization();
+		organization.setId(organizationId);
+		AppUser member = new AppUser();
+		member.setId(appUserId);
+		member.setOrganization(organization);
+		when(appUserRepository.findById(appUserId)).thenReturn(Optional.of(member));
 		ProfileAnalysis analysis = new ProfileAnalysis();
 		analysis.setId(UUID.randomUUID());
 		analysis.setOrganizationId(UUID.randomUUID());
@@ -350,10 +357,29 @@ class ProfileAnalysisServiceTest {
 		when(profileAnalysisRepository.findFirstByAppUserIdOrderByCreatedAtDesc(appUserId))
 				.thenReturn(Optional.of(analysis));
 
-		var response = profileAnalysisService.findLatest(null, appUserId);
+		var response = profileAnalysisService.findLatest(organizationId, appUserId);
 
 		assertThat(response.appUserId()).isEqualTo(appUserId);
 		verify(profileAnalysisRepository, org.mockito.Mockito.never())
 				.findFirstByOrganizationIdAndAppUserIdIsNullOrderByCreatedAtDesc(any());
+	}
+
+	// Otherwise anyone could read another startup's parsed CV by naming its owner.
+	@Test
+	void findLatestRefusesAUserOutsideTheCallersOrganization() {
+		UUID organizationId = UUID.randomUUID();
+		UUID appUserId = UUID.randomUUID();
+		Organization otherOrganization = new Organization();
+		otherOrganization.setId(UUID.randomUUID());
+		AppUser outsider = new AppUser();
+		outsider.setId(appUserId);
+		outsider.setOrganization(otherOrganization);
+		when(appUserRepository.findById(appUserId)).thenReturn(Optional.of(outsider));
+
+		assertThatThrownBy(() -> profileAnalysisService.findLatest(organizationId, appUserId))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not a member");
+		verify(profileAnalysisRepository, org.mockito.Mockito.never())
+				.findFirstByAppUserIdOrderByCreatedAtDesc(any());
 	}
 }
