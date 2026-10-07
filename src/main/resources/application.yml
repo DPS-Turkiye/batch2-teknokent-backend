@@ -61,10 +61,13 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
 
+# The API map is public when on, so it stays off unless a local .env asks for it.
 springdoc:
   api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
     path: /api/v3/api-docs
   swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
     path: /api/docs
 
 ai:
