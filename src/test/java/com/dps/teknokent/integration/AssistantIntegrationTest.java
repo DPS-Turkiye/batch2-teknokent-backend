@@ -259,7 +259,7 @@ class AssistantIntegrationTest {
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail")
-            .value("Failed to reach meeting provider: provider unavailable"));
+            .value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -279,7 +279,7 @@ class AssistantIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.detail").value("invalid api key"));
+        .andExpect(jsonPath("$.detail").value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -295,7 +295,7 @@ class AssistantIntegrationTest {
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail")
-            .value("Failed to reach meeting provider: I/O error on POST request"));
+            .value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -324,7 +324,7 @@ class AssistantIntegrationTest {
 
     mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.detail").value("invalid api key"));
+        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript"));
   }
 
   @Test
@@ -334,7 +334,7 @@ class AssistantIntegrationTest {
 
     mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript: I/O error on GET request"));
+        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript"));
   }
 
   @Test
@@ -394,7 +394,7 @@ class AssistantIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to generate meeting report: ai provider unavailable"));
+        .andExpect(jsonPath("$.detail").value("Failed to generate meeting report"));
   }
 
   @Test

@@ -93,7 +93,7 @@ class AssistantControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail").value("provider conflict"));
+        .andExpect(jsonPath("$.detail").value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -117,7 +117,7 @@ class AssistantControllerTest {
 
     mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript: provider down"));
+        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript"));
   }
 
   @Test
@@ -148,7 +148,7 @@ class AssistantControllerTest {
 
     mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail").value("provider conflict"));
+        .andExpect(jsonPath("$.detail").value("Failed to stop bot"));
   }
 
   @Test
@@ -158,7 +158,7 @@ class AssistantControllerTest {
 
     mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to stop bot: provider down"));
+        .andExpect(jsonPath("$.detail").value("Failed to stop bot"));
 
     verify(meetingService, never()).markBotStopped(any());
   }
