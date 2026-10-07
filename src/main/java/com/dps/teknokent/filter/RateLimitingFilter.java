@@ -59,18 +59,18 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 		return false;
 	}
 
+	/**
+	 * CloudFront appends the address it saw to whatever X-Forwarded-For the caller sent, so only the last
+	 * entry is ours; the first, and X-Real-IP, are whatever the caller chose to write.
+	 */
+	// ponytail: trusts exactly one proxy hop (CloudFront). If 8080 is ever reachable directly, or a load
+	// balancer is added in front, this must key on getRemoteAddr() or skip that many trailing entries.
 	private String getClientIdentifier(HttpServletRequest request) {
-		// Try to get real IP from X-Forwarded-For header first (for proxies)
 		String forwardedFor = request.getHeader("X-Forwarded-For");
-		if (forwardedFor != null && !forwardedFor.isEmpty()) {
-			return forwardedFor.split(",")[0].trim();
+		if (forwardedFor != null && !forwardedFor.isBlank()) {
+			String[] hops = forwardedFor.split(",");
+			return hops[hops.length - 1].trim();
 		}
-
-		String remoteAddr = request.getHeader("X-Real-IP");
-		if (remoteAddr != null && !remoteAddr.isEmpty()) {
-			return remoteAddr;
-		}
-
 		return request.getRemoteAddr();
 	}
 }

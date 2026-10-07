@@ -42,4 +42,10 @@ class HealthIntegrationTest {
 				.andExpect(jsonPath("$.components.redis").value(anyOf(is("UP"), is("DOWN"))));
 	}
 
+	@Test
+	void apiDocsAreOffUnlessEnabled() throws Exception {
+		mockMvc.perform(get("/api/v3/api-docs")).andExpect(status().isNotFound());
+		mockMvc.perform(get("/api/docs")).andExpect(status().isNotFound());
+	}
+
 }

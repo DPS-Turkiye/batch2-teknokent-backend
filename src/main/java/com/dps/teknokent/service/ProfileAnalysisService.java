@@ -223,12 +223,13 @@ public class ProfileAnalysisService {
 	}
 
 	public ProfileAnalysisResponse findLatest(UUID organizationId, UUID appUserId) {
+		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		if (appUserId != null) {
+			requireMemberOfOrganization(appUserId, resolvedOrganizationId);
 			return profileAnalysisRepository.findFirstByAppUserIdOrderByCreatedAtDesc(appUserId)
 					.map(ProfileAnalysisResponse::fromEntity)
 					.orElseThrow(() -> new ResourceNotFoundException("No parsed profile was found."));
 		}
-		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		return profileAnalysisRepository
 				.findFirstByOrganizationIdAndAppUserIdIsNullOrderByCreatedAtDesc(resolvedOrganizationId)
 				.map(ProfileAnalysisResponse::fromEntity)

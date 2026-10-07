@@ -102,7 +102,7 @@ class FirebaseBearerFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
-        filter.doFilter(request("/api/users", "Bearer good"), response, chain);
+        filter.doFilter(request("/api/auth/me", "Bearer good"), response, chain);
 
         assertThat(chain.getRequest()).isNotNull();
         assertThat(user.getFirebaseUid()).isEqualTo("uid-1");
@@ -147,11 +147,66 @@ class FirebaseBearerFilterTest {
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
-        filter.doFilter(request("/api/users", "Bearer good"), response, chain);
+        filter.doFilter(request("/api/auth/me", "Bearer good"), response, chain);
 
         assertThat(chain.getRequest()).isNotNull();
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         assertThat(((AppUserPrincipal) principal).role()).isEqualTo(UserRole.ADMIN);
+    }
+
+    // Endpoints off the browser's own paths trust ids sent in the request, so a token, even an
+    // admin's, must not reach them directly; the proxy sets identity from its session instead.
+    @Test
+    void refusesATokenOutsideTheBrowserPaths() throws Exception {
+        for (UserRole role : new UserRole[] { UserRole.MENTEE, UserRole.ADMIN }) {
+            AppUser user = user(UserAccountStatus.APPROVED);
+            user.setRole(role);
+            signsInAs(user);
+            for (String[] call : new String[][] {
+                    { "GET", "/api/users" },
+                    { "GET", "/api/users/" + OTHER_USER_ID + "/profile" },
+                    { "PATCH", "/api/users/" + OTHER_USER_ID + "/status" },
+                    { "GET", "/api/meetings" },
+                    { "DELETE", "/api/meetings/" + OTHER_USER_ID },
+                    { "GET", "/api/profile-analyses/latest" } }) {
+                MockHttpServletResponse response = new MockHttpServletResponse();
+                MockFilterChain chain = new MockFilterChain();
+
+                filter.doFilter(request(call[0], call[1], "Bearer good"), response, chain);
+
+                assertThat(response.getStatus()).as(role + " " + call[0] + " " + call[1]).isEqualTo(403);
+                assertThat(chain.getRequest()).isNull();
+                SecurityContextHolder.clearContext();
+            }
+        }
+    }
+
+    @Test
+    void letsATokenReachTheBrowserPaths() throws Exception {
+        signsInAs(user(UserAccountStatus.APPROVED));
+        for (String[] call : new String[][] {
+                { "GET", "/api/auth/me" },
+                { "GET", "/api/documents" },
+                { "POST", "/api/documents" },
+                { "POST", "/api/profile-analyses" },
+                { "POST", "/api/profile-analyses/preview" },
+                { "GET", "/api/notifications" },
+                { "POST", "/api/notifications/read-all" },
+                { "GET", "/api/users/" + USER_ID + "/profile" },
+                { "PUT", "/api/users/" + USER_ID + "/profile" } }) {
+            MockFilterChain chain = new MockFilterChain();
+
+            filter.doFilter(request(call[0], call[1], "Bearer good"), new MockHttpServletResponse(), chain);
+
+            assertThat(chain.getRequest()).as(call[0] + " " + call[1]).isNotNull();
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    private void signsInAs(AppUser user) {
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", user.getEmail())));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
     }
 
     @Test

@@ -64,6 +64,7 @@ public class AppUserController {
 	public AccountDecisionResponse decideStatus(
 			@PathVariable UUID id,
 			@Valid @RequestBody DecideAccountStatusRequest request) {
-		return appUserService.decideStatus(id, request);
+		return appUserService.decideStatus(id,
+				new DecideAccountStatusRequest(CurrentActor.resolve(request.actorId()), request.status()));
 	}
 }

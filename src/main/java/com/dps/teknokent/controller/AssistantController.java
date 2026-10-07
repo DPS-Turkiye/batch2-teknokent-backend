@@ -21,7 +21,9 @@ import com.dps.teknokent.service.MeetingService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class AssistantController {
@@ -36,12 +38,8 @@ public class AssistantController {
       return ResponseEntity.status(HttpStatus.CREATED).body(response);
     } catch (IllegalArgumentException ex) {
       return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
-    } catch (RestClientResponseException ex) {
-      return ResponseEntity.status(ex.getStatusCode())
-          .body(new ErrorResponse(ex.getResponseBodyAsString()));
     } catch (Exception ex) {
-      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-          .body(new ErrorResponse("Failed to reach meeting provider: " + ex.getMessage()));
+      return providerFailure("Failed to reach meeting provider", ex);
     }
   }
 
@@ -52,12 +50,8 @@ public class AssistantController {
     try {
       return ResponseEntity.ok(
           assistantService.getTranscript(platform, nativeMeetingId));
-    } catch (RestClientResponseException ex) {
-      return ResponseEntity.status(ex.getStatusCode())
-          .body(new ErrorResponse(ex.getResponseBodyAsString()));
     } catch (Exception ex) {
-      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-          .body(new ErrorResponse("Failed to fetch transcript: " + ex.getMessage()));
+      return providerFailure("Failed to fetch transcript", ex);
     }
   }
 
@@ -69,12 +63,8 @@ public class AssistantController {
       assistantService.stopBot(platform, nativeMeetingId);
       meetingService.markBotStopped(nativeMeetingId);
       return ResponseEntity.noContent().build();
-    } catch (RestClientResponseException ex) {
-      return ResponseEntity.status(ex.getStatusCode())
-          .body(new ErrorResponse(ex.getResponseBodyAsString()));
     } catch (Exception ex) {
-      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-          .body(new ErrorResponse("Failed to stop bot: " + ex.getMessage()));
+      return providerFailure("Failed to stop bot", ex);
     }
   }
 
@@ -89,12 +79,21 @@ public class AssistantController {
       return ResponseEntity.ok(response);
     } catch (InvalidRequestException ex) {
       return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
-    } catch (RestClientResponseException ex) {
-      return ResponseEntity.status(ex.getStatusCode())
-          .body(new ErrorResponse(ex.getResponseBodyAsString()));
     } catch (Exception ex) {
-      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-          .body(new ErrorResponse("Failed to generate meeting report: " + ex.getMessage()));
+      return providerFailure("Failed to generate meeting report", ex);
     }
+  }
+
+  /**
+   * Provider bodies and exception messages carry internal hosts and the provider's own wording, so
+   * the caller gets the status and a fixed message and the detail stays in the log.
+   */
+  private static ResponseEntity<ErrorResponse> providerFailure(String message, Exception ex) {
+    if (ex instanceof RestClientResponseException response) {
+      log.warn("{}: provider answered {} {}", message, response.getStatusCode(), response.getResponseBodyAsString());
+      return ResponseEntity.status(response.getStatusCode()).body(new ErrorResponse(message));
+    }
+    log.error(message, ex);
+    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new ErrorResponse(message));
   }
 }

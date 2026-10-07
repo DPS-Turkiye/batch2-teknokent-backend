@@ -26,6 +26,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.MeetingProviderClient;
 import com.dps.teknokent.service.MeetingReportService;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -66,7 +67,7 @@ class AssistantIntegrationTest {
             anyString()))
         .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isCreated())
@@ -77,7 +78,7 @@ class AssistantIntegrationTest {
 
   @Test
   void addBotEndToEndReturnsBadRequestForUnsupportedUrl() throws Exception {
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://zoom.us/j/1\"}"))
         .andExpect(status().isBadRequest())
@@ -86,7 +87,7 @@ class AssistantIntegrationTest {
 
     @Test
     void addBotEndToEndRejectsBlankMeetingUrl() throws Exception {
-        mockMvc.perform(post("/api/assistant/bots")
+        mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"meetingUrl\":\"   \"}"))
                 .andExpect(status().isBadRequest())
@@ -96,7 +97,7 @@ class AssistantIntegrationTest {
 
     @Test
     void addBotEndToEndRejectsNullMeetingUrl() throws Exception {
-        mockMvc.perform(post("/api/assistant/bots")
+        mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"meetingUrl\":null}"))
                 .andExpect(status().isBadRequest())
@@ -106,7 +107,7 @@ class AssistantIntegrationTest {
 
     @Test
     void addBotEndToEndRejectsUnexpectedMeetingUrlType() throws Exception {
-        mockMvc.perform(post("/api/assistant/bots")
+        mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"meetingUrl\":{\"value\":\"https://meet.google.com/abc-defg-hij\"}}"))
                 .andExpect(status().isBadRequest())
@@ -115,7 +116,7 @@ class AssistantIntegrationTest {
 
     @Test
     void addBotEndToEndRejectsSqlInjectionLikeInputWithoutLeakingSqlDetails() throws Exception {
-        mockMvc.perform(post("/api/assistant/bots")
+        mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"meetingUrl\":\"https://zoom.us/j/%27OR%201%3D1--\"}"))
                 .andExpect(status().isBadRequest())
@@ -127,7 +128,7 @@ class AssistantIntegrationTest {
 
     @Test
     void addBotEndToEndRejectsDoubleQuoteSqlLikeInputWithoutLeakingSqlDetails() throws Exception {
-        mockMvc.perform(post("/api/assistant/bots")
+        mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"meetingUrl\":\"https://zoom.us/j/%22OR%20%22a%22=%22a%22--\"}"))
                 .andExpect(status().isBadRequest())
@@ -147,7 +148,7 @@ class AssistantIntegrationTest {
                         "invalid native meeting id".getBytes(StandardCharsets.UTF_8),
                         StandardCharsets.UTF_8));
 
-        mockMvc.perform(get("/api/assistant/transcripts/google_meet/%27OR%201%3D1--"))
+        mockMvc.perform(get("/api/assistant/transcripts/google_meet/%27OR%201%3D1--").with(user("test-user")))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(not(containsString("SQLException"))))
                 .andExpect(content().string(not(containsString("syntax error"))))
@@ -159,7 +160,7 @@ class AssistantIntegrationTest {
             when(meetingProviderClient.getTranscript("google_meet", "abc-defg-hij"))
                 .thenReturn(new ProviderTranscriptResponse(List.of()));
 
-            mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij?nativeMeetingId=manipulated-id"))
+            mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij?nativeMeetingId=manipulated-id").with(user("test-user")))
                 .andExpect(status().isOk());
 
             verify(meetingProviderClient).getTranscript("google_meet", "abc-defg-hij");
@@ -175,7 +176,7 @@ class AssistantIntegrationTest {
                     "invalid native meeting id".getBytes(StandardCharsets.UTF_8),
                     StandardCharsets.UTF_8));
 
-            mockMvc.perform(get("/api/assistant/transcripts/google_meet/%2e%2e%2fadmin"))
+            mockMvc.perform(get("/api/assistant/transcripts/google_meet/%2e%2e%2fadmin").with(user("test-user")))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(not(containsString("SQLException"))))
                 .andExpect(content().string(not(containsString("syntax error"))))
@@ -192,7 +193,7 @@ class AssistantIntegrationTest {
             StandardCharsets.UTF_8))
                 .when(meetingProviderClient).stopBot(anyString(), anyString());
 
-        mockMvc.perform(delete("/api/assistant/bots/google_meet/%27OR%201%3D1--"))
+        mockMvc.perform(delete("/api/assistant/bots/google_meet/%27OR%201%3D1--").with(user("test-user")))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(not(containsString("SQLException"))))
                 .andExpect(content().string(not(containsString("syntax error"))))
@@ -209,7 +210,7 @@ class AssistantIntegrationTest {
                         "invalid native meeting id".getBytes(StandardCharsets.UTF_8),
                         StandardCharsets.UTF_8));
 
-        mockMvc.perform(post("/api/assistant/bots/google_meet/%27OR%201%3D1--/report")
+        mockMvc.perform(post("/api/assistant/bots/google_meet/%27OR%201%3D1--/report").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -220,7 +221,7 @@ class AssistantIntegrationTest {
 
     @Test
     void generateMeetingReportRejectsMalformedPayload() throws Exception {
-        mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report")
+        mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"model\":}"))
                 .andExpect(status().isBadRequest())
@@ -233,6 +234,18 @@ class AssistantIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void assistantEndpointsRejectAnonymousCallers() throws Exception {
+        mockMvc.perform(post("/api/assistant/bots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
+                .andExpect(status().isUnauthorized());
+    }
+
   @Test
   void addBotEndToEndReturnsBadGatewayWhenProviderFails() throws Exception {
     when(meetingProviderClient.sendBot(
@@ -241,12 +254,12 @@ class AssistantIntegrationTest {
             anyString()))
         .thenThrow(new RuntimeException("provider unavailable"));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail")
-            .value("Failed to reach meeting provider: provider unavailable"));
+            .value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -262,11 +275,11 @@ class AssistantIntegrationTest {
             "invalid api key".getBytes(StandardCharsets.UTF_8),
             StandardCharsets.UTF_8));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.detail").value("invalid api key"));
+        .andExpect(jsonPath("$.detail").value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -277,12 +290,12 @@ class AssistantIntegrationTest {
             anyString()))
         .thenThrow(new ResourceAccessException("I/O error on POST request"));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail")
-            .value("Failed to reach meeting provider: I/O error on POST request"));
+            .value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -292,7 +305,7 @@ class AssistantIntegrationTest {
             new ProviderTranscriptSegment("s1", "Ayşe", "Merhaba", 65.0)
         )));
 
-    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij"))
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.segments[0].speaker").value("Ayşe"))
         .andExpect(jsonPath("$.segments[0].text").value("Merhaba"))
@@ -309,9 +322,9 @@ class AssistantIntegrationTest {
             "invalid api key".getBytes(StandardCharsets.UTF_8),
             StandardCharsets.UTF_8));
 
-    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij"))
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.detail").value("invalid api key"));
+        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript"));
   }
 
   @Test
@@ -319,9 +332,9 @@ class AssistantIntegrationTest {
     when(meetingProviderClient.getTranscript("google_meet", "abc-defg-hij"))
         .thenThrow(new ResourceAccessException("I/O error on GET request"));
 
-    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij"))
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript: I/O error on GET request"));
+        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript"));
   }
 
   @Test
@@ -343,7 +356,7 @@ class AssistantIntegrationTest {
             List.of("Backlog netlestir"),
             "gpt-5.4"));
 
-    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report")
+    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isOk())
@@ -361,7 +374,7 @@ class AssistantIntegrationTest {
     when(meetingReportService.generate(anyList(), eq(null)))
         .thenThrow(new InvalidRequestException("Transcript is empty; cannot generate a meeting report."));
 
-    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report")
+    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isBadRequest())
@@ -377,11 +390,11 @@ class AssistantIntegrationTest {
     when(meetingReportService.generate(anyList(), eq(null)))
         .thenThrow(new RuntimeException("ai provider unavailable"));
 
-    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report")
+    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to generate meeting report: ai provider unavailable"));
+        .andExpect(jsonPath("$.detail").value("Failed to generate meeting report"));
   }
 
   @Test
@@ -391,7 +404,7 @@ class AssistantIntegrationTest {
 
     // Simulate exhausting rate limit by making 101 requests (limit is 100/minute)
     for (int i = 0; i < 100; i++) {
-      mockMvc.perform(post("/api/assistant/bots")
+      mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
               .contentType(MediaType.APPLICATION_JSON)
               .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
               .header("X-Forwarded-For", "192.168.1.1"))
@@ -399,7 +412,7 @@ class AssistantIntegrationTest {
     }
 
     // 101st request should be rate limited
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
             .header("X-Forwarded-For", "192.168.1.1"))
@@ -411,13 +424,34 @@ class AssistantIntegrationTest {
         });
   }
 
+  // A caller can write anything at the front of X-Forwarded-For; CloudFront appends the real address.
+  @Test
+  void rateLimitIgnoresSpoofedForwardedForEntries() throws Exception {
+    when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
+        .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
+
+    for (int i = 0; i < 100; i++) {
+      mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+              .header("X-Forwarded-For", "10.9.0." + i + ", 203.0.113.7"))
+          .andExpect(status().isCreated());
+    }
+
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+            .header("X-Forwarded-For", "10.9.1.1, 203.0.113.7"))
+        .andExpect(status().isTooManyRequests());
+  }
+
   @Test
   void differentIpsHaveSeparateRateLimits() throws Exception {
     when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
         .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
 
     // IP 1 - single request should succeed
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
             .header("X-Forwarded-For", "10.0.0.1"))
@@ -425,7 +459,7 @@ class AssistantIntegrationTest {
 
     // IP 2 - single request should also succeed (different bucket)
     // Because they're from different IPs, they should have separate rate limit buckets
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
             .header("X-Forwarded-For", "10.0.0.2"))
@@ -437,7 +471,7 @@ class AssistantIntegrationTest {
     when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
         .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
             .header("X-Forwarded-For", "10.0.0.100"))

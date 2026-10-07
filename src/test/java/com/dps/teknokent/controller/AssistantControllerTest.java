@@ -22,6 +22,7 @@ import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.service.AssistantService;
 import com.dps.teknokent.service.MeetingService;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -56,7 +57,7 @@ class AssistantControllerTest {
             "Mentor Bot"
         ));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isCreated())
@@ -70,7 +71,7 @@ class AssistantControllerTest {
     when(assistantService.addBot(any(AddBotRequest.class)))
         .thenThrow(new IllegalArgumentException("Unsupported meeting link"));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://zoom.us/j/1\"}"))
         .andExpect(status().isBadRequest())
@@ -88,11 +89,11 @@ class AssistantControllerTest {
             StandardCharsets.UTF_8
         ));
 
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail").value("provider conflict"));
+        .andExpect(jsonPath("$.detail").value("Failed to reach meeting provider"));
   }
 
   @Test
@@ -102,7 +103,7 @@ class AssistantControllerTest {
             new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "01:05")
         )));
 
-    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij"))
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.segments[0].speaker").value("Ayşe"))
         .andExpect(jsonPath("$.segments[0].text").value("Merhaba"))
@@ -114,14 +115,14 @@ class AssistantControllerTest {
     when(assistantService.getTranscript("google_meet", "abc-defg-hij"))
         .thenThrow(new RuntimeException("provider down"));
 
-    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij"))
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript: provider down"));
+        .andExpect(jsonPath("$.detail").value("Failed to fetch transcript"));
   }
 
   @Test
   void addBotReturnsBadRequestOnBlankMeetingUrl() throws Exception {
-    mockMvc.perform(post("/api/assistant/bots")
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"\"}"))
         .andExpect(status().isBadRequest());
@@ -129,7 +130,7 @@ class AssistantControllerTest {
 
   @Test
   void stopBotReturnsNoContentAndEndsTheMeetingInTheDatabase() throws Exception {
-    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isNoContent());
 
     verify(meetingService).markBotStopped("abc-defg-hij");
@@ -145,9 +146,9 @@ class AssistantControllerTest {
         StandardCharsets.UTF_8
     )).when(assistantService).stopBot("google_meet", "abc-defg-hij");
 
-    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail").value("provider conflict"));
+        .andExpect(jsonPath("$.detail").value("Failed to stop bot"));
   }
 
   @Test
@@ -155,9 +156,9 @@ class AssistantControllerTest {
     org.mockito.Mockito.doThrow(new RuntimeException("provider down"))
         .when(assistantService).stopBot("google_meet", "abc-defg-hij");
 
-    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij"))
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
         .andExpect(status().isBadGateway())
-        .andExpect(jsonPath("$.detail").value("Failed to stop bot: provider down"));
+        .andExpect(jsonPath("$.detail").value("Failed to stop bot"));
 
     verify(meetingService, never()).markBotStopped(any());
   }
