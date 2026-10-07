@@ -33,7 +33,9 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final String MENTOR_PROFILE_PATH_PREFIX = "/api/mentors/";
 	private static final String AVAILABILITY_SETTINGS_SUFFIX = "/availability-settings";
 	private static final String USER_PROFILE_PATH_PREFIX = "/api/users/";
+	private static final String PROFILE_PARSE_PATH = "/api/profile-analyses";
 	private static final String PROFILE_PARSE_PREVIEW_PATH = "/api/profile-analyses/preview";
+	private static final String NOTIFICATIONS_PATH = "/api/notifications";
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
@@ -90,6 +92,10 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 			write(response, HttpServletResponse.SC_FORBIDDEN, "This account is awaiting approval");
 			return;
 		}
+		if (!isBrowserPath(request, user)) {
+			write(response, HttpServletResponse.SC_FORBIDDEN, "This endpoint is only reachable through the app");
+			return;
+		}
 		if (user.getFirebaseUid() == null) {
 			user.setFirebaseUid(identity.get().uid());
 			appUserRepository.save(user);
@@ -133,6 +139,24 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		String method = request.getMethod();
 		return ("PUT".equalsIgnoreCase(method) || "GET".equalsIgnoreCase(method))
 				&& (USER_PROFILE_PATH_PREFIX + user.getId() + "/profile").equals(request.getRequestURI());
+	}
+
+	/**
+	 * The paths the browser calls with its own token, directly or through a proxy route that forwards it.
+	 * Everything else is reached through the Next.js proxy on the service credentials, with the caller's
+	 * identity taken from its session; many of those endpoints trust ids sent in the request, so a token
+	 * that reached them directly could act as anyone.
+	 */
+	private static boolean isBrowserPath(HttpServletRequest request, AppUser user) {
+		String uri = request.getRequestURI();
+		return STATUS_PATH.equals(uri)
+				|| isDocumentAccess(request)
+				|| isProfileParsePreview(request)
+				|| ("POST".equalsIgnoreCase(request.getMethod()) && PROFILE_PARSE_PATH.equals(uri))
+				|| NOTIFICATIONS_PATH.equals(uri)
+				|| uri.startsWith(NOTIFICATIONS_PATH + "/")
+				|| isOwnMentorProfileUpdate(request, user)
+				|| isOwnUserProfileUpdate(request, user);
 	}
 
 	/**

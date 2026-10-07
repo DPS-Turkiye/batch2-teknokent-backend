@@ -1,9 +1,12 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -18,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -27,6 +31,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
 
 @WebMvcTest(AppUserController.class)
@@ -174,5 +179,29 @@ class AppUserControllerTest {
                 .andExpect(jsonPath("$.user.id").value(userId.toString()))
                 .andExpect(jsonPath("$.user.status").value("APPROVED"))
                 .andExpect(jsonPath("$.inviteCode").value("ABCD2345"));
+    }
+
+    // A signed-in caller is the actor, whatever actorId the body names, so a
+    // non-admin cannot decide accounts by quoting an admin's id.
+    @Test
+    void decidesStatusAsTheSignedInCallerNotTheBodyActor() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        UUID callerId = UUID.fromString("00000000-0000-0000-0000-000000000822");
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UsernamePasswordAuthenticationToken caller = new UsernamePasswordAuthenticationToken(
+                new AppUserPrincipal(callerId, "mentee@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid"),
+                null, List.of());
+
+        mockMvc.perform(patch("/api/users/{id}/status", userId)
+                .with(authentication(caller))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                          "actorId": "%s",
+                          "status": "APPROVED"
+                        }
+                        """.formatted(adminId)));
+
+        verify(appUserService).decideStatus(eq(userId), argThat(request -> callerId.equals(request.actorId())));
     }
 }
