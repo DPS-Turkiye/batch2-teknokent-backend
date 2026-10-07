@@ -424,6 +424,27 @@ class AssistantIntegrationTest {
         });
   }
 
+  // A caller can write anything at the front of X-Forwarded-For; CloudFront appends the real address.
+  @Test
+  void rateLimitIgnoresSpoofedForwardedForEntries() throws Exception {
+    when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
+        .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
+
+    for (int i = 0; i < 100; i++) {
+      mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+              .header("X-Forwarded-For", "10.9.0." + i + ", 203.0.113.7"))
+          .andExpect(status().isCreated());
+    }
+
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
+            .header("X-Forwarded-For", "10.9.1.1, 203.0.113.7"))
+        .andExpect(status().isTooManyRequests());
+  }
+
   @Test
   void differentIpsHaveSeparateRateLimits() throws Exception {
     when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
