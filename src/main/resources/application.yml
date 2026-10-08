@@ -105,13 +105,13 @@ app:
   realtime:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}
-    allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://menton.com.tr,https://www.menton.com.tr,https://*.amplifyapp.com}
+    allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://menton.com.tr,https://www.menton.com.tr}
     document-ttl-hours: ${REALTIME_DOCUMENT_TTL_HOURS:12}
     seed-lock-seconds: ${REALTIME_SEED_LOCK_SECONDS:30}
   documents:
     # Same trusted frontend origins as app.realtime.allowed-origins by default.
-    # Patterns (https://*.amplifyapp.com) are supported via allowedOriginPatterns.
-    allowed-origins: ${DOCUMENTS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://menton.com.tr,https://www.menton.com.tr,https://*.amplifyapp.com}
+    # Exact origins only: a pattern such as https://*.amplifyapp.com trusts every Amplify app on the internet.
+    allowed-origins: ${DOCUMENTS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://menton.com.tr,https://www.menton.com.tr}
 
 profile-parsing:
   ocr:
