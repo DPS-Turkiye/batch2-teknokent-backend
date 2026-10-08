@@ -28,6 +28,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 			"/api/assistant/",
 	};
 
+	/** Exposed to browsers in SecurityConfig, so the CV upload can say how long to wait. */
+	public static final String RETRY_AFTER_HEADER = "X-Rate-Limit-Retry-After-Seconds";
+
 	private static final String CV_PARSE_PATH = "/api/profile-analyses";
 	private static final String CV_PREVIEW_PATH = CV_PARSE_PATH + "/preview";
 
@@ -58,7 +61,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 			filterChain.doFilter(request, response);
 		} else {
 			long secondsToWait = bucket.getSecondsToWait();
-			response.addHeader("X-Rate-Limit-Retry-After-Seconds", String.valueOf(secondsToWait));
+			response.addHeader(RETRY_AFTER_HEADER, String.valueOf(secondsToWait));
 			response.sendError(HttpStatus.TOO_MANY_REQUESTS.value(), 
 					"Too many requests. Please retry after " + secondsToWait + " seconds.");
 		}

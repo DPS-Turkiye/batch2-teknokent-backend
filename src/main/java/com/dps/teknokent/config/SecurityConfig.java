@@ -18,6 +18,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import com.dps.teknokent.filter.RateLimitingFilter;
 import com.dps.teknokent.security.FirebaseBearerFilter;
 
 @Configuration
@@ -72,6 +73,7 @@ public class SecurityConfig {
 			configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 			configuration.setAllowedHeaders(List.of("*"));
 			configuration.setAllowCredentials(true);
+			configuration.setExposedHeaders(List.of(RateLimitingFilter.RETRY_AFTER_HEADER));
 			source.registerCorsConfiguration("/**", configuration);
 		}
 
@@ -80,6 +82,7 @@ public class SecurityConfig {
 		documentsConfig.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 		documentsConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 		documentsConfig.setAllowCredentials(false);
+		documentsConfig.setExposedHeaders(List.of(RateLimitingFilter.RETRY_AFTER_HEADER));
 		for (String path : BROWSER_UPLOAD_PATHS) {
 			source.registerCorsConfiguration(path, documentsConfig);
 		}

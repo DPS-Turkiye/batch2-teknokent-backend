@@ -1,5 +1,6 @@
 package com.dps.teknokent.filter;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -60,9 +61,12 @@ class CvParseRateLimitTest {
 		Authentication founder = signedIn();
 		spendCvBudget(founder);
 
-		mockMvc.perform(preview().with(authentication(founder)))
+		mockMvc.perform(preview().with(authentication(founder)).header("Origin", "http://localhost:3000"))
 				.andExpect(status().isTooManyRequests())
-				.andExpect(header().exists("X-Rate-Limit-Retry-After-Seconds"));
+				.andExpect(header().exists("X-Rate-Limit-Retry-After-Seconds"))
+				// The upload runs in the browser, which can only read the wait time if CORS exposes it.
+				.andExpect(header().string("Access-Control-Expose-Headers",
+						containsString("X-Rate-Limit-Retry-After-Seconds")));
 
 		// Same office address, different account: its own budget.
 		mockMvc.perform(preview().with(authentication(signedIn()))).andExpect(status().isOk());
