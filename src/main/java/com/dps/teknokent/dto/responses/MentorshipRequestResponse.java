@@ -34,7 +34,8 @@ public record MentorshipRequestResponse(
 		RecommendationSnapshotResponse recommendationSnapshot,
 		Integer plannedSessionCount,
 		Instant mentorReadAt,
-		Instant menteeReadAt) {
+		Instant menteeReadAt,
+		String expectedOutcome) {
 
 	public static MentorshipRequestResponse fromEntity(
 			MentorshipRequest request,
@@ -64,6 +65,7 @@ public record MentorshipRequestResponse(
 				recommendationSnapshot,
 				request.getPlannedSessionCount(),
 				request.getMentorReadAt(),
-				request.getMenteeReadAt());
+				request.getMenteeReadAt(),
+				request.getExpectedOutcome());
 	}
 }

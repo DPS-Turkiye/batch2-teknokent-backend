@@ -86,7 +86,7 @@ class MentorshipRequestControllerTest {
                 null,
                 null,
                 null,
-                null
+                null, null
         )));
 
         mockMvc.perform(get("/api/mentorship-requests")
@@ -129,7 +129,7 @@ class MentorshipRequestControllerTest {
                 null,
                 null,
                 null,
-                null
+                null, null
         ));
 
         mockMvc.perform(post("/api/mentorship-requests")
@@ -184,7 +184,7 @@ class MentorshipRequestControllerTest {
                 null,
                 null,
                 null,
-                null
+                null, null
         ));
 
         mockMvc.perform(patch("/api/mentorship-requests/{id}/decision", requestId)
@@ -232,7 +232,7 @@ class MentorshipRequestControllerTest {
                 null,
                 null,
                 null,
-                null
+                null, null
         ));
 
         mockMvc.perform(post("/api/mentorship-requests/{id}/messages", requestId)
@@ -279,7 +279,7 @@ class MentorshipRequestControllerTest {
                         null,
                         6,
                         null,
-                        null
+                        null, null
                 ));
 
         mockMvc.perform(patch("/api/mentorship-requests/{id}/planned-sessions", requestId)
