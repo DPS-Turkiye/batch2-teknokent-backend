@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -32,6 +33,7 @@ import com.dps.teknokent.dto.responses.StartupStageResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.StartupRound;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -39,8 +41,12 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -58,6 +64,9 @@ public class StartupProcessService {
 
 	private final DomainLookupService domainLookupService;
 	private final OrganizationRepository organizationRepository;
+	private final ProgramRepository programRepository;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
+	private final ProgramStartupRepository programStartupRepository;
 	private final StartupRoundRepository startupRoundRepository;
 	private final ActionItemRepository actionItemRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
@@ -74,7 +83,7 @@ public class StartupProcessService {
 	@Transactional
 	public StartupProcessResponse updateStage(UUID organizationId, UpdateStartupStageRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
-		requireEditor(organization, request.actorId());
+		requireStageEditor(organization, request.actorId());
 
 		organization.setCurrentStage(request.stage());
 		return describe(organizationRepository.save(organization), today());
@@ -216,6 +225,25 @@ public class StartupProcessService {
 					.forEach(document -> filenames.put(document.getId(), document.getOriginalFilename()));
 		}
 		return filenames;
+	}
+
+	// Founders and mentors see the stage on Süreç but do not set it.
+	private void requireStageEditor(Organization organization, UUID actorId) {
+		AppUser actor = domainLookupService.requireUser(actorId);
+		if (actor.getRole() == UserRole.ADMIN) {
+			return;
+		}
+		boolean coordinatesIt = actor.getRole() == UserRole.COORDINATOR
+				&& programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(organization.getId()).stream()
+						.map(ProgramStartup::getProgramId)
+						.map(programRepository::findById)
+						.flatMap(Optional::stream)
+						.anyMatch(program -> ProgramCoordination.coordinates(
+								program, actor.getId(), programCoordinatorRepository));
+		if (!coordinatesIt) {
+			throw new InvalidRequestException(
+					"Only an admin or a coordinator of this startup's program can change its stage");
+		}
 	}
 
 	// Founder, admin, coordinator, or a mentor this startup has an accepted mentorship with.

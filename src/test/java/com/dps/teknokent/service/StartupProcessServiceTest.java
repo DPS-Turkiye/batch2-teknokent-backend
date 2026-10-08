@@ -37,6 +37,8 @@ import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.StartupRound;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -44,6 +46,9 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 
@@ -55,6 +60,8 @@ class StartupProcessServiceTest {
     private static final UUID MENTOR_ID = UUID.fromString("20000000-0000-0000-0000-000000000002");
     private static final UUID COORDINATOR_ID = UUID.fromString("20000000-0000-0000-0000-000000000003");
     private static final UUID TEAMMATE_ID = UUID.fromString("20000000-0000-0000-0000-000000000004");
+    private static final UUID ADMIN_ID = UUID.fromString("20000000-0000-0000-0000-000000000005");
+    private static final UUID PROGRAM_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
     private static final LocalDate TODAY = LocalDate.of(2026, 8, 15);
 
     @Mock
@@ -77,6 +84,15 @@ class StartupProcessServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private ProgramRepository programRepository;
+
+    @Mock
+    private ProgramCoordinatorRepository programCoordinatorRepository;
+
+    @Mock
+    private ProgramStartupRepository programStartupRepository;
 
     @InjectMocks
     private StartupProcessService startupProcessService;
@@ -149,57 +165,26 @@ class StartupProcessServiceTest {
     }
 
     @Test
-    void updateStage_letsTheFounderMoveTheStartupOn() {
+    void updateStage_letsAnAdmin() {
         Organization organization = startup();
         when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
-        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN, null));
         when(organizationRepository.save(any(Organization.class))).thenAnswer(call -> call.getArgument(0));
 
         var process = startupProcessService.updateStage(ORG_ID,
-                new UpdateStartupStageRequest(FOUNDER_ID, StartupStage.BUSINESS_MODEL));
+                new UpdateStartupStageRequest(ADMIN_ID, StartupStage.BUSINESS_MODEL));
 
         assertThat(process.currentStage()).isEqualTo(StartupStage.BUSINESS_MODEL);
         assertThat(organization.getCurrentStage()).isEqualTo(StartupStage.BUSINESS_MODEL);
     }
 
     @Test
-    void updateStage_letsAMentorWithAnAcceptedMentorship() {
-        Organization organization = startup();
-        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
-        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(user(MENTOR_ID, UserRole.MENTOR, null));
-        when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
-                MENTOR_ID, ORG_ID, MentorshipRequestStatus.ACCEPTED))
-                .thenReturn(Optional.of(new MentorshipRequest()));
-        when(organizationRepository.save(any(Organization.class))).thenAnswer(call -> call.getArgument(0));
-
-        var process = startupProcessService.updateStage(ORG_ID,
-                new UpdateStartupStageRequest(MENTOR_ID, StartupStage.MARKET));
-
-        assertThat(process.currentStage()).isEqualTo(StartupStage.MARKET);
-    }
-
-    @Test
-    void updateStage_rejectsAMentorWithoutAnAcceptedMentorship() {
-        Organization organization = startup();
-        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
-        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(user(MENTOR_ID, UserRole.MENTOR, null));
-        when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
-                MENTOR_ID, ORG_ID, MentorshipRequestStatus.ACCEPTED))
-                .thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> startupProcessService.updateStage(ORG_ID,
-                new UpdateStartupStageRequest(MENTOR_ID, StartupStage.MARKET)))
-                .isInstanceOf(InvalidRequestException.class);
-
-        verify(organizationRepository, never()).save(any(Organization.class));
-    }
-
-    @Test
-    void updateStage_letsACoordinator() {
+    void updateStage_letsACoordinatorOfTheStartupsProgram() {
         Organization organization = startup();
         when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
         when(domainLookupService.requireUser(COORDINATOR_ID))
                 .thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR, null));
+        programWithCoordinator(true);
         when(organizationRepository.save(any(Organization.class))).thenAnswer(call -> call.getArgument(0));
 
         var process = startupProcessService.updateStage(ORG_ID,
@@ -209,15 +194,49 @@ class StartupProcessServiceTest {
     }
 
     @Test
-    void updateStage_rejectsATeammateWhoIsNotTheFounder() {
+    void updateStage_rejectsACoordinatorOfAnotherProgram() {
         Organization organization = startup();
         when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(COORDINATOR_ID))
+                .thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR, null));
+        programWithCoordinator(false);
+
+        assertThatThrownBy(() -> startupProcessService.updateStage(ORG_ID,
+                new UpdateStartupStageRequest(COORDINATOR_ID, StartupStage.PITCH)))
+                .isInstanceOf(InvalidRequestException.class);
+
+        verify(organizationRepository, never()).save(any(Organization.class));
+    }
+
+    @Test
+    void updateStage_leavesTheFounderAndMentorsReadOnly() {
+        Organization organization = startup();
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(user(MENTOR_ID, UserRole.MENTOR, null));
         when(domainLookupService.requireUser(TEAMMATE_ID))
                 .thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
 
-        assertThatThrownBy(() -> startupProcessService.updateStage(ORG_ID,
-                new UpdateStartupStageRequest(TEAMMATE_ID, StartupStage.PITCH)))
-                .isInstanceOf(InvalidRequestException.class);
+        for (UUID actorId : List.of(FOUNDER_ID, MENTOR_ID, TEAMMATE_ID)) {
+            assertThatThrownBy(() -> startupProcessService.updateStage(ORG_ID,
+                    new UpdateStartupStageRequest(actorId, StartupStage.MARKET)))
+                    .isInstanceOf(InvalidRequestException.class);
+        }
+
+        verify(organizationRepository, never()).save(any(Organization.class));
+    }
+
+    private void programWithCoordinator(boolean coordinates) {
+        Program program = new Program();
+        program.setId(PROGRAM_ID);
+        program.setCreatedBy(UUID.randomUUID());
+        ProgramStartup link = new ProgramStartup();
+        link.setProgramId(PROGRAM_ID);
+        link.setOrganizationId(ORG_ID);
+        when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID)).thenReturn(List.of(link));
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+        when(programCoordinatorRepository.existsByProgramIdAndUserId(PROGRAM_ID, COORDINATOR_ID))
+                .thenReturn(coordinates);
     }
 
     @Test
