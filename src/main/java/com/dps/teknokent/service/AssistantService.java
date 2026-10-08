@@ -54,16 +54,29 @@ public class AssistantService {
     List<ProviderTranscriptSegment> raw =
         body != null && body.segments() != null ? body.segments() : List.of();
 
+    double origin = transcriptOrigin(raw);
     List<TranscriptSegmentResponse> segments = raw.stream()
         .map(seg -> new TranscriptSegmentResponse(
             seg.segmentId() != null ? seg.segmentId() : "",
             seg.speaker() != null ? seg.speaker() : "Speaker",
             seg.text() != null ? seg.text() : "",
-            TimeFormatUtils.formatTime(seg.start())
+            TimeFormatUtils.formatTime(seg.start() == null ? null : seg.start() - origin)
         ))
         .toList();
 
     return new TranscriptResponse(segments);
+  }
+
+  // Vexa 0.12 sends each start as Unix seconds; older versions sent seconds since the meeting began.
+  private static final double EPOCH_SECONDS_FLOOR = 1_000_000_000d;
+
+  /** Absolute starts count from the first segment, so the transcript reads 00:00, 00:12, ... */
+  private static double transcriptOrigin(List<ProviderTranscriptSegment> segments) {
+    return segments.stream()
+        .map(ProviderTranscriptSegment::start)
+        .filter(start -> start != null && start >= EPOCH_SECONDS_FLOOR)
+        .min(Double::compare)
+        .orElse(0d);
   }
 
   public void stopBot(String platform, String nativeMeetingId) {

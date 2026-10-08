@@ -96,6 +96,20 @@ class AssistantServiceTest {
   }
 
   @Test
+  void getTranscriptCountsAbsoluteStartsFromTheFirstSegment() {
+    when(providerClient.getTranscript("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderTranscriptResponse(List.of(
+            new ProviderTranscriptSegment("s1", "Arya", "Başlıyoruz", 1_791_470_023.135),
+            new ProviderTranscriptSegment("s2", "Arya", "Devam", 1_791_470_098.4)
+        )));
+
+    var response = assistantService.getTranscript("google_meet", "abc-defg-hij");
+
+    assertThat(response.segments()).extracting(TranscriptSegmentResponse::at)
+        .containsExactly("00:00", "01:15");
+  }
+
+  @Test
   void getTranscriptReturnsEmptyListWhenSegmentsMissing() {
     when(providerClient.getTranscript("google_meet", "abc-defg-hij"))
         .thenReturn(new ProviderTranscriptResponse(List.of()));
