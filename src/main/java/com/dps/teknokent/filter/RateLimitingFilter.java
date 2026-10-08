@@ -6,11 +6,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.dps.teknokent.config.RateLimitingConfig;
 import com.dps.teknokent.config.RateLimitingConfig.TokenBucket;
+import com.dps.teknokent.security.AppUserPrincipal;
+import com.dps.teknokent.security.FirebaseIdentity;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import java.io.IOException;
 
 @Component
@@ -24,20 +28,30 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 			"/api/assistant/",
 	};
 
+	private static final String CV_PARSE_PATH = "/api/profile-analyses";
+	private static final String CV_PREVIEW_PATH = CV_PARSE_PATH + "/preview";
+
+	/**
+	 * Each CV parse runs OCR and a paid LLM call, so it gets a far tighter budget than the general limit.
+	 */
+	private static final long CV_PARSE_CAPACITY = 10;
+	private static final long CV_PARSE_WINDOW_MS = 10 * 60_000;
+
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 			throws ServletException, IOException {
 
 		String path = request.getRequestURI();
-		boolean shouldRateLimit = shouldApplyRateLimit(path);
-
-		if (!shouldRateLimit) {
+		TokenBucket bucket;
+		if (isCvParse(request)) {
+			bucket = rateLimitingConfig.resolveBucket(
+					"cv_parse:" + getCallerIdentifier(request), CV_PARSE_CAPACITY, CV_PARSE_WINDOW_MS);
+		} else if (shouldApplyRateLimit(path)) {
+			bucket = rateLimitingConfig.resolveBucket(getClientIdentifier(request));
+		} else {
 			filterChain.doFilter(request, response);
 			return;
 		}
-
-		String clientKey = getClientIdentifier(request);
-		TokenBucket bucket = rateLimitingConfig.resolveBucket(clientKey);
 
 		if (bucket.tryConsume(1)) {
 			response.addHeader("X-Rate-Limit-Remaining", String.valueOf(bucket.getRemainingTokens()));
@@ -48,6 +62,31 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 			response.sendError(HttpStatus.TOO_MANY_REQUESTS.value(), 
 					"Too many requests. Please retry after " + secondsToWait + " seconds.");
 		}
+	}
+
+	private static boolean isCvParse(HttpServletRequest request) {
+		String path = request.getRequestURI();
+		return "POST".equalsIgnoreCase(request.getMethod())
+				&& (CV_PARSE_PATH.equals(path)
+						|| CV_PREVIEW_PATH.equals(path)
+						|| path.startsWith(CV_PREVIEW_PATH + "/documents/"));
+	}
+
+	/**
+	 * Keyed per account rather than per address, so founders sharing one office network do not use up each
+	 * other's budget. This filter runs after Spring Security, so the caller is already resolved; the service
+	 * Basic login is one shared identity and falls back to the address.
+	 */
+	private String getCallerIdentifier(HttpServletRequest request) {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		Object principal = authentication == null ? null : authentication.getPrincipal();
+		if (principal instanceof AppUserPrincipal user) {
+			return "user:" + user.id();
+		}
+		if (principal instanceof FirebaseIdentity identity) {
+			return "firebase:" + identity.uid();
+		}
+		return "ip:" + getClientIdentifier(request);
 	}
 
 	private boolean shouldApplyRateLimit(String path) {

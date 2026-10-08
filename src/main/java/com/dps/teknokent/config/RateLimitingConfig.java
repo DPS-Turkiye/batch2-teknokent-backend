@@ -33,11 +33,15 @@ public class RateLimitingConfig {
 	}
 
 	public TokenBucket resolveBucket(String key) {
+		return resolveBucket(key, 100, 60_000);
+	}
+
+	public TokenBucket resolveBucket(String key, long capacity, long refillIntervalMs) {
 		if (redisStore != null) {
-			return redisStore.resolveBucket(key);
+			return redisStore.resolveBucket(key, capacity, refillIntervalMs);
 		}
 		// Fallback to memory cache
-		return memoryCache.computeIfAbsent(key, k -> new TokenBucket(100, 60_000));
+		return memoryCache.computeIfAbsent(key, k -> new TokenBucket(capacity, refillIntervalMs));
 	}
 
 	/**
@@ -51,11 +55,9 @@ public class RateLimitingConfig {
 		private static final String KEY_PREFIX = "rate_limit:";
 		private static final String TOKENS_SUFFIX = ":tokens";
 		private static final String LAST_REFILL_SUFFIX = ":last_refill";
-		private static final long REFILL_INTERVAL_MS = 60_000;
-		private static final long CAPACITY = 100;
-		private static final long TTL_SECONDS = 120; // TTL slightly longer than refill interval
-
-		public TokenBucket resolveBucket(String ipAddress) {
+		public TokenBucket resolveBucket(String ipAddress, long capacity, long refillIntervalMs) {
+			// TTL longer than the refill interval, so an idle bucket expires only once it would be full again
+			Duration ttl = Duration.ofMillis(refillIntervalMs * 2);
 			String tokensKey = KEY_PREFIX + ipAddress + TOKENS_SUFFIX;
 			String lastRefillKey = KEY_PREFIX + ipAddress + LAST_REFILL_SUFFIX;
 
@@ -64,24 +66,22 @@ public class RateLimitingConfig {
 				String tokensStr = redisTemplate.opsForValue().get(tokensKey);
 				String lastRefillStr = redisTemplate.opsForValue().get(lastRefillKey);
 
-				long tokens = tokensStr != null ? Long.parseLong(tokensStr) : CAPACITY;
+				long tokens = tokensStr != null ? Long.parseLong(tokensStr) : capacity;
 				long lastRefill = lastRefillStr != null ? Long.parseLong(lastRefillStr) : System.currentTimeMillis();
 
-				return new TokenBucket(CAPACITY, REFILL_INTERVAL_MS, tokens, lastRefill,
-						(bucket) -> saveToRedis(tokensKey, lastRefillKey, bucket));
+				return new TokenBucket(capacity, refillIntervalMs, tokens, lastRefill,
+						(bucket) -> saveToRedis(tokensKey, lastRefillKey, bucket, ttl));
 			} catch (Exception e) {
 				// Fallback to memory cache if Redis fails
 				return fallbackCache.computeIfAbsent(ipAddress,
-						k -> new TokenBucket(CAPACITY, REFILL_INTERVAL_MS));
+						k -> new TokenBucket(capacity, refillIntervalMs));
 			}
 		}
 
-		private void saveToRedis(String tokensKey, String lastRefillKey, TokenBucket bucket) {
+		private void saveToRedis(String tokensKey, String lastRefillKey, TokenBucket bucket, Duration ttl) {
 			try {
-				redisTemplate.opsForValue().set(tokensKey, String.valueOf(bucket.getTokens()),
-						Duration.ofSeconds(TTL_SECONDS));
-				redisTemplate.opsForValue().set(lastRefillKey, String.valueOf(bucket.getLastRefillTime()),
-						Duration.ofSeconds(TTL_SECONDS));
+				redisTemplate.opsForValue().set(tokensKey, String.valueOf(bucket.getTokens()), ttl);
+				redisTemplate.opsForValue().set(lastRefillKey, String.valueOf(bucket.getLastRefillTime()), ttl);
 			} catch (Exception e) {
 				// Log error but don't fail - in-memory fallback will handle it
 			}
