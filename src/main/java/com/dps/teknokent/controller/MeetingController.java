@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -57,10 +58,13 @@ public class MeetingController {
 		return meetingService.submitFeedback(id, authorId, request);
 	}
 
+	/** 204 until the author has rated the meeting; the dashboard asks for every meeting. */
 	@GetMapping("/{id}/feedback")
-	public MeetingFeedbackResponse findFeedback(
+	public ResponseEntity<MeetingFeedbackResponse> findFeedback(
 			@PathVariable UUID id, @RequestParam UUID authorId) {
-		return meetingService.findFeedback(id, authorId);
+		return meetingService.findFeedback(id, authorId)
+				.map(ResponseEntity::ok)
+				.orElseGet(() -> ResponseEntity.noContent().build());
 	}
 
 	@PatchMapping("/{id}")

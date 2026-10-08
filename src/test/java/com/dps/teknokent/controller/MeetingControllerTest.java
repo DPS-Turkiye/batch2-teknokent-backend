@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
+import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.service.MeetingService;
 
@@ -202,5 +204,27 @@ class MeetingControllerTest {
 
                 mockMvc.perform(delete("/api/meetings/" + meetingId).with(user("test-user")))
                                 .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void answersNoContentUntilTheAuthorHasRatedTheMeeting() throws Exception {
+                UUID meetingId = UUID.randomUUID();
+                UUID authorId = UUID.randomUUID();
+                when(meetingService.findFeedback(meetingId, authorId)).thenReturn(Optional.empty());
+
+                mockMvc.perform(get("/api/meetings/" + meetingId + "/feedback")
+                                .param("authorId", authorId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isNoContent());
+
+                when(meetingService.findFeedback(meetingId, authorId)).thenReturn(Optional.of(
+                                new MeetingFeedbackResponse(UUID.randomUUID(), meetingId, authorId,
+                                                List.of(5, 4), List.of("Yol haritası"), Instant.now())));
+
+                mockMvc.perform(get("/api/meetings/" + meetingId + "/feedback")
+                                .param("authorId", authorId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.ratings[0]").value(5));
         }
 }
