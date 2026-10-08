@@ -1,5 +1,6 @@
 package com.dps.teknokent.security;
 
+import java.util.Arrays;
 import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class FirebaseLoginProvisioner implements LoginProvisioner {
+
+	private static final String PASSWORD_PROVIDER = "password";
 
 	private final FirebaseAuth firebaseAuth;
 
@@ -78,6 +81,18 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 				log.warn("No password setup link for {}: {}", email, exception.getMessage());
 				return Optional.empty();
 			}
+		}
+	}
+
+	/** A login made by {@link #loginFor} has no "password" provider until its setup link is used. */
+	@Override
+	public Optional<Boolean> hasPassword(String uid) {
+		try {
+			return Optional.of(Arrays.stream(firebaseAuth.getUser(uid).getProviderData())
+					.anyMatch(provider -> PASSWORD_PROVIDER.equals(provider.getProviderId())));
+		} catch (FirebaseAuthException exception) {
+			log.warn("Could not read the Firebase login {}: {}", uid, exception.getMessage());
+			return Optional.empty();
 		}
 	}
 }

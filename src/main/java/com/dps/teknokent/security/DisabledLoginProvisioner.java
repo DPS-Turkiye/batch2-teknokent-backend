@@ -15,4 +15,9 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	public Optional<String> passwordSetupLink(String email, String continueUrl) {
 		return Optional.empty();
 	}
+
+	@Override
+	public Optional<Boolean> hasPassword(String uid) {
+		return Optional.empty();
+	}
 }

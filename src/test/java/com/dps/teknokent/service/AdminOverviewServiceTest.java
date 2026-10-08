@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
@@ -30,6 +32,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.security.LoginProvisioner;
 
 @ExtendWith(MockitoExtension.class)
 class AdminOverviewServiceTest {
@@ -56,6 +59,8 @@ class AdminOverviewServiceTest {
 	private BottleneckRepository bottleneckRepository;
 	@Mock
 	private ProgramCoordinatorRepository programCoordinatorRepository;
+	@Mock
+	private LoginProvisioner loginProvisioner;
 
 	@InjectMocks
 	private AdminOverviewService service;
@@ -92,6 +97,27 @@ class AdminOverviewServiceTest {
 				.containsExactly("Elif Demir, Burcu Şen", "Elif Demir", null);
 		assertThat(programs.get(0).coordinatorId()).isEqualTo(elif.getId());
 		assertThat(programs.get(2).coordinatorId()).isNull();
+	}
+
+	@Test
+	void saysWhetherAnAddedCoordinatorHasSetAPassword() {
+		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
+		AppUser waiting = person("Ayla Bekler", UserRole.COORDINATOR);
+		AppUser ready = person("Burcu Şen", UserRole.COORDINATOR);
+		AppUser mentor = person("Cem Mentor", UserRole.MENTOR);
+		for (AppUser user : List.of(waiting, ready, mentor)) {
+			user.setStatus(UserAccountStatus.APPROVED);
+			user.setFirebaseUid("uid-" + user.getFullName());
+		}
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(appUserRepository.findAll()).thenReturn(List.of(admin, waiting, ready, mentor));
+		when(loginProvisioner.hasPassword(waiting.getFirebaseUid())).thenReturn(Optional.of(false));
+		when(loginProvisioner.hasPassword(ready.getFirebaseUid())).thenReturn(Optional.of(true));
+
+		var users = service.overview(admin.getId()).users();
+
+		assertThat(users).extracting(row -> row.fullName() + ":" + row.passwordSet())
+				.containsExactly("Ayla Bekler:false", "Burcu Şen:true", "Cem Mentor:null", "Platform Yöneticisi:null");
 	}
 
 	@Test

@@ -13,4 +13,7 @@ public interface LoginProvisioner {
 	 * afterwards; empty when no link can be made.
 	 */
 	Optional<String> passwordSetupLink(String email, String continueUrl);
+
+	/** Whether the login for {@code uid} has a password yet; empty when Firebase cannot say. */
+	Optional<Boolean> hasPassword(String uid);
 }
