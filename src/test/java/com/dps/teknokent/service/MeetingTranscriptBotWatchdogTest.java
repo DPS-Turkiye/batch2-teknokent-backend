@@ -29,6 +29,7 @@ import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -44,6 +45,8 @@ class MeetingTranscriptBotWatchdogTest {
 	private MeetingReportService meetingReportService;
 	@Mock
 	private MeetingAssistantShareService shareService;
+	@Mock
+	private TranscriptCleanupService transcriptCleanupService;
 
 	private MeetingTranscriptBotWatchdog watchdog;
 
@@ -53,8 +56,9 @@ class MeetingTranscriptBotWatchdogTest {
 	@BeforeEach
 	void setUp() {
 		AssistantService assistantService = new AssistantService(providerClient, meetingReportService);
+		when(transcriptCleanupService.clean(any())).thenAnswer(call -> call.getArgument(0));
 		watchdog = new MeetingTranscriptBotWatchdog(
-				meetingRepository, meetingService, assistantService, shareService);
+				meetingRepository, meetingService, assistantService, shareService, transcriptCleanupService);
 	}
 
 	@Test
@@ -70,6 +74,23 @@ class MeetingTranscriptBotWatchdogTest {
 		verify(providerClient).stopBot("google_meet", "aaa-bbbb-ccc");
 		verify(shareService).storeGeneratedTranscript(eq(meetingId), any());
 		verify(shareService).storeGeneratedReport(meetingId, report());
+	}
+
+	@Test
+	void storesTheCleanedTranscriptAndReportsFromIt() {
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		providerTranscript();
+		List<TranscriptSegmentResponse> cleaned =
+				List.of(new TranscriptSegmentResponse("s1", "Arya", "Düzeltilmiş metin", "00:00"));
+		when(transcriptCleanupService.clean(any())).thenReturn(cleaned);
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+		when(meetingReportService.generate(any(), any())).thenReturn(report());
+
+		watchdog.closeFinishedMeetings(now);
+
+		verify(shareService).storeGeneratedTranscript(meetingId, cleaned);
+		verify(meetingReportService).generate(eq(cleaned), any());
 	}
 
 	@Test
