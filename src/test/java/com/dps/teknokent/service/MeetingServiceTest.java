@@ -607,6 +607,20 @@ class MeetingServiceTest {
 	}
 
 	@Test
+	void markBotStoppedClosesAnEndedSlotThatHadABot() {
+		Meeting recorded = linkedMeeting(Instant.now().minus(5, ChronoUnit.HOURS), 60);
+		recorded.setBotDispatchedAt(Instant.now().minus(5, ChronoUnit.HOURS));
+		Meeting nextWeek = linkedMeeting(Instant.now().plus(7, ChronoUnit.DAYS), 60);
+		nextWeek.setBotDispatchedAt(Instant.now());
+		when(meetingRepository.findByStatusAndMeetLinkContainingIgnoreCase(
+				MeetingStatus.SCHEDULED, "abc-defg-hij")).thenReturn(List.of(recorded, nextWeek));
+
+		assertThat(meetingService.markBotStopped("abc-defg-hij")).containsExactly(recorded.getId());
+		assertThat(recorded.getStatus()).isEqualTo(MeetingStatus.COMPLETED);
+		assertThat(nextWeek.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+	}
+
+	@Test
 	void markBotStoppedIgnoresABlankMeetingId() {
 		assertThat(meetingService.markBotStopped(" ")).isEmpty();
 		verify(meetingRepository, never()).findByStatusAndMeetLinkContainingIgnoreCase(any(), any());

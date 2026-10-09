@@ -325,7 +325,9 @@ public class MeetingService {
 				.findByStatusAndMeetLinkContainingIgnoreCase(MeetingStatus.SCHEDULED, id)
 				.stream()
 				.filter(meeting -> id.equalsIgnoreCase(nativeMeetingIdOf(meeting)))
-				.filter(meeting -> isRunningSlot(meeting, now))
+				// An ended slot that had a bot is closed too; left SCHEDULED, the watchdog stopped its bot every 30 s.
+				.filter(meeting -> isRunningSlot(meeting, now)
+						|| (meeting.getBotDispatchedAt() != null && hasEnded(meeting, now)))
 				.toList();
 		for (Meeting meeting : stopped) {
 			meeting.setStatus(MeetingStatus.COMPLETED);
@@ -349,15 +351,24 @@ public class MeetingService {
 		}
 	}
 
+	private static boolean hasEnded(Meeting meeting, Instant now) {
+		Instant start = meeting.getScheduledAt();
+		return start != null && now.isAfter(start.plus(durationOf(meeting)
+				+ TranscriptBotConstants.DISPATCH_GRACE_MINUTES, ChronoUnit.MINUTES));
+	}
+
+	private static int durationOf(Meeting meeting) {
+		return meeting.getDurationMinutes() == null
+				? TranscriptBotConstants.DEFAULT_DURATION_MINUTES
+				: meeting.getDurationMinutes();
+	}
+
 	private static boolean isRunningSlot(Meeting meeting, Instant now) {
 		Instant start = meeting.getScheduledAt();
 		if (start == null || start.isAfter(now.plus(TranscriptBotConstants.BOT_JOIN_LEAD_MINUTES, ChronoUnit.MINUTES))) {
 			return false;
 		}
-		int duration = meeting.getDurationMinutes() == null
-				? TranscriptBotConstants.DEFAULT_DURATION_MINUTES
-				: meeting.getDurationMinutes();
-		return !now.isAfter(start.plus(duration + TranscriptBotConstants.DISPATCH_GRACE_MINUTES, ChronoUnit.MINUTES));
+		return !hasEnded(meeting, now);
 	}
 
 	@Transactional
