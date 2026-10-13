@@ -26,7 +26,7 @@ class MentorshipRequestMappingTest {
 				requester.getId(), organization.getId(), mentor.getId(),
 				"  NovaMed ekibi  ", "  İş modeli ve strateji  ", "  Gelir modeli desteği  ",
 				MentorshipRequestUrgency.THIS_WEEK, MentorshipRequestFormat.SINGLE_MEETING,
-				MeetingMode.ONLINE, "   ", null);
+				MeetingMode.ONLINE, "   ", null, null);
 
 		MentorshipRequest request = MentorshipRequest.fromRequest(
 				submission, requester, organization, mentor);
@@ -47,7 +47,7 @@ class MentorshipRequestMappingTest {
 				new CreateMentorshipRequestSubmission(
 						requester.getId(), organization.getId(), mentor.getId(), "NovaMed", "Ürün",
 						"MVP testi", MentorshipRequestUrgency.THIS_WEEK,
-						MentorshipRequestFormat.SINGLE_MEETING, MeetingMode.ONLINE, "Merhaba", null),
+						MentorshipRequestFormat.SINGLE_MEETING, MeetingMode.ONLINE, "Merhaba", null, null),
 				requester, organization, mentor);
 		request.setId(UUID.randomUUID());
 		request.setCreatedAt(Instant.parse("2026-08-17T10:00:00Z"));
@@ -61,6 +61,32 @@ class MentorshipRequestMappingTest {
 		assertThat(response.organizationName()).isEqualTo("NovaMed");
 		assertThat(response.messages()).isEmpty();
 		assertThat(response.recommendationSnapshot()).isNull();
+	}
+
+	@Test
+	void keepsTheExpectedOutcomeAsItsOwnField() {
+		AppUser requester = user("Mentee");
+		AppUser mentor = user("Mentor");
+		Organization organization = organization("NovaMed");
+		MentorshipRequest request = MentorshipRequest.fromRequest(
+				new CreateMentorshipRequestSubmission(
+						requester.getId(), organization.getId(), mentor.getId(), "NovaMed", "Finans",
+						"Finansal model", MentorshipRequestUrgency.THIS_WEEK,
+						MentorshipRequestFormat.SINGLE_MEETING, MeetingMode.ONLINE, "Merhaba", null,
+						"  İlk finansal modelin çerçevesi  "),
+				requester, organization, mentor);
+
+		assertThat(request.getExpectedOutcome()).isEqualTo("İlk finansal modelin çerçevesi");
+		assertThat(MentorshipRequestResponse.fromEntity(request, List.of(), null).expectedOutcome())
+				.isEqualTo("İlk finansal modelin çerçevesi");
+
+		MentorshipRequest blank = MentorshipRequest.fromRequest(
+				new CreateMentorshipRequestSubmission(
+						requester.getId(), organization.getId(), mentor.getId(), "NovaMed", "Finans",
+						"Finansal model", MentorshipRequestUrgency.THIS_WEEK,
+						MentorshipRequestFormat.SINGLE_MEETING, MeetingMode.ONLINE, null, null, "   "),
+				requester, organization, mentor);
+		assertThat(blank.getExpectedOutcome()).isNull();
 	}
 
 	private AppUser user(String fullName) {

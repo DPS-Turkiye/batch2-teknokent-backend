@@ -201,7 +201,7 @@ class MentorshipRequestServiceTest {
                                 MentorshipRequestFormat.SINGLE_MEETING,
                                 MeetingMode.ONLINE,
                                 "Need guidance",
-                                null);
+                                null, null);
 
                 assertThatThrownBy(() -> mentorshipRequestService.create(request))
                                 .isInstanceOf(InvalidRequestException.class)
@@ -244,7 +244,7 @@ class MentorshipRequestServiceTest {
                                 MentorshipRequestFormat.SINGLE_MEETING,
                                 MeetingMode.ONLINE,
                                 "Need guidance",
-                                null);
+                                null, null);
 
                 var result = mentorshipRequestService.create(request);
 

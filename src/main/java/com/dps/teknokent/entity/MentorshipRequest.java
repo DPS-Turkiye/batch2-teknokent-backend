@@ -52,6 +52,7 @@ public class MentorshipRequest {
 		mentorshipRequest.meetingMode = request.meetingMode();
 		mentorshipRequest.status = MentorshipRequestStatus.PENDING;
 		mentorshipRequest.requesterMessage = TextUtils.normalizeOptional(request.requesterMessage());
+		mentorshipRequest.expectedOutcome = TextUtils.normalizeOptional(request.expectedOutcome());
 		return mentorshipRequest;
 	}
 
@@ -136,6 +137,9 @@ public class MentorshipRequest {
 
 	@Column(name = "requester_message", columnDefinition = "TEXT")
 	private String requesterMessage;
+
+	@Column(name = "expected_outcome", columnDefinition = "TEXT")
+	private String expectedOutcome;
 
 	@Column(name = "mentor_message", columnDefinition = "TEXT")
 	private String mentorMessage;

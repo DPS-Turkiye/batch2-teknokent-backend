@@ -22,5 +22,6 @@ public record CreateMentorshipRequestSubmission(
 		@NotNull MentorshipRequestFormat mentorshipFormat,
 		@NotNull MeetingMode meetingMode,
 		@Size(max = 5000) String requesterMessage,
-		@Valid RecommendationSnapshotSubmission recommendationSnapshot) {
+		@Valid RecommendationSnapshotSubmission recommendationSnapshot,
+		@Size(max = 5000) String expectedOutcome) {
 }
