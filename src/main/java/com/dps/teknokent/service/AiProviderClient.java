@@ -110,15 +110,36 @@ public class AiProviderClient {
 			- The JSON must match this schema:
 			""" + schemaJson;
 
+		return completeWithSchemaFallback(model, instructions, transcriptText, schema);
+	}
+
+	/** Corrects speech-to-text lines ("id<TAB>text") in the language the meeting was held in. */
+	public JsonNode cleanTranscript(String transcriptLines, JsonNode schema) {
+		String instructions = """
+			You correct speech-to-text output from a mentorship meeting.
+			- Each input line is "<id><TAB><text>". Work out the language of the meeting from the whole transcript.
+			- Fix words the recogniser misheard (accents, names of tools and companies, Turkish and English mixed),
+			  spelling and punctuation, in the language each line was spoken in.
+			- Keep the meaning. Never add, drop, merge, split, translate or summarise lines.
+			- Return every id exactly once with its text; return the text unchanged when it is already right.
+			- Keep placeholders such as [REDACTED_EMAIL] exactly as they are.
+			- Return ONLY a single JSON object. No markdown fences, no commentary.
+			- The JSON must match this schema:
+			""" + jsonUtils.writeValue(schema);
+		return completeWithSchemaFallback(reportModel(), instructions, transcriptLines, schema);
+	}
+
+	private JsonNode completeWithSchemaFallback(
+			String model, String instructions, String input, JsonNode schema) {
 		boolean preferStrictSchema =
 				model.startsWith("openai/") || model.startsWith("google/");
 		try {
-			return completeMeetingReport(model, instructions, transcriptText, schema, preferStrictSchema);
+			return completeMeetingReport(model, instructions, input, schema, preferStrictSchema);
 		} catch (InvalidRequestException firstError) {
 			if (!preferStrictSchema) {
 				throw firstError;
 			}
-			return completeMeetingReport(model, instructions, transcriptText, schema, false);
+			return completeMeetingReport(model, instructions, input, schema, false);
 		}
 	}
 

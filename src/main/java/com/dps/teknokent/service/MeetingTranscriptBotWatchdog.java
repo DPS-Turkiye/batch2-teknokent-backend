@@ -34,6 +34,7 @@ public class MeetingTranscriptBotWatchdog {
 	private final MeetingService meetingService;
 	private final AssistantService assistantService;
 	private final MeetingAssistantShareService shareService;
+	private final TranscriptCleanupService transcriptCleanupService;
 	private final ConcurrentHashMap<String, Instant> emptySince = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, Boolean> sawHumans = new ConcurrentHashMap<>();
 
@@ -182,7 +183,7 @@ public class MeetingTranscriptBotWatchdog {
 			TranscriptResponse transcript = assistantService.getTranscript(platform, nativeMeetingId);
 			segments = transcript == null || transcript.segments() == null
 					? List.of()
-					: transcript.segments();
+					: transcriptCleanupService.clean(transcript.segments());
 			for (UUID meetingId : meetingIds) {
 				shareService.storeGeneratedTranscript(meetingId, segments);
 			}
