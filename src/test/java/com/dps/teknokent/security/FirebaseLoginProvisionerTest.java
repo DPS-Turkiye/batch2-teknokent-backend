@@ -14,6 +14,7 @@ import com.google.firebase.ErrorCode;
 import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.UserInfo;
 import com.google.firebase.auth.UserRecord;
 
 class FirebaseLoginProvisionerTest {
@@ -43,6 +44,24 @@ class FirebaseLoginProvisionerTest {
 					assertThat(exception.getReason())
 							.isEqualTo("Koordinatörün giriş hesabı Firebase'de oluşturulamadı (PERMISSION_DENIED).");
 				});
+	}
+
+	@Test
+	void seesAPasswordOnlyOnceTheSetupLinkWasUsed() throws Exception {
+		UserInfo password = mock(UserInfo.class);
+		when(password.getProviderId()).thenReturn("password");
+		UserRecord ready = mock(UserRecord.class);
+		when(ready.getProviderData()).thenReturn(new UserInfo[] {password});
+		UserRecord waiting = mock(UserRecord.class);
+		when(waiting.getProviderData()).thenReturn(new UserInfo[0]);
+		when(firebaseAuth.getUser("ready")).thenReturn(ready);
+		when(firebaseAuth.getUser("waiting")).thenReturn(waiting);
+		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);
+		when(firebaseAuth.getUser("broken")).thenThrow(denied);
+
+		assertThat(provisioner.hasPassword("ready")).contains(true);
+		assertThat(provisioner.hasPassword("waiting")).contains(false);
+		assertThat(provisioner.hasPassword("broken")).isEmpty();
 	}
 
 	private static FirebaseAuthException failure(ErrorCode errorCode, AuthErrorCode authErrorCode) {

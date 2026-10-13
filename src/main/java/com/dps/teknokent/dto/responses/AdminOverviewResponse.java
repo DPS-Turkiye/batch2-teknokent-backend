@@ -53,7 +53,9 @@ public record AdminOverviewResponse(
 			String organizationName,
 			String jobTitle,
 			Instant createdAt,
-			List<String> expertise) {
+			List<String> expertise,
+			/** Coordinators only: false until they set a password from the e-mailed link; null when unknown. */
+			Boolean passwordSet) {
 	}
 
 	public record MentorMembershipRow(

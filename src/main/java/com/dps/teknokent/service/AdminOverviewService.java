@@ -48,6 +48,7 @@ import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.util.ProgramCoordination;
 
 import lombok.RequiredArgsConstructor;
@@ -72,6 +73,7 @@ public class AdminOverviewService {
 	private final OrganizationRepository organizationRepository;
 	private final MeetingRepository meetingRepository;
 	private final BottleneckRepository bottleneckRepository;
+	private final LoginProvisioner loginProvisioner;
 
 	@Transactional(readOnly = true)
 	public AdminOverviewResponse overview(UUID actorId) {
@@ -82,7 +84,7 @@ public class AdminOverviewService {
 		List<AppUser> userEntities = appUserRepository.findAll();
 		List<UserRow> users = userEntities.stream()
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
-				.map(AdminOverviewService::toUser)
+				.map(user -> toUser(user, passwordSet(user)))
 				.toList();
 		List<RequestRow> requests = mentorshipRequestService.findAll(null, null, null).stream()
 				.filter(request -> OPEN_REQUESTS.contains(request.status()))
@@ -153,7 +155,16 @@ public class AdminOverviewService {
 				programs, users, mentorships, requests, bottlenecks, meetingsLast8Weeks, meetings);
 	}
 
-	private static UserRow toUser(AppUser user) {
+	// An added coordinator is APPROVED at once, but cannot sign in before setting a password.
+	private Boolean passwordSet(AppUser user) {
+		if (user.getRole() != UserRole.COORDINATOR || user.getStatus() != UserAccountStatus.APPROVED
+				|| user.getFirebaseUid() == null) {
+			return null;
+		}
+		return loginProvisioner.hasPassword(user.getFirebaseUid()).orElse(null);
+	}
+
+	private static UserRow toUser(AppUser user, Boolean passwordSet) {
 		return new UserRow(
 				user.getId(),
 				user.getEmail(),
@@ -164,7 +175,8 @@ public class AdminOverviewService {
 				user.getOrganization() == null ? null : user.getOrganization().getName(),
 				user.getJobTitle(),
 				user.getCreatedAt(),
-				user.getExpertise() == null ? List.of() : List.copyOf(user.getExpertise()));
+				user.getExpertise() == null ? List.of() : List.copyOf(user.getExpertise()),
+				passwordSet);
 	}
 
 	private ProgramRow toProgram(

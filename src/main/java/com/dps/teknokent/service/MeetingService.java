@@ -382,11 +382,9 @@ public class MeetingService {
 	}
 
 	@Transactional(readOnly = true)
-	public MeetingFeedbackResponse findFeedback(UUID meetingId, UUID authorId) {
+	public Optional<MeetingFeedbackResponse> findFeedback(UUID meetingId, UUID authorId) {
 		return meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, authorId)
-				.map(MeetingFeedbackResponse::fromEntity)
-				.orElseThrow(() -> new ResourceNotFoundException(
-						"Feedback not found for meeting: " + meetingId));
+				.map(MeetingFeedbackResponse::fromEntity);
 	}
 
 	private void requireMeetingParticipant(Meeting meeting, AppUser author) {
