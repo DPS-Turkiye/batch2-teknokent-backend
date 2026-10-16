@@ -68,6 +68,8 @@ For project-wide spending, including AWS billing, historical API-call exports an
 other services' invoices, use `scripts/project_spend.py`. See
 [the project spending guide](scripts/PROJECT_SPEND.md) for setup, scope controls,
 offline imports, evidence schemas and the distinction between costs and payments.
+For the Vexa bot's hosting, hosted transcription and meeting report/cleanup AI
+breakdown, see [the Vexa spending guide](scripts/VEXA_SPEND.md).
 
 ## Stack
 

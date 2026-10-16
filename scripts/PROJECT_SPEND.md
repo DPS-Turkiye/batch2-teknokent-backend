@@ -4,6 +4,9 @@
 read-only, standard-library Python CLI. AWS collection also needs the AWS CLI.
 It makes usage/billing requests, never model inference requests or deployments.
 
+For a Vexa-only breakdown, use [vexa_spend.py](VEXA_SPEND.md). Vexa costs are a
+subset of project costs and must not be added twice to a project rollup.
+
 ## Run against the local DPS repositories
 
 From this worktree (`Versions/.worktrees/openrouter-usage-backend`):
