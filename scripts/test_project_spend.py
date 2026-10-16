@@ -124,6 +124,9 @@ class ProjectSpendTests(unittest.TestCase):
         self.assertIsNone(report['aws']['net_usd'])
         self.assertEqual({}, report['totals']['documented_costs_in_period'])
         self.assertIn('scoped spending remains unknown', spend.markdown(report))
+        spend.write_outputs(report, self.root)
+        with (self.root / 'aws-monthly.csv').open(newline='') as source:
+            self.assertEqual([], list(csv.DictReader(source)))
 
     def test_aws_rejects_partial_export_and_outside_window(self):
         with self.assertRaisesRegex(spend.SpendError, 'NextPageToken'):

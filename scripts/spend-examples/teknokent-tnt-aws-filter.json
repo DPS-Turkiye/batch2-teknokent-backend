@@ -1,0 +1,22 @@
+{
+  "Or": [
+    {
+      "Tags": {
+        "Key": "Team",
+        "Values": ["teknokent", "Teknokent", "TEKNOKENT", "tnt", "TNT", "TeamTNT"]
+      }
+    },
+    {
+      "Tags": {
+        "Key": "team",
+        "Values": ["teknokent", "Teknokent", "TEKNOKENT", "tnt", "TNT", "TeamTNT"]
+      }
+    },
+    {
+      "Tags": {
+        "Key": "Name",
+        "Values": ["teknokent-app", "teknokent-vexa"]
+      }
+    }
+  ]
+}

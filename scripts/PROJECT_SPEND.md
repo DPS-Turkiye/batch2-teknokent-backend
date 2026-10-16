@@ -133,6 +133,39 @@ is not applied retroactively to an imported file and cannot be combined with it.
 For a shared account, import verified project allocations through the cost ledger
 instead of asserting the account/export is dedicated.
 
+## Teknokent / TNT team only
+
+Teknokent and TNT refer to the same team. The observed EC2 tag is
+`Team=teknokent`; current instance names are `teknokent-app` and
+`teknokent-vexa`. `Project=batch-2-infra` is broader and must not be used to
+attribute the entire shared infrastructure bill to this team. Likewise, a
+DPS-only AWS account is not necessarily a Teknokent-only account.
+
+Use the team filter instead of `--aws-dedicated-account`:
+
+```bash
+python3 scripts/project_spend.py \
+  --start 2026-07-01 \
+  --env-file ../../v1.3.0/Backend/.env \
+  --aws-env-file ../../v1.3.0/Backend/.env \
+  --aws-filter scripts/spend-examples/teknokent-tnt-aws-filter.json \
+  --output-dir ../../v1.3.0/Reports/teknokent-tnt-spend/latest
+```
+
+The filter includes exact team aliases and the two verified instance names;
+it does not do substring matching or include every `batch-2-infra` resource.
+Aliases under `Team`/`team` are scope rules, not evidence those values existed
+historically. Untagged storage, networking, database, frontend and shared costs
+remain unallocated. On 16 October 2026, billing groupings for `Team`, `team`
+and `Name` had no populated values, so an empty filtered result is unknown
+team spending. A billing admin can review activation of these tags and
+[backfill existing historical tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-allocation-backfill.html).
+Backfill cannot recover tags that were never assigned to the resource.
+
+The OpenRouter key counter remains key-wide. Its presence in this backend
+does not prove every historical request was team-exclusive. Use team-filtered
+request exports or verified key ownership for an exact team allocation.
+
 ## Historical API calls
 
 Repeat `--calls-csv` for normalized, **project-filtered** request-level exports.

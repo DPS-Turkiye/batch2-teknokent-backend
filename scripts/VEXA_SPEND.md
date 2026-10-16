@@ -26,8 +26,11 @@ python3 scripts/vexa_spend.py \
   --output-dir ../../v1.3.0/Reports/vexa-spend/latest
 ```
 
-The example filter uses `Purpose=vexa`, observed on the current `teknokent-vexa`
-EC2 instance on 16 October 2026. **Resource tags must be activated for cost
+The example filter includes the verified name `teknokent-vexa`, or
+`Purpose=vexa` together with a Teknokent/TNT team tag. The current instance
+has `Team=teknokent` and `Purpose=vexa`, observed on 16 October 2026.
+It excludes other teams' Vexa servers and the broader `batch-2-infra` project.
+**Resource tags must be activated for cost
 allocation and historically cover the intended resources.** The filter may miss
 old/replaced hosts, untagged EBS/public IP/logging/network charges or charges
 before tag activation. Zero filtered costs would not establish zero Vexa spend.

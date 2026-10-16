@@ -1,6 +1,16 @@
 {
-  "Tags": {
-    "Key": "Purpose",
-    "Values": ["vexa"]
-  }
+  "Or": [
+    {"Tags": {"Key": "Name", "Values": ["teknokent-vexa"]}},
+    {
+      "And": [
+        {"Tags": {"Key": "Purpose", "Values": ["vexa"]}},
+        {
+          "Or": [
+            {"Tags": {"Key": "Team", "Values": ["teknokent", "Teknokent", "TEKNOKENT", "tnt", "TNT", "TeamTNT"]}},
+            {"Tags": {"Key": "team", "Values": ["teknokent", "Teknokent", "TEKNOKENT", "tnt", "TNT", "TeamTNT"]}}
+          ]
+        }
+      ]
+    }
+  ]
 }

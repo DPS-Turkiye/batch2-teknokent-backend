@@ -437,7 +437,7 @@ def write_outputs(report: dict, directory: Path) -> None:
         path.write_text(content)
         path.chmod(0o600)
     for name, rows, fields in [
-        ('aws-monthly.csv', report['aws'].get('rows', []),
+        ('aws-monthly.csv', report['aws'].get('rows', []) if report['aws']['status'] == 'ok' else [],
          ['start', 'end_exclusive', 'service', 'record_type', 'amount_usd', 'estimated']),
         ('calls-by-model.csv', report['calls_by_model'],
          ['provider', 'model', 'requests', 'prompt_tokens', 'completion_tokens', 'cost_usd']),
