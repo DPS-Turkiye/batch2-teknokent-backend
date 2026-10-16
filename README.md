@@ -64,6 +64,11 @@ This view groups requests, prompt/completion/reasoning tokens, and cost by model
 The management key is required by OpenRouter's Activity API; the regular API key
 is hashed locally before being used as the activity filter. Neither key is printed.
 
+For project-wide spending, including AWS billing, historical API-call exports and
+other services' invoices, use `scripts/project_spend.py`. See
+[the project spending guide](scripts/PROJECT_SPEND.md) for setup, scope controls,
+offline imports, evidence schemas and the distinction between costs and payments.
+
 ## Stack
 
 Java 25, Spring Boot 4.1, PostgreSQL 17 + pgvector, Apache PDFBox,
