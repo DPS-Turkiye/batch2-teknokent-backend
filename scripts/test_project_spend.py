@@ -99,6 +99,32 @@ class ProjectSpendTests(unittest.TestCase):
         self.assertEqual(Decimal('11.33'), sum((spend.number(r['amount_usd']) for r in rows), Decimal(0)))
         self.assertEqual(4, len(rows))
 
+    def test_aws_breakdown_preserves_charges_credits_refunds_and_corrections(self):
+        payload = self.aws_payload(groups=[(['EC2', 'Usage'], '10'), (['EC2', 'Usage'], '-1'),
+                                           (['EC2', 'Credit'], '-8'), (['EC2', 'Refund'], '-0.5'),
+                                           (['Tax', 'Tax'], '0.2')])
+        rows = spend.aws_rows(payload, '2026-07-01', '2026-10-17')
+        totals = spend.aws_cost_breakdown(rows)
+        self.assertEqual('9.2', totals['charges_before_credits_usd'])
+        self.assertEqual('-8', totals['credits_usd'])
+        self.assertEqual('-0.5', totals['refunds_usd'])
+        self.assertEqual('0.7', totals['net_usd'])
+        self.assertEqual('0.7', totals['monthly'][0]['net_usd'])
+
+    @patch('project_spend.fetch_aws')
+    def test_empty_project_billing_filter_does_not_establish_zero_cost(self, fetch):
+        fetch.return_value = self.aws_payload(groups=[])
+        filt = self.root / 'project.json'
+        filt.write_text(json.dumps({'Tags': {'Key': 'Project', 'Values': ['dps']}}))
+        args = spend.parse_args(['--start', '2026-07-01', '--end', '2026-10-17',
+                                 '--skip-openrouter', '--aws-filter', str(filt),
+                                 '--output-dir', str(self.root)])
+        report = spend.build_report(args)
+        self.assertEqual('no_matching_billing_data', report['aws']['status'])
+        self.assertIsNone(report['aws']['net_usd'])
+        self.assertEqual({}, report['totals']['documented_costs_in_period'])
+        self.assertIn('scoped spending remains unknown', spend.markdown(report))
+
     def test_aws_rejects_partial_export_and_outside_window(self):
         with self.assertRaisesRegex(spend.SpendError, 'NextPageToken'):
             spend.aws_rows(self.aws_payload(NextPageToken='page2'), '2026-07-01', '2026-10-17')

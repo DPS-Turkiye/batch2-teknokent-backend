@@ -31,7 +31,10 @@ EC2 instance on 16 October 2026. **Resource tags must be activated for cost
 allocation and historically cover the intended resources.** The filter may miss
 old/replaced hosts, untagged EBS/public IP/logging/network charges or charges
 before tag activation. Zero filtered costs would not establish zero Vexa spend.
-No tags, IAM policies, billing settings or cloud resources are changed.
+No tags, IAM policies, billing settings or cloud resources are changed. If the
+query returns no grouped service records, hosting remains **unknown**, even if
+AWS returned a zero total. This commonly needs billing-tag activation/backfill;
+the empty result does not establish that Vexa hosting was free.
 
 AWS requires `ce:GetCostAndUsage`. Existing app credentials were denied that
 permission during the parent project spending check. Use `--aws-profile` instead

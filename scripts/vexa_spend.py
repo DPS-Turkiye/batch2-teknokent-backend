@@ -15,6 +15,7 @@ from pathlib import Path
 from project_spend import (
     AWS_URL, SpendError, aws_rows, fetch_aws, load_calls, load_ledger,
     number, parse_args as parse_project_args, read_env, redact_report,
+    aws_cost_breakdown, has_grouped_aws_charges,
 )
 
 COMPONENTS = ('hosting', 'transcription', 'reporting')
@@ -176,7 +177,16 @@ def render(report):
         lines.append('Launch time is inventory metadata; it does not prove uninterrupted uptime or lifetime cost.')
     if report['aws'].get('error'):
         lines.extend(['', 'AWS result: ' + report['aws']['error']])
-    if report['aws'].get('rows'):
+    if report['aws']['status'] == 'ok' and report['aws'].get('cost_breakdown'):
+        costs = report['aws']['cost_breakdown']
+        lines.extend(['', 'AWS hosting accrued costs (not cash payments):', '',
+                      f"- Charges before credits/refunds: USD {costs['charges_before_credits_usd']}",
+                      f"- Credits: USD {costs['credits_usd']}",
+                      f"- Refunds: USD {costs['refunds_usd']}",
+                      f"- Net after credits/refunds: USD {costs['net_usd']}"])
+    if report['aws']['status'] == 'no_matching_billing_data':
+        lines.extend(['', 'No service charge records matched the Vexa query. Hosting cost remains unknown.'])
+    if report['aws'].get('rows') and report['aws']['status'] != 'no_matching_billing_data':
         lines.extend(['', '## AWS charges by month and service', '',
                       '| Start | End exclusive | Service | Charge type | USD | Estimated |',
                       '|---|---|---|---|---:|---|'])
@@ -248,6 +258,11 @@ def build_report(args):
             aws['error'] = str(error)
     else:
         aws['error'] = 'A Vexa-only AWS filter or verified scoped export is required; account totals are not queried.'
+    if aws['status'] == 'ok':
+        aws['cost_breakdown'] = aws_cost_breakdown(aws['rows'])
+        if not has_grouped_aws_charges(aws['rows']):
+            aws.update(status='no_matching_billing_data', cost_breakdown=None,
+                       error='No service charge records matched the Vexa query. Verify billing-tag activation and historical coverage; this is not proof of zero hosting cost.')
     ledger = load_vexa_ledger(args.ledger_csv, args.start, args.end)
     calls = load_calls(args.report_calls_csv, args.start, args.end)
     usage = meeting_stats(args.meetings_file, args.start, args.end, args.naive_times_are_utc)

@@ -58,6 +58,21 @@ class VexaSpendTests(unittest.TestCase):
         self.assertEqual({}, result['costs_by_component']['hosting'])
         self.assertIsNone(result['full_vexa_total'])
 
+    def test_empty_vexa_billing_export_is_unknown_but_explicit_zero_group_is_known(self):
+        for groups, status, costs in [([], 'no_matching_billing_data', {}),
+                ([{'Keys': ['EC2', 'Usage'], 'Metrics': {'UnblendedCost': {'Amount': '0', 'Unit': 'USD'}}}],
+                 'ok', {'USD': '0'})]:
+            with self.subTest(status=status):
+                file = self.save('aws.json', {'ResultsByTime': [{'TimePeriod':
+                    {'Start': '2026-07-01', 'End': '2026-08-01'}, 'Groups': groups}]})
+                args = vexa.parse_args(['--start', '2026-07-01', '--end', '2026-10-17',
+                    '--aws-cost-file', str(file), '--aws-export-is-vexa-only', '--output-dir', str(self.root)])
+                report = vexa.build_report(args)
+                self.assertEqual(status, report['aws']['status'])
+                self.assertEqual(costs, report['totals']['costs_by_component']['hosting'])
+                if status != 'ok':
+                    self.assertIn('| Hosting | Unknown |', vexa.render(report))
+
     def test_overlapping_sources_rejected_but_component_allocation_allowed(self):
         aws = dict(status='ok', rows=[dict(amount_usd='10')])
         with self.assertRaisesRegex(SpendError, 'overlaps'):

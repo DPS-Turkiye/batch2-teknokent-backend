@@ -87,7 +87,14 @@ The billing query is monthly `UnblendedCost`, grouped by `SERVICE` then
 Amplify, S3, SES, Route 53 and other billed AWS services when present. Do not add
 Vexa's AWS hosting a second time as a separate transcription charge. Cost Explorer
 can lag and mark current periods as estimated. These are accrued billing charges,
-not a bank-payment ledger. Cost Explorer API requests themselves may incur AWS's
+not a bank-payment ledger.
+
+The report also separates charges before credits/refunds, signed credits,
+refunds and the net amount, monthly and overall. Promotional credits can reduce
+the bill to zero while the resources still consume substantial paid usage.
+An empty project filter is reported as unknown scoped spending, not zero cost.
+
+Cost Explorer API requests themselves may incur AWS's
 normal billing-query charge; the collector does not issue retries automatically.
 
 **An unfiltered AWS account is not assumed to belong to this project.** Such

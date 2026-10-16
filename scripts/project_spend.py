@@ -230,8 +230,36 @@ def aws_rows(payload: dict, start: str, end: str) -> list[dict]:
                 raise SpendError('AWS export has charges without service groups; refusing a zero total.')
             # No charge is different from a missing source.
             combined[(a, b, '(no charges)', '(none)')] += Decimal(0)
+            estimates[(a, b, '(no charges)', '(none)')] = bool(period.get('Estimated'))
     return [dict(start=k[0], end_exclusive=k[1], service=k[2], record_type=k[3],
                  amount_usd=str(v), estimated=estimates.get(k, False)) for k, v in sorted(combined.items())]
+
+
+def aws_cost_breakdown(rows: list[dict]) -> dict:
+    """Keep charges visible when credits offset the bill; preserve signed corrections."""
+    def amounts(items):
+        charges = credits = refunds = Decimal(0)
+        for row in items:
+            amount = number(row['amount_usd'])
+            if row['record_type'].lower() == 'credit':
+                credits += amount
+            elif row['record_type'].lower() == 'refund':
+                refunds += amount
+            else:
+                charges += amount
+        return dict(charges_before_credits_usd=str(charges), credits_usd=str(credits),
+                    refunds_usd=str(refunds), net_usd=str(charges + credits + refunds))
+    periods = defaultdict(list)
+    for row in rows:
+        periods[(row['start'], row['end_exclusive'])].append(row)
+    monthly = [dict(start=a, end_exclusive=b, estimated=any(r['estimated'] for r in items),
+                    **amounts(items)) for (a, b), items in sorted(periods.items())]
+    return dict(**amounts(rows), monthly=monthly)
+
+
+def has_grouped_aws_charges(rows: list[dict]) -> bool:
+    # Empty groups from a nonmatching/unactivated tag do not establish free hosting.
+    return any(row['record_type'] != '(none)' for row in rows)
 
 
 def load_calls(paths: list[Path], start: str, end: str) -> list[dict]:
@@ -351,6 +379,17 @@ def markdown(report: dict) -> str:
         lines.append(f"| OpenRouter key `{row['key_id']}` | Key lifetime | {money(row.get('lifetime_usd'))} |")
     aws = report['aws']
     lines.append(f"| AWS Cost Explorer | {aws['scope']} | {money(aws.get('net_usd')) if aws['status'] == 'ok' else 'Unavailable'} |")
+    if aws['status'] == 'ok' and aws.get('cost_breakdown'):
+        breakdown = aws['cost_breakdown']
+        lines.extend(['', 'AWS accrued charges and offsets (not cash payments):', '',
+                      f"- Charges before credits/refunds: {money(breakdown['charges_before_credits_usd'])}",
+                      f"- Credits: {money(breakdown['credits_usd'])}",
+                      f"- Refunds: {money(breakdown['refunds_usd'])}",
+                      f"- Net after credits/refunds: {money(breakdown['net_usd'])}", '',
+                      '| Month start | Charges before credits/refunds (USD) | Credits (USD) | Refunds (USD) | Net (USD) | Estimated |',
+                      '|---|---:|---:|---:|---:|---|'])
+        for row in breakdown['monthly']:
+            lines.append(f"| {row['start']} | {row['charges_before_credits_usd']} | {row['credits_usd']} | {row['refunds_usd']} | {row['net_usd']} | {row['estimated']} |")
     lines.extend(['', '## Documented costs and payments', '', totals['note'], ''])
     for title, field in [('Costs in report window', 'documented_costs_in_period'),
                          ('Cash payments in report window', 'documented_payments_in_period')]:
@@ -372,6 +411,8 @@ def markdown(report: dict) -> str:
                   '| Start | End exclusive | Service | Charge type | USD | Estimated |',
                   '|---|---|---|---|---:|---|'])
     for row in aws.get('rows', []):
+        if aws['status'] == 'no_matching_billing_data':
+            continue
         service = str(row['service']).replace('|', '/')
         lines.append(f"| {row['start']} | {row['end_exclusive']} | {service} | {row['record_type']} | {row['amount_usd']} | {row['estimated']} |")
     if aws.get('error'):
@@ -464,6 +505,10 @@ def build_report(args: argparse.Namespace) -> dict:
                        fetch_aws(args.start, args.end, args.aws_env_file, args.aws_profile, cost_filter, args.timeout))
             aws['rows'] = aws_rows(payload, args.start, args.end)
             aws.update(status='ok', net_usd=str(sum((number(row['amount_usd']) for row in aws['rows']), Decimal(0))))
+            aws['cost_breakdown'] = aws_cost_breakdown(aws['rows'])
+            if cost_filter and not has_grouped_aws_charges(aws['rows']):
+                aws.update(status='no_matching_billing_data', net_usd=None, cost_breakdown=None,
+                           error='The billing filter returned no service charge records. Verify historical tag activation and coverage; scoped spending remains unknown.')
         except (OSError, ValueError, KeyError, TypeError) as error:
             aws['error'] = redact(str(error), [])
     else:
