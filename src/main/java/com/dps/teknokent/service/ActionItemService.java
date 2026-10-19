@@ -14,6 +14,7 @@ import com.dps.teknokent.dto.responses.ActionItemResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -42,9 +43,11 @@ public class ActionItemService {
 
 	@Transactional(readOnly = true)
 	public List<ActionItemResponse> findByScope(UUID organizationId, UUID mentorshipRequestId) {
-		return actionItemRepository
-				.findByOrganizationIdOrderByCreatedAtDesc(resolveOrganizationId(organizationId, mentorshipRequestId))
-				.stream()
+		UUID scopedOrganizationId = resolveOrganizationId(organizationId, mentorshipRequestId);
+		List<ActionItem> items = mentorshipRequestId != null
+				? actionItemRepository.findByMentorshipRequestIdOrderByCreatedAtDesc(mentorshipRequestId)
+				: actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(scopedOrganizationId);
+		return items.stream()
 				.map(ActionItemResponse::fromEntity)
 				.toList();
 	}
@@ -58,7 +61,11 @@ public class ActionItemService {
 			throw new InvalidRequestException("Meeting and action item must belong to the same organization");
 		}
 
-		ActionItem actionItem = ActionItem.fromRequest(request, organization, meeting,
+		MentorshipRequest mentorshipRequest = request.mentorshipRequestId() == null
+				? null
+				: domainLookupService.requireMentorshipRequest(request.mentorshipRequestId());
+
+		ActionItem actionItem = ActionItem.fromRequest(request, organization, mentorshipRequest, meeting,
 				domainLookupService.requireUser(request.ownerId()));
 		return ActionItemResponse.fromEntity(actionItemRepository.saveAndFlush(actionItem));
 	}
