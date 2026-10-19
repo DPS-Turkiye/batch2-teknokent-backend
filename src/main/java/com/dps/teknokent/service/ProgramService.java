@@ -38,6 +38,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -197,8 +198,8 @@ public class ProgramService {
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.COORDINATOR);
 		notificationService.create(
 				mentor,
-				"Yeni program daveti",
-				program.getName() + " programına mentor olarak davet edildiniz.",
+				Texts.get(mentor, "notification.programInvite.title"),
+				Texts.get(mentor, "notification.programInvite.body", program.getName()),
 				"/mentor-dashboard");
 		return toResponse(program);
 	}
@@ -208,10 +209,11 @@ public class ProgramService {
 		AppUser mentor = requireMentor(actorId);
 		Program program = requireProgram(programId);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.MENTOR);
+		AppUser creator = domainLookupService.requireUser(program.getCreatedBy());
 		notificationService.create(
-				domainLookupService.requireUser(program.getCreatedBy()),
-				"Yeni mentor katılım talebi",
-				mentor.getFullName() + ", " + program.getName() + " programına katılmak istiyor.",
+				creator,
+				Texts.get(creator, "notification.joinRequest.title"),
+				Texts.get(creator, "notification.joinRequest.body", mentor.getFullName(), program.getName()),
 				"/programs");
 		return toResponse(program);
 	}
@@ -227,10 +229,12 @@ public class ProgramService {
 			throw new InvalidRequestException("This invitation cannot be decided.");
 		}
 		applyDecision(membership, accepted);
+		AppUser creator = domainLookupService.requireUser(requireProgram(programId).getCreatedBy());
 		notificationService.create(
-				domainLookupService.requireUser(requireProgram(programId).getCreatedBy()),
-				"Program daveti yanıtlandı",
-				mentor.getFullName() + (accepted ? " davetinizi kabul etti." : " davetinizi reddetti."),
+				creator,
+				Texts.get(creator, "notification.inviteAnswered.title"),
+				Texts.get(creator, accepted ? "notification.inviteAccepted.body" : "notification.inviteDeclined.body",
+						mentor.getFullName()),
 				"/programs");
 		return toInvitation(membership);
 	}
@@ -246,10 +250,12 @@ public class ProgramService {
 			throw new InvalidRequestException("This mentor request cannot be decided.");
 		}
 		applyDecision(membership, accepted);
+		AppUser applicant = domainLookupService.requireUser(mentorId);
 		notificationService.create(
-				domainLookupService.requireUser(mentorId),
-				"Program katılım talebiniz sonuçlandı",
-				program.getName() + (accepted ? " talebinizi kabul etti." : " talebinizi reddetti."),
+				applicant,
+				Texts.get(applicant, "notification.joinRequestAnswered.title"),
+				Texts.get(applicant, accepted ? "notification.joinRequestAccepted.body" : "notification.joinRequestDeclined.body",
+						program.getName()),
 				"/mentor-dashboard");
 		return toResponse(program);
 	}

@@ -21,6 +21,7 @@ import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -52,16 +53,18 @@ public class NotificationReminderService {
 				notificationService.create(
 						meeting.getMentor(),
 						NotificationCategory.MEETING_REMINDER,
-						"Görüşmen yaklaşıyor",
-						meeting.getOrganization().getName() + " ile görüşmen yakında başlıyor · " + startsAt,
+						Texts.get(meeting.getMentor(), "notification.meetingSoon.title"),
+						Texts.get(meeting.getMentor(), "notification.meetingSoon.body",
+								meeting.getOrganization().getName(), startsAt),
 						MENTOR_MEETINGS_HREF);
 			}
-			String withWhom = meeting.getMentor() == null ? "Mentörünle" : meeting.getMentor().getFullName() + " ile";
 			organizationMentees(meeting).forEach(mentee -> notificationService.create(
 					mentee,
 					NotificationCategory.MEETING_REMINDER,
-					"Görüşmen yaklaşıyor",
-					withWhom + " görüşmen yakında başlıyor · " + startsAt,
+					Texts.get(mentee, "notification.meetingSoon.title"),
+					meeting.getMentor() == null
+							? Texts.get(mentee, "notification.meetingSoonNoMentor.body", startsAt)
+							: Texts.get(mentee, "notification.meetingSoon.body", meeting.getMentor().getFullName(), startsAt),
 					MENTEE_MEETINGS_HREF));
 			meeting.setReminderSentAt(now);
 		}
@@ -74,12 +77,15 @@ public class NotificationReminderService {
 		List<ActionItem> tasks = actionItemRepository.findByStatusInAndDeadlineRemindedAtIsNullAndDueDateBetween(
 				OPEN_TASK_STATUSES, today, today.plusDays(1));
 		for (ActionItem task : tasks) {
-			String when = task.getDueDate().equals(today) ? "bugün" : "yarın";
+			String whenKey = task.getDueDate().equals(today)
+					? "notification.taskDeadline.today"
+					: "notification.taskDeadline.tomorrow";
 			notificationService.create(
 					task.getOwner(),
 					NotificationCategory.TASK_DEADLINE,
-					"Görev teslim tarihi yaklaşıyor",
-					"«" + task.getTitle() + "» görevinin son günü " + when + ".",
+					Texts.get(task.getOwner(), "notification.taskDeadline.title"),
+					Texts.get(task.getOwner(), "notification.taskDeadline.body", task.getTitle(),
+							Texts.get(task.getOwner(), whenKey)),
 					TASKS_HREF);
 			task.setDeadlineRemindedAt(now);
 		}

@@ -18,6 +18,7 @@ import com.dps.teknokent.dto.responses.AccountDecisionResponse;
 import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
 import com.dps.teknokent.dto.responses.UserProfileResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -28,6 +29,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -66,6 +68,11 @@ public class AppUserService {
 	@Transactional(readOnly = true)
 	public UserProfileResponse findProfile(UUID id) {
 		return UserProfileResponse.fromEntity(domainLookupService.requireUser(id));
+	}
+
+	@Transactional
+	public void saveLanguage(UUID id, AppLanguage language) {
+		domainLookupService.requireUser(id).setPreferredLanguage(language);
 	}
 
 	// Self only, and not gated on APPROVED: a pending account waiting on review
@@ -215,11 +222,11 @@ public class AppUserService {
 		notificationService.create(
 				target,
 				request.status() == UserAccountStatus.APPROVED
-						? "Başvurunuz onaylandı"
-						: "Başvurunuz sonuçlandı",
+						? Texts.get(target, "notification.applicationApproved.title")
+						: Texts.get(target, "notification.applicationRejected.title"),
 				request.status() == UserAccountStatus.APPROVED
-						? "Hesabınız kullanıma açıldı. Platforma giriş yapabilirsiniz."
-						: "Başvurunuz bu aşamada onaylanmadı.",
+						? Texts.get(target, "notification.applicationApproved.body")
+						: Texts.get(target, "notification.applicationRejected.body"),
 				"/application-status");
 		return new AccountDecisionResponse(UserResponse.fromEntity(target), inviteCode);
 	}

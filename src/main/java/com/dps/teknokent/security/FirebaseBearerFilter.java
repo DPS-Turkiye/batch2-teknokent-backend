@@ -30,6 +30,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final String REGISTER_PATH_PREFIX = "/api/auth/register";
 	private static final String ONBOARDING_PATH_PREFIX = "/api/onboarding/";
 	private static final String STATUS_PATH = "/api/auth/me";
+	private static final String LANGUAGE_PATH = "/api/auth/me/language";
 	private static final String MENTOR_PROFILE_PATH_PREFIX = "/api/mentors/";
 	private static final String AVAILABILITY_SETTINGS_SUFFIX = "/availability-settings";
 	private static final String USER_PROFILE_PATH_PREFIX = "/api/users/";
@@ -85,6 +86,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		AppUser user = account.get();
 		if (user.getStatus() != UserAccountStatus.APPROVED
 				&& !STATUS_PATH.equals(request.getRequestURI())
+				&& !LANGUAGE_PATH.equals(request.getRequestURI())
 				&& !isDocumentAccess(request)
 				&& !isProfileParsePreview(request)
 				&& !isOwnMentorProfileUpdate(request, user)
@@ -150,6 +152,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static boolean isBrowserPath(HttpServletRequest request, AppUser user) {
 		String uri = request.getRequestURI();
 		return STATUS_PATH.equals(uri)
+				|| LANGUAGE_PATH.equals(uri)
 				|| isDocumentAccess(request)
 				|| isProfileParsePreview(request)
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && PROFILE_PARSE_PATH.equals(uri))

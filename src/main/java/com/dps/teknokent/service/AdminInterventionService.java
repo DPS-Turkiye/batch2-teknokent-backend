@@ -29,6 +29,7 @@ import com.dps.teknokent.repository.NotificationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -78,7 +79,7 @@ public class AdminInterventionService {
 		}
 		Notification notification = notificationService.create(
 				coordinator,
-				"Müdahale gerekiyor",
+				Texts.get(coordinator, "notification.interventionNeeded.title"),
 				body,
 				"/coordinator/mentorships?mentorship=" + mentorship.getId());
 

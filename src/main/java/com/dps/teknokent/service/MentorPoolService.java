@@ -38,6 +38,7 @@ import com.dps.teknokent.repository.MentorProgramName;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -113,11 +114,9 @@ public class MentorPoolService {
 	private void emailInviteLink(Program program, ProgramMentorInvite invite) {
 		mailService.sendAfterCommit(
 				invite.getEmail(),
-				"menton: " + program.getName() + " mentor havuzuna davet",
-				"Merhaba,\n\n" + program.getName() + " programının mentor havuzuna davet edildiniz.\n\n"
-						+ "Kayıt bağlantınız (7 gün geçerli): "
-						+ mailService.link("/signup?role=mentor&programInvite=" + invite.getCode())
-						+ "\n\nBu e-posta adresiyle kayıt olun; koordinatör onayladığında havuza eklenirsiniz.\n\nmenton");
+				Texts.inBoth(" / ", "mail.mentorPoolInvite.subject", program.getName()),
+				Texts.inBoth(Texts.MAIL_LANGUAGE_BREAK, "mail.mentorPoolInvite.body", program.getName(),
+						mailService.link("/signup?role=mentor&programInvite=" + invite.getCode())));
 	}
 
 	@Transactional

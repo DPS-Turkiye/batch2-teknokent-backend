@@ -38,6 +38,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 import com.dps.teknokent.util.TeamCodes;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -147,11 +148,9 @@ public class ProgramLaunchService {
 		}
 		boolean sent = mailService.sendNow(
 				invite.getLeadEmail(),
-				"menton: " + program.getName() + " takım kodunuz",
-				"Merhaba,\n\n" + program.getName() + " programına " + invite.getTeamName()
-						+ " takımının yetkilisi olarak davet edildiniz.\n\nTakım kodunuz: " + invite.getCode()
-						+ "\n\n" + mailService.link("/invite") + " adresinden bu kodla kayıt olun. Kayıt olduktan sonra aynı kodu"
-						+ " ekip arkadaşlarınızla paylaşabilirsiniz.\n\nmenton");
+				Texts.inBoth(" / ", "mail.teamCode.subject", program.getName()),
+				Texts.inBoth(Texts.MAIL_LANGUAGE_BREAK, "mail.teamCode.body", program.getName(), invite.getTeamName(),
+						invite.getCode(), mailService.link("/invite")));
 		invite.setCodeSendFailed(!sent);
 		if (sent) {
 			invite.setCodeSentAt(Instant.now());
