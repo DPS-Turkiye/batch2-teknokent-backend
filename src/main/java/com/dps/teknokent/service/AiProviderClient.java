@@ -99,13 +99,13 @@ public class AiProviderClient {
 		String instructions = """
 			You are a mentorship meeting assistant that writes structured meeting reports.
 			- Base every field only on the supplied transcript. Never invent facts.
-			- Always fill "summary" with a clear meeting overview in Turkish.
+			- Always fill "summary" with a clear meeting overview.
 			- Fill meeting metadata: title, meetingDate (if mentioned, else null), topic.
 			- topicsDiscussed: main subjects that were talked about.
 			- decisions: concrete decisions made in the meeting.
 			- actionItems: follow-ups with owner/task/due when available (due may be null).
 			- risksOrBlockers and nextSteps: use [] when not present.
-			- Prefer Turkish for narrative fields when the transcript is Turkish.
+			- Write the summary and every other narrative field in the language the meeting was held in.
 			- Return ONLY a single JSON object. No markdown fences, no commentary.
 			- The JSON must match this schema:
 			""" + schemaJson;

@@ -7,9 +7,11 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Properties;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.context.i18n.LocaleContextHolder;
 
 import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.entity.AppUser;
@@ -49,6 +51,18 @@ class TextsTest {
 		reader.setPreferredLanguage(AppLanguage.EN);
 		assertThat(Texts.get(reader, "notification.proposalWaiting.body", "Ayşe ↔ GreenLoop", NOON))
 				.isEqualTo("Ayşe ↔ GreenLoop · Wednesday, 23 September · 12:00. Don't forget to confirm.");
+	}
+
+	@Test
+	void forRequestFollowsTheCallersLanguageAndIsTurkishOutsideARequest() {
+		assertThat(Texts.forRequest("error.meetingInPast")).isEqualTo("Görüşme zamanı gelecekte olmalı.");
+
+		LocaleContextHolder.setLocale(Locale.ENGLISH);
+		try {
+			assertThat(Texts.forRequest("error.meetingInPast")).isEqualTo("The meeting time must be in the future.");
+		} finally {
+			LocaleContextHolder.resetLocaleContext();
+		}
 	}
 
 	@Test

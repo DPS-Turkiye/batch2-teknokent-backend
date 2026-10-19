@@ -18,7 +18,6 @@ public final class MeetingSlotTimes {
 	public static final ZoneId APP_ZONE = ZoneId.of("Europe/Istanbul");
 	/** A meeting can be booked or proposed no sooner than this, so nobody is handed one at short notice. */
 	public static final Duration MIN_BOOKING_LEAD = Duration.ofHours(4);
-	public static final String TOO_SOON_MESSAGE = "Görüşme saati en erken 4 saat sonrası için seçilebilir.";
 	private static final DateTimeFormatter MACHINE =
 			DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 	private static final DateTimeFormatter FOR_PEOPLE =

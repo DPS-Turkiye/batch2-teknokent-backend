@@ -302,7 +302,7 @@ public class CoordinatorConversationService {
 	}
 
 	private static String nameOf(Organization organization) {
-		return organization == null ? "Takım" : organization.getName();
+		return organization == null ? Texts.forRequest("label.team") : organization.getName();
 	}
 
 	private static String nameOf(AppUser user) {

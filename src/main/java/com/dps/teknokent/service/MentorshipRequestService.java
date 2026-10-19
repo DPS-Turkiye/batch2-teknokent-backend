@@ -137,7 +137,7 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 		if (!MeetingSlotTimes.allBookable(ProposedSlots.preferred(request.requesterMessage()))) {
-			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
+			throw new InvalidRequestException(Texts.forRequest("error.slotTooSoon"));
 		}
 
 		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(
@@ -184,7 +184,7 @@ public class MentorshipRequestService {
 		}
 		if (decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED
 				&& !MeetingSlotTimes.allBookable(ProposedSlots.parse(decision.message()))) {
-			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
+			throw new InvalidRequestException(Texts.forRequest("error.slotTooSoon"));
 		}
 
 		String message = TextUtils.trim(decision.message());
@@ -362,7 +362,7 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("The selected slot is not available for this request");
 		}
 		if (slot.getStartsAt().isBefore(MeetingSlotTimes.earliestBookable())) {
-			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
+			throw new InvalidRequestException(Texts.forRequest("error.slotTooSoon"));
 		}
 		if (meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 				request.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED)) {

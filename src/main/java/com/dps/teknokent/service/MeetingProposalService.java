@@ -74,19 +74,19 @@ public class MeetingProposalService {
 		Scoped scoped = coordinatorMentorshipService.requireManagedMentorship(actorId, mentorshipId);
 		Mentorship mentorship = scoped.mentorship();
 		if (!OPEN.contains(mentorship.getStatus())) {
-			throw new InvalidRequestException("Bu mentorluk için görüşme önerilemez.");
+			throw new InvalidRequestException(Texts.forRequest("error.proposalNotAllowed"));
 		}
 		if (!request.scheduledAt().isAfter(Instant.now())) {
-			throw new InvalidRequestException("Görüşme zamanı gelecekte olmalı.");
+			throw new InvalidRequestException(Texts.forRequest("error.meetingInPast"));
 		}
 		if (proposalRepository.existsByMentorshipIdAndStatus(mentorship.getId(), MeetingProposalStatus.PENDING)) {
-			throw new ConflictException("Bu mentorluk için yanıt bekleyen bir görüşme önerisi var.");
+			throw new ConflictException(Texts.forRequest("error.mentorshipHasPendingProposal"));
 		}
 		if (request.replacesMeetingId() != null) {
 			Meeting replaced = meetingRepository.findById(request.replacesMeetingId())
 					.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + request.replacesMeetingId()));
 			if (!samePair(replaced, mentorship) || replaced.getStatus() != MeetingStatus.SCHEDULED) {
-				throw new InvalidRequestException("Yalnızca bu mentorluğun planlanmış bir görüşmesi yeniden planlanabilir.");
+				throw new InvalidRequestException(Texts.forRequest("error.rescheduleOnlyPlanned"));
 			}
 		}
 
@@ -119,19 +119,19 @@ public class MeetingProposalService {
 				.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
 		if (meeting.getStatus() != MeetingStatus.SCHEDULED || meeting.getOrganization() == null
 				|| meeting.getMentor() == null) {
-			throw new InvalidRequestException("Yalnızca planlanmış bir görüşme için yeni saat önerilebilir.");
+			throw new InvalidRequestException(Texts.forRequest("error.newTimeOnlyPlanned"));
 		}
 		boolean mentorSide = meeting.getMentor().getId().equals(actorId);
 		boolean teamSide = actor.getRole() == UserRole.MENTEE && actor.getOrganization() != null
 				&& actor.getOrganization().getId().equals(meeting.getOrganization().getId());
 		if (!mentorSide && !teamSide) {
-			throw new InvalidRequestException("Bu görüşme için yalnızca mentor ve takım yeni saat önerebilir.");
+			throw new InvalidRequestException(Texts.forRequest("error.newTimeOnlyParticipants"));
 		}
 		if (!request.scheduledAt().isAfter(Instant.now())) {
-			throw new InvalidRequestException("Görüşme zamanı gelecekte olmalı.");
+			throw new InvalidRequestException(Texts.forRequest("error.meetingInPast"));
 		}
 		if (proposalRepository.existsByReplacesMeetingIdAndStatus(meetingId, MeetingProposalStatus.PENDING)) {
-			throw new ConflictException("Bu görüşme için yanıt bekleyen bir öneri var.");
+			throw new ConflictException(Texts.forRequest("error.meetingHasPendingProposal"));
 		}
 
 		Instant now = Instant.now();
@@ -361,7 +361,7 @@ public class MeetingProposalService {
 	private Side requireSide(AppUser actor, MeetingProposal proposal) {
 		Side side = sideOf(actor, proposal);
 		if (side == null) {
-			throw new InvalidRequestException("Bu görüşme önerisine yalnızca mentor ve takım yetkilisi yanıt verebilir.");
+			throw new InvalidRequestException(Texts.forRequest("error.proposalAnswerOnlyParticipants"));
 		}
 		return side;
 	}
@@ -370,7 +370,7 @@ public class MeetingProposalService {
 		MeetingProposal proposal = proposalRepository.findById(proposalId)
 				.orElseThrow(() -> new ResourceNotFoundException("Meeting proposal not found: " + proposalId));
 		if (!proposal.isPending()) {
-			throw new ConflictException("Bu görüşme önerisi artık yanıt beklemiyor.");
+			throw new ConflictException(Texts.forRequest("error.proposalNotPending"));
 		}
 		return proposal;
 	}
@@ -378,7 +378,7 @@ public class MeetingProposalService {
 	private MeetingProposal requireManagedPending(UUID actorId, UUID proposalId) {
 		MeetingProposal proposal = requirePending(proposalId);
 		if (proposal.getMentorship() == null) {
-			throw new InvalidRequestException("Bu öneri bir program mentorluğuna bağlı değil.");
+			throw new InvalidRequestException(Texts.forRequest("error.proposalNotProgram"));
 		}
 		coordinatorMentorshipService.requireManagedMentorship(actorId, proposal.getMentorship().getId());
 		return proposal;

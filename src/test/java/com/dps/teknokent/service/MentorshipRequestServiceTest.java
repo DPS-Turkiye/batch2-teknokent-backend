@@ -402,7 +402,7 @@ class MentorshipRequestServiceTest {
                                 new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.COUNTER_PROPOSED,
                                                 "Alternatif.\nproposedSlots:" + inAnHour, null)))
                                 .isInstanceOf(InvalidRequestException.class)
-                                .hasMessage(MeetingSlotTimes.TOO_SOON_MESSAGE);
+                                .hasMessage("Görüşme saati en erken 4 saat sonrası için seçilebilir.");
                 assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.PENDING);
         }
 

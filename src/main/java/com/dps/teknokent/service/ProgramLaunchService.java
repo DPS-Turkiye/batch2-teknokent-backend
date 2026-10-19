@@ -144,7 +144,7 @@ public class ProgramLaunchService {
 		Program program = programService.requireManagedProgram(actorId, programId);
 		ProgramTeamInvite invite = requireWaitingInvite(programId, inviteId);
 		if (!mailService.isConfigured()) {
-			throw new InvalidRequestException("E-posta gönderimi bu ortamda açık değil; kodu kopyalayıp paylaşın.");
+			throw new InvalidRequestException(Texts.forRequest("error.mailDisabled"));
 		}
 		boolean sent = mailService.sendNow(
 				invite.getLeadEmail(),

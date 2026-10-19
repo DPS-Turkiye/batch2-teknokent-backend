@@ -17,6 +17,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.CoordinatorNoteRepository;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -61,7 +62,7 @@ public class CoordinatorNoteService {
 				.orElseThrow(() -> new ResourceNotFoundException("Coordinator note not found: " + noteId));
 		coordinatorMentorshipService.requireManagedMentorship(actorId, note.getMentorshipId());
 		if (!note.getAuthorId().equals(actorId)) {
-			throw new InvalidRequestException("Yalnızca kendi notunu silebilirsin.");
+			throw new InvalidRequestException(Texts.forRequest("error.ownNotesOnly"));
 		}
 		noteRepository.delete(note);
 	}
