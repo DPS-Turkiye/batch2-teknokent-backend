@@ -76,7 +76,29 @@ const SCENARIOS = {
       { target: 0, duration: "1m" },
     ],
   },
+  // One heavy target at a fixed rate, for before/after comparisons of a single fix.
+  T4: {
+    executor: "constant-arrival-rate",
+    exec: "heavy",
+    rate: Number(__ENV.RATE || 5),
+    timeUnit: "1s",
+    duration: __ENV.DURATION || "5m",
+    preAllocatedVUs: 50,
+    maxVUs: 200,
+  },
 };
+
+const T4_TARGETS = {
+  requests: ["/api/mentor-requests"],
+  conversations: ["/api/coordinator-conversations"],
+  announcements: ["/api/program-announcements"],
+  home: screen("mentee", "mentee:/dashboard").load,
+  calendar: screen("mentee", "mentee:/calendar").load,
+};
+
+function screen(role, name) {
+  return SCREENS[role].find((s) => s.name === name);
+}
 
 export const options = {
   scenarios: { [TEST]: SCENARIOS[TEST] },
@@ -139,6 +161,12 @@ export default function (sessions) {
   } else {
     sleep(randomBetween(5, 20));
   }
+}
+
+export function heavy(sessions) {
+  if (!mine) mine = { role: "mentee", ...sessions.mentee };
+  refreshTokenIfDue();
+  request(T4_TARGETS[__ENV.T4_TARGET || "requests"]);
 }
 
 function request(urls) {
