@@ -90,9 +90,7 @@ public class MentorshipRequestService {
 		} else {
 			requests = mentorshipRequestRepository.findAllByOrderByCreatedAtDesc();
 		}
-		return requests.stream()
-				.map(this::toResponse)
-				.toList();
+		return toResponses(requests);
 	}
 
 	@Transactional(readOnly = true)
@@ -111,10 +109,8 @@ public class MentorshipRequestService {
 				tab,
 				safePageable,
 				Instant.now());
-		List<MentorshipRequestResponse> content = page.getContent().stream()
-				.map(this::toResponse)
-				.toList();
-		return PageResponse.of(content, page.getNumber(), page.getSize(), page.getTotalElements());
+		return PageResponse.of(
+				toResponses(page.getContent()), page.getNumber(), page.getSize(), page.getTotalElements());
 	}
 
 	@Transactional(readOnly = true)
@@ -514,5 +510,28 @@ public class MentorshipRequestService {
 				.map(RecommendationSnapshotResponse::fromEntity)
 				.orElse(null);
 		return MentorshipRequestResponse.fromEntity(request, messages, recommendationSnapshot);
+	}
+
+	// Lists are polled (phone Mesajlar every 15 s), so messages and snapshots load once for the whole list.
+	private List<MentorshipRequestResponse> toResponses(List<MentorshipRequest> requests) {
+		if (requests.isEmpty()) {
+			return List.of();
+		}
+		List<UUID> ids = requests.stream().map(MentorshipRequest::getId).toList();
+		Map<UUID, List<MentorshipRequestMessageResponse>> messages = mentorshipRequestMessageRepository
+				.findByRequestIdInOrderByCreatedAtAsc(ids)
+				.stream()
+				.collect(Collectors.groupingBy(
+						message -> message.getRequest().getId(),
+						Collectors.mapping(MentorshipRequestMessageResponse::fromEntity, Collectors.toList())));
+		Map<UUID, RecommendationSnapshotResponse> snapshots = recommendationRunRepository.findByRequestIdIn(ids)
+				.stream()
+				.collect(Collectors.toMap(run -> run.getRequest().getId(), RecommendationSnapshotResponse::fromEntity));
+		return requests.stream()
+				.map(request -> MentorshipRequestResponse.fromEntity(
+						request,
+						messages.getOrDefault(request.getId(), List.of()),
+						snapshots.get(request.getId())))
+				.toList();
 	}
 }
