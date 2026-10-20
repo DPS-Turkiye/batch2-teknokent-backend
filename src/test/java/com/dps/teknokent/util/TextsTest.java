@@ -23,14 +23,14 @@ class TextsTest {
 
 	@Test
 	void englishHasEveryTurkishKey() throws IOException {
-		assertThat(load("texts_en.properties").stringPropertyNames())
-				.isEqualTo(load("texts.properties").stringPropertyNames());
+		assertThat(load(AppLanguage.EN).stringPropertyNames())
+				.isEqualTo(load(AppLanguage.TR).stringPropertyNames());
 	}
 
 	@Test
 	void everyPatternKeepsItsApostrophesAndFillsEveryArgument() throws IOException {
 		for (AppLanguage language : AppLanguage.values()) {
-			Properties raw = load(language == AppLanguage.TR ? "texts.properties" : "texts_en.properties");
+			Properties raw = load(language);
 			for (String key : raw.stringPropertyNames()) {
 				String rendered = Texts.get(language, key, "a0", "a1", "a2", "a3");
 				String pattern = raw.getProperty(key);
@@ -71,9 +71,9 @@ class TextsTest {
 				.isEqualTo("menton: Growth Circuit takım kodunuz / menton: your Growth Circuit team code");
 	}
 
-	private static Properties load(String file) throws IOException {
+	private static Properties load(AppLanguage language) throws IOException {
 		Properties properties = new Properties();
-		try (InputStream in = TextsTest.class.getResourceAsStream("/i18n/" + file)) {
+		try (InputStream in = TextsTest.class.getResourceAsStream("/i18n/" + language.code() + "/texts.properties")) {
 			properties.load(new InputStreamReader(in, StandardCharsets.UTF_8));
 		}
 		return properties;
