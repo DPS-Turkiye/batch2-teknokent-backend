@@ -31,10 +31,15 @@ public class ActionItemController {
 
 	private final ActionItemService actionItemService;
 
+	/** One request, one startup, or several requests at once (screens that list every request's tasks). */
 	@GetMapping
 	public List<ActionItemResponse> findByScope(
 			@RequestParam(required = false) UUID organizationId,
-			@RequestParam(required = false) UUID mentorshipRequestId) {
+			@RequestParam(required = false) UUID mentorshipRequestId,
+			@RequestParam(required = false) List<UUID> mentorshipRequestIds) {
+		if (mentorshipRequestIds != null) {
+			return actionItemService.findByRequests(mentorshipRequestIds);
+		}
 		return actionItemService.findByScope(organizationId, mentorshipRequestId);
 	}
 

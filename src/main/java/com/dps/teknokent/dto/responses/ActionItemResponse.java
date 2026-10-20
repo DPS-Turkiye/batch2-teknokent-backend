@@ -20,7 +20,8 @@ public record ActionItemResponse(
 		LocalDate dueDate,
 		String completionNotes,
 		Instant createdAt,
-		Instant updatedAt) {
+		Instant updatedAt,
+		UUID mentorshipRequestId) {
 
 	public static ActionItemResponse fromEntity(ActionItem actionItem) {
 		return new ActionItemResponse(
@@ -28,6 +29,7 @@ public record ActionItemResponse(
 				actionItem.getMeeting() == null ? null : actionItem.getMeeting().getId(),
 				actionItem.getOwner().getId(), actionItem.getOwner().getFullName(), actionItem.getTitle(),
 				actionItem.getDescription(), actionItem.getStatus(), actionItem.getDueDate(),
-				actionItem.getCompletionNotes(), actionItem.getCreatedAt(), actionItem.getUpdatedAt());
+				actionItem.getCompletionNotes(), actionItem.getCreatedAt(), actionItem.getUpdatedAt(),
+				actionItem.getMentorshipRequest() == null ? null : actionItem.getMentorshipRequest().getId());
 	}
 }
