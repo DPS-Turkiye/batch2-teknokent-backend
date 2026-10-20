@@ -39,6 +39,8 @@ import com.dps.teknokent.util.TextUtils;
 @Service
 public class MeetingService {
 
+	private static final int MAX_RATED_LOOKUP = 50;
+
 	private final MeetingRepository meetingRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final DomainLookupService domainLookupService;
@@ -396,6 +398,19 @@ public class MeetingService {
 	public Optional<MeetingFeedbackResponse> findFeedback(UUID meetingId, UUID authorId) {
 		return meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, authorId)
 				.map(MeetingFeedbackResponse::fromEntity);
+	}
+
+	@Transactional(readOnly = true)
+	public List<UUID> ratedMeetingIds(List<UUID> meetingIds, UUID authorId) {
+		if (meetingIds.size() > MAX_RATED_LOOKUP) {
+			throw new InvalidRequestException("Too many meetings in one lookup.");
+		}
+		if (meetingIds.isEmpty()) {
+			return List.of();
+		}
+		return meetingFeedbackRepository.findByMeetingIdInAndAuthorId(meetingIds, authorId).stream()
+				.map(feedback -> feedback.getMeeting().getId())
+				.toList();
 	}
 
 	private void requireMeetingParticipant(Meeting meeting, AppUser author) {

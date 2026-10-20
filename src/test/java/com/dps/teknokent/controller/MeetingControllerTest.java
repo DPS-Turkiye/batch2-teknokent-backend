@@ -227,4 +227,20 @@ class MeetingControllerTest {
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.ratings[0]").value(5));
         }
+
+        @Test
+        void listsTheRatedMeetingsAmongSeveralInOneCall() throws Exception {
+                UUID rated = UUID.randomUUID();
+                UUID unrated = UUID.randomUUID();
+                UUID authorId = UUID.randomUUID();
+                when(meetingService.ratedMeetingIds(List.of(rated, unrated), authorId)).thenReturn(List.of(rated));
+
+                mockMvc.perform(get("/api/meetings/feedback")
+                                .param("meetingIds", rated.toString(), unrated.toString())
+                                .param("authorId", authorId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.length()").value(1))
+                                .andExpect(jsonPath("$[0]").value(rated.toString()));
+        }
 }
