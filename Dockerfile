@@ -30,6 +30,8 @@ USER spring:spring
 
 EXPOSE 8080
 
-ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC --enable-native-access=ALL-UNNAMED"
+# Heap is half the machine's memory, so a bigger instance needs no image change; the other half is for
+# the OS, Docker and the JVM's own non-heap memory (a 2 GiB t3.small gets ~1 GiB, was a fixed 512 MB).
+ENV JAVA_OPTS="-Xms256m -XX:MaxRAMPercentage=50 -XX:+UseG1GC --enable-native-access=ALL-UNNAMED"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

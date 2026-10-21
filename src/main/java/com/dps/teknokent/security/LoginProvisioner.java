@@ -1,5 +1,7 @@
 package com.dps.teknokent.security;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /** Finds or creates the Firebase login for an address, so an admin can hand someone an account. */
@@ -14,6 +16,6 @@ public interface LoginProvisioner {
 	 */
 	Optional<String> passwordSetupLink(String email, String continueUrl);
 
-	/** Whether the login for {@code uid} has a password yet; empty when Firebase cannot say. */
-	Optional<Boolean> hasPassword(String uid);
+	/** Whether each login has a password yet; a uid Firebase cannot answer for is left out. */
+	Map<String, Boolean> passwordsSet(Collection<String> uids);
 }
