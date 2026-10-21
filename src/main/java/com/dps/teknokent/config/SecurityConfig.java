@@ -89,7 +89,7 @@ public class SecurityConfig {
 
 		CorsConfiguration notificationConfig = new CorsConfiguration();
 		notificationConfig.setAllowedOriginPatterns(Arrays.asList(documentsAllowedOrigins));
-		notificationConfig.setAllowedMethods(List.of("GET", "PATCH", "DELETE", "OPTIONS"));
+		notificationConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		notificationConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 		notificationConfig.setAllowCredentials(false);
 		source.registerCorsConfiguration(NOTIFICATION_PATH, notificationConfig);
