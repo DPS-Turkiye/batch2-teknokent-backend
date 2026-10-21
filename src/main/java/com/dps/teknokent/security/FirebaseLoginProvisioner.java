@@ -1,6 +1,10 @@
 package com.dps.teknokent.security;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
@@ -12,6 +16,8 @@ import com.google.firebase.auth.ActionCodeSettings;
 import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.UidIdentifier;
+import com.google.firebase.auth.UserIdentifier;
 import com.google.firebase.auth.UserRecord;
 
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	private static final String PASSWORD_PROVIDER = "password";
+	private static final int MAX_USERS_PER_LOOKUP = 100;
 
 	private final FirebaseAuth firebaseAuth;
 
@@ -85,15 +92,25 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		}
 	}
 
-	/** A login made by {@link #loginFor} has no "password" provider until its setup link is used. */
+	/**
+	 * A login made by {@link #loginFor} has no "password" provider until its setup link is used. One Firebase
+	 * call per {@value #MAX_USERS_PER_LOOKUP} logins, not one per login.
+	 */
 	@Override
-	public Optional<Boolean> hasPassword(String uid) {
-		try {
-			return Optional.of(Arrays.stream(firebaseAuth.getUser(uid).getProviderData())
-					.anyMatch(provider -> PASSWORD_PROVIDER.equals(provider.getProviderId())));
-		} catch (FirebaseAuthException exception) {
-			log.warn("Could not read the Firebase login {}: {}", uid, exception.getMessage());
-			return Optional.empty();
+	public Map<String, Boolean> passwordsSet(Collection<String> uids) {
+		List<UserIdentifier> identifiers = uids.stream().distinct().<UserIdentifier>map(UidIdentifier::new).toList();
+		Map<String, Boolean> answers = new HashMap<>();
+		for (int from = 0; from < identifiers.size(); from += MAX_USERS_PER_LOOKUP) {
+			List<UserIdentifier> batch = identifiers.subList(from, Math.min(from + MAX_USERS_PER_LOOKUP, identifiers.size()));
+			try {
+				for (UserRecord user : firebaseAuth.getUsers(batch).getUsers()) {
+					answers.put(user.getUid(), Arrays.stream(user.getProviderData())
+							.anyMatch(provider -> PASSWORD_PROVIDER.equals(provider.getProviderId())));
+				}
+			} catch (FirebaseAuthException exception) {
+				log.warn("Could not read {} Firebase logins: {}", batch.size(), exception.getMessage());
+			}
 		}
+		return answers;
 	}
 }

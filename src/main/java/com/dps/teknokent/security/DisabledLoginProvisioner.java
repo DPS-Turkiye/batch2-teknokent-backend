@@ -1,5 +1,7 @@
 package com.dps.teknokent.security;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -17,7 +19,7 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
-	public Optional<Boolean> hasPassword(String uid) {
-		return Optional.empty();
+	public Map<String, Boolean> passwordsSet(Collection<String> uids) {
+		return Map.of();
 	}
 }

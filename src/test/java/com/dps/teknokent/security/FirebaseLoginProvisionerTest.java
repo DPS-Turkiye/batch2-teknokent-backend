@@ -3,8 +3,16 @@ package com.dps.teknokent.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -14,6 +22,7 @@ import com.google.firebase.ErrorCode;
 import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.GetUsersResult;
 import com.google.firebase.auth.UserInfo;
 import com.google.firebase.auth.UserRecord;
 
@@ -47,21 +56,37 @@ class FirebaseLoginProvisionerTest {
 	}
 
 	@Test
-	void seesAPasswordOnlyOnceTheSetupLinkWasUsed() throws Exception {
+	void seesAPasswordOnlyOnceTheSetupLinkWasUsedAndAsksForEveryoneInOneCall() throws Exception {
 		UserInfo password = mock(UserInfo.class);
 		when(password.getProviderId()).thenReturn("password");
-		UserRecord ready = mock(UserRecord.class);
-		when(ready.getProviderData()).thenReturn(new UserInfo[] {password});
-		UserRecord waiting = mock(UserRecord.class);
-		when(waiting.getProviderData()).thenReturn(new UserInfo[0]);
-		when(firebaseAuth.getUser("ready")).thenReturn(ready);
-		when(firebaseAuth.getUser("waiting")).thenReturn(waiting);
-		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);
-		when(firebaseAuth.getUser("broken")).thenThrow(denied);
+		UserRecord ready = user("ready", new UserInfo[] {password});
+		UserRecord waiting = user("waiting", new UserInfo[0]);
+		GetUsersResult result = mock(GetUsersResult.class);
+		when(result.getUsers()).thenReturn(Set.of(ready, waiting));
+		when(firebaseAuth.getUsers(anyCollection())).thenReturn(result);
 
-		assertThat(provisioner.hasPassword("ready")).contains(true);
-		assertThat(provisioner.hasPassword("waiting")).contains(false);
-		assertThat(provisioner.hasPassword("broken")).isEmpty();
+		assertThat(provisioner.passwordsSet(List.of("ready", "waiting", "gone")))
+				.containsExactlyInAnyOrderEntriesOf(Map.of("ready", true, "waiting", false));
+		verify(firebaseAuth, times(1)).getUsers(anyCollection());
+	}
+
+	@Test
+	void asksAtMostAHundredLoginsPerCallAndLeavesOutABatchFirebaseRefused() throws Exception {
+		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);
+		when(firebaseAuth.getUsers(anyCollection())).thenThrow(denied);
+		List<String> uids = IntStream.range(0, 150).mapToObj(i -> "uid-" + i).toList();
+
+		assertThat(provisioner.passwordsSet(uids)).isEmpty();
+		verify(firebaseAuth, times(2)).getUsers(anyCollection());
+		assertThat(provisioner.passwordsSet(List.of())).isEmpty();
+		verify(firebaseAuth, times(2)).getUsers(anyCollection());
+	}
+
+	private static UserRecord user(String uid, UserInfo[] providers) {
+		UserRecord user = mock(UserRecord.class);
+		when(user.getUid()).thenReturn(uid);
+		when(user.getProviderData()).thenReturn(providers);
+		return user;
 	}
 
 	private static FirebaseAuthException failure(ErrorCode errorCode, AuthErrorCode authErrorCode) {

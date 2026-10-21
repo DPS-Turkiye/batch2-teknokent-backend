@@ -29,12 +29,12 @@ import com.dps.teknokent.dto.responses.AdminOverviewResponse.MentorshipRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.ProgramRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.RequestRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.StartupRow;
-import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.MentorshipResponse;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.UserRow;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Bottleneck;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
@@ -43,6 +43,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
@@ -66,7 +67,7 @@ public class AdminOverviewService {
 	private final DomainLookupService domainLookupService;
 	private final AppUserRepository appUserRepository;
 	private final MentorshipService mentorshipService;
-	private final MentorshipRequestService mentorshipRequestService;
+	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramStartupRepository programStartupRepository;
@@ -83,12 +84,15 @@ public class AdminOverviewService {
 			throw new InvalidRequestException("Only an admin can view the admin overview.");
 		}
 		List<AppUser> userEntities = appUserRepository.findAll();
+		Map<String, Boolean> passwords = loginProvisioner.passwordsSet(userEntities.stream()
+				.filter(AdminOverviewService::mayLackPassword)
+				.map(AppUser::getFirebaseUid)
+				.toList());
 		List<UserRow> users = userEntities.stream()
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
-				.map(user -> toUser(user, passwordSet(user)))
+				.map(user -> toUser(user, mayLackPassword(user) ? passwords.get(user.getFirebaseUid()) : null))
 				.toList();
-		List<RequestRow> requests = mentorshipRequestService.findAll(null, null, null).stream()
-				.filter(request -> OPEN_REQUESTS.contains(request.status()))
+		List<RequestRow> requests = mentorshipRequestRepository.findByStatusInOrderByCreatedAtDesc(OPEN_REQUESTS).stream()
 				.map(AdminOverviewService::toRequest)
 				.toList();
 		return build(programRepository.findAllByOrderByCreatedAtDesc(), null, userEntities, users, requests);
@@ -121,7 +125,8 @@ public class AdminOverviewService {
 		for (Organization organization : organizationRepository.findAll()) {
 			organizations.put(organization.getId(), organization);
 		}
-		Map<String, Instant> lastMeeting = lastPastMeetingByPair(now);
+		List<Meeting> allMeetings = meetingRepository.findAllByOrderByScheduledAtDesc();
+		Map<String, Instant> lastMeeting = lastPastMeetingByPair(allMeetings, now);
 		List<ProgramRow> programs = programEntities.stream()
 				.map(program -> toProgram(program, usersById, organizations))
 				.toList();
@@ -135,7 +140,7 @@ public class AdminOverviewService {
 				.filter(item -> inScope.test(item.getOrganization().getId()))
 				.map(AdminOverviewService::toBottleneck)
 				.toList();
-		List<Meeting> meetingEntities = meetingRepository.findAllByOrderByScheduledAtDesc().stream()
+		List<Meeting> meetingEntities = allMeetings.stream()
 				.filter(meeting -> meeting.getOrganization() != null && inScope.test(meeting.getOrganization().getId()))
 				.toList();
 		long meetingsLast8Weeks = meetingEntities.stream()
@@ -157,12 +162,9 @@ public class AdminOverviewService {
 	}
 
 	// An added coordinator is APPROVED at once, but cannot sign in before setting a password.
-	private Boolean passwordSet(AppUser user) {
-		if (user.getRole() != UserRole.COORDINATOR || user.getStatus() != UserAccountStatus.APPROVED
-				|| user.getFirebaseUid() == null) {
-			return null;
-		}
-		return loginProvisioner.hasPassword(user.getFirebaseUid()).orElse(null);
+	private static boolean mayLackPassword(AppUser user) {
+		return user.getRole() == UserRole.COORDINATOR && user.getStatus() == UserAccountStatus.APPROVED
+				&& user.getFirebaseUid() != null;
 	}
 
 	private static UserRow toUser(AppUser user, Boolean passwordSet) {
@@ -263,16 +265,16 @@ public class AdminOverviewService {
 				mentorship.goalItems().size());
 	}
 
-	private static RequestRow toRequest(MentorshipRequestResponse request) {
+	private static RequestRow toRequest(MentorshipRequest request) {
 		return new RequestRow(
-				request.id(),
-				request.organizationId(),
-				request.organizationName(),
-				request.mentorId(),
-				request.mentorName(),
-				request.supportArea(),
-				request.status().name(),
-				request.createdAt());
+				request.getId(),
+				request.getOrganization().getId(),
+				request.getOrganization().getName(),
+				request.getMentor().getId(),
+				request.getMentor().getFullName(),
+				request.getSupportArea(),
+				request.getStatus().name(),
+				request.getCreatedAt());
 	}
 
 	private static BottleneckRow toBottleneck(Bottleneck bottleneck) {
@@ -286,9 +288,9 @@ public class AdminOverviewService {
 				bottleneck.getCreatedAt());
 	}
 
-	private Map<String, Instant> lastPastMeetingByPair(Instant now) {
+	private static Map<String, Instant> lastPastMeetingByPair(List<Meeting> meetings, Instant now) {
 		Map<String, Instant> last = new HashMap<>();
-		for (Meeting meeting : meetingRepository.findAllByOrderByScheduledAtDesc()) {
+		for (Meeting meeting : meetings) {
 			if (meeting.getStatus() == MeetingStatus.CANCELLED || meeting.getScheduledAt() == null) {
 				continue;
 			}

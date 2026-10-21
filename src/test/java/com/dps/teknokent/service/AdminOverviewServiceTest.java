@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -15,10 +15,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.Program;
@@ -27,6 +29,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -44,7 +47,7 @@ class AdminOverviewServiceTest {
 	@Mock
 	private MentorshipService mentorshipService;
 	@Mock
-	private MentorshipRequestService mentorshipRequestService;
+	private MentorshipRequestRepository mentorshipRequestRepository;
 	@Mock
 	private ProgramRepository programRepository;
 	@Mock
@@ -111,13 +114,38 @@ class AdminOverviewServiceTest {
 		}
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
 		when(appUserRepository.findAll()).thenReturn(List.of(admin, waiting, ready, mentor));
-		when(loginProvisioner.hasPassword(waiting.getFirebaseUid())).thenReturn(Optional.of(false));
-		when(loginProvisioner.hasPassword(ready.getFirebaseUid())).thenReturn(Optional.of(true));
+		when(loginProvisioner.passwordsSet(List.of(waiting.getFirebaseUid(), ready.getFirebaseUid())))
+				.thenReturn(Map.of(waiting.getFirebaseUid(), false, ready.getFirebaseUid(), true));
 
 		var users = service.overview(admin.getId()).users();
 
 		assertThat(users).extracting(row -> row.fullName() + ":" + row.passwordSet())
 				.containsExactly("Ayla Bekler:false", "Burcu Şen:true", "Cem Mentor:null", "Platform Yöneticisi:null");
+	}
+
+	@Test
+	void listsTheOpenRequestsStraightFromAStatusQuery() {
+		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
+		AppUser mentor = person("Cem Mentor", UserRole.MENTOR);
+		MentorshipRequest open = new MentorshipRequest();
+		open.setId(UUID.randomUUID());
+		open.setOrganization(organization("Lumen"));
+		open.setMentor(mentor);
+		open.setSupportArea("Finans");
+		open.setStatus(MentorshipRequestStatus.MORE_INFO_REQUESTED);
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(appUserRepository.findAll()).thenReturn(List.of(admin, mentor));
+		when(mentorshipRequestRepository.findByStatusInOrderByCreatedAtDesc(List.of(
+				MentorshipRequestStatus.PENDING,
+				MentorshipRequestStatus.MORE_INFO_REQUESTED,
+				MentorshipRequestStatus.COUNTER_PROPOSED)))
+				.thenReturn(List.of(open));
+
+		var requests = service.overview(admin.getId()).requests();
+
+		assertThat(requests).extracting(row -> row.organizationName() + " · " + row.mentorName() + " · "
+				+ row.supportArea() + " · " + row.status())
+				.containsExactly("Lumen · Cem Mentor · Finans · MORE_INFO_REQUESTED");
 	}
 
 	@Test
