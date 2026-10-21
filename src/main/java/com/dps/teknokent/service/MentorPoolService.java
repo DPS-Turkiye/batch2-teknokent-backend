@@ -38,6 +38,7 @@ import com.dps.teknokent.repository.MentorProgramName;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -91,7 +92,7 @@ public class MentorPoolService {
 			invite.setCreatedBy(actorId);
 			invite.setCreatedAt(Instant.now());
 		} else if (invite.getMentorId() != null) {
-			throw new ConflictException("Bu mentor davetle zaten kayıt oldu.");
+			throw new ConflictException(Texts.forRequest("error.mentorAlreadyJoinedByInvite"));
 		}
 		invite.setExpiresAt(Instant.now().plus(INVITE_VALIDITY));
 		inviteRepository.save(invite);
@@ -113,11 +114,9 @@ public class MentorPoolService {
 	private void emailInviteLink(Program program, ProgramMentorInvite invite) {
 		mailService.sendAfterCommit(
 				invite.getEmail(),
-				"menton: " + program.getName() + " mentor havuzuna davet",
-				"Merhaba,\n\n" + program.getName() + " programının mentor havuzuna davet edildiniz.\n\n"
-						+ "Kayıt bağlantınız (7 gün geçerli): "
-						+ mailService.link("/signup?role=mentor&programInvite=" + invite.getCode())
-						+ "\n\nBu e-posta adresiyle kayıt olun; koordinatör onayladığında havuza eklenirsiniz.\n\nmenton");
+				Texts.inBoth(" / ", "mail.mentorPoolInvite.subject", program.getName()),
+				Texts.inBoth(Texts.MAIL_LANGUAGE_BREAK, "mail.mentorPoolInvite.body", program.getName(),
+						mailService.link("/signup?role=mentor&programInvite=" + invite.getCode())));
 	}
 
 	@Transactional
@@ -134,7 +133,7 @@ public class MentorPoolService {
 		ProgramMentor membership = requireMembership(programId, mentorId);
 		if (membership.getStatus() != ProgramMentorStatus.PENDING
 				|| membership.getInvitedBy() != ProgramMentorInvitedBy.COORDINATOR) {
-			throw new InvalidRequestException("Yalnızca yanıtlanmamış bir davet geri alınabilir.");
+			throw new InvalidRequestException(Texts.forRequest("error.onlyOpenInviteWithdrawn"));
 		}
 		programMentorRepository.delete(membership);
 		return rows(program);
@@ -145,7 +144,7 @@ public class MentorPoolService {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
 		ProgramMentor membership = requireAwaitingApproval(programId, mentorId);
 		AppUser mentor = appUserRepository.findById(mentorId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor bulunamadı: " + mentorId));
+				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorNotFound", mentorId)));
 		Optional<ProgramMentorInvite> invite = inviteRepository.findByProgramIdAndMentorId(programId, mentorId);
 		Optional<MentorProfile> profile = mentorProfileRepository.findById(mentorId);
 		String invitedBy = invite.flatMap(value -> appUserRepository.findById(value.getCreatedBy()))
@@ -175,10 +174,10 @@ public class MentorPoolService {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
 		requireAwaitingApproval(programId, mentorId);
 		AppUser mentor = appUserRepository.findById(mentorId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor bulunamadı: " + mentorId));
+				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorNotFound", mentorId)));
 		if (mentor.getStatus() == UserAccountStatus.PENDING) {
 			if (inviteRepository.findByProgramIdAndMentorId(programId, mentorId).isEmpty()) {
-				throw new InvalidRequestException("Bu mentorun hesabını önce bir yönetici onaylamalı.");
+				throw new InvalidRequestException(Texts.forRequest("error.mentorNeedsAdminApproval"));
 			}
 			mentor.setStatus(accepted ? UserAccountStatus.APPROVED : UserAccountStatus.REJECTED);
 			appUserRepository.save(mentor);
@@ -277,7 +276,7 @@ public class MentorPoolService {
 
 	private ProgramMentor requireMembership(UUID programId, UUID mentorId) {
 		return programMentorRepository.findByProgramIdAndMentorId(programId, mentorId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor bu programda değil: " + mentorId));
+				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorNotInProgram", mentorId)));
 	}
 
 	private ProgramMentor requireAwaitingApproval(UUID programId, UUID mentorId) {
@@ -291,9 +290,9 @@ public class MentorPoolService {
 
 	private ProgramMentorInvite requireOpenInvite(UUID programId, UUID inviteId) {
 		ProgramMentorInvite invite = inviteRepository.findByIdAndProgramId(inviteId, programId)
-				.orElseThrow(() -> new ResourceNotFoundException("Mentor daveti bulunamadı: " + inviteId));
+				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorInviteNotFound", inviteId)));
 		if (invite.getMentorId() != null) {
-			throw new InvalidRequestException("Bu mentor zaten kayıt oldu.");
+			throw new InvalidRequestException(Texts.forRequest("error.mentorAlreadySignedUp"));
 		}
 		return invite;
 	}

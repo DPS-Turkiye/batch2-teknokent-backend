@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
@@ -101,6 +102,20 @@ class NotificationReminderServiceTest {
 
 		verify(notificationService).create(founder, NotificationCategory.TASK_DEADLINE,
 				"Görev teslim tarihi yaklaşıyor", "«Finansal model» görevinin son günü bugün.", "/startup/process");
+	}
+
+	@Test
+	void writesEachReminderInItsReadersLanguage() {
+		AppUser founder = user("Gamze Kozak", UserRole.MENTEE);
+		founder.setPreferredLanguage(AppLanguage.EN);
+		when(actionItemRepository.findByStatusInAndDeadlineRemindedAtIsNullAndDueDateBetween(
+				any(), eq(TODAY), eq(TODAY.plusDays(1))))
+				.thenReturn(List.of(task(founder, TODAY)));
+
+		reminderService.remindTaskDeadlines(NOW);
+
+		verify(notificationService).create(founder, NotificationCategory.TASK_DEADLINE,
+				"Task deadline coming up", "The task “Finansal model” is due today.", "/startup/process");
 	}
 
 	private static Organization organization() {

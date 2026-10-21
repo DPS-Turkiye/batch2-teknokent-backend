@@ -15,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.MeetingProposalStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
-import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
@@ -37,8 +36,8 @@ import com.dps.teknokent.repository.MeetingProposalRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.service.CoordinatorMentorshipService.Scoped;
-import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -75,19 +74,19 @@ public class MeetingProposalService {
 		Scoped scoped = coordinatorMentorshipService.requireManagedMentorship(actorId, mentorshipId);
 		Mentorship mentorship = scoped.mentorship();
 		if (!OPEN.contains(mentorship.getStatus())) {
-			throw new InvalidRequestException("Bu mentorluk için görüşme önerilemez.");
+			throw new InvalidRequestException(Texts.forRequest("error.proposalNotAllowed"));
 		}
 		if (!request.scheduledAt().isAfter(Instant.now())) {
-			throw new InvalidRequestException("Görüşme zamanı gelecekte olmalı.");
+			throw new InvalidRequestException(Texts.forRequest("error.meetingInPast"));
 		}
 		if (proposalRepository.existsByMentorshipIdAndStatus(mentorship.getId(), MeetingProposalStatus.PENDING)) {
-			throw new ConflictException("Bu mentorluk için yanıt bekleyen bir görüşme önerisi var.");
+			throw new ConflictException(Texts.forRequest("error.mentorshipHasPendingProposal"));
 		}
 		if (request.replacesMeetingId() != null) {
 			Meeting replaced = meetingRepository.findById(request.replacesMeetingId())
 					.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + request.replacesMeetingId()));
 			if (!samePair(replaced, mentorship) || replaced.getStatus() != MeetingStatus.SCHEDULED) {
-				throw new InvalidRequestException("Yalnızca bu mentorluğun planlanmış bir görüşmesi yeniden planlanabilir.");
+				throw new InvalidRequestException(Texts.forRequest("error.rescheduleOnlyPlanned"));
 			}
 		}
 
@@ -105,9 +104,10 @@ public class MeetingProposalService {
 		proposal.setStatus(MeetingProposalStatus.PENDING);
 		MeetingProposal saved = proposalRepository.save(proposal);
 
-		String title = request.replacesMeetingId() == null ? "Koordinatörden görüşme önerisi" : "Koordinatörden yeni saat önerisi";
-		notifyUnanswered(saved, title, pairLine(saved) + " · " + MeetingSlotTimes.formatForPeople(saved.getScheduledAt())
-				+ ". Uygunsan onayla.");
+		String titleKey = request.replacesMeetingId() == null
+				? "notification.proposalFromCoordinator.title"
+				: "notification.newTimeFromCoordinator.title";
+		notifyUnanswered(saved, titleKey, "notification.proposalPleaseConfirm.body", pairLine(saved), saved.getScheduledAt());
 		return response(saved, scoped.program(), null);
 	}
 
@@ -119,19 +119,19 @@ public class MeetingProposalService {
 				.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
 		if (meeting.getStatus() != MeetingStatus.SCHEDULED || meeting.getOrganization() == null
 				|| meeting.getMentor() == null) {
-			throw new InvalidRequestException("Yalnızca planlanmış bir görüşme için yeni saat önerilebilir.");
+			throw new InvalidRequestException(Texts.forRequest("error.newTimeOnlyPlanned"));
 		}
 		boolean mentorSide = meeting.getMentor().getId().equals(actorId);
 		boolean teamSide = actor.getRole() == UserRole.MENTEE && actor.getOrganization() != null
 				&& actor.getOrganization().getId().equals(meeting.getOrganization().getId());
 		if (!mentorSide && !teamSide) {
-			throw new InvalidRequestException("Bu görüşme için yalnızca mentor ve takım yeni saat önerebilir.");
+			throw new InvalidRequestException(Texts.forRequest("error.newTimeOnlyParticipants"));
 		}
 		if (!request.scheduledAt().isAfter(Instant.now())) {
-			throw new InvalidRequestException("Görüşme zamanı gelecekte olmalı.");
+			throw new InvalidRequestException(Texts.forRequest("error.meetingInPast"));
 		}
 		if (proposalRepository.existsByReplacesMeetingIdAndStatus(meetingId, MeetingProposalStatus.PENDING)) {
-			throw new ConflictException("Bu görüşme için yanıt bekleyen bir öneri var.");
+			throw new ConflictException(Texts.forRequest("error.meetingHasPendingProposal"));
 		}
 
 		Instant now = Instant.now();
@@ -155,8 +155,8 @@ public class MeetingProposalService {
 		}
 		MeetingProposal saved = proposalRepository.save(proposal);
 
-		notifyUnanswered(saved, actor.getFullName() + " yeni saat önerdi", pairLine(saved) + " · "
-				+ MeetingSlotTimes.formatForPeople(saved.getScheduledAt()) + ". Uygunsan onayla.");
+		notifyUnanswered(saved, "notification.newTimeProposed.title", "notification.proposalPleaseConfirm.body",
+				pairLine(saved), saved.getScheduledAt(), actor.getFullName());
 		return response(saved, null, actor);
 	}
 
@@ -234,8 +234,8 @@ public class MeetingProposalService {
 		MeetingProposal saved = proposalRepository.save(proposal);
 
 		String reason = saved.getDeclineReason() == null ? "" : ": " + saved.getDeclineReason();
-		notifyProposer(saved, "Görüşme önerisi reddedildi", actor.getFullName() + " · " + pairLine(saved) + " · "
-				+ MeetingSlotTimes.formatForPeople(saved.getScheduledAt()) + reason);
+		notifyProposer(saved, "notification.proposalDeclined.title", "notification.proposalDeclined.body",
+				actor.getFullName(), pairLine(saved), saved.getScheduledAt(), reason);
 		return response(saved, programOf(saved), actor);
 	}
 
@@ -252,8 +252,8 @@ public class MeetingProposalService {
 		MeetingProposal proposal = requireManagedPending(actorId, proposalId);
 		proposal.setRemindedAt(Instant.now());
 		proposalRepository.save(proposal);
-		notifyUnanswered(proposal, "Görüşme önerisi yanıt bekliyor", pairLine(proposal) + " · "
-				+ MeetingSlotTimes.formatForPeople(proposal.getScheduledAt()) + ". Onaylamayı unutma.");
+		notifyUnanswered(proposal, "notification.proposalWaiting.title", "notification.proposalWaiting.body",
+				pairLine(proposal), proposal.getScheduledAt());
 	}
 
 	/** Both sides said yes: move the replaced meeting if it is still planned, otherwise book a new one. */
@@ -289,38 +289,40 @@ public class MeetingProposalService {
 		}
 		proposal.setStatus(MeetingProposalStatus.CONFIRMED);
 
-		String body = pairLine(proposal) + " · " + MeetingSlotTimes.formatForPeople(proposal.getScheduledAt());
-		if (botReleased) {
-			body += " " + TranscriptBotConstants.CAPACITY_FULL_MESSAGE;
-		}
-		notifyProposer(proposal, "Görüşme onaylandı", body);
+		String bodyKey = botReleased ? "notification.proposalConfirmedNoBot.body" : "notification.proposalConfirmed.body";
+		Object[] args = {pairLine(proposal), proposal.getScheduledAt()};
+		notifyProposer(proposal, "notification.proposalConfirmed.title", bodyKey, args);
 		if (!proposal.getMentor().getId().equals(proposal.getProposedBy())) {
-			notificationService.create(proposal.getMentor(), NotificationCategory.MEETING_CHANGE, "Görüşme onaylandı",
-					body, "/mentor-dashboard/calendar");
+			notify(proposal.getMentor(), "notification.proposalConfirmed.title", bodyKey, args, "/mentor-dashboard/calendar");
 		}
 		if (replaced != null) {
 			for (AppUser member : members(proposal.getOrganization())) {
-				notificationService.create(member, NotificationCategory.MEETING_CHANGE, "Görüşme yeni saate taşındı",
-						body, "/mentorships?tab=active");
+				notify(member, "notification.meetingMoved.title", bodyKey, args, "/mentorships?tab=active");
 			}
 		}
 	}
 
-	private void notifyUnanswered(MeetingProposal proposal, String title, String body) {
+	private void notifyUnanswered(MeetingProposal proposal, String titleKey, String bodyKey, Object... args) {
 		if (proposal.getMentorAcceptedAt() == null) {
-			notificationService.create(proposal.getMentor(), NotificationCategory.MEETING_CHANGE, title, body, MENTOR_HOME);
+			notify(proposal.getMentor(), titleKey, bodyKey, args, MENTOR_HOME);
 		}
 		if (proposal.getTeamAcceptedAt() == null) {
 			for (AppUser responder : teamResponders(proposal.getOrganization())) {
-				notificationService.create(responder, NotificationCategory.MEETING_CHANGE, title, body, TEAM_HOME);
+				notify(responder, titleKey, bodyKey, args, TEAM_HOME);
 			}
 		}
 	}
 
 	/** The coordinator lands on the mentorship's drawer; a mentor or a team member on their own page. */
-	private void notifyProposer(MeetingProposal proposal, String title, String body) {
-		appUserRepository.findById(proposal.getProposedBy()).ifPresent(proposer -> notificationService.create(
-				proposer, NotificationCategory.MEETING_CHANGE, title, body, proposerLink(proposal, proposer)));
+	private void notifyProposer(MeetingProposal proposal, String titleKey, String bodyKey, Object... args) {
+		appUserRepository.findById(proposal.getProposedBy())
+				.ifPresent(proposer -> notify(proposer, titleKey, bodyKey, args, proposerLink(proposal, proposer)));
+	}
+
+	/** Title and body are written in the reader's language, from the same arguments. */
+	private void notify(AppUser reader, String titleKey, String bodyKey, Object[] args, String href) {
+		notificationService.create(reader, NotificationCategory.MEETING_CHANGE, Texts.get(reader, titleKey, args),
+				Texts.get(reader, bodyKey, args), href);
 	}
 
 	private static String proposerLink(MeetingProposal proposal, AppUser proposer) {
@@ -359,7 +361,7 @@ public class MeetingProposalService {
 	private Side requireSide(AppUser actor, MeetingProposal proposal) {
 		Side side = sideOf(actor, proposal);
 		if (side == null) {
-			throw new InvalidRequestException("Bu görüşme önerisine yalnızca mentor ve takım yetkilisi yanıt verebilir.");
+			throw new InvalidRequestException(Texts.forRequest("error.proposalAnswerOnlyParticipants"));
 		}
 		return side;
 	}
@@ -368,7 +370,7 @@ public class MeetingProposalService {
 		MeetingProposal proposal = proposalRepository.findById(proposalId)
 				.orElseThrow(() -> new ResourceNotFoundException("Meeting proposal not found: " + proposalId));
 		if (!proposal.isPending()) {
-			throw new ConflictException("Bu görüşme önerisi artık yanıt beklemiyor.");
+			throw new ConflictException(Texts.forRequest("error.proposalNotPending"));
 		}
 		return proposal;
 	}
@@ -376,7 +378,7 @@ public class MeetingProposalService {
 	private MeetingProposal requireManagedPending(UUID actorId, UUID proposalId) {
 		MeetingProposal proposal = requirePending(proposalId);
 		if (proposal.getMentorship() == null) {
-			throw new InvalidRequestException("Bu öneri bir program mentorluğuna bağlı değil.");
+			throw new InvalidRequestException(Texts.forRequest("error.proposalNotProgram"));
 		}
 		coordinatorMentorshipService.requireManagedMentorship(actorId, proposal.getMentorship().getId());
 		return proposal;

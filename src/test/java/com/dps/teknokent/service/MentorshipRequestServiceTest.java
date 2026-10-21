@@ -106,9 +106,6 @@ class MentorshipRequestServiceTest {
 
                 when(mentorshipRequestRepository.findByRequesterIdOrderByCreatedAtDesc(requesterId))
                                 .thenReturn(List.of(first, second));
-                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(any()))
-                                .thenReturn(List.of());
-                when(recommendationRunRepository.findByRequestId(any())).thenReturn(Optional.empty());
 
                 var result = mentorshipRequestService.findAll(requesterId, null, null);
 
@@ -135,9 +132,6 @@ class MentorshipRequestServiceTest {
 
                 when(mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
                                 .thenReturn(List.of(first, second));
-                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(any()))
-                                .thenReturn(List.of());
-                when(recommendationRunRepository.findByRequestId(any())).thenReturn(Optional.empty());
 
                 var result = mentorshipRequestService.findAll(null, null, organizationId);
 
@@ -165,9 +159,6 @@ class MentorshipRequestServiceTest {
                                 any(),
                                 any()))
                                 .thenReturn(new PageImpl<>(List.of(pending), PageRequest.of(0, 1), 2));
-                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(pendingId))
-                                .thenReturn(List.of());
-                when(recommendationRunRepository.findByRequestId(pendingId)).thenReturn(Optional.empty());
 
                 var result = mentorshipRequestService.findWorkspacePage(
                                 null, organizationId, MentorshipWorkspaceTab.REQUESTS, PageRequest.of(0, 1));
@@ -402,7 +393,7 @@ class MentorshipRequestServiceTest {
                                 new DecideMentorshipRequest(mentorId, MentorshipRequestStatus.COUNTER_PROPOSED,
                                                 "Alternatif.\nproposedSlots:" + inAnHour, null)))
                                 .isInstanceOf(InvalidRequestException.class)
-                                .hasMessage(MeetingSlotTimes.TOO_SOON_MESSAGE);
+                                .hasMessage("Görüşme saati en erken 4 saat sonrası için seçilebilir.");
                 assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.PENDING);
         }
 

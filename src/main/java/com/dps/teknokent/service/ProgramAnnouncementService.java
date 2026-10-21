@@ -28,6 +28,7 @@ import com.dps.teknokent.repository.ProgramAnnouncementRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -60,13 +61,15 @@ public class ProgramAnnouncementService {
 		ProgramAnnouncement saved = announcementRepository.saveAndFlush(announcement);
 
 		Audience audience = audience(programId);
-		String title = program.getName() + " — Duyuru";
 		String preview = preview(saved.getBody());
 		for (AppUser member : audience.members()) {
-			notificationService.create(member, NotificationCategory.GENERAL, title, preview, "/messages");
+			notificationService.create(member, NotificationCategory.GENERAL,
+					Texts.get(member, "notification.announcement.title", program.getName()), preview, "/messages");
 		}
 		for (AppUser mentor : audience.mentors()) {
-			notificationService.create(mentor, NotificationCategory.GENERAL, title, preview, "/mentor-dashboard/messages");
+			notificationService.create(mentor, NotificationCategory.GENERAL,
+					Texts.get(mentor, "notification.announcement.title", program.getName()), preview,
+					"/mentor-dashboard/messages");
 		}
 		return response(saved, program, nameOf(actorId), audience);
 	}

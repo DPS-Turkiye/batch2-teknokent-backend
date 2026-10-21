@@ -8,6 +8,10 @@ spring:
   application:
     name: backend
 
+  # Errors and match reasons follow the caller's Accept-Language; without one they are Turkish.
+  web:
+    locale: tr
+
   servlet:
     multipart:
       max-file-size: 50MB

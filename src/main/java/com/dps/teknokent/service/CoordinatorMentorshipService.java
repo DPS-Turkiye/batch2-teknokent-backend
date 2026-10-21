@@ -44,6 +44,7 @@ import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.service.CoordinatorProgramService.HealthBucket;
 import com.dps.teknokent.service.CoordinatorProgramService.Snapshot;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -144,13 +145,16 @@ public class CoordinatorMentorshipService {
 		Scoped scoped = requireManagedMentorship(actorId, mentorshipId);
 		Mentorship mentorship = scoped.mentorship();
 		String pair = mentorship.getMentor().getFullName() + " ↔ " + mentorship.getOrganization().getName();
-		String body = scoped.program().getName() + " · " + pair + " için sıradaki görüşmeyi planlayın.";
+		String program = scoped.program().getName();
 		notificationService.create(
-				mentorship.getMentor(), NotificationCategory.MEETING_REMINDER, "Koordinatör hatırlatması", body,
+				mentorship.getMentor(), NotificationCategory.MEETING_REMINDER,
+				Texts.get(mentorship.getMentor(), "notification.coordinatorReminder.title"),
+				Texts.get(mentorship.getMentor(), "notification.coordinatorReminder.body", program, pair),
 				"/mentor-dashboard/calendar");
 		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(mentorship.getOrganization().getId())) {
 			notificationService.create(
-					member, NotificationCategory.MEETING_REMINDER, "Koordinatör hatırlatması", body, "/mentorships?tab=active");
+					member, NotificationCategory.MEETING_REMINDER, Texts.get(member, "notification.coordinatorReminder.title"),
+					Texts.get(member, "notification.coordinatorReminder.body", program, pair), "/mentorships?tab=active");
 		}
 	}
 

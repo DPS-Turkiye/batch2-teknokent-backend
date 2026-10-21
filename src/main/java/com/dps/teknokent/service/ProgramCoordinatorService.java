@@ -19,6 +19,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.util.ProgramCoordination;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -69,8 +70,8 @@ public class ProgramCoordinatorService {
 		programCoordinatorRepository.save(row);
 		notificationService.create(
 				user,
-				"Programa koordinatör olarak eklendiniz",
-				program.getName() + " programını artık siz de yönetebilirsiniz.",
+				Texts.get(user, "notification.addedAsCoordinator.title"),
+				Texts.get(user, "notification.addedAsCoordinator.body", program.getName()),
 				"/coordinator/programs/" + programId);
 		return refs(program);
 	}

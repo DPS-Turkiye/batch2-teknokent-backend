@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.ContactPreference;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -89,6 +90,10 @@ public class AppUser {
 
 	@Column(name = "firebase_uid", unique = true)
 	private String firebaseUid;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "preferred_language", nullable = false, length = 8)
+	private AppLanguage preferredLanguage = AppLanguage.TR;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

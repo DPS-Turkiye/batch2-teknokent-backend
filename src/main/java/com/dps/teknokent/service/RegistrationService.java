@@ -46,6 +46,7 @@ import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.util.Texts;
 
 @Service
 @RequiredArgsConstructor
@@ -216,12 +217,12 @@ public class RegistrationService {
 		}
 		ProgramMentorInvite invite = programMentorInviteRepository.findByCode(code.trim())
 				.filter(value -> value.getMentorId() == null)
-				.orElseThrow(() -> new InvalidRequestException("Program daveti geçersiz."));
+				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.programInviteInvalid")));
 		if (!invite.getExpiresAt().isAfter(Instant.now())) {
-			throw new InvalidRequestException("Bu program davetinin süresi dolmuş.");
+			throw new InvalidRequestException(Texts.forRequest("error.programInviteExpired"));
 		}
 		if (!invite.getEmail().equalsIgnoreCase(email)) {
-			throw new InvalidRequestException("Davetin gönderildiği e-posta adresiyle kayıt olun.");
+			throw new InvalidRequestException(Texts.forRequest("error.programInviteWrongEmail"));
 		}
 		return Optional.of(invite);
 	}

@@ -34,6 +34,7 @@ import com.dps.teknokent.repository.MentorshipGoalRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipWeekCheckRepository;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -216,21 +217,17 @@ public class MentorshipService {
 	}
 
 	private void notifyOrgMentees(Mentorship mentorship) {
-		String endLabel = mentorship.getEndDate() == null
-				? "süresiz"
-				: mentorship.getEndDate().toString();
-		String body = mentorship.getMentor().getFullName()
-				+ ", "
-				+ mentorship.getOrganization().getName()
-				+ " için düzenli mentorlük başlattı (bitiş: "
-				+ endLabel
-				+ ").";
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(mentorship.getOrganization().getId()).stream()
 				.filter(user -> user.getRole() == UserRole.MENTEE)
 				.forEach(mentee -> notificationService.create(
 						mentee,
-						"Düzenli mentorlük başladı",
-						body,
+						Texts.get(mentee, "notification.regularMentorshipStarted.title"),
+						Texts.get(mentee, "notification.regularMentorshipStarted.body",
+								mentorship.getMentor().getFullName(),
+								mentorship.getOrganization().getName(),
+								mentorship.getEndDate() == null
+										? Texts.get(mentee, "notification.regularMentorshipStarted.noEnd")
+										: mentorship.getEndDate().toString()),
 						"/mentorships?tab=regular"));
 	}
 

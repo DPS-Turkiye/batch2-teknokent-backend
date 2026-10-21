@@ -35,9 +35,12 @@ import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 @Service
 public class MeetingService {
+
+	private static final int MAX_RATED_LOOKUP = 50;
 
 	private final MeetingRepository meetingRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
@@ -110,25 +113,20 @@ public class MeetingService {
 		if (meeting.getOrganization() == null) {
 			return;
 		}
-		String mentorName = meeting.getMentor() == null
-				? "Mentörünüz"
-				: meeting.getMentor().getFullName();
-		String when = meeting.getScheduledAt() == null
-				? ""
-				: " · " + MeetingSlotTimes.formatForPeople(meeting.getScheduledAt());
-		String body = mentorName
-				+ ", "
-				+ meeting.getOrganization().getName()
-				+ " için yeni bir görüşme planladı"
-				+ when
-				+ ".";
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(meeting.getOrganization().getId()).stream()
 				.filter(user -> user.getRole() == UserRole.MENTEE)
 				.forEach(mentee -> notificationService.create(
 						mentee,
 						NotificationCategory.MEETING_CHANGE,
-						"Yeni görüşme planlandı",
-						body,
+						Texts.get(mentee, "notification.meetingPlanned.title"),
+						Texts.get(mentee, "notification.meetingPlanned.body",
+								meeting.getMentor() == null
+										? Texts.get(mentee, "notification.yourMentor")
+										: meeting.getMentor().getFullName(),
+								meeting.getOrganization().getName(),
+								meeting.getScheduledAt() == null
+										? ""
+										: " · " + MeetingSlotTimes.formatForPeople(meeting.getScheduledAt(), mentee.getPreferredLanguage())),
 						"/mentorships?tab=active"));
 	}
 
@@ -396,6 +394,19 @@ public class MeetingService {
 	public Optional<MeetingFeedbackResponse> findFeedback(UUID meetingId, UUID authorId) {
 		return meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, authorId)
 				.map(MeetingFeedbackResponse::fromEntity);
+	}
+
+	@Transactional(readOnly = true)
+	public List<UUID> ratedMeetingIds(List<UUID> meetingIds, UUID authorId) {
+		if (meetingIds.size() > MAX_RATED_LOOKUP) {
+			throw new InvalidRequestException("Too many meetings in one lookup.");
+		}
+		if (meetingIds.isEmpty()) {
+			return List.of();
+		}
+		return meetingFeedbackRepository.findByMeetingIdInAndAuthorId(meetingIds, authorId).stream()
+				.map(feedback -> feedback.getMeeting().getId())
+				.toList();
 	}
 
 	private void requireMeetingParticipant(Meeting meeting, AppUser author) {

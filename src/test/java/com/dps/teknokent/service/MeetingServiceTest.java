@@ -706,4 +706,30 @@ class MeetingServiceTest {
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("participant");
 	}
+
+	@Test
+	void ratedMeetingIds_returnsOnlyTheMeetingsTheAuthorRatedInOneLookup() {
+		UUID authorId = UUID.randomUUID();
+		UUID rated = UUID.randomUUID();
+		UUID unrated = UUID.randomUUID();
+		Meeting meeting = new Meeting();
+		meeting.setId(rated);
+		MeetingFeedback feedback = new MeetingFeedback();
+		feedback.setMeeting(meeting);
+		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorId(List.of(rated, unrated), authorId))
+				.thenReturn(List.of(feedback));
+
+		assertThat(meetingService.ratedMeetingIds(List.of(rated, unrated), authorId)).containsExactly(rated);
+	}
+
+	@Test
+	void ratedMeetingIds_skipsTheQueryForNoMeetingsAndRejectsTooMany() {
+		UUID authorId = UUID.randomUUID();
+		assertThat(meetingService.ratedMeetingIds(List.of(), authorId)).isEmpty();
+		List<UUID> tooMany = java.util.stream.Stream.generate(UUID::randomUUID).limit(51).toList();
+
+		assertThatThrownBy(() -> meetingService.ratedMeetingIds(tooMany, authorId))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(meetingFeedbackRepository, never()).findByMeetingIdInAndAuthorId(any(), any());
+	}
 }

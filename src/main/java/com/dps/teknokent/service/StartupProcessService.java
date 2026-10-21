@@ -48,6 +48,7 @@ import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -139,8 +140,8 @@ public class StartupProcessService {
 			notificationService.create(
 					item.getOwner(),
 					NotificationCategory.TASK_ASSIGNED,
-					"Yeni görev",
-					actor.getFullName() + " yeni bir görev ekledi: " + item.getTitle(),
+					Texts.get(item.getOwner(), "notification.newTask.title"),
+					Texts.get(item.getOwner(), "notification.newTask.body", actor.getFullName(), item.getTitle()),
 					"/startup/process");
 		}
 		return describe(organization, today());

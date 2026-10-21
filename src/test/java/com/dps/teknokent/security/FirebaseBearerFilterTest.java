@@ -246,6 +246,16 @@ class FirebaseBearerFilterTest {
     }
 
     @Test
+    void letsPendingAccountSaveItsLanguage() throws Exception {
+        signsInAs(user(UserAccountStatus.PENDING));
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("PUT", "/api/auth/me/language", "Bearer good"), new MockHttpServletResponse(), chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+    }
+
+    @Test
     void rejectsUnknownAccountOutsideRegistration() throws Exception {
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
         when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com")));

@@ -29,6 +29,7 @@ import com.dps.teknokent.repository.NotificationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -78,7 +79,7 @@ public class AdminInterventionService {
 		}
 		Notification notification = notificationService.create(
 				coordinator,
-				"Müdahale gerekiyor",
+				Texts.get(coordinator, "notification.interventionNeeded.title"),
 				body,
 				"/coordinator/mentorships?mentorship=" + mentorship.getId());
 
@@ -101,7 +102,7 @@ public class AdminInterventionService {
 		MentorshipIntervention row = interventionRepository.findById(interventionId)
 				.orElseThrow(() -> new ResourceNotFoundException("Intervention not found: " + interventionId));
 		if (row.getResolvedAt() != null) {
-			throw new InvalidRequestException("Bu takip zaten kapanmış.");
+			throw new InvalidRequestException(Texts.forRequest("error.followUpClosed"));
 		}
 		row.setResolvedAt(Instant.now());
 		interventionRepository.save(row);
@@ -111,16 +112,16 @@ public class AdminInterventionService {
 	private Program programOf(Organization organization) {
 		if (organization.getActiveProgramId() != null) {
 			return programRepository.findById(organization.getActiveProgramId())
-					.orElseThrow(() -> new InvalidRequestException("Bu takımın programı bulunamadı."));
+					.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.teamProgramNotFound")));
 		}
 		List<ProgramStartup> memberships = programStartupRepository
 				.findByOrganizationIdOrderByCreatedAtAsc(organization.getId());
 		if (memberships.isEmpty()) {
-			throw new InvalidRequestException("Bu takım bir programa bağlı değil.");
+			throw new InvalidRequestException(Texts.forRequest("error.teamWithoutProgram"));
 		}
 		UUID programId = memberships.get(memberships.size() - 1).getProgramId();
 		return programRepository.findById(programId)
-				.orElseThrow(() -> new InvalidRequestException("Bu takımın programı bulunamadı."));
+				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.teamProgramNotFound")));
 	}
 
 	private AdminInterventionResponse toResponse(MentorshipIntervention row) {
