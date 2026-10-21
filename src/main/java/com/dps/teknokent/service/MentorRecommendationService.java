@@ -19,6 +19,7 @@ import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorRecommendationResult;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -137,7 +138,7 @@ public class MentorRecommendationService {
 	private List<String> fallbackReasons(RecommendMentorsRequest request, MentorProfileResponse mentor) {
 		List<String> reasons = new ArrayList<>(requestSpecificReasons(request, mentor));
 		if (reasons.isEmpty())
-			reasons.add(request.supportArea() + " talebiyle uzmanlık yakınlığı");
+			reasons.add(Texts.forRequest("match.reason.closeExpertise", request.supportArea()));
 		return reasons.stream().limit(3).toList();
 	}
 
@@ -153,22 +154,22 @@ public class MentorRecommendationService {
 						.reversed()
 						.thenComparing(String.CASE_INSENSITIVE_ORDER))
 				.limit(2)
-				.forEach(specialty -> reasons.add("Talebinizle örtüşen uzmanlık: " + specialty));
+				.forEach(specialty -> reasons.add(Texts.forRequest("match.reason.specialty", specialty)));
 
 		if (reasons.size() < 3) {
 			sectorSegments(mentor.sectorExperience()).stream()
 					.filter(sector -> overlaps(requestTokens, sector))
 					.findFirst()
-					.ifPresent(sector -> reasons.add("İlgili sektör deneyimi: " + sector));
+					.ifPresent(sector -> reasons.add(Texts.forRequest("match.reason.sector", sector)));
 		}
 		if (reasons.size() < 3 && hasStartupStageExperience(request, mentor)) {
-			reasons.add(value(request.startupStage()) + " aşamasındaki girişimlerle deneyimli");
+			reasons.add(Texts.forRequest("match.reason.stage", value(request.startupStage())));
 		}
 		if (reasons.size() < 3 && isMeetingModeCompatible(request.meetingMode(), mentor.meetingMode())) {
-			reasons.add(meetingModeLabel(request.meetingMode()) + " görüşme tercihinizle uyumlu");
+			reasons.add(Texts.forRequest("match.reason.meetingMode", meetingModeLabel(request.meetingMode())));
 		}
 		if (reasons.size() < 3 && isAvailableForUrgency(request.urgency(), mentor.availabilityLabel())) {
-			reasons.add("Talebinizin zamanlamasına uygun: " + mentor.availabilityLabel());
+			reasons.add(Texts.forRequest("match.reason.timing", mentor.availabilityLabel()));
 		}
 		return reasons.stream().distinct().limit(3).toList();
 	}
@@ -204,7 +205,7 @@ public class MentorRecommendationService {
 	}
 
 	private String meetingModeLabel(String requestedMode) {
-		return "IN_PERSON".equals(requestedMode) ? "Yüz yüze" : "Online";
+		return Texts.forRequest("IN_PERSON".equals(requestedMode) ? "match.mode.inPerson" : "match.mode.online");
 	}
 
 	private boolean isAvailableForUrgency(String urgency, String availability) {

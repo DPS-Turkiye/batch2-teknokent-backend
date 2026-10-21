@@ -45,6 +45,7 @@ import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -174,15 +175,15 @@ public class ProgramMatchingService {
 		closeOpenRequests(team, mentorId);
 		notificationService.create(
 				mentor,
-				"Yeni mentorluk eşleşmesi",
-				program.getName() + " programında " + team.getName() + " takımıyla eşleştirildiniz.",
+				Texts.get(mentor, "notification.matchedWithTeam.title"),
+				Texts.get(mentor, "notification.matchedWithTeam.body", program.getName(), team.getName()),
 				"/mentor-dashboard");
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(team.getId()).stream()
 				.filter(member -> member.getRole() == UserRole.MENTEE)
 				.forEach(member -> notificationService.create(
 						member,
-						"Mentorunuz belirlendi",
-						program.getName() + " programında mentorunuz " + mentor.getFullName() + " oldu.",
+						Texts.get(member, "notification.mentorAssigned.title"),
+						Texts.get(member, "notification.mentorAssigned.body", program.getName(), mentor.getFullName()),
 						"/mentorships"));
 		return overviewOf(program);
 	}

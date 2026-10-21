@@ -35,6 +35,7 @@ import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 @Service
 public class MeetingService {
@@ -110,25 +111,20 @@ public class MeetingService {
 		if (meeting.getOrganization() == null) {
 			return;
 		}
-		String mentorName = meeting.getMentor() == null
-				? "Mentörünüz"
-				: meeting.getMentor().getFullName();
-		String when = meeting.getScheduledAt() == null
-				? ""
-				: " · " + MeetingSlotTimes.formatForPeople(meeting.getScheduledAt());
-		String body = mentorName
-				+ ", "
-				+ meeting.getOrganization().getName()
-				+ " için yeni bir görüşme planladı"
-				+ when
-				+ ".";
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(meeting.getOrganization().getId()).stream()
 				.filter(user -> user.getRole() == UserRole.MENTEE)
 				.forEach(mentee -> notificationService.create(
 						mentee,
 						NotificationCategory.MEETING_CHANGE,
-						"Yeni görüşme planlandı",
-						body,
+						Texts.get(mentee, "notification.meetingPlanned.title"),
+						Texts.get(mentee, "notification.meetingPlanned.body",
+								meeting.getMentor() == null
+										? Texts.get(mentee, "notification.yourMentor")
+										: meeting.getMentor().getFullName(),
+								meeting.getOrganization().getName(),
+								meeting.getScheduledAt() == null
+										? ""
+										: " · " + MeetingSlotTimes.formatForPeople(meeting.getScheduledAt(), mentee.getPreferredLanguage())),
 						"/mentorships?tab=active"));
 	}
 

@@ -1,6 +1,8 @@
 spring:
   profiles:
     active: test
+  web:
+    locale: tr
   security:
     user:
       name: test

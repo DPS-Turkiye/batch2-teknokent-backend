@@ -50,6 +50,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.util.ProgramCoordination;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -197,7 +198,7 @@ public class AdminOverviewService {
 					AppUser founder = organization == null ? null : organization.getFounder();
 					return new StartupRow(
 							row.getOrganizationId(),
-							organization == null ? "Takım" : organization.getName(),
+							organization == null ? Texts.forRequest("label.team") : organization.getName(),
 							organization == null || organization.getSector() == null
 									? null
 									: organization.getSector().value(),

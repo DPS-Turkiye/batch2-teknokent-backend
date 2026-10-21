@@ -59,6 +59,7 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProposedSlots;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -136,7 +137,7 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 		if (!MeetingSlotTimes.allBookable(ProposedSlots.preferred(request.requesterMessage()))) {
-			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
+			throw new InvalidRequestException(Texts.forRequest("error.slotTooSoon"));
 		}
 
 		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(
@@ -148,15 +149,14 @@ public class MentorshipRequestService {
 		if (request.recommendationSnapshot() != null) {
 			saveRecommendationSnapshot(savedRequest, request.recommendationSnapshot());
 		}
-		String title = "Yeni mentorluk talebi";
-		String body = requester.getFullName() + " size " + savedRequest.getSupportArea()
-				+ " konusunda bir talep gönderdi.";
+		String title = Texts.get(mentor, "notification.newRequest.title");
+		String body = Texts.get(mentor, "notification.newRequest.body", requester.getFullName(),
+				savedRequest.getSupportArea());
 		notificationService.create(mentor, title, body, "/mentor-dashboard");
 		mailService.sendAfterCommit(
 				mentor.getEmail(),
 				title,
-				"Merhaba " + mentor.getFullName() + ",\n\n" + body
-						+ "\n\nTalebi görmek için: " + mailService.link("/mentor-dashboard") + "\n\nMenton");
+				Texts.get(mentor, "mail.newRequest.body", mentor.getFullName(), body, mailService.link("/mentor-dashboard")));
 		return toResponse(savedRequest);
 	}
 
@@ -184,7 +184,7 @@ public class MentorshipRequestService {
 		}
 		if (decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED
 				&& !MeetingSlotTimes.allBookable(ProposedSlots.parse(decision.message()))) {
-			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
+			throw new InvalidRequestException(Texts.forRequest("error.slotTooSoon"));
 		}
 
 		String message = TextUtils.trim(decision.message());
@@ -205,12 +205,12 @@ public class MentorshipRequestService {
 		notificationService.create(
 				request.getRequester(),
 				decision.status() == MentorshipRequestStatus.ACCEPTED
-						? "Mentorluk talebiniz kabul edildi"
+						? Texts.get(request.getRequester(), "notification.requestAccepted.title")
 						: decision.status() == MentorshipRequestStatus.DECLINED
-								? "Mentorluk talebiniz sonuçlandı"
+								? Texts.get(request.getRequester(), "notification.requestDeclined.title")
 								: decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED
-										? "Mentorunuz alternatif saat önerdi"
-										: "Mentorunuz ek bilgi istedi",
+										? Texts.get(request.getRequester(), "notification.requestCounterProposed.title")
+										: Texts.get(request.getRequester(), "notification.requestInfoNeeded.title"),
 				message,
 				"/mentor-request/status?request=" + request.getId());
 		return toResponse(savedRequest);
@@ -235,8 +235,8 @@ public class MentorshipRequestService {
 		notificationService.create(
 				request.getMentor(),
 				NotificationCategory.MEETING_CHANGE,
-				"Mentee görüşme saatini seçti",
-				request.getRequester().getFullName() + " önerdiğiniz saatlerden birini kabul etti.",
+				Texts.get(request.getMentor(), "notification.slotChosen.title"),
+				Texts.get(request.getMentor(), "notification.slotChosen.body", request.getRequester().getFullName()),
 				"/mentorships");
 		return toResponse(savedRequest);
 	}
@@ -261,8 +261,9 @@ public class MentorshipRequestService {
 		notificationService.create(
 				request.getMentor(),
 				NotificationCategory.MESSAGE,
-				isReplyingToInfoRequest ? "Ek bilgi talebinize yanıt geldi" : "Startup'tan yeni mesaj",
-				request.getRequester().getFullName() + " yeni bir mesaj gönderdi.",
+				Texts.get(request.getMentor(),
+					isReplyingToInfoRequest ? "notification.infoReplied.title" : "notification.startupMessage.title"),
+				Texts.get(request.getMentor(), "notification.sentMessage.body", request.getRequester().getFullName()),
 				"/mentor-dashboard");
 		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
 	}
@@ -281,8 +282,8 @@ public class MentorshipRequestService {
 		notificationService.create(
 				request.getRequester(),
 				NotificationCategory.MESSAGE,
-				"Mentorunuzdan yeni mesaj",
-				request.getMentor().getFullName() + " yeni bir mesaj gönderdi.",
+				Texts.get(request.getRequester(), "notification.mentorMessage.title"),
+				Texts.get(request.getRequester(), "notification.sentMessage.body", request.getMentor().getFullName()),
 				"/mentor-request/status?request=" + request.getId());
 		return toResponse(request);
 	}
@@ -361,7 +362,7 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("The selected slot is not available for this request");
 		}
 		if (slot.getStartsAt().isBefore(MeetingSlotTimes.earliestBookable())) {
-			throw new InvalidRequestException(MeetingSlotTimes.TOO_SOON_MESSAGE);
+			throw new InvalidRequestException(Texts.forRequest("error.slotTooSoon"));
 		}
 		if (meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 				request.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED)) {
@@ -372,8 +373,8 @@ public class MentorshipRequestService {
 		notificationService.create(
 				request.getMentor(),
 				NotificationCategory.MEETING_CHANGE,
-				"Yeni görüşme planlandı",
-				request.getRequester().getFullName() + " mentorluk görüşmesi için bir zaman seçti.",
+				Texts.get(request.getMentor(), "notification.meetingPlanned.title"),
+				Texts.get(request.getMentor(), "notification.slotBooked.body", request.getRequester().getFullName()),
 				"/mentor-dashboard/calendar");
 		return MeetingResponse.fromEntity(savedMeeting);
 	}

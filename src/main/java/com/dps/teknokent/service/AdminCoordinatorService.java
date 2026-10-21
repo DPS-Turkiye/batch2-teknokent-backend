@@ -21,6 +21,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.security.LoginProvisioner;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -80,16 +81,14 @@ public class AdminCoordinatorService {
 		} else {
 			notificationService.create(
 					coordinator,
-					"Koordinatör olarak atandınız",
-					"Artık programları koordinatör olarak yönetebilirsiniz.",
+					Texts.get(coordinator, "notification.coordinatorAssigned.title"),
+					Texts.get(coordinator, "notification.coordinatorAssigned.body"),
 					"/coordinator");
 			mailService.sendAfterCommit(
 					coordinator.getEmail(),
-					"menton'da koordinatör olarak atandınız",
-					"Merhaba " + coordinator.getFullName() + ",\n\n"
-							+ "menton'da (ODTÜ Teknokent) artık programları koordinatör olarak yönetebilirsiniz. "
-							+ "Mevcut şifrenizle giriş yapabilirsiniz: " + mailService.link("/login")
-							+ "\n\nmenton");
+					Texts.get(coordinator, "mail.coordinatorAssigned.subject"),
+					Texts.get(coordinator, "mail.coordinatorAssigned.body", coordinator.getFullName(),
+							mailService.link("/login")));
 		}
 		return toResponse(coordinator, outcome);
 	}
@@ -134,14 +133,8 @@ public class AdminCoordinatorService {
 				.map(link -> {
 					mailService.sendAfterCommit(
 							coordinator.getEmail(),
-							"menton koordinatör hesabınız hazır",
-							"Merhaba " + coordinator.getFullName() + ",\n\n"
-									+ "menton'da (ODTÜ Teknokent) sizin için bir koordinatör hesabı açıldı. "
-									+ "Şifrenizi belirlemek için bu bağlantıyı açın:\n\n" + link
-									+ "\n\nŞifrenizi belirledikten sonra " + login + " adresinden giriş yapabilirsiniz. "
-									+ "Bağlantının süresi dolarsa giriş sayfasındaki \"Şifremi unuttum\" ile yenisini "
-									+ "isteyebilir ya da yöneticinizden e-postayı tekrar göndermesini isteyebilirsiniz."
-									+ "\n\nmenton");
+							Texts.get(coordinator, "mail.coordinatorAccount.subject"),
+							Texts.get(coordinator, "mail.coordinatorAccount.body", coordinator.getFullName(), link, login));
 					return true;
 				})
 				.orElse(false);

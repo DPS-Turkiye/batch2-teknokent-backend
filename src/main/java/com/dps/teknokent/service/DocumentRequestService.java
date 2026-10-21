@@ -40,6 +40,7 @@ import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -47,7 +48,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class DocumentRequestService {
 
-	private static final String MENTOR_REQUESTED_TITLE = "Mentor belgeler istedi";
+	private static final String MENTOR_REQUESTED_TITLE_KEY = "notification.documentsRequestedByMentor.title";
 
 	private final DocumentRequestItemRepository itemRepository;
 	private final DocumentRequestUploadRepository uploadRepository;
@@ -109,7 +110,7 @@ public class DocumentRequestService {
 				null,
 				null);
 		notifyDocumentsRequested(
-				request.getOrganization(), actor, saved, MENTOR_REQUESTED_TITLE, "/mentorships?tab=active");
+				request.getOrganization(), actor, saved, MENTOR_REQUESTED_TITLE_KEY, "/mentorships?tab=active");
 		return toResponses(saved);
 	}
 
@@ -134,7 +135,7 @@ public class DocumentRequestService {
 				meeting.getOrganization(),
 				actor,
 				saved,
-				MENTOR_REQUESTED_TITLE,
+				MENTOR_REQUESTED_TITLE_KEY,
 				"/meetings/research?id=" + meeting.getId());
 		return toResponses(saved);
 	}
@@ -161,7 +162,7 @@ public class DocumentRequestService {
 				mentorship.getOrganization(),
 				actor,
 				saved,
-				MENTOR_REQUESTED_TITLE,
+				MENTOR_REQUESTED_TITLE_KEY,
 				"/mentorships?tab=regular");
 		return toResponses(saved);
 	}
@@ -215,7 +216,7 @@ public class DocumentRequestService {
 			}
 			current.values().forEach(leftovers::addAll);
 			existing.remove(organization.getId());
-			notifyDocumentsRequested(organization, actor, added, "Koordinatör belgeler istedi", "/startup/files");
+			notifyDocumentsRequested(organization, actor, added, "notification.documentsRequestedByCoordinator.title", "/startup/files");
 		}
 		// Startups that have left the program no longer owe its documents.
 		existing.values().forEach(byTitle -> byTitle.values().forEach(leftovers::addAll));
@@ -248,7 +249,7 @@ public class DocumentRequestService {
 				null);
 		saved.forEach(item -> item.setSortOrder(existing.size() + item.getSortOrder()));
 		notifyDocumentsRequested(
-				request.getOrganization(), mentor, saved, MENTOR_REQUESTED_TITLE, "/mentorships?tab=active");
+				request.getOrganization(), mentor, saved, MENTOR_REQUESTED_TITLE_KEY, "/mentorships?tab=active");
 	}
 
 	@Transactional
@@ -270,7 +271,7 @@ public class DocumentRequestService {
 				meeting.getOrganization(),
 				mentor,
 				saved,
-				MENTOR_REQUESTED_TITLE,
+				MENTOR_REQUESTED_TITLE_KEY,
 				"/meetings/research?id=" + meeting.getId());
 	}
 
@@ -460,20 +461,19 @@ public class DocumentRequestService {
 			Organization organization,
 			AppUser requester,
 			List<DocumentRequestItem> items,
-			String title,
+			String titleKey,
 			String href) {
 		if (organization == null || items.isEmpty()) {
 			return;
 		}
 		String titles = items.stream().map(DocumentRequestItem::getTitle).collect(Collectors.joining(", "));
-		String body = requester.getFullName() + " şu belgeleri istedi: " + titles;
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(organization.getId()).stream()
 				.filter(user -> user.getRole() == UserRole.MENTEE)
 				.forEach(mentee -> notificationService.create(
 						mentee,
 						NotificationCategory.TASK_ASSIGNED,
-						title,
-						body,
+						Texts.get(mentee, titleKey),
+						Texts.get(mentee, "notification.documentsRequested.body", requester.getFullName(), titles),
 						href));
 	}
 
@@ -496,8 +496,8 @@ public class DocumentRequestService {
 		notificationService.create(
 				mentor,
 				NotificationCategory.STARTUP_ACTIVITY,
-				"İstenen belge yüklendi",
-				uploader.getFullName() + " «" + item.getTitle() + "» belgesini yükledi.",
+				Texts.get(mentor, "notification.documentUploaded.title"),
+				Texts.get(mentor, "notification.documentUploaded.body", uploader.getFullName(), item.getTitle()),
 				href);
 	}
 

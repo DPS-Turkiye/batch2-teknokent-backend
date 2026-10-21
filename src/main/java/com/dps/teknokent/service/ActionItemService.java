@@ -19,6 +19,7 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -98,8 +99,8 @@ public class ActionItemService {
 		notificationService.create(
 				mentor,
 				NotificationCategory.STARTUP_ACTIVITY,
-				"Görev tamamlandı",
-				item.getOrganization().getName() + " «" + item.getTitle() + "» görevini tamamladı.",
+				Texts.get(mentor, "notification.taskCompleted.title"),
+				Texts.get(mentor, "notification.taskCompleted.body", item.getOrganization().getName(), item.getTitle()),
 				"/mentor-dashboard");
 	}
 }

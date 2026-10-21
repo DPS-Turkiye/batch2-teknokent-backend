@@ -89,6 +89,7 @@ class AssistantIntegrationTest {
     void addBotEndToEndRejectsBlankMeetingUrl() throws Exception {
         mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Accept-Language", "en")
                         .content("{\"meetingUrl\":\"   \"}"))
                 .andExpect(status().isBadRequest())
           .andExpect(jsonPath("$.message").value("Request validation failed"))
@@ -102,7 +103,7 @@ class AssistantIntegrationTest {
                         .content("{\"meetingUrl\":null}"))
                 .andExpect(status().isBadRequest())
           .andExpect(jsonPath("$.message").value("Request validation failed"))
-          .andExpect(jsonPath("$.fieldErrors.meetingUrl").value("must not be blank"));
+          .andExpect(jsonPath("$.fieldErrors.meetingUrl").value("boş değer olamaz"));
     }
 
     @Test

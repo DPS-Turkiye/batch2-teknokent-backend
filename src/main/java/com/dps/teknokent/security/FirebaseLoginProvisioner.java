@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.Texts;
 import com.google.firebase.auth.ActionCodeSettings;
 import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
@@ -55,13 +56,13 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	/**
 	 * A Firebase failure here is a server-side setup problem (credentials, permissions), not the admin's input.
-	 * The reason is sent back in Turkish with Firebase's own code, so the admin's toast says what to fix
+	 * The reason is sent back in the admin's language with Firebase's own code, so the admin's toast says what to fix
 	 * instead of the generic server-error text.
 	 */
 	private static ResponseStatusException loginUnavailable(String email, FirebaseAuthException exception) {
 		log.error("Could not get a Firebase login for {}: {} {}", email, exception.getErrorCode(), exception.getMessage());
 		return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-				"Koordinatörün giriş hesabı Firebase'de oluşturulamadı (" + exception.getErrorCode() + ").", exception);
+				Texts.forRequest("error.coordinatorLoginFailed", exception.getErrorCode()), exception);
 	}
 
 	/**

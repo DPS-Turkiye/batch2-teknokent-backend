@@ -36,6 +36,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.ProgramCoordination;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -165,22 +166,24 @@ public class CoordinatorConversationService {
 					.forEach(coordinator -> notificationService.create(
 							coordinator,
 							NotificationCategory.MESSAGE,
-							"Yeni mesaj",
-							sender.getFullName() + " sana bir mesaj gönderdi.",
+							Texts.get(coordinator, "notification.newMessage.title"),
+							Texts.get(coordinator, "notification.newMessage.body", sender.getFullName()),
 							"/coordinator/messages?conversation=" + conversation.getId()));
 			return;
 		}
-		String body = sender.getFullName() + " (koordinatör) sana bir mesaj gönderdi.";
 		String thread = "?conversation=" + conversation.getId();
 		if (conversation.getMentorId() != null) {
 			appUserRepository.findById(conversation.getMentorId())
 					.ifPresent(mentor -> notificationService.create(
-							mentor, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body,
+							mentor, NotificationCategory.MESSAGE, Texts.get(mentor, "notification.coordinatorMessage.title"),
+							Texts.get(mentor, "notification.coordinatorMessage.body", sender.getFullName()),
 							"/mentor-dashboard/messages" + thread));
 			return;
 		}
 		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(conversation.getOrganizationId())) {
-			notificationService.create(member, NotificationCategory.MESSAGE, "Koordinatörden mesaj", body, "/messages" + thread);
+			notificationService.create(member, NotificationCategory.MESSAGE,
+					Texts.get(member, "notification.coordinatorMessage.title"),
+					Texts.get(member, "notification.coordinatorMessage.body", sender.getFullName()), "/messages" + thread);
 		}
 	}
 
@@ -299,7 +302,7 @@ public class CoordinatorConversationService {
 	}
 
 	private static String nameOf(Organization organization) {
-		return organization == null ? "Takım" : organization.getName();
+		return organization == null ? Texts.forRequest("label.team") : organization.getName();
 	}
 
 	private static String nameOf(AppUser user) {

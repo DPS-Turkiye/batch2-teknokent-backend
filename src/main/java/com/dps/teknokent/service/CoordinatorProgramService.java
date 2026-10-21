@@ -69,6 +69,7 @@ import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramCoordination;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -511,7 +512,7 @@ public class CoordinatorProgramService {
 	}
 
 	static String meetingTitle(Meeting meeting) {
-		return isBlank(meeting.getAgenda()) ? "Mentorluk görüşmesi" : meeting.getAgenda().trim();
+		return isBlank(meeting.getAgenda()) ? Texts.forRequest("label.mentorshipMeeting") : meeting.getAgenda().trim();
 	}
 
 	static boolean isBlank(String value) {
@@ -819,7 +820,7 @@ public class CoordinatorProgramService {
 
 	static String organizationName(Snapshot snapshot, UUID organizationId) {
 		Organization organization = snapshot.organizations().get(organizationId);
-		return organization == null ? "Takım" : organization.getName();
+		return organization == null ? Texts.forRequest("label.team") : organization.getName();
 	}
 
 	private static String blankToNull(String value) {
