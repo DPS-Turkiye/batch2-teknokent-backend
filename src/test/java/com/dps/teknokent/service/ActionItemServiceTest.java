@@ -70,7 +70,7 @@ class ActionItemServiceTest {
         when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
                 .thenReturn(List.of(actionItem));
 
-        var result = actionItemService.findByScope(organizationId, null);
+        var result = actionItemService.findByOrganization(organizationId);
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().id()).isEqualTo(actionItem.getId());
@@ -199,7 +199,7 @@ class ActionItemServiceTest {
         when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
                 .thenReturn(List.of());
 
-        assertThat(actionItemService.findByScope(organizationId, null)).isEmpty();
+        assertThat(actionItemService.findByOrganization(organizationId)).isEmpty();
     }
 
     @Test
@@ -229,12 +229,12 @@ class ActionItemServiceTest {
         mentorshipRequest.setOrganization(organization);
         mentorshipRequest.setMentor(mentor);
         ActionItem actionItem = openItem(actionItemId, organization);
-        when(domainLookupService.requireMentorshipRequest(requestId)).thenReturn(mentorshipRequest);
+        actionItem.setMentorshipRequest(mentorshipRequest);
         when(actionItemRepository.findByIdAndOrganizationId(actionItemId, organization.getId()))
                 .thenReturn(Optional.of(actionItem));
         when(actionItemRepository.saveAndFlush(actionItem)).thenReturn(actionItem);
 
-        actionItemService.update(actionItemId, null, requestId, completion());
+        actionItemService.update(actionItemId, organization.getId(), null, completion());
 
         verify(notificationService).create(
                 eq(mentor),
@@ -288,27 +288,6 @@ class ActionItemServiceTest {
     }
 
     @Test
-    void findByScope_listsOnlyTheRequestsOwnTasksNotEveryTaskOfTheStartup() {
-        UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
-        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "GreenLoop");
-
-        MentorshipRequest mentorshipRequest = new MentorshipRequest();
-        mentorshipRequest.setId(mentorshipRequestId);
-        mentorshipRequest.setOrganization(organization);
-        ActionItem ownTask = openItem(UUID.fromString("00000000-0000-0000-0000-000000000301"), organization);
-        ownTask.setMentorshipRequest(mentorshipRequest);
-
-        when(domainLookupService.requireMentorshipRequest(mentorshipRequestId)).thenReturn(mentorshipRequest);
-        when(actionItemRepository.findByMentorshipRequestIdOrderByCreatedAtDesc(mentorshipRequestId))
-                .thenReturn(List.of(ownTask));
-
-        var result = actionItemService.findByScope(null, mentorshipRequestId);
-
-        assertThat(result).extracting(ActionItemResponse::id).containsExactly(ownTask.getId());
-        verify(actionItemRepository, never()).findByOrganizationIdOrderByCreatedAtDesc(any());
-    }
-
-    @Test
     void create_linksTheTaskToTheRequestItWasSetThrough() {
         UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000201");
@@ -358,22 +337,46 @@ class ActionItemServiceTest {
         ActionItem secondTask = openItem(UUID.fromString("00000000-0000-0000-0000-000000000302"), organization);
         secondTask.setMentorshipRequest(second);
         List<UUID> ids = List.of(first.getId(), second.getId());
-        when(actionItemRepository.findByMentorshipRequestIdInOrderByCreatedAtDesc(ids))
+        when(actionItemRepository.findByMentorshipRequestIdInAndMentorshipRequestOrganizationIdOrderByCreatedAtDesc(
+                ids, organization.getId()))
                 .thenReturn(List.of(firstTask, secondTask));
 
-        assertThat(actionItemService.findByRequests(ids))
+        assertThat(actionItemService.findByRequests(ids, organization.getId(), null))
                 .extracting(ActionItemResponse::mentorshipRequestId)
                 .containsExactly(first.getId(), second.getId());
     }
 
     @Test
+    void findByRequests_asksForTheMentorsOwnRequestsWhenAMentorCalls() {
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+        List<UUID> ids = List.of(UUID.fromString("00000000-0000-0000-0000-000000000401"));
+        when(actionItemRepository.findByMentorshipRequestIdInAndMentorshipRequestMentorIdOrderByCreatedAtDesc(
+                ids, mentorId))
+                .thenReturn(List.of());
+
+        assertThat(actionItemService.findByRequests(ids, null, mentorId)).isEmpty();
+    }
+
+    @Test
+    void findByRequests_needsExactlyOneCaller() {
+        List<UUID> ids = List.of(UUID.fromString("00000000-0000-0000-0000-000000000401"));
+
+        assertThatThrownBy(() -> actionItemService.findByRequests(ids, null, null))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> actionItemService.findByRequests(ids, UUID.randomUUID(), UUID.randomUUID()))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
     void findByRequests_skipsTheQueryForNoRequestsAndRejectsTooMany() {
-        assertThat(actionItemService.findByRequests(List.of())).isEmpty();
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        assertThat(actionItemService.findByRequests(List.of(), organizationId, null)).isEmpty();
         List<UUID> tooMany = java.util.stream.Stream.generate(UUID::randomUUID).limit(101).toList();
 
-        assertThatThrownBy(() -> actionItemService.findByRequests(tooMany))
+        assertThatThrownBy(() -> actionItemService.findByRequests(tooMany, organizationId, null))
                 .isInstanceOf(InvalidRequestException.class);
-        verify(actionItemRepository, never()).findByMentorshipRequestIdInOrderByCreatedAtDesc(any());
+        verify(actionItemRepository, never())
+                .findByMentorshipRequestIdInAndMentorshipRequestOrganizationIdOrderByCreatedAtDesc(any(), any());
     }
 
     private static Organization organization(UUID id, String name) {

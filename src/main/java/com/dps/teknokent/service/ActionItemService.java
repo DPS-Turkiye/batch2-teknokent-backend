@@ -45,25 +45,38 @@ public class ActionItemService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ActionItemResponse> findByScope(UUID organizationId, UUID mentorshipRequestId) {
-		UUID scopedOrganizationId = resolveOrganizationId(organizationId, mentorshipRequestId);
-		List<ActionItem> items = mentorshipRequestId != null
-				? actionItemRepository.findByMentorshipRequestIdOrderByCreatedAtDesc(mentorshipRequestId)
-				: actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(scopedOrganizationId);
-		return items.stream()
+	public List<ActionItemResponse> findByOrganization(UUID organizationId) {
+		if (organizationId == null) {
+			throw new InvalidRequestException(
+					"Provide organizationId, or mentorshipRequestIds with the caller's organizationId or mentorId");
+		}
+		return actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId).stream()
 				.map(ActionItemResponse::fromEntity)
 				.toList();
 	}
 
+	/**
+	 * The app calls this with its service login, so it names the caller: a startup member's organization or a
+	 * mentor. Requests that aren't the caller's are left out rather than refused, so a screen listing several
+	 * still loads.
+	 */
 	@Transactional(readOnly = true)
-	public List<ActionItemResponse> findByRequests(List<UUID> mentorshipRequestIds) {
+	public List<ActionItemResponse> findByRequests(List<UUID> mentorshipRequestIds, UUID organizationId, UUID mentorId) {
+		if ((organizationId == null) == (mentorId == null)) {
+			throw new InvalidRequestException("Provide exactly one of organizationId or mentorId");
+		}
 		if (mentorshipRequestIds.size() > MAX_REQUESTS_PER_LOOKUP) {
 			throw new InvalidRequestException("Too many requests in one lookup.");
 		}
 		if (mentorshipRequestIds.isEmpty()) {
 			return List.of();
 		}
-		return actionItemRepository.findByMentorshipRequestIdInOrderByCreatedAtDesc(mentorshipRequestIds).stream()
+		List<ActionItem> items = organizationId != null
+				? actionItemRepository.findByMentorshipRequestIdInAndMentorshipRequestOrganizationIdOrderByCreatedAtDesc(
+						mentorshipRequestIds, organizationId)
+				: actionItemRepository.findByMentorshipRequestIdInAndMentorshipRequestMentorIdOrderByCreatedAtDesc(
+						mentorshipRequestIds, mentorId);
+		return items.stream()
 				.map(ActionItemResponse::fromEntity)
 				.toList();
 	}
@@ -98,15 +111,15 @@ public class ActionItemService {
 				request.ownerId() == null ? null : domainLookupService.requireUser(request.ownerId()));
 		ActionItem saved = actionItemRepository.saveAndFlush(actionItem);
 		if (!wasCompleted && saved.getStatus() == ActionItemStatus.COMPLETED) {
-			notifyMentorOfCompletion(saved, mentorshipRequestId);
+			notifyMentorOfCompletion(saved);
 		}
 		return ActionItemResponse.fromEntity(saved);
 	}
 
 	// The mentor who set the task hears when the startup finishes it.
-	private void notifyMentorOfCompletion(ActionItem item, UUID mentorshipRequestId) {
-		AppUser mentor = mentorshipRequestId != null
-				? domainLookupService.requireMentorshipRequest(mentorshipRequestId).getMentor()
+	private void notifyMentorOfCompletion(ActionItem item) {
+		AppUser mentor = item.getMentorshipRequest() != null
+				? item.getMentorshipRequest().getMentor()
 				: item.getMeeting() == null ? null : item.getMeeting().getMentor();
 		if (mentor == null) {
 			return;
