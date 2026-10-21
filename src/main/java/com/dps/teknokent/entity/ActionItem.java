@@ -36,9 +36,11 @@ import lombok.Setter;
 public class ActionItem {
 
 	public static ActionItem fromRequest(
-			CreateActionItemRequest request, Organization organization, Meeting meeting, AppUser owner) {
+			CreateActionItemRequest request, Organization organization, MentorshipRequest mentorshipRequest,
+			Meeting meeting, AppUser owner) {
 		ActionItem actionItem = new ActionItem();
 		actionItem.organization = organization;
+		actionItem.mentorshipRequest = mentorshipRequest;
 		actionItem.meeting = meeting;
 		actionItem.owner = owner;
 		actionItem.title = TextUtils.trim(request.title());
@@ -64,6 +66,11 @@ public class ActionItem {
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "organization_id", nullable = false)
 	private Organization organization;
+
+	// Null for Süreç assignments, which belong to the startup rather than one request.
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "mentorship_request_id")
+	private MentorshipRequest mentorshipRequest;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "meeting_id")

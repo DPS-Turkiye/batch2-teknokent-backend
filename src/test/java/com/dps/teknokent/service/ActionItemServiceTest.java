@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -24,6 +25,7 @@ import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.dto.requests.CreateActionItemRequest;
 import com.dps.teknokent.dto.requests.UpdateActionItemRequest;
+import com.dps.teknokent.dto.responses.ActionItemResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
@@ -286,18 +288,46 @@ class ActionItemServiceTest {
     }
 
     @Test
-    void findByScope_scopesToTheMentorshipRequestsOrganization() {
+    void findByScope_listsOnlyTheRequestsOwnTasksNotEveryTaskOfTheStartup() {
         UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "GreenLoop");
 
         MentorshipRequest mentorshipRequest = new MentorshipRequest();
         mentorshipRequest.setId(mentorshipRequestId);
-        mentorshipRequest.setOrganization(organization(organizationId, "GreenLoop"));
+        mentorshipRequest.setOrganization(organization);
+        ActionItem ownTask = openItem(UUID.fromString("00000000-0000-0000-0000-000000000301"), organization);
+        ownTask.setMentorshipRequest(mentorshipRequest);
 
         when(domainLookupService.requireMentorshipRequest(mentorshipRequestId)).thenReturn(mentorshipRequest);
-        when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId)).thenReturn(List.of());
+        when(actionItemRepository.findByMentorshipRequestIdOrderByCreatedAtDesc(mentorshipRequestId))
+                .thenReturn(List.of(ownTask));
 
-        assertThat(actionItemService.findByScope(null, mentorshipRequestId)).isEmpty();
+        var result = actionItemService.findByScope(null, mentorshipRequestId);
+
+        assertThat(result).extracting(ActionItemResponse::id).containsExactly(ownTask.getId());
+        verify(actionItemRepository, never()).findByOrganizationIdOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    void create_linksTheTaskToTheRequestItWasSetThrough() {
+        UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "GreenLoop");
+        MentorshipRequest mentorshipRequest = new MentorshipRequest();
+        mentorshipRequest.setId(mentorshipRequestId);
+        mentorshipRequest.setOrganization(organization);
+
+        when(domainLookupService.requireMentorshipRequest(mentorshipRequestId)).thenReturn(mentorshipRequest);
+        when(domainLookupService.requireOrganization(organization.getId())).thenReturn(organization);
+        when(domainLookupService.requireUser(ownerId)).thenReturn(user(ownerId, "Ayşe Yılmaz"));
+        when(actionItemRepository.saveAndFlush(any(ActionItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        actionItemService.create(new CreateActionItemRequest(
+                null, mentorshipRequestId, null, ownerId, "Rakip analizi", null, null));
+
+        ArgumentCaptor<ActionItem> saved = ArgumentCaptor.forClass(ActionItem.class);
+        verify(actionItemRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getMentorshipRequest()).isSameAs(mentorshipRequest);
     }
 
     @Test
