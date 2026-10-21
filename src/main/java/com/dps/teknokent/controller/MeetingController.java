@@ -58,7 +58,13 @@ public class MeetingController {
 		return meetingService.submitFeedback(id, authorId, request);
 	}
 
-	/** 204 until the author has rated the meeting; the dashboard asks for every meeting. */
+	/** The ids, among these meetings, that the author has already rated: one call for the home page's list. */
+	@GetMapping("/feedback")
+	public List<UUID> ratedMeetingIds(@RequestParam List<UUID> meetingIds, @RequestParam UUID authorId) {
+		return meetingService.ratedMeetingIds(meetingIds, authorId);
+	}
+
+	/** 204 until the author has rated the meeting. */
 	@GetMapping("/{id}/feedback")
 	public ResponseEntity<MeetingFeedbackResponse> findFeedback(
 			@PathVariable UUID id, @RequestParam UUID authorId) {

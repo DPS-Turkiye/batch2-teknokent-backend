@@ -33,5 +33,7 @@ public interface MeetingFeedbackRepository extends JpaRepository<MeetingFeedback
 
 	Optional<MeetingFeedback> findByMeetingIdAndAuthorId(UUID meetingId, UUID authorId);
 
+	List<MeetingFeedback> findByMeetingIdInAndAuthorId(Collection<UUID> meetingIds, UUID authorId);
+
 	List<MeetingFeedback> findByMeetingIdInAndAuthorRole(Collection<UUID> meetingIds, UserRole role);
 }
