@@ -46,6 +46,20 @@ function unique(urls) {
   return [...new Set(urls)];
 }
 
+const T4_TARGETS = {
+  requests: ["/api/mentor-requests"],
+  conversations: ["/api/coordinator-conversations"],
+  announcements: ["/api/program-announcements"],
+  home: screen("mentee", "mentee:/dashboard").load,
+  calendar: screen("mentee", "mentee:/calendar").load,
+};
+
+function screen(role, name) {
+  return SCREENS[role].find((s) => s.name === name);
+}
+
+const T4_TARGET = T4_TARGETS[__ENV.T4_TARGET || "requests"];
+
 const steps = (__ENV.STEPS || "25,50,100,250,500").split(",").map(Number);
 const stepMinutes = __ENV.STEP_MINUTES || "10";
 const SCENARIOS = {
@@ -80,29 +94,19 @@ const SCENARIOS = {
       { target: 0, duration: "1m" },
     ],
   },
-  // One heavy target at a fixed rate, for before/after comparisons of a single fix.
+  // One heavy target at a fixed rate, for before/after comparisons of a single fix. RATE counts
+  // requests, not screens: one iteration fires every call of the target, so a screen of N calls
+  // starts RATE iterations every N seconds.
   T4: {
     executor: "constant-arrival-rate",
     exec: "heavy",
     rate: Number(__ENV.RATE || 5),
-    timeUnit: "1s",
+    timeUnit: `${T4_TARGET.length}s`,
     duration: __ENV.DURATION || "5m",
     preAllocatedVUs: 50,
     maxVUs: 200,
   },
 };
-
-const T4_TARGETS = {
-  requests: ["/api/mentor-requests"],
-  conversations: ["/api/coordinator-conversations"],
-  announcements: ["/api/program-announcements"],
-  home: screen("mentee", "mentee:/dashboard").load,
-  calendar: screen("mentee", "mentee:/calendar").load,
-};
-
-function screen(role, name) {
-  return SCREENS[role].find((s) => s.name === name);
-}
 
 export const options = {
   scenarios: { [TEST]: SCENARIOS[TEST] },
@@ -170,7 +174,7 @@ export default function (sessions) {
 export function heavy(sessions) {
   if (!mine) mine = { role: "mentee", ...sessions.mentee };
   refreshTokenIfDue();
-  request(T4_TARGETS[__ENV.T4_TARGET || "requests"]);
+  request(T4_TARGET);
 }
 
 function request(urls) {
