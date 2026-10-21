@@ -62,10 +62,14 @@ const SCENARIOS = {
     ],
     gracefulRampDown: "30s",
   },
+  // Ramped in: 50 users opening heavy screens in the same second is T3's job, not a soak.
   T2: {
-    executor: "constant-vus",
-    vus: Number(__ENV.VUS || 100),
-    duration: __ENV.DURATION || "60m",
+    executor: "ramping-vus",
+    startVUs: 0,
+    stages: [
+      { target: Number(__ENV.VUS || 100), duration: "2m" },
+      { target: Number(__ENV.VUS || 100), duration: __ENV.DURATION || "60m" },
+    ],
   },
   T3: {
     executor: "ramping-vus",
