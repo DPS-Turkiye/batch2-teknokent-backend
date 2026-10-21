@@ -17,10 +17,11 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 	@EntityGraph(attributePaths = "createdBy")
 	List<ActionItem> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
-	@EntityGraph(attributePaths = "createdBy")
-	List<ActionItem> findByMentorshipRequestIdOrderByCreatedAtDesc(UUID mentorshipRequestId);
+	List<ActionItem> findByMentorshipRequestIdInAndMentorshipRequestOrganizationIdOrderByCreatedAtDesc(
+			Collection<UUID> mentorshipRequestIds, UUID organizationId);
 
-	List<ActionItem> findByMentorshipRequestIdInOrderByCreatedAtDesc(Collection<UUID> mentorshipRequestIds);
+	List<ActionItem> findByMentorshipRequestIdInAndMentorshipRequestMentorIdOrderByCreatedAtDesc(
+			Collection<UUID> mentorshipRequestIds, UUID mentorId);
 
 	Optional<ActionItem> findByIdAndOrganizationId(UUID id, UUID organizationId);
 

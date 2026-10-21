@@ -2,6 +2,7 @@ package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -54,7 +55,7 @@ class ActionItemControllerTest {
         UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(actionItemService.findByScope(organizationId, null)).thenReturn(List.of(new ActionItemResponse(
+        when(actionItemService.findByOrganization(organizationId)).thenReturn(List.of(new ActionItemResponse(
                 actionItemId,
                 organizationId,
                 "Teknokent",
@@ -81,20 +82,23 @@ class ActionItemControllerTest {
     }
 
     @Test
-    void returnsActionItemsScopedToAMentorshipRequest() throws Exception {
+    void returnsOneRequestsActionItemsForTheCallingMentor() throws Exception {
         UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000501");
 
-        when(actionItemService.findByScope(null, mentorshipRequestId)).thenReturn(List.of());
+        when(actionItemService.findByRequests(List.of(mentorshipRequestId), null, mentorId)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/actions")
                         .param("mentorshipRequestId", mentorshipRequestId.toString())
+                        .param("mentorId", mentorId.toString())
                         .with(user("test-user")))
                 .andExpect(status().isOk());
+        verify(actionItemService).findByRequests(List.of(mentorshipRequestId), null, mentorId);
     }
 
     @Test
     void rejectsListWithoutAScope() throws Exception {
-        when(actionItemService.findByScope(null, null))
+        when(actionItemService.findByOrganization(null))
                 .thenThrow(new InvalidRequestException("Provide exactly one of organizationId or mentorshipRequestId"));
 
         mockMvc.perform(get("/api/actions").with(user("test-user")))
@@ -206,7 +210,8 @@ class ActionItemControllerTest {
     void listsSeveralRequestsItemsInOneCall() throws Exception {
         UUID first = UUID.fromString("00000000-0000-0000-0000-000000000401");
         UUID second = UUID.fromString("00000000-0000-0000-0000-000000000402");
-        when(actionItemService.findByRequests(List.of(first, second))).thenReturn(List.of(new ActionItemResponse(
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        when(actionItemService.findByRequests(List.of(first, second), organizationId, null)).thenReturn(List.of(new ActionItemResponse(
                 UUID.fromString("00000000-0000-0000-0000-000000000011"),
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
                 "Teknokent",
@@ -225,6 +230,7 @@ class ActionItemControllerTest {
 
         mockMvc.perform(get("/api/actions")
                         .param("mentorshipRequestIds", first.toString(), second.toString())
+                        .param("organizationId", organizationId.toString())
                         .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].mentorshipRequestId").value(second.toString()));
