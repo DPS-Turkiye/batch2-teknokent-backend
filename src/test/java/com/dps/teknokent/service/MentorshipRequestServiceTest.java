@@ -106,9 +106,6 @@ class MentorshipRequestServiceTest {
 
                 when(mentorshipRequestRepository.findByRequesterIdOrderByCreatedAtDesc(requesterId))
                                 .thenReturn(List.of(first, second));
-                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(any()))
-                                .thenReturn(List.of());
-                when(recommendationRunRepository.findByRequestId(any())).thenReturn(Optional.empty());
 
                 var result = mentorshipRequestService.findAll(requesterId, null, null);
 
@@ -135,9 +132,6 @@ class MentorshipRequestServiceTest {
 
                 when(mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
                                 .thenReturn(List.of(first, second));
-                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(any()))
-                                .thenReturn(List.of());
-                when(recommendationRunRepository.findByRequestId(any())).thenReturn(Optional.empty());
 
                 var result = mentorshipRequestService.findAll(null, null, organizationId);
 
@@ -165,9 +159,6 @@ class MentorshipRequestServiceTest {
                                 any(),
                                 any()))
                                 .thenReturn(new PageImpl<>(List.of(pending), PageRequest.of(0, 1), 2));
-                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(pendingId))
-                                .thenReturn(List.of());
-                when(recommendationRunRepository.findByRequestId(pendingId)).thenReturn(Optional.empty());
 
                 var result = mentorshipRequestService.findWorkspacePage(
                                 null, organizationId, MentorshipWorkspaceTab.REQUESTS, PageRequest.of(0, 1));
