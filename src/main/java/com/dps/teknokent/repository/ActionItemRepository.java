@@ -20,6 +20,8 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 	@EntityGraph(attributePaths = "createdBy")
 	List<ActionItem> findByMentorshipRequestIdOrderByCreatedAtDesc(UUID mentorshipRequestId);
 
+	List<ActionItem> findByMentorshipRequestIdInOrderByCreatedAtDesc(Collection<UUID> mentorshipRequestIds);
+
 	Optional<ActionItem> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
 	long countByStatusNotInAndDueDateBefore(Collection<ActionItemStatus> statuses, LocalDate threshold);

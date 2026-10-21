@@ -27,6 +27,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ActionItemService {
 
+	private static final int MAX_REQUESTS_PER_LOOKUP = 100;
+
 	private final ActionItemRepository actionItemRepository;
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
@@ -49,6 +51,19 @@ public class ActionItemService {
 				? actionItemRepository.findByMentorshipRequestIdOrderByCreatedAtDesc(mentorshipRequestId)
 				: actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(scopedOrganizationId);
 		return items.stream()
+				.map(ActionItemResponse::fromEntity)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<ActionItemResponse> findByRequests(List<UUID> mentorshipRequestIds) {
+		if (mentorshipRequestIds.size() > MAX_REQUESTS_PER_LOOKUP) {
+			throw new InvalidRequestException("Too many requests in one lookup.");
+		}
+		if (mentorshipRequestIds.isEmpty()) {
+			return List.of();
+		}
+		return actionItemRepository.findByMentorshipRequestIdInOrderByCreatedAtDesc(mentorshipRequestIds).stream()
 				.map(ActionItemResponse::fromEntity)
 				.toList();
 	}

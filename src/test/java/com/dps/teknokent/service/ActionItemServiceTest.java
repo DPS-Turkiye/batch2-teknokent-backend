@@ -346,6 +346,36 @@ class ActionItemServiceTest {
                 .hasMessageContaining("exactly one");
     }
 
+    @Test
+    void findByRequests_listsEveryRequestsItemsInOneQueryAndSaysWhichRequestEachIsFor() {
+        Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000101"), "GreenLoop");
+        MentorshipRequest first = new MentorshipRequest();
+        first.setId(UUID.fromString("00000000-0000-0000-0000-000000000401"));
+        MentorshipRequest second = new MentorshipRequest();
+        second.setId(UUID.fromString("00000000-0000-0000-0000-000000000402"));
+        ActionItem firstTask = openItem(UUID.fromString("00000000-0000-0000-0000-000000000301"), organization);
+        firstTask.setMentorshipRequest(first);
+        ActionItem secondTask = openItem(UUID.fromString("00000000-0000-0000-0000-000000000302"), organization);
+        secondTask.setMentorshipRequest(second);
+        List<UUID> ids = List.of(first.getId(), second.getId());
+        when(actionItemRepository.findByMentorshipRequestIdInOrderByCreatedAtDesc(ids))
+                .thenReturn(List.of(firstTask, secondTask));
+
+        assertThat(actionItemService.findByRequests(ids))
+                .extracting(ActionItemResponse::mentorshipRequestId)
+                .containsExactly(first.getId(), second.getId());
+    }
+
+    @Test
+    void findByRequests_skipsTheQueryForNoRequestsAndRejectsTooMany() {
+        assertThat(actionItemService.findByRequests(List.of())).isEmpty();
+        List<UUID> tooMany = java.util.stream.Stream.generate(UUID::randomUUID).limit(101).toList();
+
+        assertThatThrownBy(() -> actionItemService.findByRequests(tooMany))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(actionItemRepository, never()).findByMentorshipRequestIdInOrderByCreatedAtDesc(any());
+    }
+
     private static Organization organization(UUID id, String name) {
         Organization organization = new Organization();
         organization.setId(id);

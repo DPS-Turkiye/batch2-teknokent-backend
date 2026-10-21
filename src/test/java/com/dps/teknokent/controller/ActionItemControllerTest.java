@@ -67,7 +67,8 @@ class ActionItemControllerTest {
                 LocalDate.of(2026, 9, 15),
                 null,
                 Instant.parse("2026-08-20T10:00:00Z"),
-                Instant.parse("2026-08-20T10:00:00Z")
+                Instant.parse("2026-08-20T10:00:00Z"),
+                null
         )));
 
         mockMvc.perform(get("/api/actions")
@@ -120,7 +121,8 @@ class ActionItemControllerTest {
                 LocalDate.of(2026, 9, 15),
                 null,
                 Instant.parse("2026-08-20T10:30:00Z"),
-                Instant.parse("2026-08-20T10:30:00Z")
+                Instant.parse("2026-08-20T10:30:00Z"),
+                null
         ));
 
         mockMvc.perform(post("/api/actions")
@@ -177,7 +179,8 @@ class ActionItemControllerTest {
                 LocalDate.of(2026, 9, 20),
                 "Completed after review",
                 Instant.parse("2026-08-20T11:00:00Z"),
-                Instant.parse("2026-08-20T11:05:00Z")
+                Instant.parse("2026-08-20T11:05:00Z"),
+                null
         ));
 
         mockMvc.perform(patch("/api/actions/{id}", actionItemId)
@@ -197,5 +200,33 @@ class ActionItemControllerTest {
                 .andExpect(jsonPath("$.id").value(actionItemId.toString()))
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.completionNotes").value("Completed after review"));
+    }
+
+    @Test
+    void listsSeveralRequestsItemsInOneCall() throws Exception {
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000402");
+        when(actionItemService.findByRequests(List.of(first, second))).thenReturn(List.of(new ActionItemResponse(
+                UUID.fromString("00000000-0000-0000-0000-000000000011"),
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "Teknokent",
+                null,
+                UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                "Ahmet Yılmaz",
+                "Prepare onboarding checklist",
+                null,
+                ActionItemStatus.OPEN,
+                null,
+                null,
+                Instant.parse("2026-08-20T10:00:00Z"),
+                Instant.parse("2026-08-20T10:00:00Z"),
+                second
+        )));
+
+        mockMvc.perform(get("/api/actions")
+                        .param("mentorshipRequestIds", first.toString(), second.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].mentorshipRequestId").value(second.toString()));
     }
 }
