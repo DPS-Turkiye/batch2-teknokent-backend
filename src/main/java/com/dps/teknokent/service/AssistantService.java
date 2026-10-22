@@ -20,6 +20,7 @@ import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
+import com.dps.teknokent.exception.ConflictException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,6 +30,24 @@ public class AssistantService {
 
   private final MeetingProviderClient providerClient;
   private final MeetingReportService meetingReportService;
+  private final TranscriptBotCapacityService capacityService;
+
+  /**
+   * A bot asked for from the assistant, outside a booked meeting. Booked meetings reserve their slot when they are
+   * saved, so only this route checks the bots running right now; when that count is unknown it refuses.
+   */
+  public AddBotResponse addAdHocBot(AddBotRequest request) {
+    var parsed = MeetingUrlParser.parse(request.meetingUrl());
+    Set<String> running = runningBotKeys()
+        .orElseThrow(() -> new IllegalStateException("Running bots are unknown"));
+    // ponytail: live count only, so meetings booked later can still add their reserved bots on top; a shared
+    // ledger of ad-hoc and booked bots if the provider bill needs a hard ceiling.
+    if (!running.contains(botKey(parsed.platform(), parsed.nativeMeetingId()))
+        && running.size() >= capacityService.capacity()) {
+      throw new ConflictException("All recording slots are in use.");
+    }
+    return addBot(request);
+  }
 
   public AddBotResponse addBot(AddBotRequest request) {
     var parsed = MeetingUrlParser.parse(request.meetingUrl());

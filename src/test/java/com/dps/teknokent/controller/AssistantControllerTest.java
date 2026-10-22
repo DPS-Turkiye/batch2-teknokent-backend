@@ -19,6 +19,7 @@ import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.service.AssistantService;
 import com.dps.teknokent.service.MeetingService;
 
@@ -48,7 +49,7 @@ class AssistantControllerTest {
 
   @Test
   void addBotReturnsCreated() throws Exception {
-    when(assistantService.addBot(any(AddBotRequest.class)))
+    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
         .thenReturn(new AddBotResponse(
             "bot-1",
             "google_meet",
@@ -68,7 +69,7 @@ class AssistantControllerTest {
 
   @Test
   void addBotReturnsBadRequestOnInvalidUrl() throws Exception {
-    when(assistantService.addBot(any(AddBotRequest.class)))
+    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
         .thenThrow(new IllegalArgumentException("Unsupported meeting link"));
 
     mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
@@ -79,8 +80,20 @@ class AssistantControllerTest {
   }
 
   @Test
+  void addBotReturnsConflictWhenEveryRecordingSlotIsTaken() throws Exception {
+    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
+        .thenThrow(new ConflictException("All recording slots are in use."));
+
+    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail").value("All recording slots are in use."));
+  }
+
+  @Test
   void addBotReturnsProviderStatusOnRestClientError() throws Exception {
-    when(assistantService.addBot(any(AddBotRequest.class)))
+    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
         .thenThrow(HttpClientErrorException.create(
             HttpStatus.CONFLICT,
             "Conflict",

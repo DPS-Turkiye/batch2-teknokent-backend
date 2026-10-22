@@ -15,6 +15,7 @@ import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.ErrorResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.AssistantService;
 import com.dps.teknokent.service.MeetingService;
@@ -34,10 +35,12 @@ public class AssistantController {
   @PostMapping("/api/assistant/bots")
   public ResponseEntity<?> addBot(@Valid @RequestBody AddBotRequest request) {
     try {
-      AddBotResponse response = assistantService.addBot(request);
+      AddBotResponse response = assistantService.addAdHocBot(request);
       return ResponseEntity.status(HttpStatus.CREATED).body(response);
     } catch (IllegalArgumentException ex) {
       return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
+    } catch (ConflictException ex) {
+      return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(ex.getMessage()));
     } catch (Exception ex) {
       return providerFailure("Failed to reach meeting provider", ex);
     }
