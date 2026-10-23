@@ -91,6 +91,9 @@ public class AppUser {
 	@Column(name = "firebase_uid", unique = true)
 	private String firebaseUid;
 
+	@Column(name = "sign_ins_revoked_at")
+	private Instant signInsRevokedAt;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "preferred_language", nullable = false, length = 8)
 	private AppLanguage preferredLanguage = AppLanguage.TR;

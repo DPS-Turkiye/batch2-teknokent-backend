@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,12 +27,14 @@ import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
+import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.util.InviteCodeGenerator;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,6 +57,9 @@ class AppUserServiceTest {
 
     @Mock
     private OrganizationPendingMemberRepository pendingMemberRepository;
+
+    @Mock
+    private LoginProvisioner loginProvisioner;
 
     @InjectMocks
     private AppUserService appUserService;
@@ -401,6 +407,54 @@ class AppUserServiceTest {
                 targetId, new DecideAccountStatusRequest(adminId, UserAccountStatus.PENDING)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("APPROVED or REJECTED");
+    }
+
+    @Test
+    void revokeSignIns_recordsTheTimeAndEndsTheFirebaseSignIns() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser target = user(targetId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
+        target.setFirebaseUid("uid-811");
+        when(domainLookupService.requireUser(adminId))
+                .thenReturn(user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN));
+        when(domainLookupService.requireUser(targetId)).thenReturn(target);
+        Instant before = Instant.now();
+
+        UserResponse response = appUserService.revokeSignIns(targetId, adminId);
+
+        assertThat(target.getSignInsRevokedAt()).isAfterOrEqualTo(before);
+        assertThat(response.signInsRevokedAt()).isEqualTo(target.getSignInsRevokedAt());
+        verify(appUserRepository).save(target);
+        verify(loginProvisioner).revokeSignIns("uid-811");
+    }
+
+    @Test
+    void revokeSignIns_stillEndsAppSessionsForAnAccountWithoutAFirebaseLogin() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        AppUser target = user(targetId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
+        when(domainLookupService.requireUser(adminId))
+                .thenReturn(user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN));
+        when(domainLookupService.requireUser(targetId)).thenReturn(target);
+
+        appUserService.revokeSignIns(targetId, adminId);
+
+        assertThat(target.getSignInsRevokedAt()).isNotNull();
+        verify(loginProvisioner, never()).revokeSignIns(any());
+    }
+
+    @Test
+    void revokeSignIns_rejectsNonAdminActor() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        when(domainLookupService.requireUser(actorId))
+                .thenReturn(user(actorId, "kemal@mentor.com", "Dr. Kemal Arslan", UserRole.COORDINATOR));
+
+        assertThatThrownBy(() -> appUserService.revokeSignIns(targetId, actorId))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Only an admin");
+        verify(appUserRepository, never()).save(any());
+        verify(loginProvisioner, never()).revokeSignIns(any());
     }
 
     private static AppUser user(UUID id, String email, String fullName, UserRole role) {

@@ -22,4 +22,9 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	public Map<String, Boolean> passwordsSet(Collection<String> uids) {
 		return Map.of();
 	}
+
+	@Override
+	public void revokeSignIns(String uid) {
+		// Without Firebase there are no Firebase sign-ins; the recorded time still ends app sessions.
+	}
 }

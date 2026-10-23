@@ -10,9 +10,11 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -63,7 +65,8 @@ class AppUserControllerTest {
                 UserAccountStatus.APPROVED,
                 organizationId,
                 "Teknokent",
-                "Ürün & Araştırma Direktörü"
+                "Ürün & Araştırma Direktörü",
+                null
         )));
 
         mockMvc.perform(get("/api/users").param("role", "MENTOR").with(user("test-user")))
@@ -86,7 +89,8 @@ class AppUserControllerTest {
                 UserAccountStatus.APPROVED,
                 organizationId,
                 "Teknokent",
-                "Product Designer"
+                "Product Designer",
+                null
         ));
 
         mockMvc.perform(get("/api/users/{id}", userId).with(user("test-user")))
@@ -110,7 +114,8 @@ class AppUserControllerTest {
                         UserAccountStatus.APPROVED,
                         null,
                         null,
-                        "Platform Admin"
+                        "Platform Admin",
+                        null
                 ),
                 new UserResponse(
                         secondUserId,
@@ -120,7 +125,8 @@ class AppUserControllerTest {
                         UserAccountStatus.APPROVED,
                         null,
                         null,
-                        "Mentor"
+                        "Mentor",
+                        null
                 )
         ));
 
@@ -161,7 +167,8 @@ class AppUserControllerTest {
                                 UserAccountStatus.APPROVED,
                                 organizationId,
                                 "GreenLoop",
-                                "Kurucu"
+                                "Kurucu",
+                                null
                         ),
                         "ABCD2345"
                 ));
@@ -203,5 +210,43 @@ class AppUserControllerTest {
                         """.formatted(adminId)));
 
         verify(appUserService).decideStatus(eq(userId), argThat(request -> callerId.equals(request.actorId())));
+    }
+
+    @Test
+    void revokesSignInsAsTheSignedInCallerNotTheBodyActor() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        UUID callerId = UUID.fromString("00000000-0000-0000-0000-000000000822");
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UsernamePasswordAuthenticationToken caller = new UsernamePasswordAuthenticationToken(
+                new AppUserPrincipal(callerId, "mentee@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid"),
+                null, List.of());
+
+        mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
+                .with(authentication(caller))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        { "actorId": "%s" }
+                        """.formatted(adminId)));
+
+        verify(appUserService).revokeSignIns(userId, callerId);
+    }
+
+    @Test
+    void revokesSignInsForTheServiceCredentialActor() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        Instant revokedAt = Instant.parse("2026-10-23T15:00:00Z");
+        when(appUserService.revokeSignIns(userId, adminId)).thenReturn(new UserResponse(
+                userId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE, UserAccountStatus.APPROVED,
+                null, null, "Kurucu", revokedAt));
+
+        mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "actorId": "%s" }
+                                """.formatted(adminId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signInsRevokedAt").value("2026-10-23T15:00:00Z"));
     }
 }

@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.entity.OrganizationPendingMember;
 import com.dps.teknokent.dto.responses.OrganizationPendingMemberResponse;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -27,12 +28,15 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AppUserService {
@@ -43,6 +47,7 @@ public class AppUserService {
 	private final InviteCodeGenerator inviteCodeGenerator;
 	private final NotificationService notificationService;
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
+	private final LoginProvisioner loginProvisioner;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -229,6 +234,26 @@ public class AppUserService {
 						: Texts.get(target, "notification.applicationRejected.body"),
 				"/application-status");
 		return new AccountDecisionResponse(UserResponse.fromEntity(target), inviteCode);
+	}
+
+	/**
+	 * Signs a user out everywhere: Firebase refuses their tokens, and the recorded time lets the web app end
+	 * sessions that started before it. If Firebase fails, nothing is recorded and the admin sees the error.
+	 */
+	@Transactional
+	public UserResponse revokeSignIns(UUID userId, UUID actorId) {
+		AppUser actor = domainLookupService.requireUser(actorId);
+		if (actor.getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin can end someone's sign-ins");
+		}
+		AppUser target = domainLookupService.requireUser(userId);
+		target.setSignInsRevokedAt(Instant.now());
+		appUserRepository.save(target);
+		if (target.getFirebaseUid() != null) {
+			loginProvisioner.revokeSignIns(target.getFirebaseUid());
+		}
+		log.info("Admin {} ended all sign-ins of user {}", actor.getId(), target.getId());
+		return UserResponse.fromEntity(target);
 	}
 
 	private String ensureInviteCode(Organization organization) {

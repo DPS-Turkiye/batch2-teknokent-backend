@@ -113,4 +113,19 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		}
 		return answers;
 	}
+
+	@Override
+	public void revokeSignIns(String uid) {
+		try {
+			firebaseAuth.revokeRefreshTokens(uid);
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				return;
+			}
+			log.error("Could not revoke the Firebase sign-ins of {}: {} {}", uid, exception.getErrorCode(),
+					exception.getMessage());
+			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+					Texts.forRequest("error.signInRevokeFailed", exception.getErrorCode()), exception);
+		}
+	}
 }
