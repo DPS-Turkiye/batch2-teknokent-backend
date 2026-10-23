@@ -57,8 +57,14 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 			return;
 		}
 
-		Optional<FirebaseIdentity> identity = firebaseTokenVerifier
-				.verify(header.substring(BEARER_PREFIX.length()).trim());
+		Optional<FirebaseIdentity> identity;
+		try {
+			identity = firebaseTokenVerifier.verify(header.substring(BEARER_PREFIX.length()).trim());
+		} catch (FirebaseUnavailableException exception) {
+			// A 401 would read as "signed out" or "not registered" to the frontend.
+			write(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Firebase is unavailable");
+			return;
+		}
 		if (identity.isEmpty()) {
 			write(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid Firebase token");
 			return;
