@@ -436,7 +436,7 @@ public class ProgramService {
 		return toResponses(List.of(program)).getFirst();
 	}
 
-	/** Four queries for the whole list, not one per startup and mentor of every program. */
+	/** One query per table for the whole list, not one per startup and mentor of every program. */
 	private List<ProgramResponse> toResponses(List<Program> programs) {
 		if (programs.isEmpty()) {
 			return List.of();
