@@ -1,5 +1,7 @@
 package com.dps.teknokent.config;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.List;
 
@@ -12,6 +14,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -62,6 +65,30 @@ public class SecurityConfig {
 	};
 
 	private static final String NOTIFICATION_PATH = "/api/notifications/**";
+
+	/**
+	 * The only password Spring checks is the shared Basic credential the frontend proxy sends on
+	 * every call, and it already sits in plain text in the environment. With the default encoder,
+	 * Spring upgrades it to bcrypt after the first login and then runs a bcrypt verify per request,
+	 * which load tests showed to be almost all of the backend's CPU. A constant-time comparison
+	 * keeps timing safety without the hashing.
+	 */
+	@Bean
+	PasswordEncoder serviceCredentialEncoder() {
+		return new PasswordEncoder() {
+			@Override
+			public String encode(CharSequence rawPassword) {
+				return rawPassword.toString();
+			}
+
+			@Override
+			public boolean matches(CharSequence rawPassword, String encodedPassword) {
+				return encodedPassword != null && MessageDigest.isEqual(
+						rawPassword.toString().getBytes(StandardCharsets.UTF_8),
+						encodedPassword.getBytes(StandardCharsets.UTF_8));
+			}
+		};
+	}
 
 	@Bean
 	CorsConfigurationSource corsConfigurationSource(Environment environment) {
