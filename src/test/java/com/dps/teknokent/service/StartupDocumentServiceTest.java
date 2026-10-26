@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,9 +19,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -81,6 +84,9 @@ class StartupDocumentServiceTest {
 
     @Mock
     private ObjectStorage objectStorage;
+
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private StartupDocumentService startupDocumentService;
@@ -321,8 +327,10 @@ class StartupDocumentServiceTest {
         startupDocumentService.delete(deck.getId(), TEAMMATE_ID);
 
         verify(storedDocumentShareRepository).deleteByDocumentId(deck.getId());
-        verify(storedDocumentRepository).delete(deck);
-        verify(objectStorage).delete(deck.getS3Key());
+        InOrder order = inOrder(storedDocumentRepository, transactionManager, objectStorage);
+        order.verify(storedDocumentRepository).delete(deck);
+        order.verify(transactionManager).commit(any());
+        order.verify(objectStorage).delete(deck.getS3Key());
     }
 
     @Test
@@ -362,6 +370,7 @@ class StartupDocumentServiceTest {
                 .isInstanceOf(InvalidRequestException.class);
 
         verify(storedDocumentRepository, never()).delete(any(StoredDocument.class));
+        verify(objectStorage, never()).delete(anyString());
     }
 
     @Test

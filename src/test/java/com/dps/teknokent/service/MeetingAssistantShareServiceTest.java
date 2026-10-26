@@ -10,8 +10,10 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -35,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,6 +55,8 @@ class MeetingAssistantShareServiceTest {
 	private ObjectStorage objectStorage;
 	@Mock
 	private MeetingNoteService meetingNoteService;
+	@Mock
+	private PlatformTransactionManager transactionManager;
 
 	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
 	private final UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000301");
@@ -61,7 +66,7 @@ class MeetingAssistantShareServiceTest {
 	private MeetingAssistantShareService service() {
 		return new MeetingAssistantShareService(
 				domainLookupService, shareRepository, meetingRepository, jsonUtils, objectStorage,
-				meetingNoteService);
+				meetingNoteService, transactionManager);
 	}
 
 	@Test
@@ -155,6 +160,12 @@ class MeetingAssistantShareServiceTest {
 				body.capture(),
 				eq("application/json"));
 		assertThat(new String(body.getValue(), StandardCharsets.UTF_8)).contains("Merhaba");
+		// Checked in one short transaction, stored in S3 with none open, recorded in a second one.
+		InOrder order = inOrder(transactionManager, objectStorage, shareRepository);
+		order.verify(transactionManager).commit(any());
+		order.verify(objectStorage).put(anyString(), any(), anyString());
+		order.verify(transactionManager).getTransaction(any());
+		order.verify(shareRepository).saveAndFlush(any(MeetingAssistantShare.class));
 		assertThat(saved.getValue().getTranscript()).isNull();
 		assertThat(saved.getValue().getTranscriptS3Key())
 				.isEqualTo("meetings/" + meetingId + "/transcript.json");
@@ -485,6 +496,7 @@ class MeetingAssistantShareServiceTest {
 				jsonUtils.readTree("[{\"id\":\"s1\",\"speaker\":\"A\",\"text\":\"Hi\",\"at\":\"00:01\"}]"),
 				null)))
 				.isInstanceOf(InvalidRequestException.class);
+		verify(objectStorage, never()).put(anyString(), any(), anyString());
 	}
 
 	@Test

@@ -12,7 +12,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -60,6 +62,7 @@ public class StartupDocumentService {
 	private final DocumentRequestUploadRepository documentRequestUploadRepository;
 	private final DomainLookupService domainLookupService;
 	private final ObjectStorage objectStorage;
+	private final PlatformTransactionManager transactionManager;
 
 	@Transactional(readOnly = true)
 	public List<OrganizationDocumentResponse> listForOrganization(UUID organizationId, UUID actorId) {
@@ -134,23 +137,24 @@ public class StartupDocumentService {
 		return describe(List.of(document)).getFirst();
 	}
 
-	// The uploader or the founder; the stored object goes after the row, so a
-	// storage hiccup leaves an orphaned object rather than a dangling record.
-	@Transactional
+	// The uploader or the founder. The stored object goes only once the row's deletion has committed, outside the
+	// transaction: a storage hiccup leaves an orphaned object rather than a dangling record, and the S3 call does
+	// not hold a pool connection.
 	public void delete(UUID documentId, UUID actorId) {
-		StoredDocument document = requireDocument(documentId);
-		AppUser actor = domainLookupService.requireUser(actorId);
-		if (!actor.getId().equals(document.getUserId()) && !isFounder(actor, document.getOrganizationId())) {
-			throw new InvalidRequestException("Only the uploader or the founder can delete this document");
-		}
-
-		storedDocumentShareRepository.deleteByDocumentId(documentId);
-		storedDocumentRepository.delete(document);
+		String s3Key = new TransactionTemplate(transactionManager).execute(status -> {
+			StoredDocument document = requireDocument(documentId);
+			AppUser actor = domainLookupService.requireUser(actorId);
+			if (!actor.getId().equals(document.getUserId()) && !isFounder(actor, document.getOrganizationId())) {
+				throw new InvalidRequestException("Only the uploader or the founder can delete this document");
+			}
+			storedDocumentShareRepository.deleteByDocumentId(documentId);
+			storedDocumentRepository.delete(document);
+			return document.getS3Key();
+		});
 		try {
-			objectStorage.delete(document.getS3Key());
+			objectStorage.delete(s3Key);
 		} catch (RuntimeException error) {
-			log.warn("Deleted document {} but its stored object {} remains: {}",
-					documentId, document.getS3Key(), error.getMessage());
+			log.warn("Deleted document {} but its stored object {} remains: {}", documentId, s3Key, error.getMessage());
 		}
 	}
 
