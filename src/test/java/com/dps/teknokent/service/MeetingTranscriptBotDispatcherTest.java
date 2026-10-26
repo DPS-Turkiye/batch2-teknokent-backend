@@ -16,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.dto.requests.AddBotRequest;
@@ -84,6 +86,20 @@ class MeetingTranscriptBotDispatcherTest {
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
 		verify(meetingRepository, never()).markBotDispatched(any(), any());
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
+	}
+
+	@Test
+	void recordsTheMeetingAsDispatchedWhenTheProviderAlreadyHasABotThere() {
+		Instant now = Instant.parse("2026-09-02T12:00:00Z");
+		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of(meeting));
+		when(assistantService.addBot(any())).thenThrow(
+				HttpClientErrorException.create(HttpStatus.CONFLICT, "Conflict", null, null, null));
+
+		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
+		verify(meetingRepository).markBotDispatched(List.of(meeting.getId()), now);
 		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
 	}
 

@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.TranscriptBotConstants;
@@ -58,6 +59,11 @@ public class MeetingTranscriptBotDispatcher {
 			List<UUID> ids = entry.getValue().stream().map(Meeting::getId).toList();
 			try {
 				assistantService.addBot(new AddBotRequest(entry.getKey()));
+			} catch (HttpClientErrorException.Conflict alreadyThere) {
+				// Vexa answers 409 when a bot is already in this meeting, e.g. a previous send that outran the read
+				// timeout. Record it so the watchdog tracks that bot instead of re-sending every tick.
+				meetingRepository.markBotDispatched(ids, dispatchedAt);
+				continue;
 			} catch (RuntimeException error) {
 				log.warn("Transcript bot could not join {}: {}", entry.getKey(), error.getMessage());
 				if (isUnrecoverableJoinFailure(error)) {
