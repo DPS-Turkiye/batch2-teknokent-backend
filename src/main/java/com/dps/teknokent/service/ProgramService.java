@@ -1,8 +1,14 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,7 +97,7 @@ public class ProgramService {
 		} else {
 			throw new InvalidRequestException("Only a coordinator or mentor can view programs.");
 		}
-		return programs.stream().map(this::toResponse).toList();
+		return toResponses(programs);
 	}
 
 	/**
@@ -373,14 +379,26 @@ public class ProgramService {
 	}
 
 	private ProgramDetailResponse toDetailResponse(Program program) {
-		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
-		List<ProgramStartupRosterResponse> startups = programStartupRepository
-				.findByProgramIdOrderByCreatedAtAsc(program.getId())
+		List<ProgramStartup> rows = programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId());
+		List<ProgramMentor> accepted = programMentorRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())
 				.stream()
+				.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
+				.toList();
+		List<UUID> organizationIds = rows.stream().map(ProgramStartup::getOrganizationId).toList();
+		Map<UUID, Organization> organizations = organizationsById(organizationIds);
+		Map<UUID, List<AppUser>> membersByOrganization = organizationIds.isEmpty()
+				? Map.of()
+				: appUserRepository.findByOrganizationIdInOrderByFullNameAsc(organizationIds).stream()
+						.collect(Collectors.groupingBy(user -> user.getOrganization().getId()));
+		Map<UUID, AppUser> users = usersById(Stream.concat(
+				Stream.of(program.getCreatedBy()),
+				accepted.stream().map(ProgramMentor::getMentorId)).toList());
+		AppUser coordinator = require(users, program.getCreatedBy(), "User");
+		List<ProgramStartupRosterResponse> startups = rows.stream()
 				.map(row -> {
-					Organization organization = domainLookupService.requireOrganization(row.getOrganizationId());
-					List<ProgramMemberSummaryResponse> members = appUserRepository
-							.findByOrganizationIdOrderByFullNameAsc(organization.getId())
+					Organization organization = require(organizations, row.getOrganizationId(), "Organization");
+					List<ProgramMemberSummaryResponse> members = membersByOrganization
+							.getOrDefault(organization.getId(), List.of())
 							.stream()
 							.map(user -> new ProgramMemberSummaryResponse(
 									user.getId(),
@@ -396,11 +414,8 @@ public class ProgramService {
 							members);
 				})
 				.toList();
-		List<ProgramMentorResponse> mentors = programMentorRepository
-				.findByProgramIdOrderByCreatedAtAsc(program.getId())
-				.stream()
-				.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
-				.map(this::toMentorResponse)
+		List<ProgramMentorResponse> mentors = accepted.stream()
+				.map(membership -> toMentorResponse(membership, require(users, membership.getMentorId(), "User")))
 				.toList();
 		return new ProgramDetailResponse(
 				program.getId(),
@@ -418,31 +433,72 @@ public class ProgramService {
 	}
 
 	private ProgramResponse toResponse(Program program) {
-		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
-		List<OrganizationResponse> startups = programStartupRepository
-				.findByProgramIdOrderByCreatedAtAsc(program.getId())
-				.stream()
-				.map(row -> OrganizationResponse.fromEntity(
-						domainLookupService.requireOrganization(row.getOrganizationId())))
-				.toList();
-		List<ProgramMentorResponse> mentors = programMentorRepository
-				.findByProgramIdOrderByCreatedAtAsc(program.getId())
-				.stream()
-				.map(this::toMentorResponse)
-				.toList();
-		return new ProgramResponse(
-				program.getId(),
-				program.getName(),
-				coordinator.getId(),
-				coordinator.getFullName(),
-				program.getCreatedAt(),
-				program.getStatus(),
-				startups,
-				mentors);
+		return toResponses(List.of(program)).getFirst();
 	}
 
-	private ProgramMentorResponse toMentorResponse(ProgramMentor membership) {
-		AppUser mentor = domainLookupService.requireUser(membership.getMentorId());
+	/** Four queries for the whole list, not one per startup and mentor of every program. */
+	private List<ProgramResponse> toResponses(List<Program> programs) {
+		if (programs.isEmpty()) {
+			return List.of();
+		}
+		List<UUID> programIds = programs.stream().map(Program::getId).toList();
+		Map<UUID, List<ProgramStartup>> startupRows = programStartupRepository
+				.findByProgramIdInOrderByCreatedAtAsc(programIds).stream()
+				.collect(Collectors.groupingBy(ProgramStartup::getProgramId));
+		Map<UUID, List<ProgramMentor>> mentorRows = programMentorRepository
+				.findByProgramIdInOrderByCreatedAtAsc(programIds).stream()
+				.collect(Collectors.groupingBy(ProgramMentor::getProgramId));
+		Map<UUID, Organization> organizations = organizationsById(startupRows.values().stream()
+				.flatMap(List::stream)
+				.map(ProgramStartup::getOrganizationId)
+				.toList());
+		Map<UUID, AppUser> users = usersById(Stream.concat(
+				programs.stream().map(Program::getCreatedBy),
+				mentorRows.values().stream().flatMap(List::stream).map(ProgramMentor::getMentorId)).toList());
+		return programs.stream()
+				.map(program -> {
+					AppUser coordinator = require(users, program.getCreatedBy(), "User");
+					List<OrganizationResponse> startups = startupRows.getOrDefault(program.getId(), List.of()).stream()
+							.map(row -> OrganizationResponse.fromEntity(
+									require(organizations, row.getOrganizationId(), "Organization")))
+							.toList();
+					List<ProgramMentorResponse> mentors = mentorRows.getOrDefault(program.getId(), List.of()).stream()
+							.map(membership -> toMentorResponse(
+									membership, require(users, membership.getMentorId(), "User")))
+							.toList();
+					return new ProgramResponse(
+							program.getId(),
+							program.getName(),
+							coordinator.getId(),
+							coordinator.getFullName(),
+							program.getCreatedAt(),
+							program.getStatus(),
+							startups,
+							mentors);
+				})
+				.toList();
+	}
+
+	private Map<UUID, AppUser> usersById(Collection<UUID> ids) {
+		return appUserRepository.findAllById(Set.copyOf(ids)).stream()
+				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+	}
+
+	private Map<UUID, Organization> organizationsById(Collection<UUID> ids) {
+		return organizationRepository.findAllById(Set.copyOf(ids)).stream()
+				.collect(Collectors.toMap(Organization::getId, Function.identity()));
+	}
+
+	/** Same 404 as {@link DomainLookupService} when a referenced row is gone. */
+	private static <T> T require(Map<UUID, T> rows, UUID id, String kind) {
+		T row = rows.get(id);
+		if (row == null) {
+			throw new ResourceNotFoundException(kind + " not found: " + id);
+		}
+		return row;
+	}
+
+	private ProgramMentorResponse toMentorResponse(ProgramMentor membership, AppUser mentor) {
 		return new ProgramMentorResponse(
 				mentor.getId(),
 				mentor.getFullName(),
