@@ -67,8 +67,15 @@ public class MailService {
 				// afterCommit runs before the transaction hands its connection back, so sending here would hold
 				// that connection for the whole SES round trip.
 				try {
-					afterCommitExecutor.execute(() -> send(to, subject, body));
+					afterCommitExecutor.execute(() -> {
+						try {
+							send(to, subject, body);
+						} catch (RuntimeException error) {
+							log.warn("Email to {} failed: {}", to, error.getMessage());
+						}
+					});
 				} catch (RejectedExecutionException shuttingDown) {
+					// Only while shutting down; this inline send does hold the connection.
 					send(to, subject, body);
 				}
 			}

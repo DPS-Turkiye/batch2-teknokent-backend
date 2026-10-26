@@ -32,9 +32,12 @@ public class MailConfig {
 		return builder.build();
 	}
 
-	/** Runs after-commit emails off the request thread; closing it on shutdown lets queued emails finish. */
+	/**
+	 * Runs after-commit emails off the request thread. Two at a time keeps a burst under the SES send rate;
+	 * closing it on shutdown lets queued emails finish.
+	 */
 	@Bean(destroyMethod = "close")
 	ExecutorService mailExecutor() {
-		return Executors.newVirtualThreadPerTaskExecutor();
+		return Executors.newFixedThreadPool(2, Thread.ofVirtual().name("mail-", 0).factory());
 	}
 }

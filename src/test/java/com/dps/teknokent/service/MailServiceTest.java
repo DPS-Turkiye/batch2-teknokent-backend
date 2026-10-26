@@ -58,6 +58,23 @@ class MailServiceTest {
 	}
 
 	@Test
+	void stillSendsAfterTheCommitWhenTheExecutorIsShuttingDown() {
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				task -> {
+					throw new java.util.concurrent.RejectedExecutionException("closed");
+				});
+		TransactionSynchronizationManager.initSynchronization();
+		try {
+			mailService.sendAfterCommit("mentor@tekno.com", "Konu", "Metin");
+			TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
+		} finally {
+			TransactionSynchronizationManager.clearSynchronization();
+		}
+
+		verify(sesClient).sendEmail(any(SendEmailRequest.class));
+	}
+
+	@Test
 	void sendsNothingWithoutASenderAddress() {
 		MailService mailService = new MailService(sesClient, "", "https://menton.com.tr", Runnable::run);
 
