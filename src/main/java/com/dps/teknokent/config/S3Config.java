@@ -1,5 +1,7 @@
 package com.dps.teknokent.config;
 
+import java.time.Duration;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +20,11 @@ public class S3Config {
 			@Value("${app.s3.region:eu-central-1}") String region,
 			@Value("${app.s3.access-key-id:}") String accessKeyId,
 			@Value("${app.s3.secret-access-key:}") String secretAccessKey) {
-		var builder = S3Client.builder().region(Region.of(region));
+		// The SDK default has no cap on a whole call (retries included). 30 s, not less: the backend itself uploads
+		// documents of up to 50 MB.
+		var builder = S3Client.builder()
+				.region(Region.of(region))
+				.overrideConfiguration(config -> config.apiCallTimeout(Duration.ofSeconds(30)));
 		if (!accessKeyId.isBlank() && !secretAccessKey.isBlank()) {
 			builder.credentialsProvider(StaticCredentialsProvider.create(
 					AwsBasicCredentials.create(accessKeyId, secretAccessKey)));

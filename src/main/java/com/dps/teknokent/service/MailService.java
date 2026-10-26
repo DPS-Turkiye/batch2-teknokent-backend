@@ -1,7 +1,10 @@
 package com.dps.teknokent.service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -24,12 +27,15 @@ public class MailService {
 	private final SesV2Client sesClient;
 	private final String fromAddress;
 	private final String publicUrl;
+	private final Executor afterCommitExecutor;
 
 	public MailService(
 			SesV2Client sesClient,
 			@Value("${app.mail.from:}") String fromAddress,
-			@Value("${app.mail.public-url:https://menton.com.tr}") String publicUrl) {
+			@Value("${app.mail.public-url:https://menton.com.tr}") String publicUrl,
+			@Qualifier("mailExecutor") Executor afterCommitExecutor) {
 		this.sesClient = sesClient;
+		this.afterCommitExecutor = afterCommitExecutor;
 		this.fromAddress = fromAddress.trim();
 		this.publicUrl = publicUrl.trim().replaceAll("/+$", "");
 	}
@@ -58,7 +64,13 @@ public class MailService {
 		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
 			public void afterCommit() {
-				send(to, subject, body);
+				// afterCommit runs before the transaction hands its connection back, so sending here would hold
+				// that connection for the whole SES round trip.
+				try {
+					afterCommitExecutor.execute(() -> send(to, subject, body));
+				} catch (RejectedExecutionException shuttingDown) {
+					send(to, subject, body);
+				}
 			}
 		});
 	}
