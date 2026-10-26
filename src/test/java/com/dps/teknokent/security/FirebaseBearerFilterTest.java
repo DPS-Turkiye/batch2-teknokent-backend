@@ -89,6 +89,22 @@ class FirebaseBearerFilterTest {
         assertThat(chain.getRequest()).isNull();
     }
 
+    // "Invalid token" would send the frontend to sign-in or registration during a Firebase outage.
+    @Test
+    void answersServiceUnavailableWhenFirebaseCannotBeAsked() throws Exception {
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good"))
+                .thenThrow(new FirebaseUnavailableException(new RuntimeException("timeout")));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request("/api/auth/me", "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(chain.getRequest()).isNull();
+    }
+
     @Test
     void authenticatesApprovedUserAndBacksfillsFirebaseUid() throws Exception {
         AppUser user = user(UserAccountStatus.APPROVED);
