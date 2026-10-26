@@ -181,6 +181,10 @@ function request(urls) {
   const responses = http.batch(urls.map(toRequest));
   for (const response of responses) {
     check(response, { "status < 400": (r) => r.status > 0 && r.status < 400 });
+    // The session re-checks the account every 10 minutes and saves a new cookie; a browser keeps
+    // it, so must we, or every request after minute 10 would repeat the backend check.
+    const refreshed = response.cookies.teknokent_session && response.cookies.teknokent_session[0];
+    if (refreshed && refreshed.value) mine.cookie = refreshed.value;
   }
 }
 
