@@ -439,6 +439,23 @@ class MeetingAssistantShareServiceTest {
 	}
 
 	@Test
+	void doesNotRecordTheGeneratedTranscriptWhenTheMentorStoredOneWhileItUploaded() {
+		Meeting meeting = meeting();
+		MeetingAssistantShare storedMeanwhile = MeetingAssistantShare.emptyFor(meeting);
+		storedMeanwhile.setTranscriptS3Key("meetings/" + meetingId + "/transcript.json");
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(shareRepository.findByMeetingId(meetingId))
+				.thenReturn(Optional.empty())
+				.thenReturn(Optional.of(storedMeanwhile));
+		when(objectStorage.isConfigured()).thenReturn(true);
+
+		assertThat(service().storeGeneratedTranscript(meetingId, List.of(
+				new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "00:10")))).isFalse();
+
+		verify(shareRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void issuesAPresignedPutUrlForTheMeetingsMentor() {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
 		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
