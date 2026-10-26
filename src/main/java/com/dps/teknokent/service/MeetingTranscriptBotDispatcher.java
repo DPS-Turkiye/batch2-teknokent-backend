@@ -6,9 +6,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.TranscriptBotConstants;
@@ -27,7 +27,7 @@ public class MeetingTranscriptBotDispatcher {
 	private final MeetingRepository meetingRepository;
 	private final AssistantService assistantService;
 
-	@Transactional
+	// No transaction around the Vexa calls: each is a network round trip that must not hold a pool connection.
 	public int dispatchDueMeetings(Instant now) {
 		Instant from = now.minus(TranscriptBotConstants.DISPATCH_LOOKBACK_HOURS, ChronoUnit.HOURS);
 		Instant until = now.plus(TranscriptBotConstants.DISPATCH_LOOKAHEAD_MINUTES, ChronoUnit.MINUTES);
@@ -55,21 +55,18 @@ public class MeetingTranscriptBotDispatcher {
 		int sent = 0;
 		Instant dispatchedAt = now;
 		for (Map.Entry<String, List<Meeting>> entry : byLink.entrySet()) {
+			List<UUID> ids = entry.getValue().stream().map(Meeting::getId).toList();
 			try {
 				assistantService.addBot(new AddBotRequest(entry.getKey()));
-				for (Meeting meeting : entry.getValue()) {
-					meeting.setBotDispatchedAt(dispatchedAt);
-				}
-				sent++;
 			} catch (RuntimeException error) {
 				log.warn("Transcript bot could not join {}: {}", entry.getKey(), error.getMessage());
 				if (isUnrecoverableJoinFailure(error)) {
-					for (Meeting meeting : entry.getValue()) {
-						meeting.setBotDispatchedAt(dispatchedAt);
-						meeting.setStatus(MeetingStatus.COMPLETED);
-					}
+					meetingRepository.markEndedAtProvider(ids, dispatchedAt);
 				}
+				continue;
 			}
+			meetingRepository.markBotDispatched(ids, dispatchedAt);
+			sent++;
 		}
 		return sent;
 	}

@@ -54,8 +54,8 @@ class MeetingTranscriptBotDispatcherTest {
 		ArgumentCaptor<AddBotRequest> captor = ArgumentCaptor.forClass(AddBotRequest.class);
 		verify(assistantService).addBot(captor.capture());
 		assertThat(captor.getValue().meetingUrl()).isEqualTo("https://meet.google.com/aaa-bbbb-ccc");
-		assertThat(first.getBotDispatchedAt()).isEqualTo(now);
-		assertThat(copy.getBotDispatchedAt()).isEqualTo(now);
+		verify(meetingRepository).markBotDispatched(List.of(first.getId(), copy.getId()), now);
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
 	}
 
 	@Test
@@ -83,7 +83,8 @@ class MeetingTranscriptBotDispatcherTest {
 		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("provider down"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
-		assertThat(meeting.getBotDispatchedAt()).isNull();
+		verify(meetingRepository, never()).markBotDispatched(any(), any());
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
 	}
 
 	@Test
@@ -95,8 +96,8 @@ class MeetingTranscriptBotDispatcherTest {
 		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("The meeting has ended"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
-		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
-		assertThat(meeting.getStatus()).isEqualTo(MeetingStatus.COMPLETED);
+		verify(meetingRepository).markEndedAtProvider(List.of(meeting.getId()), now);
+		verify(meetingRepository, never()).markBotDispatched(any(), any());
 	}
 
 	@Test
@@ -108,8 +109,8 @@ class MeetingTranscriptBotDispatcherTest {
 		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("404 meeting not found"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
-		assertThat(meeting.getBotDispatchedAt()).isNull();
-		assertThat(meeting.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+		verify(meetingRepository, never()).markBotDispatched(any(), any());
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
 	}
 
 	@Test
@@ -123,7 +124,7 @@ class MeetingTranscriptBotDispatcherTest {
 				new AddBotResponse("bot-1", "google_meet", "aaa-bbbb-ccc", "joining", "Mentor Bot"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isEqualTo(1);
-		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
+		verify(meetingRepository).markBotDispatched(List.of(meeting.getId()), now);
 	}
 
 	@Test
