@@ -518,7 +518,7 @@ def render(run, steps, stalls, slowest, degrading, cw, previous, regressions):
         out += [f"| `{name}` | {vus} | {st['count']:,} | {ms(st['p50'])} | {ms(st['p95'])} |"
                 for name, vus, st in slowest]
     else:
-        out.append("No valid step to rank them in.")
+        out.append("No valid step to rank them in." if not valid else "Too few calls (< 50 per endpoint) to rank them.")
     if degrading:
         out += ["", "## Most degraded endpoints (first → highest valid step, p95)", "",
                 "| Endpoint | p95 before | p95 after | × |", "|---|---|---|---|"]
