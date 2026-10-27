@@ -238,20 +238,21 @@ public class AppUserService {
 
 	/**
 	 * Signs a user out everywhere: Firebase refuses their tokens, and the recorded time lets the web app end
-	 * sessions that started before it. If Firebase fails, nothing is recorded and the admin sees the error.
+	 * sessions that started before it. Firebase is asked first with no transaction open, so a slow Firebase holds
+	 * no pool connection and a failure records nothing.
 	 */
-	@Transactional
 	public UserResponse revokeSignIns(UUID userId, UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		if (actor.getRole() != UserRole.ADMIN) {
 			throw new InvalidRequestException("Only an admin can end someone's sign-ins");
 		}
 		AppUser target = domainLookupService.requireUser(userId);
-		target.setSignInsRevokedAt(Instant.now());
-		appUserRepository.save(target);
 		if (target.getFirebaseUid() != null) {
 			loginProvisioner.revokeSignIns(target.getFirebaseUid());
 		}
+		Instant revokedAt = Instant.now();
+		appUserRepository.recordSignInsRevokedAt(target.getId(), revokedAt);
+		target.setSignInsRevokedAt(revokedAt);
 		log.info("Admin {} ended all sign-ins of user {}", actor.getId(), target.getId());
 		return UserResponse.fromEntity(target);
 	}
