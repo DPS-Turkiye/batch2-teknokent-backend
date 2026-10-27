@@ -10,16 +10,26 @@ Nothing secret lives here. Test logins, the Firebase web key and the recorded sc
 
 ```bash
 set -a; . ~/.config/menton-loadtest/prod.env; set +a
-RUN=T1-$(date -u +%Y%m%dT%H%M%SZ)
-TEST=T1 STEPS=100,250,500 STEP_MINUTES=5 K6_WEB_DASHBOARD=true \
-  K6_WEB_DASHBOARD_EXPORT=~/.config/menton-loadtest/reports/$RUN.html \
-  k6 run --include-system-env-vars --out json=$HOME/.config/menton-loadtest/reports/$RUN.json \
-  scripts/loadtest/menton.js
+export RUN_ID=T1-$(date -u +%Y%m%dT%H%M%SZ) R=~/.config/menton-loadtest/reports
+python3 -I scripts/loadtest/genprobe.py $R/$RUN_ID.probe.txt & PROBE=$!
+TEST=T1 STEPS=100,250,500 STEP_MINUTES=5 K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_OPEN=true \
+  K6_WEB_DASHBOARD_EXPORT=$R/$RUN_ID.html \
+  k6 run --include-system-env-vars --out json=$R/$RUN_ID.json scripts/loadtest/menton.js
+kill $PROBE
 ```
 
 Shapes (`TEST=`): `T0` smoke (3 VUs, 2 min) · `T1` steps (`STEPS`, `STEP_MINUTES`; 1 min ramp + hold each) ·
 `T2` soak (`VUS`, `DURATION`) · `T3` rush (`VUS` in 1 min, hold 5) · `T4` one endpoint at a fixed rate
 (`T4_TARGET`, `RATE`, `DURATION`).
+
+- **Warm-up:** every shape starts with 2 min of light load (`WARMUP=2m`, `WARMUP_VUS=5`; `WARMUP=0` turns it off).
+  It is its own k6 scenario, so thresholds and `analyze.py` leave it out. A fresh backend (27 Oct: median 3.2 s in
+  the first minute after a deploy) or an idle Amplify (~3–4 s cold start) is slow at first, and that is not what a
+  step measures.
+- **`X-Load-Test: $RUN_ID`** goes on every request to our app (default `menton-k6`; the probe sends
+  `$RUN_ID-probe`). Nothing logs it yet: see the proposal in the Phase 2 report.
+- **`genprobe.py`** watches the generator once a second: whole-Mac CPU, ping 1.1.1.1, `GET /api/health` (5 s
+  timeout), each independent of the others. Start it before k6, stop it after.
 
 **Always start both safety watchers next to a run** (k6's own thresholds are cumulative and react late):
 
