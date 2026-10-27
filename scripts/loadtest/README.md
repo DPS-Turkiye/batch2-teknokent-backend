@@ -24,8 +24,8 @@ Shapes (`TEST=`): `T0` smoke (3 VUs, 2 min) · `T1` steps (`STEPS`, `STEP_MINUTE
 **Always start both safety watchers next to a run** (k6's own thresholds are cumulative and react late):
 
 ```bash
-python3 -I scripts/loadtest/watch-prod.py ~/.config/menton-loadtest/reports/$RUN.json   # p95 > 3 s or errors > 5 %/min
-AWS_PROFILE=menton scripts/loadtest/watch-rds.sh                                          # RDS free memory < 40 MB
+python3 -I scripts/loadtest/watch-prod.py $R/$RUN_ID.json   # p95 > 3 s or errors > 5 %/min
+AWS_PROFILE=menton scripts/loadtest/watch-rds.sh            # RDS free memory < 40 MB
 ```
 
 Both stop k6 with SIGINT, so it still writes its report.
@@ -34,15 +34,20 @@ Both stop k6 with SIGINT, so it still writes its report.
 
 ```bash
 TEST=T1 STEPS=100,250,500 STEP_MINUTES=5 python3 -I scripts/loadtest/analyze.py \
-  ~/.config/menton-loadtest/reports/$RUN.json --backend-version v1.6.26 [--aws]
+  $R/$RUN_ID.json --backend-version v1.6.26 [--aws]
 ```
 
 Pass the same `TEST`/`STEPS`/`STEP_MINUTES` (or `VUS`/`DURATION`) the run used: they define the hold windows.
+The probe file `$RUN_ID.probe.txt` next to the run is picked up by itself (`--probe` for another path).
 
 - Per step, the steady hold only: users, requests/s, failures, p50–p99, and the Response Time Law check.
 - **Stalls:** any 10 s window where ≥ 20 % of requests waited > 3 s makes its step invalid. Without `--aws` the cause
   comes from k6 alone (if `GET /api/session`, which never reaches the backend, waited too, it's the network path).
-  With `--aws` the backend's slow-request log decides.
+  With `--aws` the backend's slow-request log decides. If the probe failed in the same window, it's the network path.
+- **Generator health** also makes a step invalid: Mac CPU > 80 % (10 s mean), k6's blocked + connecting time rising
+  through the hold, or the probe bad (ping lost or > 100 ms, health failed or > 3 s) in two seconds within 10 s.
+  Stalls on already-open connections show up only in the probe, never in k6's connect times (27 Oct 08:06: connect
+  time stayed at 0.1 ms while half the requests waited 3–24 s).
 - Slowest and most-degraded endpoints, CloudWatch worst values (`--aws`), and a comparison with the last accepted run.
 - Saved to `~/menton-perf-history/<date>-<backend version>-<run>/` (`report.md`, `summary.json`); a run is accepted when
   every step is valid, errors ≤ 1 % and nothing regressed. Exit code 0 pass, 1 regression, 2 inconclusive.

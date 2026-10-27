@@ -4,9 +4,9 @@
 // users, logged in once in setup), opens screens recorded from production, and on messaging screens
 // keeps polling like the open tab would. Only GET requests: nothing is written, sent or charged.
 //
-// Run (env and recorded screens live outside the repo, see README.md):
+// Run (env and recorded screens live outside the repo; with the probe and watchers, see README.md):
 //   set -a; . ~/.config/menton-loadtest/prod.env; set +a
-//   TEST=T0 K6_WEB_DASHBOARD=true k6 run --include-system-env-vars scripts/loadtest/menton.js
+//   RUN_ID=T0-test TEST=T0 K6_WEB_DASHBOARD=true k6 run --include-system-env-vars scripts/loadtest/menton.js
 import http from "k6/http";
 import { check, sleep } from "k6";
 
