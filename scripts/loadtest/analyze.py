@@ -389,9 +389,13 @@ def render(run, steps, stalls, slowest, degrading, cw, previous, regressions):
         out.append(f"- **{iso(st['start'])[11:19]}–{iso(st['end'])[11:19]}Z**: up to {st['slow_share']:.0%} of "
                    f"requests waited > {STALL_WAIT_MS / 1000:.0f} s (max {st['max_wait_ms'] / 1000:.1f} s), "
                    f"{st['endpoints_slow']} of {st['endpoints']} endpoints → **{st['cause']}** ({st['evidence']}).")
-    out += ["", "## Slowest endpoints (highest valid step)", "", "| Endpoint | VUs | Calls | p50 | p95 |",
-            "|---|---|---|---|---|"]
-    out += [f"| `{name}` | {vus} | {st['count']:,} | {ms(st['p50'])} | {ms(st['p95'])} |" for name, vus, st in slowest]
+    out += ["", "## Slowest endpoints (highest valid step)", ""]
+    if slowest:
+        out += ["| Endpoint | VUs | Calls | p50 | p95 |", "|---|---|---|---|---|"]
+        out += [f"| `{name}` | {vus} | {st['count']:,} | {ms(st['p50'])} | {ms(st['p95'])} |"
+                for name, vus, st in slowest]
+    else:
+        out.append("No valid step to rank them in.")
     if degrading:
         out += ["", "## Most degraded endpoints (first → highest valid step, p95)", "",
                 "| Endpoint | p95 before | p95 after | × |", "|---|---|---|---|"]
