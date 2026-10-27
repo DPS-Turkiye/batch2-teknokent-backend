@@ -46,6 +46,7 @@ import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.Texts;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorshipRequestMessageRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
@@ -966,7 +967,8 @@ class MentorshipRequestServiceTest {
 
                 assertThatThrownBy(() -> mentorshipRequestService.scheduleMeeting(REQUEST_ID,
                                 new ScheduleMentorshipRequest(REQUESTER_ID, soon.getId())))
-                                .isInstanceOf(InvalidRequestException.class);
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessage(Texts.forRequest("error.slotTooSoon"));
                 verify(meetingRepository, never()).saveAndFlush(any());
         }
 

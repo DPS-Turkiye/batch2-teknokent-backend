@@ -359,6 +359,7 @@ class ProgramServiceTest {
 		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
 		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID)).thenReturn(Optional.empty());
 		ArgumentCaptor<ProgramMentor> saved = ArgumentCaptor.forClass(ProgramMentor.class);
 
@@ -389,6 +390,7 @@ class ProgramServiceTest {
 		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
 		ProgramMentor request = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
 				.thenReturn(Optional.of(request));
 
