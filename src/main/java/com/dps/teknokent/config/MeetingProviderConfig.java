@@ -15,15 +15,19 @@ public class MeetingProviderConfig {
   @Bean
   RestClient meetingProviderRestClient(
       @Value("${meeting.provider.base-url}") String baseUrl,
-      @Value("${meeting.provider.api-key}") String apiKey) {
+      @Value("${meeting.provider.api-key}") String apiKey,
+      @Value("${meeting.provider.read-timeout:20s}") Duration readTimeout) {
 
     HttpClient httpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(15))
         .build();
+    // Without a read timeout a Vexa that accepts the connection but never answers blocks the scheduler thread forever.
+    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+    requestFactory.setReadTimeout(readTimeout);
 
     return RestClient.builder()
-        .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+        .requestFactory(requestFactory)
         .baseUrl(baseUrl)
         .defaultHeader("X-API-Key", apiKey)
         .build();

@@ -16,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.dto.requests.AddBotRequest;
@@ -54,8 +56,8 @@ class MeetingTranscriptBotDispatcherTest {
 		ArgumentCaptor<AddBotRequest> captor = ArgumentCaptor.forClass(AddBotRequest.class);
 		verify(assistantService).addBot(captor.capture());
 		assertThat(captor.getValue().meetingUrl()).isEqualTo("https://meet.google.com/aaa-bbbb-ccc");
-		assertThat(first.getBotDispatchedAt()).isEqualTo(now);
-		assertThat(copy.getBotDispatchedAt()).isEqualTo(now);
+		verify(meetingRepository).markBotDispatched(List.of(first.getId(), copy.getId()), now);
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
 	}
 
 	@Test
@@ -83,7 +85,22 @@ class MeetingTranscriptBotDispatcherTest {
 		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("provider down"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
-		assertThat(meeting.getBotDispatchedAt()).isNull();
+		verify(meetingRepository, never()).markBotDispatched(any(), any());
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
+	}
+
+	@Test
+	void recordsTheMeetingAsDispatchedWhenTheProviderAlreadyHasABotThere() {
+		Instant now = Instant.parse("2026-09-02T12:00:00Z");
+		Meeting meeting = meeting("https://meet.google.com/aaa-bbbb-ccc");
+		when(meetingRepository.findByTranscribeRequestedTrueAndBotDispatchedAtIsNullAndStatusAndScheduledAtBetween(
+				any(), any(), any())).thenReturn(List.of(meeting));
+		when(assistantService.addBot(any())).thenThrow(
+				HttpClientErrorException.create(HttpStatus.CONFLICT, "Conflict", null, null, null));
+
+		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
+		verify(meetingRepository).markBotDispatched(List.of(meeting.getId()), now);
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
 	}
 
 	@Test
@@ -95,8 +112,8 @@ class MeetingTranscriptBotDispatcherTest {
 		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("The meeting has ended"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
-		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
-		assertThat(meeting.getStatus()).isEqualTo(MeetingStatus.COMPLETED);
+		verify(meetingRepository).markEndedAtProvider(List.of(meeting.getId()), now);
+		verify(meetingRepository, never()).markBotDispatched(any(), any());
 	}
 
 	@Test
@@ -108,8 +125,8 @@ class MeetingTranscriptBotDispatcherTest {
 		when(assistantService.addBot(any())).thenThrow(new IllegalStateException("404 meeting not found"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isZero();
-		assertThat(meeting.getBotDispatchedAt()).isNull();
-		assertThat(meeting.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+		verify(meetingRepository, never()).markBotDispatched(any(), any());
+		verify(meetingRepository, never()).markEndedAtProvider(any(), any());
 	}
 
 	@Test
@@ -123,7 +140,7 @@ class MeetingTranscriptBotDispatcherTest {
 				new AddBotResponse("bot-1", "google_meet", "aaa-bbbb-ccc", "joining", "Mentor Bot"));
 
 		assertThat(dispatcher.dispatchDueMeetings(now)).isEqualTo(1);
-		assertThat(meeting.getBotDispatchedAt()).isEqualTo(now);
+		verify(meetingRepository).markBotDispatched(List.of(meeting.getId()), now);
 	}
 
 	@Test
