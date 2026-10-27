@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,9 +16,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -60,6 +63,8 @@ class ProgramLaunchServiceTest {
 	private MailService mailService;
 	@Mock
 	private CoordinatorMentorshipService mentorshipService;
+	@Mock
+	private PlatformTransactionManager transactionManager;
 	@InjectMocks
 	private ProgramLaunchService service;
 
@@ -173,6 +178,39 @@ class ProgramLaunchServiceTest {
 			assertThat(row.codeSendFailed()).isFalse();
 			assertThat(row.codeSentAt()).isNull();
 		});
+	}
+
+	@Test
+	void emailsTheCodeBetweenTwoTransactionsNotInsideOne() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+		when(mailService.isConfigured()).thenReturn(true);
+		when(mailService.sendNow(any(), any(), any())).thenReturn(true);
+
+		service.sendCode(ELIF, programId, waiting.getId());
+
+		InOrder order = inOrder(transactionManager, mailService);
+		order.verify(transactionManager).getTransaction(any());
+		order.verify(transactionManager).commit(any());
+		order.verify(mailService).sendNow(any(), any(), any());
+		order.verify(transactionManager).getTransaction(any());
+		order.verify(transactionManager).commit(any());
+	}
+
+	@Test
+	void doesNotStampALeadAddressThatWasEditedWhileTheEmailWentOut() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+		when(mailService.isConfigured()).thenReturn(true);
+		when(mailService.sendNow(any(), any(), any())).thenAnswer(call -> {
+			waiting.setLeadEmail("ali@pusula.com");
+			return true;
+		});
+
+		service.sendCode(ELIF, programId, waiting.getId());
+
+		assertThat(waiting.getCodeSentAt()).isNull();
+		verify(inviteRepository, never()).save(any());
 	}
 
 	@Test
