@@ -13,7 +13,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -61,6 +63,7 @@ public class ProgramLaunchService {
 	private final AppUserRepository appUserRepository;
 	private final MailService mailService;
 	private final CoordinatorMentorshipService mentorshipService;
+	private final PlatformTransactionManager transactionManager;
 
 	@Transactional
 	public CoordinatorProgramResponse.Detail create(UUID actorId, CreateCoordinatorProgramRequest request) {
@@ -138,25 +141,42 @@ public class ProgramLaunchService {
 		return rows(programId);
 	}
 
-	/** "Kodu gönder" / "Kodu tekrar gönder": emails the code to the lead, and marks the team "Sorunlu" if SES refuses. */
-	@Transactional
+	/**
+	 * "Kodu gönder" / "Kodu tekrar gönder": emails the code to the lead, and marks the team "Sorunlu" if SES refuses.
+	 * SES runs between two short transactions, so its round trip does not hold a pool connection.
+	 */
 	public List<ProgramTeamResponse> sendCode(UUID actorId, UUID programId, UUID inviteId) {
-		Program program = programService.requireManagedProgram(actorId, programId);
-		ProgramTeamInvite invite = requireWaitingInvite(programId, inviteId);
-		if (!mailService.isConfigured()) {
-			throw new InvalidRequestException(Texts.forRequest("error.mailDisabled"));
-		}
-		boolean sent = mailService.sendNow(
-				invite.getLeadEmail(),
-				Texts.inBoth(" / ", "mail.teamCode.subject", program.getName()),
-				Texts.inBoth(Texts.MAIL_LANGUAGE_BREAK, "mail.teamCode.body", program.getName(), invite.getTeamName(),
-						invite.getCode(), mailService.link("/invite")));
-		invite.setCodeSendFailed(!sent);
-		if (sent) {
-			invite.setCodeSentAt(Instant.now());
-		}
-		inviteRepository.save(invite);
-		return rows(programId);
+		TransactionTemplate readOnly = new TransactionTemplate(transactionManager);
+		readOnly.setReadOnly(true);
+		CodeMail mail = readOnly.execute(status -> {
+			Program program = programService.requireManagedProgram(actorId, programId);
+			ProgramTeamInvite invite = requireWaitingInvite(programId, inviteId);
+			if (!mailService.isConfigured()) {
+				throw new InvalidRequestException(Texts.forRequest("error.mailDisabled"));
+			}
+			return new CodeMail(
+					invite.getLeadEmail(),
+					Texts.inBoth(" / ", "mail.teamCode.subject", program.getName()),
+					Texts.inBoth(Texts.MAIL_LANGUAGE_BREAK, "mail.teamCode.body", program.getName(),
+							invite.getTeamName(), invite.getCode(), mailService.link("/invite")));
+		});
+		boolean sent = mailService.sendNow(mail.to(), mail.subject(), mail.body());
+		return new TransactionTemplate(transactionManager).execute(status -> {
+			// A lead address edited while SES answered resets the status itself; don't stamp it with this send.
+			inviteRepository.findByIdAndProgramId(inviteId, programId)
+					.filter(invite -> mail.to().equals(invite.getLeadEmail()))
+					.ifPresent(invite -> {
+						invite.setCodeSendFailed(!sent);
+						if (sent) {
+							invite.setCodeSentAt(Instant.now());
+						}
+						inviteRepository.save(invite);
+					});
+			return rows(programId);
+		});
+	}
+
+	private record CodeMail(String to, String subject, String body) {
 	}
 
 	/** The Takımlar drawer for a team that has joined the program. */

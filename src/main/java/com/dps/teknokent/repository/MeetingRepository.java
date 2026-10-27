@@ -7,6 +7,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.entity.Meeting;
@@ -44,6 +48,22 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 			MeetingStatus status, Instant from, Instant until);
 
 	List<Meeting> findByTranscribeRequestedTrueAndBotDispatchedAtIsNotNullAndStatus(MeetingStatus status);
+
+	// Guarded updates: the dispatcher calls Vexa with no transaction open, so the rows may have changed meanwhile.
+	@Transactional
+	@Modifying
+	@Query("""
+			update Meeting m set m.botDispatchedAt = :at, m.updatedAt = :at
+			where m.id in :ids and m.botDispatchedAt is null""")
+	int markBotDispatched(@Param("ids") Collection<UUID> ids, @Param("at") Instant at);
+
+	@Transactional
+	@Modifying
+	@Query("""
+			update Meeting m set m.botDispatchedAt = :at, m.updatedAt = :at,
+			m.status = com.dps.teknokent.domain.MeetingStatus.COMPLETED
+			where m.id in :ids and m.status = com.dps.teknokent.domain.MeetingStatus.SCHEDULED""")
+	int markEndedAtProvider(@Param("ids") Collection<UUID> ids, @Param("at") Instant at);
 
 	List<Meeting> findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(
 			MeetingStatus status, Instant from, Instant to);
