@@ -3,13 +3,16 @@
 
 Usage:
   TEST=T1 STEPS=600,700,800,1000 STEP_MINUTES=5 python3 -I scripts/loadtest/analyze.py reports/<run>.json \
-      [--backend-version v1.6.26] [--aws] [--history ~/menton-perf-history] [--no-history]
+      [--backend-version v1.6.26] [--probe reports/<run>.probe.txt] [--aws] [--history ~/menton-perf-history]
+      [--no-history]
 
 The test shape is read from the same variables menton.js uses (TEST, STEPS, STEP_MINUTES, VUS, DURATION), or from
-the matching flags. Only the steady hold of each step is measured; ramps are cut. The file is streamed, so 1 GB runs
-are fine. --aws adds read-only CloudWatch metrics and the backend's slow-request log (needs AWS_PROFILE).
+the matching flags. Only the steady hold of each step is measured; ramps and the warm-up scenario are cut. The file
+is streamed, so 1 GB runs are fine. The generator probe (genprobe.py) is picked up from <run>.probe.txt next to the
+run. --aws adds read-only CloudWatch metrics and the backend's slow-request log (needs AWS_PROFILE).
 
-Exit code: 0 pass, 1 regression against the last accepted run, 2 inconclusive (a step had a stall).
+Exit code: 0 pass, 1 regression against the last accepted run, 2 inconclusive (a stall, or the generator was the
+limit).
 """
 import argparse
 import bisect
@@ -32,9 +35,17 @@ P95_BAND = (0.25, 50)  # 25 % and at least 50 ms
 P50_BAND = (0.15, 20)
 ERROR_BAND = 0.005  # half a percentage point
 ACCEPT_MAX_ERRORS = 0.01
+# Generator health (genprobe.py). From 27 Oct: at home ping 1.1.1.1 is 12-50 ms and /api/health 0.1-0.9 s; in the
+# stalls ping went to 116-157 ms or was lost and health took 2.6 s up to the 5 s timeout.
+GEN_CPU_MAX = 80  # % of the whole Mac, mean over 10 s
+PING_BAD_MS = 100
+HEALTH_BAD_S = STALL_WAIT_MS / 1000
+PROBE_BAD_SAMPLES = 2  # bad seconds within 10 s, so a one-second blip is not a stall
+PROBE_MIN_COVERAGE = 0.5  # health results per second of hold; below = the probe wasn't running
+SETUP_RISE = (2.0, 10)  # blocked + connecting: last third of a hold ≥ 2× the first and ≥ 10 ms
 
 WANTED = ("http_req_duration", "http_req_waiting", "http_req_failed", "http_req_receiving",
-          "vus", "iterations", "iteration_duration")
+          "http_req_blocked", "http_req_connecting", "vus", "iterations", "iteration_duration")
 PREFIXES = tuple(f'{{"metric":"{m}","type":"Point"'.encode() for m in WANTED)
 
 REGION = "eu-central-1"
@@ -84,6 +95,7 @@ class Step:
         self.iteration_ms = 0.0
         self.vus = []
         self.stalls = []
+        self.generator = {}
 
 
 def parse_time(text):
@@ -95,6 +107,8 @@ def scan(path):
     reqs = []  # (time, duration, key); the other per-request metrics join on the same key
     waiting, receiving, failed = {}, {}, collections.Counter()
     vus, iters = [], []
+    setup = collections.defaultdict(lambda: [0.0, 0])  # 10 s window → [blocked + connecting ms, requests]
+    warmup = 0
     with open(path, "rb") as f:
         for line in f:
             if not line.startswith(PREFIXES):
@@ -108,7 +122,14 @@ def scan(path):
                 continue
             if "scenario" not in tags:  # setup() sign-ins
                 continue
-            if metric == "iterations":
+            if tags["scenario"] == "warmup":
+                warmup += metric == "http_req_duration"
+                continue
+            if metric in ("http_req_blocked", "http_req_connecting"):
+                w = setup[int(t // 10 * 10)]
+                w[0] += data["value"]
+                w[1] += metric == "http_req_blocked"
+            elif metric == "iterations":
                 iters.append((t, None))
             elif metric == "iteration_duration":
                 iters.append((t, data["value"]))
@@ -122,11 +143,76 @@ def scan(path):
                     receiving[key] = data["value"]
                 elif metric == "http_req_failed" and data["value"]:
                     failed[key] += 1
-    return reqs, waiting, receiving, failed, vus, iters
+    return reqs, waiting, receiving, failed, vus, iters, setup, warmup
 
 
-def analyse(path, shape):
-    reqs, waiting, receiving, failed, vus, iters = scan(path)
+def read_probe(path):
+    """genprobe.py output → samples per 10 s window, and the sorted times of every bad ping / health sample."""
+    windows, bad = {}, []
+    with open(path) as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) != 3 or parts[1] not in ("cpu", "ping", "health"):
+                continue
+            t, kind, value = float(parts[0]), parts[1], parts[2]
+            number = None if value in ("lost", "fail") else float(value)
+            if kind != "cpu" and (number is None or number > (PING_BAD_MS if kind == "ping" else HEALTH_BAD_S)):
+                bad.append(int(t))
+            windows.setdefault(int(t // 10 * 10), {"cpu": [], "ping": [], "health": []})[kind].append(number)
+    # Whole seconds: a one-second blip that loses both the ping and the health call is one bad sample, not two.
+    return {"windows": windows, "bad": sorted(set(bad))}
+
+
+def probe_stalls(bad, start, end):
+    """Spans where PROBE_BAD_SAMPLES bad samples fall within 10 s of each other (sliding, not fixed buckets)."""
+    times = bad[bisect.bisect_left(bad, start):bisect.bisect_left(bad, end)]
+    spans, k = [], PROBE_BAD_SAMPLES
+    for i in range(len(times) - k + 1):
+        if times[i + k - 1] - times[i] < 10:
+            if spans and times[i] <= spans[-1][1]:
+                spans[-1][1] = times[i + k - 1]
+            else:
+                spans.append([times[i], times[i + k - 1]])
+    return [f"{iso(a)[11:19]}–{iso(b)[11:19]}" for a, b in spans]
+
+
+def check_generator(step, probe, setup):
+    """Was the Mac (CPU, its line to the internet) the limit in this hold? Fills step.generator."""
+    keys = range(int(step.start // 10 * 10), int(step.end), 10)
+    issues, g = [], {"setup_ms": [], "issues": []}
+    if not step.durations:  # never reached
+        step.generator = g
+        return
+    thirds = [keys[i * len(keys) // 3:(i + 1) * len(keys) // 3] for i in range(3)]
+    means = []
+    for part in thirds:
+        total, n = (sum(x) for x in zip(*([setup[k] for k in part if k in setup] or [(0, 0)])))
+        means.append(total / n if n else 0)
+    g["setup_ms"] = [round(m, 1) for m in means]
+    rel, floor = SETUP_RISE
+    if means[0] < means[1] < means[2] and means[2] >= max(means[0] * rel, floor):
+        issues.append(f"connect time rising {means[0]:.0f} → {means[2]:.0f} ms")
+    if probe is not None:
+        windows = [probe["windows"][k] for k in keys if k in probe["windows"]]
+        cpu = [sum(w["cpu"]) / len(w["cpu"]) for w in windows if w["cpu"]]
+        ping = sorted(x for w in windows for x in w["ping"] if x is not None)
+        health = sorted(x for w in windows for x in w["health"] if x is not None)
+        health_n = sum(len(w["health"]) for w in windows)
+        g.update(cpu_max=round(max(cpu), 1) if cpu else None, ping_p95=pct(ping, 0.95),
+                 ping_lost=sum(len(w["ping"]) for w in windows) - len(ping), health_p95=pct(health, 0.95),
+                 health_failed=health_n - len(health), probe_bad=probe_stalls(probe["bad"], step.start, step.end))
+        if cpu and max(cpu) > GEN_CPU_MAX:
+            issues.append(f"Mac CPU {max(cpu):.0f} %")
+        if g["probe_bad"]:
+            issues.append(f"probe stalled {', '.join(g['probe_bad'])}Z")
+        if health_n < (step.end - step.start) * PROBE_MIN_COVERAGE:
+            issues.append(f"probe gap ({health_n} health checks in {step.end - step.start:.0f} s)")
+    g["issues"] = issues
+    step.generator = g
+
+
+def analyse(path, shape, probe=None):
+    reqs, waiting, receiving, failed, vus, iters, setup, warmup = scan(path)
     if not reqs:
         raise SystemExit("no scenario requests in this file")
     reqs.sort(key=lambda r: r[0])
@@ -182,11 +268,16 @@ def analyse(path, shape):
                      "endpoints": len(b["names"]), "next_only_slow": b["next_slow"], "next_only": b["next_n"],
                      "slow_receiving": b["slow_receiving"]}
             stall["cause"], stall["evidence"] = classify(stall)
+            if probe and bisect.bisect_left(probe["bad"], start) < bisect.bisect_left(probe["bad"], start + 10):
+                stall["cause"] = "network path"
+                stall["evidence"] = "the generator's own probe (ping 1.1.1.1, /api/health) failed in the same window"
             stalls.append(stall)
             s = step_at(start) or step_at(start + 9.999)
             if s:
                 s.stalls.append(stall)
-    return steps, merge_stalls(stalls), reqs[0][0], reqs[-1][0]
+    for s in steps:
+        check_generator(s, probe, setup)
+    return steps, merge_stalls(stalls), reqs[0][0], reqs[-1][0], warmup
 
 
 def classify(stall):
@@ -242,8 +333,9 @@ def step_summary(s):
         "mean_iteration_s": mean_iter_s,
         "expected_req_per_s": expected,
         "reached": n > 0,
-        "valid": n > 0 and not s.stalls,
+        "valid": n > 0 and not s.stalls and not s.generator["issues"],
         "stalls": [iso(x["start"]) for x in s.stalls],
+        "generator": s.generator,
     }
 
 
@@ -351,10 +443,19 @@ def ms(v):
     return "—" if v is None else f"{v:,.0f}"
 
 
+def validity(s):
+    if not s["reached"]:
+        return "not reached"
+    reasons = (["stall"] if s["stalls"] else []) + (["generator"] if s["generator"]["issues"] else [])
+    return f"no ({', '.join(reasons)})" if reasons else "yes"
+
+
 def render(run, steps, stalls, slowest, degrading, cw, previous, regressions):
     out = [f"# Load test {run['name']}", "",
            f"Test **{run['test']}**, backend **{run['backend_version']}**, {run['started_utc']} → {run['ended_utc']} "
-           f"(times in UTC; the file's {run['source_offset']} offset converted).", ""]
+           f"(times in UTC; the file's {run['source_offset']} offset converted).",
+           f"Warm-up: {run['warmup_requests']:,} requests before the test, left out of everything below."
+           if run["warmup_requests"] else "Warm-up: none in this run (older run, or `WARMUP=0`).", ""]
     reached = [s for s in steps if s["reached"]]
     valid = [s for s in reached if s["valid"]]
     verdict = {"pass": "**Pass**", "fail": "**Regression**", "inconclusive": "**Inconclusive**"}[run["status"]]
@@ -369,7 +470,7 @@ def render(run, steps, stalls, slowest, degrading, cw, previous, regressions):
         hold = f"{s['window_utc'][0][11:16]}–{s['window_utc'][1][11:16]}"
         out.append(f"| {s['vus']} | {hold} | {s['requests']:,} | {s['req_per_s']:.0f} | {s['failed']} | "
                    f"{ms(s['p50'])} | {ms(s['p75'])} | {ms(s['p90'])} | {ms(s['p95'])} | {ms(s['p99'])} | "
-                   f"{ms(s['max'])} | {'yes' if s['valid'] else 'no (stall)' if s['reached'] else 'not reached'} |")
+                   f"{ms(s['max'])} | {validity(s)} |")
     out += ["", "## Response Time Law", "",
             "N users each loop: open a screen (its calls in parallel), then think. R + Z = one loop "
             "(mean iteration); the think time Z is almost all of it (a screen's calls take well under a second). "
@@ -389,6 +490,28 @@ def render(run, steps, stalls, slowest, degrading, cw, previous, regressions):
         out.append(f"- **{iso(st['start'])[11:19]}–{iso(st['end'])[11:19]}Z**: up to {st['slow_share']:.0%} of "
                    f"requests waited > {STALL_WAIT_MS / 1000:.0f} s (max {st['max_wait_ms'] / 1000:.1f} s), "
                    f"{st['endpoints_slow']} of {st['endpoints']} endpoints → **{st['cause']}** ({st['evidence']}).")
+    out += ["", "## Generator health", "",
+            f"A step is invalid when this Mac was the limit: CPU > {GEN_CPU_MAX} % (10 s mean), k6's blocked + "
+            f"connecting time rising through the hold (last third ≥ {SETUP_RISE[0]:.0f}× the first and "
+            f"≥ {SETUP_RISE[1]} ms), or the probe stalling (bad in ≥ {PROBE_BAD_SAMPLES} seconds within 10 s: ping 1.1.1.1 "
+            f"lost or > {PING_BAD_MS} ms, `/api/health` failed or > {HEALTH_BAD_S:.0f} s). Stalls on open "
+            "connections show up only in the probe, not in k6's connect times.", ""]
+    if not run["probe"]:
+        out += ["No probe file (`--probe`, or `<run>.probe.txt` next to the run): only k6's connect times "
+                "were checked.", ""]
+    out += ["| VUs | Mac CPU max | Ping p95 / lost | Health p95 / failed | Blocked + connecting (thirds, ms) | "
+            "Problems |", "|---|---|---|---|---|---|"]
+    for s in steps:
+        g = s["generator"]
+        if not s["reached"]:
+            continue
+
+        def unit(v, fmt, suffix):
+            return "—" if v is None else f"{v:{fmt}}{suffix}"
+        probe_cols = (f"{unit(g['cpu_max'], '.1f', ' %')} | {unit(g['ping_p95'], '.0f', ' ms')} / {g['ping_lost']} | "
+                      f"{unit(g['health_p95'], '.2f', ' s')} / {g['health_failed']}") if "cpu_max" in g else "— | — | —"
+        out.append(f"| {s['vus']} | {probe_cols} | {' / '.join(f'{x:g}' for x in g['setup_ms'])} | "
+                   f"{'; '.join(g['issues']) or 'none'} |")
     out += ["", "## Slowest endpoints (highest valid step)", ""]
     if slowest:
         out += ["| Endpoint | VUs | Calls | p50 | p95 |", "|---|---|---|---|---|"]
@@ -432,12 +555,17 @@ def main():
     p.add_argument("--history", default=env.get("PERF_HISTORY", os.path.expanduser("~/menton-perf-history")))
     p.add_argument("--no-history", action="store_true", help="don't save this run or compare it")
     p.add_argument("--aws", action="store_true", help="read-only CloudWatch metrics + slow-request log")
+    p.add_argument("--probe", default=env.get("PROBE"), help="genprobe.py output (default: <run>.probe.txt if there)")
     a = p.parse_args()
 
     vus = a.vus or {"T2": 100, "T3": 300}.get(a.test)
     duration = seconds(a.duration or {"T2": "60m", "T4": "5m"}.get(a.test, "0s"))
     shape = holds(a.test, [int(x) for x in a.steps.split(",")], a.step_minutes, vus, duration)
-    steps, stalls, first, last = analyse(a.run_json, shape)
+    probe_path = a.probe or a.run_json.removesuffix(".json") + ".probe.txt"
+    probe = read_probe(probe_path) if os.path.isfile(probe_path) else None
+    if a.probe and probe is None:
+        raise SystemExit(f"no probe file at {a.probe}")
+    steps, stalls, first, last, warmup = analyse(a.run_json, shape, probe)
     summaries = [step_summary(s) for s in steps]
     slowest, degrading = endpoint_tables(steps, summaries)
 
@@ -456,7 +584,8 @@ def main():
     with open(a.run_json, "rb") as f:  # the offset of the generator's clock, to say what was converted
         offset = next((json.loads(l)["data"]["time"][-6:] for l in f if l.startswith(PREFIXES)), "?")
     run = {"run": name, "name": name, "test": a.test, "backend_version": a.backend_version,
-           "started_utc": iso(first), "ended_utc": iso(last), "source_offset": offset, "steps": summaries,
+           "started_utc": iso(first), "ended_utc": iso(last), "source_offset": offset, "warmup_requests": warmup,
+           "probe": os.path.basename(probe_path) if probe is not None else None, "steps": summaries,
            "stalls": [{**s, "start": iso(s["start"]), "end": iso(s["end"])} for s in stalls]}
     run_id = f"{iso(first)[:10]}-{a.backend_version}-{name}"
     previous = None if a.no_history else previous_accepted(a.history, a.test, run["started_utc"], run_id)
