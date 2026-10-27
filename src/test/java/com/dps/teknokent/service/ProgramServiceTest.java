@@ -29,6 +29,8 @@ import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -49,6 +51,8 @@ class ProgramServiceTest {
 	@Mock
 	private OrganizationRepository organizationRepository;
 	@Mock
+	private AppUserRepository appUserRepository;
+	@Mock
 	private DomainLookupService domainLookupService;
 	@Mock
 	private NotificationService notificationService;
@@ -66,8 +70,7 @@ class ProgramServiceTest {
 	void createPersistsAProgramForTheCoordinator() {
 		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
 		when(programRepository.save(any(Program.class))).thenAnswer(invocation -> invocation.getArgument(0));
-		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
-		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
 
 		var result = programService.create(COORDINATOR_ID, "  Seed 2026  ");
 
@@ -94,8 +97,7 @@ class ProgramServiceTest {
 		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
 		when(programRepository.save(program)).thenReturn(program);
-		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
-		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
 
 		var result = programService.setStatus(COORDINATOR_ID, PROGRAM_ID, ProgramStatus.COMPLETED);
 
@@ -128,8 +130,7 @@ class ProgramServiceTest {
 		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID)).thenReturn(Optional.empty());
-		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
-		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
 
 		programService.inviteMentor(COORDINATOR_ID, PROGRAM_ID, MENTOR_ID);
 
@@ -179,13 +180,51 @@ class ProgramServiceTest {
 		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
 		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
 				.thenReturn(Optional.empty());
-		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
-		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
 
 		var result = programService.addStartup(COORDINATOR_ID, PROGRAM_ID, ORG_ID);
 
 		assertThat(result.id()).isEqualTo(PROGRAM_ID);
 		verify(programStartupRepository).save(any());
+	}
+
+	@Test
+	void listGivesEachProgramItsOwnStartupsAndMentorsFromOneBatch() {
+		Program other = program();
+		other.setId(OTHER_PROGRAM_ID);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findByCreatedByOrderByCreatedAtDesc(COORDINATOR_ID))
+				.thenReturn(List.of(program(), other));
+		when(programStartupRepository.findByProgramIdInOrderByCreatedAtAsc(List.of(PROGRAM_ID, OTHER_PROGRAM_ID)))
+				.thenReturn(List.of(assignment(PROGRAM_ID)));
+		when(programMentorRepository.findByProgramIdInOrderByCreatedAtAsc(List.of(PROGRAM_ID, OTHER_PROGRAM_ID)))
+				.thenReturn(List.of(membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR)));
+		when(organizationRepository.findAllById(any())).thenReturn(List.of(mentee(null).getOrganization()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator(), mentor()));
+
+		var result = programService.list(COORDINATOR_ID);
+
+		assertThat(result).hasSize(2);
+		assertThat(result.get(0).coordinatorName()).isEqualTo("Demo Coordinator");
+		assertThat(result.get(0).startups()).singleElement()
+				.satisfies(startup -> assertThat(startup.name()).isEqualTo("NovaMed AI"));
+		assertThat(result.get(0).mentors()).singleElement()
+				.satisfies(mentor -> assertThat(mentor.fullName()).isEqualTo("Ece Demir"));
+		assertThat(result.get(1).startups()).isEmpty();
+		assertThat(result.get(1).mentors()).isEmpty();
+	}
+
+	@Test
+	void listAnswersNotFoundWhenAStartupsOrganizationIsGone() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findByCreatedByOrderByCreatedAtDesc(COORDINATOR_ID)).thenReturn(List.of(program()));
+		when(programStartupRepository.findByProgramIdInOrderByCreatedAtAsc(any()))
+				.thenReturn(List.of(assignment(PROGRAM_ID)));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		assertThatThrownBy(() -> programService.list(COORDINATOR_ID))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessage("Organization not found: " + ORG_ID);
 	}
 
 	@Test

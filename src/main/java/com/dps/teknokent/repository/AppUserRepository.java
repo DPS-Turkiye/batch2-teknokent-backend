@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,6 +13,8 @@ import com.dps.teknokent.entity.AppUser;
 
 public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	List<AppUser> findByOrganizationIdOrderByFullNameAsc(UUID organizationId);
+
+	List<AppUser> findByOrganizationIdInOrderByFullNameAsc(Collection<UUID> organizationIds);
 
 	boolean existsByEmailIgnoreCase(String email);
 
