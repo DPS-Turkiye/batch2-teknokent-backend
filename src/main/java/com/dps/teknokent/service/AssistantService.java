@@ -40,8 +40,9 @@ public class AssistantService {
     var parsed = MeetingUrlParser.parse(request.meetingUrl());
     Set<String> running = runningBotKeys()
         .orElseThrow(() -> new IllegalStateException("Running bots are unknown"));
-    // ponytail: live count only, so meetings booked later can still add their reserved bots on top; a shared
-    // ledger of ad-hoc and booked bots if the provider bill needs a hard ceiling.
+    // ponytail: live count with no lock, so two requests at the same moment can both pass and meetings booked
+    // later can still add their reserved bots on top; a shared ledger of ad-hoc and booked bots if the provider
+    // bill needs a hard ceiling.
     if (!running.contains(botKey(parsed.platform(), parsed.nativeMeetingId()))
         && running.size() >= capacityService.capacity()) {
       throw new ConflictException("All recording slots are in use.");
