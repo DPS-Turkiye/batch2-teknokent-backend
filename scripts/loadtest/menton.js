@@ -13,6 +13,12 @@ import { check, sleep } from "k6";
 const BASE_URL = __ENV.BASE_URL;
 const FIREBASE_API_KEY = __ENV.FIREBASE_API_KEY;
 const TEST = __ENV.TEST || "T0";
+// Sent on every request to our app, so test traffic can be told apart wherever it gets logged.
+const LOAD_TEST_HEADER = { "X-Load-Test": __ENV.RUN_ID || "menton-k6" };
+// Light load before the measured test: a fresh JVM, an idle Amplify and cold connections are slow for the first
+// minute or two, and that is not what a step measures. Its own scenario, so thresholds and analyze.py skip it.
+const WARMUP = __ENV.WARMUP || "2m";
+const WARMUP_VUS = Number(__ENV.WARMUP_VUS || 5);
 const POLL_SECONDS = 15;
 const ROLE_WEIGHTS = [
   ["mentee", 0.8],
@@ -108,8 +114,14 @@ const SCENARIOS = {
   },
 };
 
+const warm = !/^0[a-z]*$/.test(WARMUP);
+
 export const options = {
-  scenarios: { [TEST]: SCENARIOS[TEST] },
+  scenarios: {
+    // gracefulStop 0: warm-up users stop when the test starts, not after their screen's polling (up to 3 min).
+    ...(warm && { warmup: { executor: "constant-vus", vus: WARMUP_VUS, duration: WARMUP, gracefulStop: "0s" } }),
+    [TEST]: { ...SCENARIOS[TEST], startTime: warm ? WARMUP : "0s" },
+  },
   // Scoped to the scenario, so the one-off sign-ins in setup() don't count. Stops the run before real
   // users feel it.
   thresholds: {
@@ -133,7 +145,7 @@ export function setup() {
     if (signIn.status !== 200) throw new Error(`${role}: Firebase sign-in failed (${signIn.status})`);
     const { idToken, refreshToken, expiresIn } = signIn.json();
     const session = http.post(`${BASE_URL}/api/session`, JSON.stringify({ rememberMe: false }), {
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}`, ...LOAD_TEST_HEADER },
       tags: { name: "POST /api/session" },
     });
     const cookie = session.cookies.teknokent_session && session.cookies.teknokent_session[0];
@@ -193,9 +205,9 @@ function toRequest(url) {
   // The notification bell calls the backend directly with the Firebase token; the rest go through
   // the Next.js proxy with the session cookie, as in the browser.
   if (url.startsWith("http")) {
-    return ["GET", url, null, { headers: { Authorization: `Bearer ${mine.idToken}`, Origin: BASE_URL }, tags: { name: `direct ${name.replace(/^https?:\/\/[^/]+/, "")}` } }];
+    return ["GET", url, null, { headers: { Authorization: `Bearer ${mine.idToken}`, Origin: BASE_URL, ...LOAD_TEST_HEADER }, tags: { name: `direct ${name.replace(/^https?:\/\/[^/]+/, "")}` } }];
   }
-  return ["GET", `${BASE_URL}${url}`, null, { headers: { Cookie: `teknokent_session=${mine.cookie}` }, tags: { name } }];
+  return ["GET", `${BASE_URL}${url}`, null, { headers: { Cookie: `teknokent_session=${mine.cookie}`, ...LOAD_TEST_HEADER }, tags: { name } }];
 }
 
 // Firebase ID tokens last an hour; jitter so not every VU refreshes in the same second.
