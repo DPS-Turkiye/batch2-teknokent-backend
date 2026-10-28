@@ -175,5 +175,25 @@ class AnalyzeTest(unittest.TestCase):
         self.assertIn("| RDS free memory MB | 60.0 (Minimum) |", out.stdout)
 
 
+class BaselineTest(unittest.TestCase):
+    def test_leaves_out_the_warm_up_and_a_probe_stall_and_flags_thin_features(self):
+        folder = tempfile.mkdtemp()
+        run_json = os.path.join(folder, "J-test.json")
+        lines = [point("feature_visible", -30, 9000, {"feature": "mentee:/calendar", "scenario": "warmup"})]
+        for i, ms in enumerate((700, 720, 740, 760, 780, 800)):  # one round every 20 s
+            lines.append(point("feature_visible", i * 20, ms, {"feature": "mentee:/calendar", "scenario": "journeys"}))
+        lines.append(point("feature_visible", 0, 1500, {"feature": "mentee:login", "scenario": "journeys"}))
+        with open(run_json, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        write_probe(run_json.removesuffix(".json") + ".probe.txt", bad_seconds={100, 103})  # drops the 800 at 100 s
+        out = subprocess.run([sys.executable, "-I", os.path.join(HERE, "baseline.py"), run_json, "--write",
+                              "--out-dir", folder], capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("| `mentee:/calendar` | 5 | 740 | 760 | 780 | 40 |", out.stdout)
+        self.assertIn("| `mentee:login` | 1 (< 5) |", out.stdout)
+        with open(os.path.join(folder, "features.json")) as f:
+            self.assertEqual(json.load(f)["mentee:/calendar"]["n"], 5)
+
+
 if __name__ == "__main__":
     unittest.main()
