@@ -9,6 +9,7 @@
 //   RUN_ID=T0-test TEST=T0 K6_WEB_DASHBOARD=true k6 run --include-system-env-vars scripts/loadtest/menton.js
 import http from "k6/http";
 import { check, sleep } from "k6";
+import { Counter, Trend } from "k6/metrics";
 
 const BASE_URL = __ENV.BASE_URL;
 const FIREBASE_API_KEY = __ENV.FIREBASE_API_KEY;
@@ -25,11 +26,32 @@ const ROLE_WEIGHTS = [
   ["mentor", 0.15],
   ["admin", 0.05],
 ];
-const ACCOUNTS = {
-  mentee: [__ENV.MENTEE_EMAIL, __ENV.MENTEE_PASSWORD],
-  mentor: [__ENV.MENTOR_EMAIL, __ENV.MENTOR_PASSWORD],
-  admin: [__ENV.ADMIN_EMAIL, __ENV.ADMIN_PASSWORD],
-};
+// A pool per role: MENTEE_EMAIL=a@x,b@x with one shared MENTEE_PASSWORD or a list in the same order. Each VU
+// sticks to one account, so the backend sees N people, not one person with N tabs.
+const ACCOUNTS = Object.fromEntries(
+  ["mentee", "mentor", "admin"].map((role) => {
+    const emails = (__ENV[`${role.toUpperCase()}_EMAIL`] || "").split(",");
+    const passwords = (__ENV[`${role.toUpperCase()}_PASSWORD`] || "").split(",");
+    return [role, emails.map((email, i) => [email.trim(), (passwords[i] ?? passwords[0]).trim()])];
+  }),
+);
+
+// Wall time until every call a screen opens with has answered (they run in parallel, as in the browser), and
+// goodput: screens where every call was < 400 and that time stayed within the screen's band. The band is the
+// screen's no-load p90 from baselines/screens.json (baseline.py), else SCREEN_BAND_MS.
+const screenTime = new Trend("screen_time", true);
+const screensOpened = new Counter("screens");
+const screensGood = new Counter("goodput_screens");
+const DEFAULT_BAND_MS = Number(__ENV.SCREEN_BAND_MS || 1000);
+const SCREEN_BANDS = loadBands();
+
+function loadBands() {
+  try {
+    return JSON.parse(open("./baselines/screens.json"));
+  } catch {
+    return {};
+  }
+}
 
 // A capture lists, per screen, every /api call the page made with the second it started. Calls in the
 // first seconds are the page load; calls later on are its polling.
@@ -112,6 +134,16 @@ const SCENARIOS = {
     preAllocatedVUs: 50,
     maxVUs: 200,
   },
+  // Breakpoint: screens per second rising with no think time until something gives. The watchers stop it.
+  T5: {
+    executor: "ramping-arrival-rate",
+    exec: "rush",
+    startRate: 1,
+    timeUnit: "1s",
+    stages: [{ target: Number(__ENV.T5_MAX || 50), duration: __ENV.DURATION || "10m" }],
+    preAllocatedVUs: 50,
+    maxVUs: Number(__ENV.MAX_VUS || 1000),
+  },
 };
 
 const warm = !/^0[a-z]*$/.test(WARMUP);
@@ -136,42 +168,44 @@ export const options = {
 
 export function setup() {
   const sessions = {};
-  for (const [role, [email, password]] of Object.entries(ACCOUNTS)) {
-    const signIn = http.post(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
-      JSON.stringify({ email, password, returnSecureToken: true }),
-      { headers: { "Content-Type": "application/json", Referer: `${BASE_URL}/` }, tags: { name: "firebase sign-in" } },
-    );
-    if (signIn.status !== 200) throw new Error(`${role}: Firebase sign-in failed (${signIn.status})`);
-    const { idToken, refreshToken, expiresIn } = signIn.json();
-    const session = http.post(`${BASE_URL}/api/session`, JSON.stringify({ rememberMe: false }), {
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}`, ...LOAD_TEST_HEADER },
-      tags: { name: "POST /api/session" },
-    });
-    const cookie = session.cookies.teknokent_session && session.cookies.teknokent_session[0];
-    if (session.status !== 200 || !cookie) throw new Error(`${role}: session failed (${session.status})`);
-    sessions[role] = {
-      cookie: cookie.value,
-      idToken,
-      refreshToken,
-      expiresAt: Date.now() + Number(expiresIn) * 1000,
-    };
+  for (const [role, accounts] of Object.entries(ACCOUNTS)) {
+    sessions[role] = accounts.map(([email, password]) => signIn(role, email, password));
   }
   return sessions;
+}
+
+function signIn(role, email, password) {
+  const firebase = http.post(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+    JSON.stringify({ email, password, returnSecureToken: true }),
+    { headers: { "Content-Type": "application/json", Referer: `${BASE_URL}/` }, tags: { name: "firebase sign-in" } },
+  );
+  if (firebase.status !== 200) throw new Error(`${role}: Firebase sign-in failed (${firebase.status})`);
+  const { idToken, refreshToken, expiresIn } = firebase.json();
+  const session = http.post(`${BASE_URL}/api/session`, JSON.stringify({ rememberMe: false }), {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}`, ...LOAD_TEST_HEADER },
+    tags: { name: "POST /api/session" },
+  });
+  const cookie = session.cookies.teknokent_session && session.cookies.teknokent_session[0];
+  if (session.status !== 200 || !cookie) throw new Error(`${role}: session failed (${session.status})`);
+  return { cookie: cookie.value, idToken, refreshToken, expiresAt: Date.now() + Number(expiresIn) * 1000 };
 }
 
 // Each VU keeps its own copy, so a refreshed token stays with that VU.
 let mine = null;
 
-export default function (sessions) {
+function become(sessions, role) {
   if (!mine) {
-    const role = pickRole();
-    mine = { role, ...sessions[role] };
+    const pool = sessions[role];
+    mine = { role, ...pool[(__VU - 1) % pool.length] };
   }
   refreshTokenIfDue();
+}
 
+export default function (sessions) {
+  become(sessions, mine ? mine.role : pickRole());
   const screen = pick(SCREENS[mine.role]);
-  request(screen.load);
+  openScreen(screen);
   if (screen.poll.length) {
     const polls = randomBetween(4, 12);
     for (let i = 0; i < polls; i++) {
@@ -184,20 +218,36 @@ export default function (sessions) {
 }
 
 export function heavy(sessions) {
-  if (!mine) mine = { role: "mentee", ...sessions.mentee };
-  refreshTokenIfDue();
+  become(sessions, "mentee");
   request(T4_TARGET);
+}
+
+export function rush(sessions) {
+  become(sessions, mine ? mine.role : pickRole());
+  openScreen(pick(SCREENS[mine.role]));
+}
+
+function openScreen(screen) {
+  const started = Date.now();
+  const ok = request(screen.load);
+  const ms = Date.now() - started;
+  screenTime.add(ms, { screen: screen.name });
+  screensOpened.add(1, { screen: screen.name });
+  const band = SCREEN_BANDS[screen.name] ? SCREEN_BANDS[screen.name].p90 : DEFAULT_BAND_MS;
+  if (ok && ms <= band) screensGood.add(1, { screen: screen.name });
 }
 
 function request(urls) {
   const responses = http.batch(urls.map(toRequest));
+  let ok = true;
   for (const response of responses) {
-    check(response, { "status < 400": (r) => r.status > 0 && r.status < 400 });
+    ok = check(response, { "status < 400": (r) => r.status > 0 && r.status < 400 }) && ok;
     // The session re-checks the account every 10 minutes and saves a new cookie; a browser keeps
     // it, so must we, or every request after minute 10 would repeat the backend check.
     const refreshed = response.cookies.teknokent_session && response.cookies.teknokent_session[0];
     if (refreshed && refreshed.value) mine.cookie = refreshed.value;
   }
+  return ok;
 }
 
 function toRequest(url) {
