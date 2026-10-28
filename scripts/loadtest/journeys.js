@@ -268,25 +268,42 @@ async function measure(page, net, step, started) {
   const tags = { feature: step.feature, nav: step.nav || "login" };
   featureVisible.add(visible, tags);
   check(null, { "feature visible, no /api error": () => settled && net.errors === 0 }, tags);
-  if (!settled || net.errors) console.warn(`${step.feature}: settled=${settled} api errors: ${net.failed.join(", ")}`);
+  if (!settled || net.errors) console.warn(`${step.feature}: settled=${settled} api errors: ${net.failed.join(", ")} open: ${[...net.open.keys()].join(", ")}`);
 }
 
 function watchNetwork(page) {
-  const net = { inflight: 0, last: 0, errors: 0, failed: [] };
+  const net = { inflight: 0, last: 0, errors: 0, failed: [], open: new Map() };
+  const done = (url) => {
+    net.inflight = Math.max(0, net.inflight - 1);
+    const left = (net.open.get(url) || 1) - 1;
+    if (left > 0) net.open.set(url, left);
+    else net.open.delete(url);
+  };
   net.reset = () => {
     net.inflight = 0; // calls cut off by the last navigation never answer
+    net.open = new Map();
     net.last = 0;
     net.errors = 0;
     net.failed = [];
   };
-  const isApi = (url) => url.includes("/api/");
+  // A known-broken call is retried by the app with growing delays; it must not hold the feature's time hostage.
+  const knownPaths = new Set(Object.keys(KNOWN_API_ERRORS).map((key) => key.split(" ")[1]));
+  const isApi = (url) => url.includes("/api/") && !knownPaths.has(pathOf(url));
   page.on("request", (request) => {
-    if (isApi(request.url())) net.inflight += 1;
+    if (!isApi(request.url())) return;
+    net.inflight += 1;
+    net.open.set(pathOf(request.url()), (net.open.get(pathOf(request.url())) || 0) + 1);
+  });
+  // A call the app cancels (a query aborted when the view changes) never answers; it is done, not an error.
+  page.on("requestfailed", (request) => {
+    if (isApi(request.url())) done(pathOf(request.url()));
   });
   page.on("response", (response) => {
-    if (!isApi(response.url())) return;
-    net.inflight = Math.max(0, net.inflight - 1);
-    net.last = Date.now();
+    if (!response.url().includes("/api/")) return;
+    if (isApi(response.url())) {
+      done(pathOf(response.url()));
+      net.last = Date.now();
+    }
     if (response.status() >= 400) {
       net.errors += 1;
       net.failed.push(`${response.status()} ${pathOf(response.url())}`);
