@@ -5,9 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -34,12 +37,16 @@ import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
 import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
+import com.dps.teknokent.dto.requests.ScheduleMentorshipRequest;
+import com.dps.teknokent.dto.requests.WithdrawMentorshipRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.Texts;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorshipRequestMessageRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
@@ -770,6 +777,218 @@ class MentorshipRequestServiceTest {
                                 .isInstanceOf(InvalidRequestException.class)
                                 .hasMessageContaining("not part of this conversation");
                 assertThat(request.getMenteeReadAt()).isNull();
+        }
+
+        // --- Withdrawing, the availability list and booking: the steps after a mentor answers ---
+
+        private static final UUID REQUEST_ID = UUID.fromString("00000000-0000-0000-0000-000000000901");
+        private static final UUID REQUESTER_ID = UUID.fromString("00000000-0000-0000-0000-000000000902");
+        private static final UUID MENTOR_ID = UUID.fromString("00000000-0000-0000-0000-000000000903");
+
+        private static MentorshipRequest requestIn(MentorshipRequestStatus status) {
+                return mentorshipRequest(REQUEST_ID,
+                                user(REQUESTER_ID, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE),
+                                organization(UUID.fromString("00000000-0000-0000-0000-000000000904"), "GreenLoop"),
+                                user(MENTOR_ID, "kemal@mentor.com", "Dr. Kemal Arslan", UserRole.MENTOR),
+                                "Roadmap help", status);
+        }
+
+        private static MentorAvailabilitySlot slot(String id, AppUser mentor, Instant startsAt) {
+                MentorAvailabilitySlot slot = new MentorAvailabilitySlot();
+                slot.setId(UUID.fromString(id));
+                slot.setMentor(mentor);
+                slot.setStartsAt(startsAt);
+                slot.setDurationMinutes(45);
+                return slot;
+        }
+
+        // Building the response reads only some of these, depending on the request's status.
+        private void stubResponseLookups() {
+                lenient().when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(REQUEST_ID))
+                                .thenReturn(List.of());
+                lenient().when(recommendationRunRepository.findByRequestId(REQUEST_ID)).thenReturn(Optional.empty());
+                lenient().when(meetingRepository.findByMentorshipRequestId(REQUEST_ID)).thenReturn(Optional.empty());
+        }
+
+        @Test
+        void withdraw_letsTheRequesterTakeBackAnUnansweredRequest() {
+                for (MentorshipRequestStatus status : List.of(MentorshipRequestStatus.PENDING,
+                                MentorshipRequestStatus.MORE_INFO_REQUESTED, MentorshipRequestStatus.COUNTER_PROPOSED)) {
+                        MentorshipRequest request = requestIn(status);
+                        when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+                        when(mentorshipRequestRepository.saveAndFlush(request)).thenReturn(request);
+                        stubResponseLookups();
+
+                        var result = mentorshipRequestService.withdraw(REQUEST_ID,
+                                        new WithdrawMentorshipRequest(REQUESTER_ID));
+
+                        assertThat(result.status()).isEqualTo(MentorshipRequestStatus.WITHDRAWN);
+                }
+        }
+
+        @Test
+        void withdraw_rejectsAnyoneButTheRequester() {
+                MentorshipRequest request = requestIn(MentorshipRequestStatus.PENDING);
+                when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+                assertThatThrownBy(() -> mentorshipRequestService.withdraw(REQUEST_ID,
+                                new WithdrawMentorshipRequest(MENTOR_ID)))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("Only the requester");
+                assertThat(request.getStatus()).isEqualTo(MentorshipRequestStatus.PENDING);
+        }
+
+        @Test
+        void withdraw_rejectsARequestTheMentorAlreadyAnswered() {
+                for (MentorshipRequestStatus status : List.of(MentorshipRequestStatus.ACCEPTED,
+                                MentorshipRequestStatus.DECLINED, MentorshipRequestStatus.WITHDRAWN)) {
+                        MentorshipRequest request = requestIn(status);
+                        when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+                        assertThatThrownBy(() -> mentorshipRequestService.withdraw(REQUEST_ID,
+                                        new WithdrawMentorshipRequest(REQUESTER_ID)))
+                                        .isInstanceOf(InvalidRequestException.class)
+                                        .hasMessageContaining("unanswered");
+                        assertThat(request.getStatus()).isEqualTo(status);
+                }
+        }
+
+        @Test
+        void findAvailability_isClosedUntilTheMentorAccepts() {
+                when(mentorshipRequestRepository.findById(REQUEST_ID))
+                                .thenReturn(Optional.of(requestIn(MentorshipRequestStatus.PENDING)));
+
+                assertThatThrownBy(() -> mentorshipRequestService.findAvailability(REQUEST_ID))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("after the request is accepted");
+        }
+
+        @Test
+        void findAvailability_leavesOutTimesTheMentorHasAlreadyBooked() {
+                MentorshipRequest request = requestIn(MentorshipRequestStatus.ACCEPTED);
+                Instant free = Instant.now().plus(Duration.ofDays(2));
+                Instant taken = Instant.now().plus(Duration.ofDays(3));
+                when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+                when(mentorAvailabilitySlotRepository.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(eq(MENTOR_ID),
+                                any())).thenReturn(List.of(
+                                                slot("00000000-0000-0000-0000-000000000911", request.getMentor(), free),
+                                                slot("00000000-0000-0000-0000-000000000912", request.getMentor(), taken)));
+                when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(MENTOR_ID, free, MeetingStatus.SCHEDULED))
+                                .thenReturn(false);
+                when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(MENTOR_ID, taken, MeetingStatus.SCHEDULED))
+                                .thenReturn(true);
+
+                var slots = mentorshipRequestService.findAvailability(REQUEST_ID);
+
+                assertThat(slots).extracting(item -> item.startsAt()).containsExactly(free);
+        }
+
+        @Test
+        void scheduleMeeting_booksTheChosenSlotAndTellsTheMentor() {
+                MentorshipRequest request = requestIn(MentorshipRequestStatus.ACCEPTED);
+                Instant startsAt = Instant.now().plus(Duration.ofDays(2));
+                MentorAvailabilitySlot chosen = slot("00000000-0000-0000-0000-000000000911", request.getMentor(),
+                                startsAt);
+                when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+                when(meetingRepository.findByMentorshipRequestId(REQUEST_ID)).thenReturn(Optional.empty());
+                when(mentorAvailabilitySlotRepository.findById(chosen.getId())).thenReturn(Optional.of(chosen));
+                when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(MENTOR_ID, startsAt,
+                                MeetingStatus.SCHEDULED)).thenReturn(false);
+                when(meetingRepository.saveAndFlush(any(Meeting.class))).thenAnswer(call -> call.getArgument(0));
+
+                var meeting = mentorshipRequestService.scheduleMeeting(REQUEST_ID,
+                                new ScheduleMentorshipRequest(REQUESTER_ID, chosen.getId()));
+
+                assertThat(meeting.scheduledAt()).isEqualTo(startsAt);
+                assertThat(meeting.durationMinutes()).isEqualTo(45);
+                assertThat(meeting.status()).isEqualTo(MeetingStatus.SCHEDULED);
+                verify(notificationService).create(eq(request.getMentor()), eq(NotificationCategory.MEETING_CHANGE),
+                                any(), any(), eq("/mentor-dashboard/calendar"));
+        }
+
+        @Test
+        void scheduleMeeting_refusesAnyoneButTheRequesterOrBeforeAcceptance() {
+                when(mentorshipRequestRepository.findById(REQUEST_ID))
+                                .thenReturn(Optional.of(requestIn(MentorshipRequestStatus.ACCEPTED)));
+                assertThatThrownBy(() -> mentorshipRequestService.scheduleMeeting(REQUEST_ID,
+                                new ScheduleMentorshipRequest(MENTOR_ID, UUID.randomUUID())))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("Only the requester");
+
+                when(mentorshipRequestRepository.findById(REQUEST_ID))
+                                .thenReturn(Optional.of(requestIn(MentorshipRequestStatus.PENDING)));
+                assertThatThrownBy(() -> mentorshipRequestService.scheduleMeeting(REQUEST_ID,
+                                new ScheduleMentorshipRequest(REQUESTER_ID, UUID.randomUUID())))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("after the request is accepted");
+                verify(meetingRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        void scheduleMeeting_refusesASecondMeetingForTheSameRequest() {
+                MentorshipRequest request = requestIn(MentorshipRequestStatus.ACCEPTED);
+                when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+                when(meetingRepository.findByMentorshipRequestId(REQUEST_ID)).thenReturn(Optional.of(
+                                Meeting.forMentorshipRequest(request, slot("00000000-0000-0000-0000-000000000911",
+                                                request.getMentor(), Instant.now().plus(Duration.ofDays(1))))));
+
+                assertThatThrownBy(() -> mentorshipRequestService.scheduleMeeting(REQUEST_ID,
+                                new ScheduleMentorshipRequest(REQUESTER_ID, UUID.randomUUID())))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("already been scheduled");
+        }
+
+        @Test
+        void scheduleMeeting_refusesAnotherMentorsSlot() {
+                MentorshipRequest request = requestIn(MentorshipRequestStatus.ACCEPTED);
+                AppUser otherMentor = user(UUID.fromString("00000000-0000-0000-0000-000000000920"), "x@mentor.com",
+                                "Another Mentor", UserRole.MENTOR);
+                MentorAvailabilitySlot foreign = slot("00000000-0000-0000-0000-000000000911", otherMentor,
+                                Instant.now().plus(Duration.ofDays(2)));
+                when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+                when(meetingRepository.findByMentorshipRequestId(REQUEST_ID)).thenReturn(Optional.empty());
+                when(mentorAvailabilitySlotRepository.findById(foreign.getId())).thenReturn(Optional.of(foreign));
+
+                assertThatThrownBy(() -> mentorshipRequestService.scheduleMeeting(REQUEST_ID,
+                                new ScheduleMentorshipRequest(REQUESTER_ID, foreign.getId())))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("not available for this request");
+        }
+
+        // Mentors are promised at least the booking lead time before a meeting starts.
+        @Test
+        void scheduleMeeting_refusesASlotThatStartsTooSoon() {
+                MentorshipRequest request = requestIn(MentorshipRequestStatus.ACCEPTED);
+                MentorAvailabilitySlot soon = slot("00000000-0000-0000-0000-000000000911", request.getMentor(),
+                                Instant.now().plus(Duration.ofMinutes(30)));
+                when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+                when(meetingRepository.findByMentorshipRequestId(REQUEST_ID)).thenReturn(Optional.empty());
+                when(mentorAvailabilitySlotRepository.findById(soon.getId())).thenReturn(Optional.of(soon));
+
+                assertThatThrownBy(() -> mentorshipRequestService.scheduleMeeting(REQUEST_ID,
+                                new ScheduleMentorshipRequest(REQUESTER_ID, soon.getId())))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessage(Texts.forRequest("error.slotTooSoon"));
+                verify(meetingRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        void scheduleMeeting_refusesASlotSomeoneElseJustBooked() {
+                MentorshipRequest request = requestIn(MentorshipRequestStatus.ACCEPTED);
+                Instant startsAt = Instant.now().plus(Duration.ofDays(2));
+                MentorAvailabilitySlot taken = slot("00000000-0000-0000-0000-000000000911", request.getMentor(),
+                                startsAt);
+                when(mentorshipRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+                when(meetingRepository.findByMentorshipRequestId(REQUEST_ID)).thenReturn(Optional.empty());
+                when(mentorAvailabilitySlotRepository.findById(taken.getId())).thenReturn(Optional.of(taken));
+                when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(MENTOR_ID, startsAt,
+                                MeetingStatus.SCHEDULED)).thenReturn(true);
+
+                assertThatThrownBy(() -> mentorshipRequestService.scheduleMeeting(REQUEST_ID,
+                                new ScheduleMentorshipRequest(REQUESTER_ID, taken.getId())))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("just been booked");
+                verify(meetingRepository, never()).saveAndFlush(any());
         }
 
         private static MentorshipRequest mentorshipRequest(UUID id, AppUser requester, Organization organization,

@@ -3,6 +3,9 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -308,6 +311,125 @@ class ProgramServiceTest {
 		assertThat(actor.getOrganization().getActiveProgramId()).isNull();
 		assertThat(result.activeProgramId()).isNull();
 		assertThat(result.programs()).isEmpty();
+	}
+
+	// --- Who may open a program, and the coordinator's answer to a mentor asking to join ---
+
+	@Test
+	void findDetailRefusesAMentorWhoHasNotBeenAccepted() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR)));
+
+		assertThatThrownBy(() -> programService.findDetail(MENTOR_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not a member");
+	}
+
+	@Test
+	void findDetailRefusesAStartupThatWasNotAddedToTheProgram() {
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(mentee(null));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> programService.findDetail(MENTEE_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not a member");
+	}
+
+	@Test
+	void findDetailRefusesACoordinatorWhoDoesNotRunTheProgram() {
+		UUID otherCoordinatorId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+		AppUser other = coordinator();
+		other.setId(otherCoordinatorId);
+		when(domainLookupService.requireUser(otherCoordinatorId)).thenReturn(other);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programCoordinatorRepository.existsByProgramIdAndUserId(PROGRAM_ID, otherCoordinatorId))
+				.thenReturn(false);
+
+		assertThatThrownBy(() -> programService.findDetail(otherCoordinatorId, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not a member");
+	}
+
+	@Test
+	void requestToJoinLeavesTheRequestPendingAndTellsTheCoordinator() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID)).thenReturn(Optional.empty());
+		ArgumentCaptor<ProgramMentor> saved = ArgumentCaptor.forClass(ProgramMentor.class);
+
+		programService.requestToJoin(MENTOR_ID, PROGRAM_ID);
+
+		verify(programMentorRepository).save(saved.capture());
+		assertThat(saved.getValue().getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
+		assertThat(saved.getValue().getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.MENTOR);
+		verify(notificationService).create(argThat(user -> COORDINATOR_ID.equals(user.getId())), any(), any(),
+				eq("/programs"));
+	}
+
+	@Test
+	void requestToJoinRefusesAMentorAlreadyInTheProgram() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(membership(ProgramMentorStatus.ACCEPTED, ProgramMentorInvitedBy.MENTOR)));
+
+		assertThatThrownBy(() -> programService.requestToJoin(MENTOR_ID, PROGRAM_ID))
+				.isInstanceOf(ConflictException.class);
+		verify(notificationService, never()).create(any(), any(), any(), any());
+	}
+
+	@Test
+	void decideMentorRequestAcceptsAMentorsRequestAndTellsThem() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		ProgramMentor request = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(request));
+
+		programService.decideMentorRequest(COORDINATOR_ID, PROGRAM_ID, MENTOR_ID, true);
+
+		assertThat(request.getStatus()).isEqualTo(ProgramMentorStatus.ACCEPTED);
+		assertThat(request.getDecidedAt()).isNotNull();
+		verify(notificationService).create(argThat(user -> MENTOR_ID.equals(user.getId())), any(), any(),
+				eq("/mentor-dashboard"));
+	}
+
+	// A coordinator's own invitation is the mentor's to answer, not the coordinator's.
+	@Test
+	void decideMentorRequestRefusesToDecideACoordinatorsInvitation() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		ProgramMentor invitation = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR);
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(invitation));
+
+		assertThatThrownBy(() -> programService.decideMentorRequest(COORDINATOR_ID, PROGRAM_ID, MENTOR_ID, true))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("cannot be decided");
+		assertThat(invitation.getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
+	}
+
+	@Test
+	void decideMentorRequestRefusesAnotherCoordinator() {
+		UUID otherCoordinatorId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+		AppUser other = coordinator();
+		other.setId(otherCoordinatorId);
+		when(domainLookupService.requireUser(otherCoordinatorId)).thenReturn(other);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programCoordinatorRepository.existsByProgramIdAndUserId(PROGRAM_ID, otherCoordinatorId))
+				.thenReturn(false);
+
+		assertThatThrownBy(() -> programService.decideMentorRequest(otherCoordinatorId, PROGRAM_ID, MENTOR_ID, true))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Only the program coordinator");
 	}
 
 	private static AppUser mentee(UUID activeProgramId) {
