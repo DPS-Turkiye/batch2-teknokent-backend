@@ -63,7 +63,8 @@ class AuthRegistrationControllerTest {
                 UserAccountStatus.PENDING,
                 organizationId,
                 "GreenLoop",
-                "Kurucu"
+                "Kurucu",
+                null
         ));
 
         mockMvc.perform(post("/api/auth/register/founder")
@@ -97,6 +98,7 @@ class AuthRegistrationControllerTest {
                 UserAccountStatus.PENDING,
                 null,
                 null,
+                null,
                 null
         ));
 
@@ -128,6 +130,7 @@ class AuthRegistrationControllerTest {
                 UserAccountStatus.APPROVED,
                 organizationId,
                 "GreenLoop",
+                null,
                 null
         ));
 

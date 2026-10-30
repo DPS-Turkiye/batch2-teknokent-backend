@@ -1,5 +1,6 @@
 package com.dps.teknokent.dto.responses;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -14,7 +15,8 @@ public record UserResponse(
 		UserAccountStatus status,
 		UUID organizationId,
 		String organizationName,
-		String jobTitle) {
+		String jobTitle,
+		Instant signInsRevokedAt) {
 
 	public static UserResponse fromEntity(AppUser user) {
 		UserAccountStatus status = user.getStatus() == null
@@ -23,6 +25,7 @@ public record UserResponse(
 		return new UserResponse(
 				user.getId(), user.getEmail(), user.getFullName(), user.getRole(), status,
 				user.getOrganization() == null ? null : user.getOrganization().getId(),
-				user.getOrganization() == null ? null : user.getOrganization().getName(), user.getJobTitle());
+				user.getOrganization() == null ? null : user.getOrganization().getName(), user.getJobTitle(),
+				user.getSignInsRevokedAt());
 	}
 }

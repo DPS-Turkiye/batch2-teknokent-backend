@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -80,6 +81,31 @@ class FirebaseLoginProvisionerTest {
 		verify(firebaseAuth, times(2)).getUsers(anyCollection());
 		assertThat(provisioner.passwordsSet(List.of())).isEmpty();
 		verify(firebaseAuth, times(2)).getUsers(anyCollection());
+	}
+
+	@Test
+	void revokesTheFirebaseSignInsOfALogin() throws Exception {
+		provisioner.revokeSignIns("uid-1");
+
+		verify(firebaseAuth).revokeRefreshTokens("uid-1");
+	}
+
+	// A login deleted in Firebase has nothing left to revoke.
+	@Test
+	void treatsAMissingLoginAsAlreadySignedOut() throws Exception {
+		doThrow(failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND))
+				.when(firebaseAuth).revokeRefreshTokens("uid-gone");
+
+		provisioner.revokeSignIns("uid-gone");
+	}
+
+	@Test
+	void reportsAFirebaseFailureAsABadGateway() throws Exception {
+		doThrow(failure(ErrorCode.PERMISSION_DENIED, null)).when(firebaseAuth).revokeRefreshTokens("uid-1");
+
+		assertThatThrownBy(() -> provisioner.revokeSignIns("uid-1"))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
 	}
 
 	private static UserRecord user(String uid, UserInfo[] providers) {

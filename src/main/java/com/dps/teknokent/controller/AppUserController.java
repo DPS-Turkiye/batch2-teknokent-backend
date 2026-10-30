@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
+import com.dps.teknokent.dto.requests.RevokeSignInsRequest;
 import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
 import com.dps.teknokent.dto.responses.UserProfileResponse;
@@ -66,5 +68,12 @@ public class AppUserController {
 			@Valid @RequestBody DecideAccountStatusRequest request) {
 		return appUserService.decideStatus(id,
 				new DecideAccountStatusRequest(CurrentActor.resolve(request.actorId()), request.status()));
+	}
+
+	@PostMapping("/{id}/sign-ins/revoke")
+	public UserResponse revokeSignIns(
+			@PathVariable UUID id,
+			@Valid @RequestBody RevokeSignInsRequest request) {
+		return appUserService.revokeSignIns(id, CurrentActor.resolve(request.actorId()));
 	}
 }
