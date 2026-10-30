@@ -25,6 +25,7 @@ import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
+import com.dps.teknokent.exception.ConflictException;
 
 @ExtendWith(MockitoExtension.class)
 class AssistantServiceTest {
@@ -35,8 +36,58 @@ class AssistantServiceTest {
   @Mock
   private MeetingReportService meetingReportService;
 
+  @Mock
+  private TranscriptBotCapacityService capacityService;
+
   @InjectMocks
   private AssistantService assistantService;
+
+  private static final String URL = "https://meet.google.com/abc-defg-hij";
+
+  private void running(String... nativeIds) {
+    when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(
+        java.util.Arrays.stream(nativeIds).map(id -> new ProviderRunningBot("google_meet", id, "running")).toList()));
+  }
+
+  @Test
+  void addAdHocBotSendsTheBotWhileASlotIsFree() {
+    running("aaa-bbbb-ccc");
+    when(capacityService.capacity()).thenReturn(2);
+    when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
+        .thenReturn(new ProviderBotResponse("bot-1", "requested", "New meeting bot"));
+
+    assertThat(assistantService.addAdHocBot(new AddBotRequest(URL)).id()).isEqualTo("bot-1");
+  }
+
+  @Test
+  void addAdHocBotRefusesWhenEverySlotIsTaken() {
+    running("aaa-bbbb-ccc", "ddd-eeee-fff");
+    when(capacityService.capacity()).thenReturn(2);
+
+    assertThatThrownBy(() -> assistantService.addAdHocBot(new AddBotRequest(URL)))
+        .isInstanceOf(ConflictException.class);
+    verify(providerClient, never()).sendBot(any(), any(), any());
+  }
+
+  @Test
+  void addAdHocBotLetsTheSameMeetingThroughWhenItsBotIsAlreadyRunning() {
+    running("abc-defg-hij", "ddd-eeee-fff");
+    when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
+        .thenReturn(new ProviderBotResponse("bot-1", "requested", "New meeting bot"));
+
+    assistantService.addAdHocBot(new AddBotRequest(URL));
+
+    verify(providerClient).sendBot("google_meet", "abc-defg-hij", URL);
+  }
+
+  @Test
+  void addAdHocBotRefusesWhenTheRunningBotsAreUnknown() {
+    when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(null));
+
+    assertThatThrownBy(() -> assistantService.addAdHocBot(new AddBotRequest(URL)))
+        .isInstanceOf(IllegalStateException.class);
+    verify(providerClient, never()).sendBot(any(), any(), any());
+  }
 
   @Test
   void addBotParsesUrlAndMapsProviderResponse() {

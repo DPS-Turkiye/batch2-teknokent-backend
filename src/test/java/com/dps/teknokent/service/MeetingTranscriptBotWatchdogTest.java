@@ -55,7 +55,7 @@ class MeetingTranscriptBotWatchdogTest {
 
 	@BeforeEach
 	void setUp() {
-		AssistantService assistantService = new AssistantService(providerClient, meetingReportService);
+		AssistantService assistantService = new AssistantService(providerClient, meetingReportService, null);
 		when(transcriptCleanupService.clean(any())).thenAnswer(call -> call.getArgument(0));
 		watchdog = new MeetingTranscriptBotWatchdog(
 				meetingRepository, meetingService, assistantService, shareService, transcriptCleanupService);

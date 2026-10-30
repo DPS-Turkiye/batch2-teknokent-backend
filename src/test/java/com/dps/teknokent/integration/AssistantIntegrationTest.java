@@ -3,6 +3,7 @@ package com.dps.teknokent.integration;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,6 +19,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
+import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.responses.MeetingReportActionItem;
@@ -58,6 +60,11 @@ class AssistantIntegrationTest {
 
   @MockitoBean
   private StringRedisTemplate redisTemplate;
+
+  @BeforeEach
+  void noBotsRunning() {
+    when(meetingProviderClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(List.of()));
+  }
 
   @Test
   void addBotEndToEndReturnsCreated() throws Exception {
