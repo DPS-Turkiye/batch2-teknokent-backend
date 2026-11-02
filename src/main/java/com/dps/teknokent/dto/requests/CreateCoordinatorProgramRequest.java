@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest.PhaseInput;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -23,5 +25,7 @@ public record CreateCoordinatorProgramRequest(
 		@NotNull @Min(1) @Max(90) Integer meetingFrequencyDays,
 		@NotNull @Min(1) @Max(180) Integer communicationGapDays,
 		@NotNull @Min(1) @Max(365) Integer bottleneckFlagDays,
-		@NotNull @Size(max = 200) List<@Valid TeamInviteInput> teams) {
+		@NotNull @Size(max = 200) List<@Valid TeamInviteInput> teams,
+		@Size(max = 12) List<@Valid PhaseInput> phases,
+		UUID syllabusDocumentId) {
 }
