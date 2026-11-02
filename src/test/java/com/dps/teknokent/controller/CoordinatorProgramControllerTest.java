@@ -41,6 +41,7 @@ import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.MentorPoolService;
+import com.dps.teknokent.service.ProgramApprovalService;
 import com.dps.teknokent.service.ProgramMatchingService;
 import com.dps.teknokent.service.ProgramLaunchService;
 
@@ -61,6 +62,8 @@ class CoordinatorProgramControllerTest {
 	private MentorPoolService mentorPoolService;
 	@MockitoBean
 	private ProgramMatchingService programMatchingService;
+	@MockitoBean
+	private ProgramApprovalService programApprovalService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");
@@ -234,6 +237,33 @@ class CoordinatorProgramControllerTest {
 						.content("{\"accepted\":true}"))
 				.andExpect(status().isOk());
 		verify(mentorPoolService).decide(SIGNED_IN_ID, PROGRAM_ID, mentorId, true);
+	}
+
+	@Test
+	void decidesApplicantsAndStartupsOfTheProgramAsTheSignedInUser() throws Exception {
+		UUID person = UUID.randomUUID();
+		mockMvc.perform(post("/api/coordinator/programs/{id}/approvals/people/{userId}", PROGRAM_ID, person)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"accepted\":true}"))
+				.andExpect(status().isOk());
+		verify(programApprovalService).decidePerson(SIGNED_IN_ID, PROGRAM_ID, person, true);
+
+		UUID startup = UUID.randomUUID();
+		mockMvc.perform(post("/api/coordinator/programs/{id}/approvals/startups/{organizationId}", PROGRAM_ID,
+						startup)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"accepted\":false}"))
+				.andExpect(status().isOk());
+		verify(programApprovalService).decideStartup(SIGNED_IN_ID, PROGRAM_ID, startup, false);
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/approvals/startups/{organizationId}", PROGRAM_ID,
+						startup)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{}"))
+				.andExpect(status().isBadRequest());
 	}
 
 	@Test

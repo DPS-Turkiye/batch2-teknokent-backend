@@ -21,14 +21,18 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.dto.requests.ActorRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
+import com.dps.teknokent.dto.requests.CreateStartupRequest;
+import com.dps.teknokent.dto.requests.JoinStartupRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
+import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
+import com.dps.teknokent.service.RegistrationService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -42,6 +46,7 @@ public class OrganizationController {
 
 	private final OrganizationService organizationService;
 	private final AppUserService appUserService;
+	private final RegistrationService registrationService;
 
 	@GetMapping
 	public List<OrganizationResponse> findAll() {
@@ -75,6 +80,24 @@ public class OrganizationController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public OrganizationResponse create(@Valid @RequestBody CreateOrganizationRequest request) {
 		return organizationService.create(request);
+	}
+
+	/** "Kodum var" on /startup: an approved mentee without a startup joins one of their program's startups. */
+	@PostMapping("/join")
+	public UserResponse join(@Valid @RequestBody JoinStartupRequest request) {
+		return registrationService.joinStartup(CurrentActor.resolve(request.actorId()), request.inviteCode());
+	}
+
+	/** "Startup'ımı oluştur" on /startup; the startup waits for its program's coordinator. */
+	@PostMapping("/mine")
+	@ResponseStatus(HttpStatus.CREATED)
+	public UserResponse createOwn(@Valid @RequestBody CreateStartupRequest request) {
+		return registrationService.createStartup(CurrentActor.resolve(request.actorId()), request);
+	}
+
+	@PostMapping("/{id}/resubmit")
+	public OrganizationResponse resubmit(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return organizationService.resubmit(id, CurrentActor.resolve(actorId));
 	}
 
 	@GetMapping("/{id}/members")

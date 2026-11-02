@@ -75,6 +75,7 @@ class AuthRegistrationControllerTest {
                                   "fullName": "Ayşe Demir",
                                   "email": "ayse@startup.com",
                                   "organizationName": "GreenLoop",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa",
                                   "jobTitle": "Kurucu"
                                 }
                                 """))
@@ -175,6 +176,7 @@ class AuthRegistrationControllerTest {
                                   "fullName": "Ayşe Demir",
                                   "email": "ayse@startup.com",
                                   "organizationName": "GreenLoop",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa",
                                   "phone": "+90abc5551112233"
                                 }
                                 """))

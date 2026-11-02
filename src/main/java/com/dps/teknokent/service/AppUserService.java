@@ -206,30 +206,34 @@ public class AppUserService {
 		if (actor.getRole() != UserRole.ADMIN) {
 			throw new InvalidRequestException("Only an admin can decide account status");
 		}
-		if (request.status() != UserAccountStatus.APPROVED && request.status() != UserAccountStatus.REJECTED) {
+		return decide(domainLookupService.requireUser(userId), request.status());
+	}
+
+	/** Shared by the admin's account list and a coordinator's "Onaylar" tab. */
+	@Transactional
+	public AccountDecisionResponse decide(AppUser target, UserAccountStatus status) {
+		if (status != UserAccountStatus.APPROVED && status != UserAccountStatus.REJECTED) {
 			throw new InvalidRequestException("Account status can only be set to APPROVED or REJECTED");
 		}
-
-		AppUser target = domainLookupService.requireUser(userId);
 		if (target.getStatus() != UserAccountStatus.PENDING) {
 			throw new InvalidRequestException("Only pending accounts can be decided");
 		}
 
-		target.setStatus(request.status());
+		target.setStatus(status);
 		appUserRepository.save(target);
 
 		String inviteCode = null;
-		if (request.status() == UserAccountStatus.APPROVED) {
+		if (status == UserAccountStatus.APPROVED) {
 			inviteCode = organizationRepository.findByFounderId(target.getId())
 					.map(this::ensureInviteCode)
 					.orElse(null);
 		}
 		notificationService.create(
 				target,
-				request.status() == UserAccountStatus.APPROVED
+				status == UserAccountStatus.APPROVED
 						? Texts.get(target, "notification.applicationApproved.title")
 						: Texts.get(target, "notification.applicationRejected.title"),
-				request.status() == UserAccountStatus.APPROVED
+				status == UserAccountStatus.APPROVED
 						? Texts.get(target, "notification.applicationApproved.body")
 						: Texts.get(target, "notification.applicationRejected.body"),
 				"/application-status");

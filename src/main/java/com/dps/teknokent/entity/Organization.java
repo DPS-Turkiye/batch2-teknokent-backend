@@ -18,6 +18,7 @@ import com.dps.teknokent.domain.StartupProgramLevelConverter;
 import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.StartupSectorConverter;
 import com.dps.teknokent.domain.StartupStage;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.util.TextUtils;
 
@@ -119,6 +120,11 @@ public class Organization {
 	// Null means no assignment yet, or none chosen.
 	@Column(name = "active_program_id")
 	private UUID activeProgramId;
+
+	/** Only a startup created after signup waits for its own approval; one from signup is approved with its founder. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "approval_status", nullable = false, length = 16)
+	private UserAccountStatus approvalStatus = UserAccountStatus.APPROVED;
 
 	@Column(name = "status_version", length = 32)
 	private String statusVersion;

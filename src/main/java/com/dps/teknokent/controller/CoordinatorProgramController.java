@@ -20,6 +20,7 @@ import com.dps.teknokent.dto.requests.AddProgramTeamsRequest;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
 import com.dps.teknokent.dto.requests.CreateProgramMatchRequest;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
+import com.dps.teknokent.dto.requests.DecideApprovalRequest;
 import com.dps.teknokent.dto.requests.DecideProgramMentorRequest;
 import com.dps.teknokent.dto.requests.InviteProgramMentorRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -28,6 +29,7 @@ import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.MentorPoolResponse;
+import com.dps.teknokent.dto.responses.ProgramApprovalsResponse;
 import com.dps.teknokent.dto.responses.ProgramMatchingResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamDetailResponse;
@@ -35,6 +37,7 @@ import com.dps.teknokent.dto.responses.ProgramTeamResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.MentorPoolService;
+import com.dps.teknokent.service.ProgramApprovalService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
 import com.dps.teknokent.service.ProgramMatchingService;
@@ -54,6 +57,7 @@ public class CoordinatorProgramController {
 	private final ProgramLaunchService programLaunchService;
 	private final MentorPoolService mentorPoolService;
 	private final ProgramMatchingService programMatchingService;
+	private final ProgramApprovalService programApprovalService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -193,6 +197,38 @@ public class CoordinatorProgramController {
 			@PathVariable UUID organizationId,
 			@RequestParam(required = false) UUID actorId) {
 		return programLaunchService.teamDetail(CurrentActor.resolve(actorId), id, organizationId);
+	}
+
+	@GetMapping("/{id}/approvals")
+	public ProgramApprovalsResponse approvals(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return programApprovalService.approvals(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/approvals/people/{userId}")
+	public ProgramApprovalsResponse decidePerson(
+			@PathVariable UUID id,
+			@PathVariable UUID userId,
+			@Valid @RequestBody DecideApprovalRequest request) {
+		return programApprovalService.decidePerson(CurrentActor.resolve(request.actorId()), id, userId,
+				request.accepted());
+	}
+
+	@PostMapping("/{id}/approvals/startups/{organizationId}")
+	public ProgramApprovalsResponse decideStartup(
+			@PathVariable UUID id,
+			@PathVariable UUID organizationId,
+			@Valid @RequestBody DecideApprovalRequest request) {
+		return programApprovalService.decideStartup(CurrentActor.resolve(request.actorId()), id, organizationId,
+				request.accepted());
+	}
+
+	@GetMapping("/{id}/without-team")
+	public List<ProgramApprovalsResponse.Person> withoutTeam(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return programApprovalService.withoutTeam(CurrentActor.resolve(actorId), id);
 	}
 
 	@GetMapping("/{id}/mentors")

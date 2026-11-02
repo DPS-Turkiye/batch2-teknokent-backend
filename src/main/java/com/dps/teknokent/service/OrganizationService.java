@@ -128,6 +128,17 @@ public class OrganizationService {
 		return new OrganizationInviteResponse(organization.getId(), inviteCode);
 	}
 
+	/** After a coordinator's rejection, the founder fixes the startup and sends it back for approval. */
+	@Transactional
+	public OrganizationResponse resubmit(UUID organizationId, UUID actorId) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		if (!isFounder(organization, actorId) || organization.getApprovalStatus() != UserAccountStatus.REJECTED) {
+			throw new InvalidRequestException("Only the founder can send a rejected startup back for approval");
+		}
+		organization.setApprovalStatus(UserAccountStatus.PENDING);
+		return OrganizationResponse.fromEntity(organizationRepository.save(organization));
+	}
+
 	private static boolean isAdmin(AppUser actor) {
 		return actor.getRole() == UserRole.ADMIN;
 	}
