@@ -25,6 +25,8 @@ import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.InvalidRequestException;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.InviteCodeGenerator;
 
@@ -75,8 +77,10 @@ class OrganizationServiceTest {
         when(domainLookupService.requireUser(OTHER_ID)).thenReturn(outsider);
 
         assertThatThrownBy(() -> organizationService.getInviteCode(ORGANIZATION_ID, OTHER_ID))
-                .isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("admin or the organization founder");
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("admin or the organization founder")
+                .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode())
+                        .isEqualTo(HttpStatus.FORBIDDEN));
     }
 
     @Test
