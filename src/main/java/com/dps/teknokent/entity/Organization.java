@@ -139,6 +139,15 @@ public class Organization {
 	@Column(name = "current_stage", length = 32)
 	private StartupStage currentStage;
 
+	/**
+	 * A program team: approved itself and, for a startup from signup, its founder approved too. Anything still
+	 * waiting is listed only in the coordinator's "Onaylar" tab, not among the teams or in matching.
+	 */
+	public boolean isApprovedForProgram() {
+		return approvalStatus == UserAccountStatus.APPROVED
+				&& (founder == null || founder.getStatus() == UserAccountStatus.APPROVED);
+	}
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
