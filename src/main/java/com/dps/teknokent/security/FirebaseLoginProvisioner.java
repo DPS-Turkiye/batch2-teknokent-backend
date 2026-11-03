@@ -115,14 +115,15 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
-	public void revokeSignIns(String uid) {
+	public void revokeSignIns(String email) {
 		try {
-			firebaseAuth.revokeRefreshTokens(uid);
+			firebaseAuth.revokeRefreshTokens(firebaseAuth.getUserByEmail(email).getUid());
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				log.warn("No Firebase login for {}; only app sessions are ended", email);
 				return;
 			}
-			log.error("Could not revoke the Firebase sign-ins of {}: {} {}", uid, exception.getErrorCode(),
+			log.error("Could not revoke the Firebase sign-ins of {}: {} {}", email, exception.getErrorCode(),
 					exception.getMessage());
 			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
 					Texts.forRequest("error.signInRevokeFailed", exception.getErrorCode()), exception);
