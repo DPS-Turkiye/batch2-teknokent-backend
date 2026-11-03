@@ -40,7 +40,6 @@ public class RateLimitingConfig {
 		if (redisStore != null) {
 			return redisStore.resolveBucket(key, capacity, refillIntervalMs);
 		}
-		// Fallback to memory cache
 		return memoryCache.computeIfAbsent(key, k -> new TokenBucket(capacity, refillIntervalMs));
 	}
 
@@ -62,7 +61,6 @@ public class RateLimitingConfig {
 			String lastRefillKey = KEY_PREFIX + ipAddress + LAST_REFILL_SUFFIX;
 
 			try {
-				// Try to get from Redis
 				String tokensStr = redisTemplate.opsForValue().get(tokensKey);
 				String lastRefillStr = redisTemplate.opsForValue().get(lastRefillKey);
 
