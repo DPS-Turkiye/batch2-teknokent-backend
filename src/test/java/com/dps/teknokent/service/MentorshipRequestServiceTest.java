@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,7 @@ import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.Texts;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
@@ -53,6 +55,7 @@ import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestWorkspaceQuery;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
 import org.springframework.data.domain.PageImpl;
@@ -93,6 +96,12 @@ class MentorshipRequestServiceTest {
 
         @Mock
         private DocumentRequestService documentRequestService;
+
+        @Mock
+        private MenteeProgramService menteeProgramService;
+
+        @Mock
+        private ProgramRepository programRepository;
 
     @InjectMocks
         private MentorshipRequestService mentorshipRequestService;
@@ -1026,5 +1035,68 @@ class MentorshipRequestServiceTest {
                 user.setFullName(fullName);
                 user.setRole(role);
                 return user;
+        }
+
+        @Test
+        void create_refusesAMentorOutsideTheMenteesProgram() {
+                UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+                UUID programId = UUID.fromString("00000000-0000-0000-0000-0000000005a1");
+                Organization organization = organization(organizationId, "Teknokent");
+                when(domainLookupService.requireUser(requesterId))
+                                .thenReturn(user(requesterId, "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE));
+                when(domainLookupService.requireUser(mentorId))
+                                .thenReturn(user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR));
+                when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+                when(menteeProgramService.programOf(organization)).thenReturn(Optional.of(programId));
+                when(menteeProgramService.acceptedMentorIds(programId)).thenReturn(Set.of(UUID.randomUUID()));
+
+                assertThatThrownBy(() -> mentorshipRequestService.create(
+                                submission(requesterId, organizationId, mentorId)))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessageContaining("mentor havuzunda değil");
+                verify(mentorshipRequestRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        void create_recordsTheMenteesProgramOnTheRequest() {
+                UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+                UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+                UUID requestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+                Program program = new Program();
+                program.setId(UUID.fromString("00000000-0000-0000-0000-0000000005a1"));
+                program.setName("METU BİGG 2026");
+                Organization organization = organization(organizationId, "Teknokent");
+                when(domainLookupService.requireUser(requesterId))
+                                .thenReturn(user(requesterId, "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE));
+                when(domainLookupService.requireUser(mentorId))
+                                .thenReturn(user(mentorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR));
+                when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+                when(menteeProgramService.programOf(organization)).thenReturn(Optional.of(program.getId()));
+                when(menteeProgramService.acceptedMentorIds(program.getId())).thenReturn(Set.of(mentorId));
+                when(programRepository.findById(program.getId())).thenReturn(Optional.of(program));
+                when(mentorshipRequestRepository.saveAndFlush(any(MentorshipRequest.class))).thenAnswer(invocation -> {
+                        MentorshipRequest saved = invocation.getArgument(0);
+                        saved.setId(requestId);
+                        return saved;
+                });
+                when(mentorshipRequestMessageRepository.findByRequestIdOrderByCreatedAtAsc(requestId))
+                                .thenReturn(List.of());
+                when(recommendationRunRepository.findByRequestId(requestId)).thenReturn(Optional.empty());
+
+                var result = mentorshipRequestService.create(submission(requesterId, organizationId, mentorId));
+
+                assertThat(result.programId()).isEqualTo(program.getId());
+                assertThat(result.programName()).isEqualTo("METU BİGG 2026");
+        }
+
+        private static CreateMentorshipRequestSubmission submission(UUID requesterId, UUID organizationId,
+                        UUID mentorId) {
+                return new CreateMentorshipRequestSubmission(requesterId, organizationId, mentorId, "Arda Demir",
+                                "Product strategy", "We need help validating our roadmap.",
+                                MentorshipRequestUrgency.THIS_WEEK, MentorshipRequestFormat.SINGLE_MEETING,
+                                MeetingMode.ONLINE, "Need guidance", null, null);
         }
 }

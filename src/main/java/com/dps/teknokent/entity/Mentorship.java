@@ -58,6 +58,11 @@ public class Mentorship {
 	@JoinColumn(name = "organization_id", nullable = false)
 	private Organization organization;
 
+	/** The mentee's program when this began; null for a startup outside any program. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "program_id")
+	private Program program;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private MentorshipStatus status;

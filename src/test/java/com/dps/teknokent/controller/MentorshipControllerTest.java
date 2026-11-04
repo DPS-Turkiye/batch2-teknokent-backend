@@ -60,7 +60,7 @@ class MentorshipControllerTest {
 				1,
 				"Product-market fit validation and go-to-market planning",
 				List.of(),
-				0)));
+				0, null, null)));
 
 		mockMvc.perform(get("/api/mentorships").with(user("test-user")))
 				.andExpect(status().isOk())
@@ -89,7 +89,7 @@ class MentorshipControllerTest {
 				1,
 				"Define roadmap and validate product strategy",
 				List.of(),
-				0));
+				0, null, null));
 
 		mockMvc.perform(post("/api/mentorships")
 						.with(user("test-user"))

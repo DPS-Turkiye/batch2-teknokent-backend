@@ -161,7 +161,7 @@ public class ProgramMatchingService {
 			throw new ConflictException("This mentor is already working with this team.");
 		}
 		Need need = needOf(team);
-		mentorshipRepository.save(Mentorship.fromRequest(
+		Mentorship matched = Mentorship.fromRequest(
 				new CreateMentorshipRequest(
 						mentorId,
 						team.getId(),
@@ -171,7 +171,9 @@ public class ProgramMatchingService {
 						1,
 						need.topic()),
 				mentor,
-				team));
+				team);
+		matched.setProgram(program);
+		mentorshipRepository.save(matched);
 		closeOpenRequests(team, mentorId);
 		notificationService.create(
 				mentor,

@@ -33,6 +33,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipGoalRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipWeekCheckRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
@@ -48,6 +49,8 @@ public class MentorshipService {
 	private final AppUserRepository appUserRepository;
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
+	private final MenteeProgramService menteeProgramService;
+	private final ProgramRepository programRepository;
 
 	@Transactional(readOnly = true)
 	public List<MentorshipResponse> findAll() {
@@ -104,6 +107,8 @@ public class MentorshipService {
 						request.goals()),
 				mentor,
 				organization);
+		menteeProgramService.programOf(organization).flatMap(programRepository::findById)
+				.ifPresent(mentorship::setProgram);
 		Mentorship saved = mentorshipRepository.save(mentorship);
 		notifyOrgMentees(saved);
 		return toResponse(saved);

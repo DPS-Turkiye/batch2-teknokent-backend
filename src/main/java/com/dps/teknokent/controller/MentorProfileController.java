@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,9 +42,10 @@ public class MentorProfileController {
 	private final MentorProfileService mentorProfileService;
 	private final MentorRatingService mentorRatingService;
 
+	/** A mentee in a program sees only that program's accepted mentors; everyone else sees them all. */
 	@GetMapping
-	public List<MentorProfileResponse> findAll() {
-		return mentorProfileService.findAll();
+	public List<MentorProfileResponse> findAll(@RequestParam(required = false) UUID actorId) {
+		return mentorProfileService.findReachable(CurrentActor.resolveOptional(actorId));
 	}
 
 	@GetMapping("/{id}")

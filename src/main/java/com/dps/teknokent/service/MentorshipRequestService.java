@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -61,6 +62,7 @@ import com.dps.teknokent.util.ProposedSlots;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -77,6 +79,8 @@ public class MentorshipRequestService {
 	private final MeetingRepository meetingRepository;
 	private final DomainLookupService domainLookupService;
 	private final MentorProfileService mentorProfileService;
+	private final MenteeProgramService menteeProgramService;
+	private final ProgramRepository programRepository;
 	private final NotificationService notificationService;
 	private final MailService mailService;
 	private final DocumentRequestService documentRequestService;
@@ -142,7 +146,12 @@ public class MentorshipRequestService {
 		if (organization.getApprovalStatus() != UserAccountStatus.APPROVED) {
 			throw new InvalidRequestException(Texts.forRequest("error.startupNotApproved"));
 		}
+		Optional<UUID> programId = menteeProgramService.programOf(organization);
+		if (programId.isPresent() && !menteeProgramService.acceptedMentorIds(programId.get()).contains(mentor.getId())) {
+			throw new InvalidRequestException(Texts.forRequest("error.mentorOutsideProgram"));
+		}
 		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(request, requester, organization, mentor);
+		programId.flatMap(programRepository::findById).ifPresent(mentorshipRequest::setProgram);
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(mentorshipRequest);
 		if (request.recommendationSnapshot() != null) {
 			saveRecommendationSnapshot(savedRequest, request.recommendationSnapshot());
@@ -379,7 +388,13 @@ public class MentorshipRequestService {
 
 	@Transactional(readOnly = true)
 	public List<MentorProfileResponse> findAlternatives(UUID id) {
-		return mentorProfileService.findAllExcept(requireRequest(id).getMentor().getId());
+		MentorshipRequest request = requireRequest(id);
+		UUID current = request.getMentor().getId();
+		if (request.getProgram() == null) {
+			return mentorProfileService.findAllExcept(current);
+		}
+		return mentorProfileService.findAmongExcept(
+				menteeProgramService.acceptedMentorIds(request.getProgram().getId()), current);
 	}
 
 	private void saveRecommendationSnapshot(
