@@ -412,7 +412,7 @@ class RegistrationServiceTest {
         registrationService.joinStartup(USER_ID, "KARGO1");
 
         verify(notificationService).create(argThat(recipient -> recipient == leader),
-                argThat(title -> title.contains(person.getFullName())), any(String.class), argThat("/team"::equals));
+                argThat(title -> title.contains(person.getFullName())), any(String.class), argThat("/startup/team"::equals));
     }
 
     @Test

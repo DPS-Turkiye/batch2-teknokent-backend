@@ -383,7 +383,7 @@ public class RegistrationService {
 		notificationService.create(leader, Texts.get(leader, "notification.teamMemberJoined.title",
 				member.getFullName()),
 				Texts.get(leader, "notification.teamMemberJoined.body", member.getFullName(), organization.getName()),
-				"/team");
+				"/startup/team");
 	}
 
 	private void applyFirebaseIdentity(AppUser user, String email) {

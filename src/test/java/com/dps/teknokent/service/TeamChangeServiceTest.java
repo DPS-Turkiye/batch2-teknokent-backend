@@ -155,7 +155,7 @@ class TeamChangeServiceTest {
 
 		assertThat(result.kind()).isEqualTo(TeamChangeKind.REMOVE);
 		assertThat(result.requestedById()).isEqualTo(LEADER_ID);
-		verify(notificationService).create(eq(member), anyString(), anyString(), eq("/team"));
+		verify(notificationService).create(eq(member), anyString(), anyString(), eq("/startup/team"));
 		verify(notificationService).create(eq(coordinator), anyString(), anyString(), anyString());
 	}
 
@@ -190,7 +190,7 @@ class TeamChangeServiceTest {
 		assertThat(leader.getProgramId()).isEqualTo(PROGRAM_ID);
 		verify(teamMembershipService).left(leader, startup, TeamExitReason.LEFT);
 		verify(taskHandoverService).markLeft(leader, startup);
-		verify(notificationService).create(eq(member), anyString(), anyString(), eq("/team"));
+		verify(notificationService).create(eq(member), anyString(), anyString(), eq("/startup/team"));
 	}
 
 	@Test
@@ -242,7 +242,7 @@ class TeamChangeServiceTest {
 		verify(teamMembershipService).left(member, startup, TeamExitReason.LEFT);
 		verify(taskHandoverService).markLeft(member, startup);
 		verify(notificationService).create(eq(member), anyString(), anyString(), eq("/startup"));
-		verify(notificationService).create(eq(leader), anyString(), anyString(), eq("/team"));
+		verify(notificationService).create(eq(leader), anyString(), anyString(), eq("/startup/team"));
 	}
 
 	@Test
@@ -264,8 +264,8 @@ class TeamChangeServiceTest {
 
 		assertThat(request.getStatus()).isEqualTo(TeamChangeStatus.REJECTED);
 		assertThat(member.getOrganization()).isSameAs(startup);
-		verify(notificationService).create(eq(leader), anyString(), anyString(), eq("/team"));
-		verify(notificationService).create(eq(member), anyString(), anyString(), eq("/team"));
+		verify(notificationService).create(eq(leader), anyString(), anyString(), eq("/startup/team"));
+		verify(notificationService).create(eq(member), anyString(), anyString(), eq("/startup/team"));
 		verify(taskHandoverService, never()).markLeft(any(), any());
 	}
 

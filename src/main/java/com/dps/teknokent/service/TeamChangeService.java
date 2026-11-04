@@ -83,7 +83,7 @@ public class TeamChangeService {
 		notificationService.create(member, Texts.get(member, "notification.teamRemovalRequestedMember.title"),
 				Texts.get(member, "notification.teamRemovalRequestedMember.body", leader.getFullName(),
 						organization.getName()),
-				"/team");
+				"/startup/team");
 		return opened;
 	}
 
@@ -136,7 +136,7 @@ public class TeamChangeService {
 		notificationService.create(successor, Texts.get(successor, "notification.teamLeaderChanged.title"),
 				Texts.get(successor, "notification.teamLeaderChanged.body", leader.getFullName(),
 						organization.getName()),
-				"/team");
+				"/startup/team");
 		programId.ifPresent(id -> notifyCoordinators(id, "notification.teamLeaderLeft", leader.getFullName(),
 				organization.getName(), successor.getFullName()));
 		return UserResponse.fromEntity(leader);
@@ -179,7 +179,7 @@ public class TeamChangeService {
 		if (leader != null) {
 			String leaderKey = removed ? "notification.teamMemberRemoved" : "notification.teamMemberLeft";
 			notificationService.create(leader, Texts.get(leader, leaderKey + ".title", member.getFullName()),
-					Texts.get(leader, leaderKey + ".body", member.getFullName(), organization.getName()), "/team");
+					Texts.get(leader, leaderKey + ".body", member.getFullName(), organization.getName()), "/startup/team");
 		}
 	}
 
@@ -250,7 +250,7 @@ public class TeamChangeService {
 	private void notifyRejected(TeamChangeRequest request, AppUser recipient) {
 		notificationService.create(recipient, Texts.get(recipient, "notification.teamChangeRejected.title"),
 				Texts.get(recipient, "notification.teamChangeRejected.body", request.getOrganization().getName()),
-				"/team");
+				"/startup/team");
 	}
 
 	private void notifyCoordinators(UUID programId, String key, Object... args) {
