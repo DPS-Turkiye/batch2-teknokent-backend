@@ -224,6 +224,15 @@ public class CoordinatorProgramController {
 				request.accepted());
 	}
 
+	@PostMapping("/{id}/approvals/team-changes/{requestId}")
+	public ProgramApprovalsResponse decideTeamChange(
+			@PathVariable UUID id,
+			@PathVariable UUID requestId,
+			@Valid @RequestBody DecideApprovalRequest request) {
+		return programApprovalService.decideTeamChange(CurrentActor.resolve(request.actorId()), id, requestId,
+				request.accepted());
+	}
+
 	@GetMapping("/{id}/without-team")
 	public List<ProgramApprovalsResponse.Person> withoutTeam(
 			@PathVariable UUID id,

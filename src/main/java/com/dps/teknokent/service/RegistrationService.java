@@ -67,6 +67,8 @@ public class RegistrationService {
 	private final ProgramMentorRepository programMentorRepository;
 	private final DomainLookupService domainLookupService;
 	private final InviteCodeGenerator inviteCodeGenerator;
+	private final TeamMembershipService teamMembershipService;
+	private final NotificationService notificationService;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
@@ -94,6 +96,7 @@ public class RegistrationService {
 		organization.setFounder(founder);
 		attachDeclaredProgram(organization, request.programId());
 		organizationRepository.saveAndFlush(organization);
+		teamMembershipService.joined(founder, organization);
 		savePendingMembers(organization, request.teamMembers());
 		discardOnboardingDraft();
 
@@ -128,7 +131,10 @@ public class RegistrationService {
 		}
 		person.setOrganization(organization);
 		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), person.getEmail());
-		return UserResponse.fromEntity(appUserRepository.save(person));
+		AppUser joined = appUserRepository.save(person);
+		teamMembershipService.joined(joined, organization);
+		notifyLeaderOfNewMember(organization, joined);
+		return UserResponse.fromEntity(joined);
 	}
 
 	/**
@@ -151,7 +157,9 @@ public class RegistrationService {
 		savePendingMembers(organization, request.teamMembers());
 
 		person.setOrganization(organization);
-		return UserResponse.fromEntity(appUserRepository.save(person));
+		AppUser founder = appUserRepository.save(person);
+		teamMembershipService.joined(founder, organization);
+		return UserResponse.fromEntity(founder);
 	}
 
 	private AppUser requireWithoutStartup(UUID actorId) {
@@ -185,6 +193,7 @@ public class RegistrationService {
 		appUserRepository.saveAndFlush(lead);
 		organization.setFounder(lead);
 		organizationRepository.saveAndFlush(organization);
+		teamMembershipService.joined(lead, organization);
 
 		ProgramStartup membership = new ProgramStartup();
 		membership.setId(UUID.randomUUID());
@@ -359,7 +368,22 @@ public class RegistrationService {
 				UserAccountStatus.APPROVED, organization);
 		applyFirebaseIdentity(member, email);
 		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), email);
-		return UserResponse.fromEntity(appUserRepository.save(member));
+		AppUser joined = appUserRepository.save(member);
+		teamMembershipService.joined(joined, organization);
+		notifyLeaderOfNewMember(organization, joined);
+		return UserResponse.fromEntity(joined);
+	}
+
+	/** Whoever joins with the startup's code, at signup or later, is announced to the team's current leader. */
+	private void notifyLeaderOfNewMember(Organization organization, AppUser member) {
+		AppUser leader = organization.getFounder();
+		if (leader == null || leader.getId().equals(member.getId())) {
+			return;
+		}
+		notificationService.create(leader, Texts.get(leader, "notification.teamMemberJoined.title",
+				member.getFullName()),
+				Texts.get(leader, "notification.teamMemberJoined.body", member.getFullName(), organization.getName()),
+				"/team");
 	}
 
 	private void applyFirebaseIdentity(AppUser user, String email) {

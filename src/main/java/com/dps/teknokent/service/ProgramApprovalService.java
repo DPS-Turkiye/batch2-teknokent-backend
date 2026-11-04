@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import com.dps.teknokent.domain.TeamChangeStatus;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.ProgramApprovalsResponse;
+import com.dps.teknokent.dto.responses.TeamChangeResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.ProgramStartup;
@@ -19,6 +21,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -38,6 +41,8 @@ public class ProgramApprovalService {
 	private final AppUserRepository appUserRepository;
 	private final OrganizationRepository organizationRepository;
 	private final ProgramStartupRepository programStartupRepository;
+	private final TeamChangeRequestRepository teamChangeRequestRepository;
+	private final TeamChangeService teamChangeService;
 
 	@Transactional(readOnly = true)
 	public ProgramApprovalsResponse approvals(UUID actorId, UUID programId) {
@@ -90,6 +95,13 @@ public class ProgramApprovalService {
 		return approvalsOf(programId);
 	}
 
+	@Transactional
+	public ProgramApprovalsResponse decideTeamChange(UUID actorId, UUID programId, UUID requestId, boolean accepted) {
+		coordinatorProgramService.requireManagedProgram(actorId, programId);
+		teamChangeService.decide(actorId, programId, requestId, accepted);
+		return approvalsOf(programId);
+	}
+
 	private ProgramApprovalsResponse approvalsOf(UUID programId) {
 		List<ProgramApprovalsResponse.Person> people = appUserRepository
 				.findByProgramIdAndRoleAndStatusOrderByCreatedAtAsc(programId, UserRole.MENTEE,
@@ -107,6 +119,10 @@ public class ProgramApprovalService {
 						.stream()
 						.map(ProgramApprovalsResponse.Startup::of)
 						.toList();
-		return new ProgramApprovalsResponse(people, startups);
+		List<TeamChangeResponse> teamChanges = teamChangeRequestRepository
+				.findByProgramIdAndStatusOrderByCreatedAtAsc(programId, TeamChangeStatus.PENDING).stream()
+				.map(TeamChangeResponse::of)
+				.toList();
+		return new ProgramApprovalsResponse(people, startups, teamChanges);
 	}
 }

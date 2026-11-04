@@ -23,16 +23,19 @@ import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.dto.requests.CreateStartupRequest;
 import com.dps.teknokent.dto.requests.JoinStartupRequest;
+import com.dps.teknokent.dto.requests.LeaveTeamRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
+import com.dps.teknokent.dto.responses.TeamChangeResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
 import com.dps.teknokent.service.RegistrationService;
+import com.dps.teknokent.service.TeamChangeService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -47,6 +50,7 @@ public class OrganizationController {
 	private final OrganizationService organizationService;
 	private final AppUserService appUserService;
 	private final RegistrationService registrationService;
+	private final TeamChangeService teamChangeService;
 
 	@GetMapping
 	public List<OrganizationResponse> findAll() {
@@ -122,13 +126,49 @@ public class OrganizationController {
 				CurrentActor.resolve(request.actorId()), request.fullName(), request.jobTitle()));
 	}
 
+	/** Only for a startup outside any program; inside one, removing a member goes through a removal request. */
 	@DeleteMapping("/{id}/members/{memberId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void removeMember(
 			@PathVariable UUID id,
 			@PathVariable UUID memberId,
 			@RequestParam(required = false) UUID actorId) {
-		appUserService.removeOrganizationMember(id, memberId, CurrentActor.resolve(actorId));
+		teamChangeService.removeOutsideProgram(CurrentActor.resolve(actorId), id, memberId);
+	}
+
+	/** Leave and removal requests of this startup still waiting for the coordinator. */
+	@GetMapping("/{id}/team-changes")
+	public List<TeamChangeResponse> teamChanges(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return teamChangeService.pending(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/leave-request")
+	@ResponseStatus(HttpStatus.CREATED)
+	public TeamChangeResponse requestLeave(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return teamChangeService.requestLeave(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/members/{memberId}/removal-request")
+	@ResponseStatus(HttpStatus.CREATED)
+	public TeamChangeResponse requestRemoval(
+			@PathVariable UUID id,
+			@PathVariable UUID memberId,
+			@RequestParam(required = false) UUID actorId) {
+		return teamChangeService.requestRemoval(CurrentActor.resolve(actorId), id, memberId);
+	}
+
+	@PostMapping("/{id}/team-changes/{requestId}/cancel")
+	public TeamChangeResponse cancelTeamChange(
+			@PathVariable UUID id,
+			@PathVariable UUID requestId,
+			@RequestParam(required = false) UUID actorId) {
+		return teamChangeService.cancel(CurrentActor.resolve(actorId), requestId);
+	}
+
+	/** The leader leaves at once, naming a successor; a startup nobody else is in is archived. */
+	@PostMapping("/{id}/leave")
+	public UserResponse leaveAsLeader(@PathVariable UUID id, @RequestBody LeaveTeamRequest request) {
+		return teamChangeService.leaveAsLeader(CurrentActor.resolve(request.actorId()), id, request.successorId());
 	}
 
 	@GetMapping("/{id}/pending-members")

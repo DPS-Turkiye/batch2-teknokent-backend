@@ -42,6 +42,7 @@ import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
 import com.dps.teknokent.service.RegistrationService;
+import com.dps.teknokent.service.TeamChangeService;
 
 @WebMvcTest(OrganizationController.class)
 @Import(SecurityConfig.class)
@@ -71,6 +72,9 @@ class OrganizationControllerTest {
 
     @MockitoBean
     private RegistrationService registrationService;
+
+    @MockitoBean
+    private TeamChangeService teamChangeService;
 
     @Test
     void requiresAuthenticationForOrganizations() throws Exception {
@@ -269,7 +273,7 @@ class OrganizationControllerTest {
                         .with(user("test-user")))
                 .andExpect(status().isNoContent());
 
-        verify(appUserService).removeOrganizationMember(organizationId, memberId, actorId);
+        verify(teamChangeService).removeOutsideProgram(actorId, organizationId, memberId);
     }
 
     @Test
@@ -375,6 +379,6 @@ class OrganizationControllerTest {
                         .with(authentication(signedInAs(signedIn))))
                 .andExpect(status().isNoContent());
 
-        verify(appUserService).removeOrganizationMember(organizationId, memberId, signedIn);
+        verify(teamChangeService).removeOutsideProgram(signedIn, organizationId, memberId);
     }
 }
