@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,10 +83,16 @@ public class CoordinatorMentorshipService {
 		List<Program> scope = programService.scopeOf(actorId, managed, programId);
 		Snapshot snapshot = programService.snapshot(scope);
 		Context context = context(scope, snapshot);
-		return context.programOf().entrySet().stream()
-				.flatMap(entry -> CoordinatorProgramService.mentorshipsOf(snapshot, entry.getKey()).stream()
+		// Each mentorship is listed once, under the program it was made in. One made before V82 has no program
+		// and is listed under the first of the team's programs here, as before.
+		Set<UUID> listed = new HashSet<>();
+		return scope.stream()
+				.flatMap(program -> snapshot.startups().getOrDefault(program.getId(), List.of()).stream()
+						.flatMap(startup -> CoordinatorProgramService
+								.mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId()).stream())
 						.filter(mentorship -> LISTED.contains(mentorship.getStatus()))
-						.map(mentorship -> row(mentorship, entry.getValue(), snapshot, context)))
+						.filter(mentorship -> listed.add(mentorship.getId()))
+						.map(mentorship -> row(mentorship, program, snapshot, context)))
 				.sorted(Comparator
 						.comparingInt((CoordinatorMentorshipResponse row) -> RISK_ORDER.indexOf(row.health()))
 						.thenComparing(
@@ -270,6 +277,13 @@ public class CoordinatorMentorshipService {
 				.orElseThrow(() -> new ResourceNotFoundException("Mentorship not found: " + mentorshipId));
 		Map<UUID, Program> managed = programService.managedPrograms(actor).stream()
 				.collect(Collectors.toMap(Program::getId, program -> program, (first, second) -> first, LinkedHashMap::new));
+		if (mentorship.getProgram() != null) {
+			Program program = managed.get(mentorship.getProgram().getId());
+			if (program == null) {
+				throw new InvalidRequestException("This mentorship is not in one of your programs.");
+			}
+			return new Scoped(mentorship, program);
+		}
 		UUID organizationId = mentorship.getOrganization().getId();
 		Program program = managed.isEmpty()
 				? null

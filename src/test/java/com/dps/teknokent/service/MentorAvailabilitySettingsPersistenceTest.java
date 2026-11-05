@@ -35,7 +35,7 @@ import jakarta.persistence.EntityManager;
  * can't see Hibernate's insert-before-delete flush order or the unique constraints.
  */
 @DataJpaTest
-@Import({ MentorProfileService.class, DomainLookupService.class })
+@Import({ MentorProfileService.class, DomainLookupService.class, MenteeProgramService.class })
 class MentorAvailabilitySettingsPersistenceTest {
 
 	@Autowired

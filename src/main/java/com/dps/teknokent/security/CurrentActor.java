@@ -14,6 +14,18 @@ public final class CurrentActor {
 
 	// A verified bearer token always wins; the actorId is only trusted on the
 	// shared service credentials the Next.js proxy uses.
+	/**
+	 * Like {@link #resolve}, but null instead of an error when nobody is named: for reads that only narrow what a
+	 * known caller sees. A signed-in caller is always themselves.
+	 */
+	public static UUID resolveOptional(UUID requestedActorId) {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {
+			return principal.id();
+		}
+		return requestedActorId;
+	}
+
 	public static UUID resolve(UUID requestedActorId) {
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {

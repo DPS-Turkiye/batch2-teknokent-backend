@@ -65,7 +65,9 @@ public class AdminInterventionService {
 		if (interventionRepository.findByMentorshipIdAndResolvedAtIsNull(mentorship.getId()).isPresent()) {
 			throw new InvalidRequestException("Bu mentorluk zaten takipte.");
 		}
-		Program program = programOf(mentorship.getOrganization());
+		Program program = mentorship.getProgram() != null
+				? mentorship.getProgram()
+				: programOf(mentorship.getOrganization());
 		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
 		String action = request.action().trim();
 		String note = TextUtils.normalizeOptional(request.note());

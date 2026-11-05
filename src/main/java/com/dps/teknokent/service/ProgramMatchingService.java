@@ -161,7 +161,7 @@ public class ProgramMatchingService {
 			throw new ConflictException("This mentor is already working with this team.");
 		}
 		Need need = needOf(team);
-		mentorshipRepository.save(Mentorship.fromRequest(
+		Mentorship matched = Mentorship.fromRequest(
 				new CreateMentorshipRequest(
 						mentorId,
 						team.getId(),
@@ -171,7 +171,9 @@ public class ProgramMatchingService {
 						1,
 						need.topic()),
 				mentor,
-				team));
+				team);
+		matched.setProgram(program);
+		mentorshipRepository.save(matched);
 		closeOpenRequests(team, mentorId);
 		notificationService.create(
 				mentor,
@@ -194,7 +196,11 @@ public class ProgramMatchingService {
 		Map<UUID, Organization> teams = organizationRepository.findAllById(teamIds).stream()
 				.filter(Organization::isApprovedForProgram)
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
-		List<Mentorship> mentorships = teamIds.isEmpty() ? List.of() : mentorshipRepository.findByOrganizationIdIn(teamIds);
+		List<Mentorship> mentorships = teamIds.isEmpty()
+				? List.of()
+				: mentorshipRepository.findByOrganizationIdIn(teamIds).stream()
+						.filter(mentorship -> CoordinatorProgramService.countsIn(mentorship, Set.of(program.getId())))
+						.toList();
 		Set<UUID> matchedTeams = mentorships.stream()
 				.filter(mentorship -> MATCHED.contains(mentorship.getStatus()))
 				.map(mentorship -> mentorship.getOrganization().getId())

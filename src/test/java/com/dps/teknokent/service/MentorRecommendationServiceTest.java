@@ -1,6 +1,8 @@
 package com.dps.teknokent.service;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -24,12 +26,15 @@ class MentorRecommendationServiceTest {
 	private MentorProfileService mentorProfileService;
 	@Mock
 	private PgVectorMentorRetrievalService pgVectorRetrievalService;
+	@Mock
+	private MenteeProgramService menteeProgramService;
 
 	private MentorRecommendationService recommendationService;
 
 	@BeforeEach
 	void setUp() {
-		recommendationService = new MentorRecommendationService(mentorProfileService, pgVectorRetrievalService);
+		recommendationService = new MentorRecommendationService(mentorProfileService, pgVectorRetrievalService,
+				menteeProgramService);
 		ReflectionTestUtils.setField(recommendationService, "provider", "openrouter");
 		ReflectionTestUtils.setField(recommendationService, "openRouterModel", "openai/text-embedding-3-small");
 		ReflectionTestUtils.setField(recommendationService, "openAiModel", "text-embedding-3-small");
@@ -139,5 +144,38 @@ class MentorRecommendationServiceTest {
 		return new MentorProfileResponse(UUID.randomUUID(), fullName, "mentor@example.com", "ME", title,
 				"DPS", "Müsait", "24 saat", "Online", "E-posta", "Yapılandırılmış", "Yüksek",
 				"Kıdemli", "Teknoloji", "MVP", specialties, List.of(), evidence);
+	}
+
+	@Test
+	void recommendFor_ranksOnlyTheMenteesProgramMentorsWithoutTheExcludedOne() {
+		UUID mentee = UUID.randomUUID();
+		MentorProfileResponse inProgram = mentor("Ali Yazılım", "Yazılım mimarı", List.of("Yazılım"));
+		MentorProfileResponse current = mentor("Ece Ürün", "Ürün yöneticisi", List.of("Ürün"));
+		MentorProfileResponse outside = mentor("Zeynep Finans", "Finans", List.of("Yatırım"));
+		when(mentorProfileService.findAll()).thenReturn(List.of(inProgram, current, outside));
+		when(menteeProgramService.reachableMentorIds(mentee))
+				.thenReturn(Optional.of(Set.of(inProgram.id(), current.id())));
+
+		var result = recommendationService.recommendFor(mentee, request(current.id()));
+
+		assertThat(result.mentors()).extracting(MentorProfileResponse::fullName).containsExactly("Ali Yazılım");
+	}
+
+	@Test
+	void recommendFor_ranksEveryoneWhenNothingLimitsTheCaller() {
+		UUID coordinator = UUID.randomUUID();
+		MentorProfileResponse first = mentor("Ali Yazılım", "Yazılım mimarı", List.of("Yazılım"));
+		MentorProfileResponse second = mentor("Zeynep Finans", "Finans", List.of("Yatırım"));
+		when(mentorProfileService.findAll()).thenReturn(List.of(first, second));
+		when(menteeProgramService.reachableMentorIds(coordinator)).thenReturn(Optional.empty());
+
+		var result = recommendationService.recommendFor(coordinator, request(null));
+
+		assertThat(result.mentors()).hasSize(2);
+	}
+
+	private static RecommendMentorsRequest request(UUID excludedMentorId) {
+		return new RecommendMentorsRequest("Yazılım", "Yazılım mimarisi desteği", "THIS_WEEK", "SINGLE_MEETING",
+				"ONLINE", null, "MVP", null, List.of(), excludedMentorId);
 	}
 }

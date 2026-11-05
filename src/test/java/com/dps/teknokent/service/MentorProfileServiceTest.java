@@ -56,6 +56,7 @@ import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
 import com.dps.teknokent.entity.MentorAvailabilityException;
 import java.time.LocalDate;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -86,6 +87,8 @@ class MentorProfileServiceTest {
 	private MentorshipRepository mentorshipRepository;
 	@Mock
 	private ProgramMentorRepository programMentorRepository;
+	@Mock
+	private MenteeProgramService menteeProgramService;
 
 	private MentorProfileService mentorProfileService;
 
@@ -97,7 +100,8 @@ class MentorProfileServiceTest {
 		mentorProfileService = new MentorProfileService(
 				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilityExceptionRepository,
 				mentorAvailabilitySlotRepository,
-				meetingRepository, domainLookupService, mentorshipRepository, programMentorRepository);
+				meetingRepository, domainLookupService, mentorshipRepository, programMentorRepository,
+				menteeProgramService);
 	}
 
 	private AppUser mentor() {
@@ -681,5 +685,35 @@ class MentorProfileServiceTest {
 		slot.setStartsAt(startsAt);
 		slot.setDurationMinutes(60);
 		return slot;
+	}
+
+	@Test
+	void findReachable_keepsOnlyTheMentorsTheMenteesProgramAccepted() {
+		UUID mentee = UUID.randomUUID();
+		MentorProfile inProgram = new MentorProfile();
+		inProgram.setId(mentorId);
+		inProgram.setUser(mentor());
+		MentorProfile outside = new MentorProfile();
+		outside.setId(UUID.randomUUID());
+		outside.setUser(mentor());
+		when(mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED))
+				.thenReturn(List.of(inProgram, outside));
+		when(menteeProgramService.reachableMentorIds(mentee)).thenReturn(Optional.of(Set.of(mentorId)));
+
+		assertThat(mentorProfileService.findReachable(mentee)).extracting(MentorProfileResponse::id)
+				.containsExactly(mentorId);
+	}
+
+	@Test
+	void findReachable_listsEveryApprovedMentorWhenNothingLimitsTheCaller() {
+		UUID admin = UUID.randomUUID();
+		MentorProfile only = new MentorProfile();
+		only.setId(mentorId);
+		only.setUser(mentor());
+		when(mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED))
+				.thenReturn(List.of(only));
+		when(menteeProgramService.reachableMentorIds(admin)).thenReturn(Optional.empty());
+
+		assertThat(mentorProfileService.findReachable(admin)).hasSize(1);
 	}
 }

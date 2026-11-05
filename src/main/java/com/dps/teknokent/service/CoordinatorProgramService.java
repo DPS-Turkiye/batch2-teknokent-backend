@@ -309,7 +309,7 @@ public class CoordinatorProgramService {
 				: meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds);
 		return new CoordinatorOverviewResponse(
 				options,
-				overviewMetrics(programOf, snapshot),
+				overviewMetrics(programOf, idsOf(scope), snapshot),
 				nextMeeting(meetings, snapshot.now()),
 				agenda(scope, organizationIds, meetings, snapshot),
 				new CoordinatorOverviewResponse.Actions(
@@ -318,7 +318,12 @@ public class CoordinatorProgramService {
 						missingNotes(meetings, snapshot.now())));
 	}
 
-	private CoordinatorOverviewResponse.Metrics overviewMetrics(Map<UUID, Program> programOf, Snapshot snapshot) {
+	private static Set<UUID> idsOf(List<Program> programs) {
+		return programs.stream().map(Program::getId).collect(Collectors.toSet());
+	}
+
+	private CoordinatorOverviewResponse.Metrics overviewMetrics(
+			Map<UUID, Program> programOf, Set<UUID> scopeIds, Snapshot snapshot) {
 		Set<UUID> matchedMentorships = new HashSet<>();
 		Set<UUID> mentoredTeams = new HashSet<>();
 		Set<UUID> activeMentors = new HashSet<>();
@@ -327,7 +332,7 @@ public class CoordinatorProgramService {
 		for (Map.Entry<UUID, Program> entry : programOf.entrySet()) {
 			UUID organizationId = entry.getKey();
 			bottlenecks += snapshot.openBottlenecks().getOrDefault(organizationId, List.of()).size();
-			for (Mentorship mentorship : mentorshipsOf(snapshot, organizationId)) {
+			for (Mentorship mentorship : mentorshipsOf(snapshot, scopeIds, organizationId)) {
 				if (!MATCHED.contains(mentorship.getStatus())) {
 					continue;
 				}
@@ -495,7 +500,7 @@ public class CoordinatorProgramService {
 		List<CoordinatorOverviewResponse.AwaitingTeam> teams = new ArrayList<>();
 		for (Program program : scope) {
 			for (ProgramStartup startup : awaitingMatch(
-					snapshot.startups().getOrDefault(program.getId(), List.of()), snapshot)) {
+					program, snapshot.startups().getOrDefault(program.getId(), List.of()), snapshot)) {
 				teams.add(new CoordinatorOverviewResponse.AwaitingTeam(
 						startup.getOrganizationId(),
 						organizationName(snapshot, startup.getOrganizationId()),
@@ -550,7 +555,7 @@ public class CoordinatorProgramService {
 		Snapshot snapshot = snapshot(List.of(program));
 		CoordinatorProgramResponse summary = summarize(program, snapshot);
 		List<ProgramStartup> startups = snapshot.startups().getOrDefault(program.getId(), List.of());
-		List<ProgramStartup> awaiting = awaitingMatch(startups, snapshot);
+		List<ProgramStartup> awaiting = awaitingMatch(program, startups, snapshot);
 		List<CoordinatorProgramResponse.AwaitingTeam> awaitingTeams = awaiting.stream()
 				.map(startup -> new CoordinatorProgramResponse.AwaitingTeam(
 						startup.getOrganizationId(),
@@ -617,10 +622,10 @@ public class CoordinatorProgramService {
 		List<ProgramStartup> startups = snapshot.startups().getOrDefault(program.getId(), List.of());
 		List<ProgramMentor> mentors = snapshot.mentors().getOrDefault(program.getId(), List.of());
 		List<ProgramPhase> phases = snapshot.phases().getOrDefault(program.getId(), List.of());
-		List<ProgramStartup> awaiting = awaitingMatch(startups, snapshot);
+		List<ProgramStartup> awaiting = awaitingMatch(program, startups, snapshot);
 		int activeMentorships = 0;
 		for (ProgramStartup startup : startups) {
-			for (Mentorship mentorship : mentorshipsOf(snapshot, startup.getOrganizationId())) {
+			for (Mentorship mentorship : mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId())) {
 				if (MATCHED.contains(mentorship.getStatus())) {
 					activeMentorships++;
 				}
@@ -664,7 +669,7 @@ public class CoordinatorProgramService {
 			UUID organizationId = startup.getOrganizationId();
 			List<Bottleneck> openIssues = snapshot.openBottlenecks().getOrDefault(organizationId, List.of());
 			boolean hasOpenIssue = !openIssues.isEmpty() || snapshot.overdueActionOrganizations().contains(organizationId);
-			for (Mentorship mentorship : mentorshipsOf(snapshot, organizationId)) {
+			for (Mentorship mentorship : mentorshipsOf(snapshot, Set.of(program.getId()), organizationId)) {
 				if (mentorship.getStatus() != MentorshipStatus.ACTIVE) {
 					continue;
 				}
@@ -728,9 +733,9 @@ public class CoordinatorProgramService {
 		return new CoordinatorProgramResponse.MentorDistribution(withCapacity, full, idle, pending);
 	}
 
-	private List<ProgramStartup> awaitingMatch(List<ProgramStartup> startups, Snapshot snapshot) {
+	private List<ProgramStartup> awaitingMatch(Program program, List<ProgramStartup> startups, Snapshot snapshot) {
 		return startups.stream()
-				.filter(startup -> mentorshipsOf(snapshot, startup.getOrganizationId()).stream()
+				.filter(startup -> mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId()).stream()
 						.noneMatch(mentorship -> MATCHED.contains(mentorship.getStatus())))
 				.toList();
 	}
@@ -859,8 +864,16 @@ public class CoordinatorProgramService {
 		}
 	}
 
-	static List<Mentorship> mentorshipsOf(Snapshot snapshot, UUID organizationId) {
-		return snapshot.mentorships().getOrDefault(organizationId, List.of());
+	/** The team's mentorships that count in these programs: the ones made there, plus older ones made before V82. */
+	static List<Mentorship> mentorshipsOf(Snapshot snapshot, Set<UUID> programIds, UUID organizationId) {
+		return snapshot.mentorships().getOrDefault(organizationId, List.of()).stream()
+				.filter(mentorship -> countsIn(mentorship, programIds))
+				.toList();
+	}
+
+	/** A mentorship belongs to the program it was made in; one made before V82 has none and counts in each. */
+	static boolean countsIn(Mentorship mentorship, Set<UUID> programIds) {
+		return mentorship.getProgram() == null || programIds.contains(mentorship.getProgram().getId());
 	}
 
 	static String organizationName(Snapshot snapshot, UUID organizationId) {

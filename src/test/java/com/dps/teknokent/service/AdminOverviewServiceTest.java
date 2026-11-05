@@ -16,10 +16,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.dto.responses.MentorshipResponse;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.ProgramCoordinator;
@@ -171,6 +174,59 @@ class AdminOverviewServiceTest {
 		assertThat(report.meetingsLast8Weeks()).isEqualTo(1);
 		assertThat(report.users()).isEmpty();
 		assertThat(report.requests()).isEmpty();
+	}
+
+	@Test
+	void programReportCountsATeamsMentorshipOnlyInTheProgramItWasMadeIn() {
+		AppUser elif = person("Elif Demir", UserRole.COORDINATOR);
+		AppUser kemal = person("Kemal Arslan", UserRole.MENTOR);
+		AppUser deniz = person("Deniz Kaya", UserRole.MENTOR);
+		AppUser selin = person("Selin Ak", UserRole.MENTOR);
+		Program stars = program("METU Stars 2026", elif.getId());
+		Program growth = program("Growth Circuit 2026", elif.getId());
+		Organization vega = organization("Vega");
+		ProgramStartup startup = new ProgramStartup();
+		startup.setProgramId(stars.getId());
+		startup.setOrganizationId(vega.getId());
+		when(appUserRepository.findAll()).thenReturn(List.of(elif, kemal, deniz, selin));
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(stars.getId())).thenReturn(List.of(startup));
+		when(mentorshipService.findAll()).thenReturn(List.of(
+				mentorship(kemal, vega, stars), mentorship(deniz, vega, growth), mentorship(selin, vega, null)));
+
+		var report = service.programReport(stars);
+
+		assertThat(report.mentorships()).extracting(row -> row.mentorName() + ":" + row.programId())
+				.containsExactly("Kemal Arslan:" + stars.getId(), "Selin Ak:null");
+	}
+
+	@Test
+	void overviewTellsWhichProgramEachMentorshipWasMadeIn() {
+		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
+		AppUser kemal = person("Kemal Arslan", UserRole.MENTOR);
+		AppUser deniz = person("Deniz Kaya", UserRole.MENTOR);
+		Program stars = program("METU Stars 2026", admin.getId());
+		Program growth = program("Growth Circuit 2026", admin.getId());
+		Organization vega = organization("Vega");
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(appUserRepository.findAll()).thenReturn(List.of(admin, kemal, deniz));
+		when(mentorshipService.findAll()).thenReturn(List.of(
+				mentorship(kemal, vega, stars), mentorship(deniz, vega, growth)));
+
+		var mentorships = service.overview(admin.getId()).mentorships();
+
+		assertThat(mentorships).extracting(row -> row.mentorName() + ":" + row.programId())
+				.containsExactly("Kemal Arslan:" + stars.getId(), "Deniz Kaya:" + growth.getId());
+	}
+
+	private static MentorshipResponse mentorship(AppUser mentor, Organization organization, Program program) {
+		Mentorship mentorship = new Mentorship();
+		mentorship.setId(UUID.randomUUID());
+		mentorship.setMentor(mentor);
+		mentorship.setOrganization(organization);
+		mentorship.setProgram(program);
+		mentorship.setStatus(MentorshipStatus.ACTIVE);
+		mentorship.setStartDate(java.time.LocalDate.now().minusDays(3));
+		return MentorshipResponse.fromEntity(mentorship);
 	}
 
 	private static Organization organization(String name) {

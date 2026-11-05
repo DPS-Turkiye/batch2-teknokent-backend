@@ -66,6 +66,7 @@ public class MentorProfileService {
 	private final DomainLookupService domainLookupService;
 	private final MentorshipRepository mentorshipRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final MenteeProgramService menteeProgramService;
 
 	private static final List<MentorshipStatus> ONGOING_MENTORSHIP = List.of(
 			MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
@@ -73,6 +74,24 @@ public class MentorProfileService {
 	@Transactional(readOnly = true)
 	public List<MentorProfileResponse> findAll() {
 		return withActivity(approvedMentors());
+	}
+
+	/** The directory as {@code actorId} sees it: a mentee in a program gets only that program's accepted mentors. */
+	@Transactional(readOnly = true)
+	public List<MentorProfileResponse> findReachable(UUID actorId) {
+		return menteeProgramService.reachableMentorIds(actorId)
+				.map(ids -> withActivity(approvedMentors().stream()
+						.filter(profile -> ids.contains(profile.getId()))
+						.toList()))
+				.orElseGet(this::findAll);
+	}
+
+	/** Every approved mentor of {@code mentorIds} except one, for offering someone else. */
+	@Transactional(readOnly = true)
+	public List<MentorProfileResponse> findAmongExcept(Set<UUID> mentorIds, UUID excludedMentorId) {
+		return withActivity(approvedMentors().stream()
+				.filter(profile -> mentorIds.contains(profile.getId()) && !profile.getId().equals(excludedMentorId))
+				.toList());
 	}
 
 	@Transactional(readOnly = true)
