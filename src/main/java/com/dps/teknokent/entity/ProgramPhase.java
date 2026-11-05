@@ -40,4 +40,7 @@ public class ProgramPhase {
 
 	@Column(name = "end_date")
 	private LocalDate endDate;
+
+	@Column(name = "expected_output", length = 200)
+	private String expectedOutput;
 }

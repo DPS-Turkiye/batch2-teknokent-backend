@@ -8,5 +8,6 @@ public record ProgramPhaseResponse(
 		String name,
 		int position,
 		LocalDate startDate,
-		LocalDate endDate) {
+		LocalDate endDate,
+		String expectedOutput) {
 }

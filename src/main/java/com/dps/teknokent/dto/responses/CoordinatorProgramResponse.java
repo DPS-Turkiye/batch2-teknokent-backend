@@ -1,5 +1,6 @@
 package com.dps.teknokent.dto.responses;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -39,7 +40,12 @@ public record CoordinatorProgramResponse(
 			TeamDistribution teams,
 			MentorDistribution mentors,
 			List<CoordinatorRef> coordinators,
-			int missingNoteMeetings) {
+			int missingNoteMeetings,
+			Syllabus syllabus) {
+	}
+
+	/** The syllabus file the phases were taken from; null when there is none. */
+	public record Syllabus(UUID id, String filename, long sizeBytes, Instant uploadedAt) {
 	}
 
 	/** {@code owner} is the coordinator who created the program; the others were added to it. */
