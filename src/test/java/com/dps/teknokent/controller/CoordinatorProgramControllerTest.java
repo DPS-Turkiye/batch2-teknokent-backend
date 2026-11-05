@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -35,8 +36,10 @@ import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
+import com.dps.teknokent.dto.requests.ExtractSyllabusPhasesRequest;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
+import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
@@ -44,6 +47,7 @@ import com.dps.teknokent.service.MentorPoolService;
 import com.dps.teknokent.service.ProgramApprovalService;
 import com.dps.teknokent.service.ProgramMatchingService;
 import com.dps.teknokent.service.ProgramLaunchService;
+import com.dps.teknokent.service.SyllabusPhaseService;
 
 @WebMvcTest(CoordinatorProgramController.class)
 @Import(SecurityConfig.class)
@@ -62,6 +66,8 @@ class CoordinatorProgramControllerTest {
 	private MentorPoolService mentorPoolService;
 	@MockitoBean
 	private ProgramMatchingService programMatchingService;
+	@MockitoBean
+	private SyllabusPhaseService syllabusPhaseService;
 	@MockitoBean
 	private ProgramApprovalService programApprovalService;
 
@@ -108,6 +114,31 @@ class CoordinatorProgramControllerTest {
 						.content("{\"name\":\" \"}"))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(coordinatorProgramService);
+	}
+
+	@Test
+	void readsASyllabusAsTheSignedInUserAndNeedsADocument() throws Exception {
+		UUID documentId = UUID.randomUUID();
+		when(syllabusPhaseService.extract(eq(SIGNED_IN_ID), any(ExtractSyllabusPhasesRequest.class)))
+				.thenReturn(new SyllabusPhasesResponse(List.of(new SyllabusPhasesResponse.Phase(
+						"Keşif", "Rapor", LocalDate.of(2026, 11, 3), null)), 18));
+
+		mockMvc.perform(post("/api/coordinator/programs/syllabus/phases")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"actorId\":\"" + ACTOR_ID + "\",\"documentId\":\"" + documentId
+								+ "\",\"startDate\":\"2026-11-03\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.pageCount").value(18))
+				.andExpect(jsonPath("$.phases[0].name").value("Keşif"))
+				.andExpect(jsonPath("$.phases[0].startDate").value("2026-11-03"));
+
+		mockMvc.perform(post("/api/coordinator/programs/syllabus/phases")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{}"))
+				.andExpect(status().isBadRequest());
+		verify(syllabusPhaseService).extract(eq(SIGNED_IN_ID), any(ExtractSyllabusPhasesRequest.class));
 	}
 
 	@Test

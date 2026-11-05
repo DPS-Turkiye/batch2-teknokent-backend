@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -184,6 +185,41 @@ class MeetingProposalServiceTest {
 		assertThat(existing.getScheduledAt()).isEqualTo(nextWeek);
 		assertThat(existing.getReminderSentAt()).isNull();
 		verify(meetingService, never()).create(any());
+	}
+
+	@Test
+	void aNewTimeWithEveryRecordingBotBusyIsRefusedBeforeAnyoneIsAsked() {
+		Meeting meeting = scheduledMeeting();
+		when(appUserRepository.findById(mentor.getId())).thenReturn(Optional.of(mentor));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		doThrow(new ConflictException("busy")).when(meetingService)
+				.requireTranscriptBotSlot(meeting, nextWeek, meeting.getDurationMinutes());
+
+		assertThatThrownBy(() -> service.proposeReschedule(mentor.getId(), meeting.getId(),
+				new RescheduleMeetingRequest(null, nextWeek, null))).isInstanceOf(ConflictException.class);
+		verify(proposalRepository, never()).save(any());
+		verify(notificationService, never()).create(any(), any(), anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aRescheduleWhoseSlotFilledUpWhileWaitingIsNotConfirmed() {
+		Instant original = Instant.now().plus(1, ChronoUnit.DAYS);
+		Meeting existing = new Meeting();
+		existing.setId(UUID.randomUUID());
+		existing.setOrganization(lumen);
+		existing.setMentor(mentor);
+		existing.setStatus(MeetingStatus.SCHEDULED);
+		existing.setScheduledAt(original);
+		MeetingProposal proposal = pending(existing.getId());
+		proposal.setMentorAcceptedAt(Instant.now());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+		when(meetingRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+		doThrow(new ConflictException("busy")).when(meetingService)
+				.requireTranscriptBotSlot(eq(existing), eq(nextWeek), any());
+
+		assertThatThrownBy(() -> service.accept(lead.getId(), proposal.getId())).isInstanceOf(ConflictException.class);
+		assertThat(existing.getScheduledAt()).isEqualTo(original);
+		assertThat(proposal.getStatus()).isEqualTo(MeetingProposalStatus.PENDING);
 	}
 
 	@Test

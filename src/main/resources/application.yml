@@ -136,4 +136,4 @@ meeting:
   transcript-bot:
     enabled: ${MEETING_TRANSCRIPT_BOT_ENABLED:true}
     interval-ms: ${MEETING_TRANSCRIPT_BOT_INTERVAL_MS:30000}
-    max-concurrent: ${MEETING_TRANSCRIPT_BOT_MAX_CONCURRENT:2}
+    max-concurrent: ${MEETING_TRANSCRIPT_BOT_MAX_CONCURRENT:3}

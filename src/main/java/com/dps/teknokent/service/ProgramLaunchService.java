@@ -104,6 +104,10 @@ public class ProgramLaunchService {
 			row.setCreatedAt(Instant.now());
 			programCoordinatorRepository.save(row);
 		}
+		if (request.phases() != null) {
+			programService.writePhases(program.getId(), request.phases());
+		}
+		programService.attachSyllabus(program, actor.getId(), request.syllabusDocumentId());
 		invite(program, request.teams(), actor.getId());
 		return programService.detail(actorId, program.getId());
 	}

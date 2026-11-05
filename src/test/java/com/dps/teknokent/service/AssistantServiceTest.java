@@ -70,6 +70,17 @@ class AssistantServiceTest {
   }
 
   @Test
+  void addAdHocBotLeavesTheSlotsOfBookedRecordingsDueWithinTheHour() {
+    running("aaa-bbbb-ccc");
+    when(capacityService.capacity()).thenReturn(3);
+    when(capacityService.reservedWithinHour(any())).thenReturn(2);
+
+    assertThatThrownBy(() -> assistantService.addAdHocBot(new AddBotRequest(URL)))
+        .isInstanceOf(ConflictException.class);
+    verify(providerClient, never()).sendBot(any(), any(), any());
+  }
+
+  @Test
   void addAdHocBotLetsTheSameMeetingThroughWhenItsBotIsAlreadyRunning() {
     running("abc-defg-hij", "ddd-eeee-fff");
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
