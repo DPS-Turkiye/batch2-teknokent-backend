@@ -100,7 +100,7 @@ public class MeetingService {
 			meeting.setMentorshipRequest(resolveAcceptedMentorship(organization, mentor, request.agenda()));
 		}
 		copyBotDispatchIfSameLink(meeting);
-		transcriptBotCapacity.releaseIfFull(meeting);
+		transcriptBotCapacity.requireSlot(meeting);
 		Meeting saved = meetingRepository.save(meeting);
 		notifyOrgMentees(saved);
 		if (mentor != null) {
@@ -221,6 +221,7 @@ public class MeetingService {
 			throw new InvalidRequestException("Only the assigned mentor can log a meeting for this request");
 		}
 		Meeting meeting = meetingRepository.findByMentorshipRequestId(request.getId()).orElse(null);
+		BotSlot before = meeting == null ? null : BotSlot.of(meeting);
 		if (meeting == null) {
 			meeting = Meeting.forLoggedEntry(
 					request,
@@ -259,17 +260,24 @@ public class MeetingService {
 			}
 		}
 		copyBotDispatchIfSameLink(meeting);
-		if (Boolean.TRUE.equals(logRequest.transcribeRequested())) {
-			transcriptBotCapacity.releaseIfFull(meeting);
+		// Only a new time or a newly asked-for bot is checked, so editing notes never trips on an older booking.
+		if (!BotSlot.of(meeting).equals(before)) {
+			transcriptBotCapacity.requireSlot(meeting);
 		}
 		Meeting saved = meetingRepository.saveAndFlush(meeting);
 		documentRequestService.copyFromRequestToMeeting(request, saved);
 		return MeetingResponse.fromEntity(saved);
 	}
 
-	/** For a meeting moved outside this service: drops its bot when the new slot is already full. */
-	public boolean releaseTranscriptBotIfFull(Meeting meeting) {
-		return transcriptBotCapacity.releaseIfFull(meeting);
+	/** For a recorded meeting about to move outside this service: refuses when its new time has no free bot. */
+	public void requireTranscriptBotSlot(Meeting meeting, Instant start, Integer durationMinutes) {
+		transcriptBotCapacity.requireSlot(meeting, start, durationMinutes);
+	}
+
+	private record BotSlot(Instant start, Integer durationMinutes, boolean recorded) {
+		static BotSlot of(Meeting meeting) {
+			return new BotSlot(meeting.getScheduledAt(), meeting.getDurationMinutes(), meeting.isTranscribeRequested());
+		}
 	}
 
 	@Transactional
@@ -290,8 +298,11 @@ public class MeetingService {
 			copyBotDispatchIfSameLink(meeting);
 		}
 		if (request.transcribeRequested() != null) {
+			boolean wasRecorded = meeting.isTranscribeRequested();
 			meeting.setTranscribeRequested(Boolean.TRUE.equals(request.transcribeRequested()));
-			transcriptBotCapacity.releaseIfFull(meeting);
+			if (!wasRecorded) {
+				transcriptBotCapacity.requireSlot(meeting);
+			}
 		}
 		if (Boolean.TRUE.equals(request.transcriptBotDispatched())
 				|| request.status() == MeetingStatus.COMPLETED) {

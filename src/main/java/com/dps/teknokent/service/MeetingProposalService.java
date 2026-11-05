@@ -88,6 +88,7 @@ public class MeetingProposalService {
 			if (!samePair(replaced, mentorship) || replaced.getStatus() != MeetingStatus.SCHEDULED) {
 				throw new InvalidRequestException(Texts.forRequest("error.rescheduleOnlyPlanned"));
 			}
+			meetingService.requireTranscriptBotSlot(replaced, request.scheduledAt(), request.durationMinutes());
 		}
 
 		MeetingProposal proposal = new MeetingProposal();
@@ -133,6 +134,8 @@ public class MeetingProposalService {
 		if (proposalRepository.existsByReplacesMeetingIdAndStatus(meetingId, MeetingProposalStatus.PENDING)) {
 			throw new ConflictException(Texts.forRequest("error.meetingHasPendingProposal"));
 		}
+		meetingService.requireTranscriptBotSlot(meeting, request.scheduledAt(),
+				request.durationMinutes() == null ? meeting.getDurationMinutes() : request.durationMinutes());
 
 		Instant now = Instant.now();
 		MeetingProposal proposal = new MeetingProposal();
@@ -263,13 +266,13 @@ public class MeetingProposalService {
 				: meetingRepository.findById(proposal.getReplacesMeetingId())
 						.filter(meeting -> meeting.getStatus() == MeetingStatus.SCHEDULED)
 						.orElse(null);
-		boolean botReleased = false;
 		if (replaced != null) {
+			// Checked again here: the slot may have filled up while the proposal waited for answers.
+			meetingService.requireTranscriptBotSlot(replaced, proposal.getScheduledAt(), proposal.getDurationMinutes());
 			// ponytail: moves only this meeting, not guest copies in a shared room; add roommates if group reschedules matter.
 			replaced.setScheduledAt(proposal.getScheduledAt());
 			replaced.setDurationMinutes(proposal.getDurationMinutes());
 			replaced.setReminderSentAt(null);
-			botReleased = meetingService.releaseTranscriptBotIfFull(replaced);
 			meetingRepository.save(replaced);
 			proposal.setMeetingId(replaced.getId());
 		} else {
@@ -289,7 +292,7 @@ public class MeetingProposalService {
 		}
 		proposal.setStatus(MeetingProposalStatus.CONFIRMED);
 
-		String bodyKey = botReleased ? "notification.proposalConfirmedNoBot.body" : "notification.proposalConfirmed.body";
+		String bodyKey = "notification.proposalConfirmed.body";
 		Object[] args = {pairLine(proposal), proposal.getScheduledAt()};
 		notifyProposer(proposal, "notification.proposalConfirmed.title", bodyKey, args);
 		if (!proposal.getMentor().getId().equals(proposal.getProposedBy())) {
