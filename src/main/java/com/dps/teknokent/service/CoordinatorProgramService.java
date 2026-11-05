@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
@@ -66,6 +67,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramCoordination;
@@ -98,6 +100,7 @@ public class CoordinatorProgramService {
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramPhaseRepository programPhaseRepository;
+	private final StoredDocumentRepository storedDocumentRepository;
 	private final ProgramEventRepository programEventRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
@@ -185,7 +188,14 @@ public class CoordinatorProgramService {
 			UUID programId,
 			ReplaceProgramPhasesRequest request) {
 		Program program = requireEditableProgram(actorId, programId);
-		for (ReplaceProgramPhasesRequest.PhaseInput input : request.phases()) {
+		writePhases(programId, request.phases());
+		attachSyllabus(program, actorId, request.syllabusDocumentId());
+		return detailOf(program);
+	}
+
+	/** Replaces the program's phases with {@code inputs}, in that order. */
+	public void writePhases(UUID programId, List<ReplaceProgramPhasesRequest.PhaseInput> inputs) {
+		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
 			requireOrderedDates(input.startDate(), input.endDate(), "A phase cannot end before it starts.");
 		}
 		programPhaseRepository.deleteByProgramId(programId);
@@ -194,7 +204,7 @@ public class CoordinatorProgramService {
 		programPhaseRepository.flush();
 		List<ProgramPhase> phases = new ArrayList<>();
 		int position = 0;
-		for (ReplaceProgramPhasesRequest.PhaseInput input : request.phases()) {
+		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
 			ProgramPhase phase = new ProgramPhase();
 			phase.setId(UUID.randomUUID());
 			phase.setProgramId(programId);
@@ -202,10 +212,26 @@ public class CoordinatorProgramService {
 			phase.setPosition(position++);
 			phase.setStartDate(input.startDate());
 			phase.setEndDate(input.endDate());
+			phase.setExpectedOutput(blankToNull(input.expectedOutput()));
 			phases.add(phase);
 		}
 		programPhaseRepository.saveAll(phases);
-		return detailOf(program);
+	}
+
+	/**
+	 * Links a syllabus the actor uploaded to the program; null leaves the current one. Someone else's file
+	 * reads as missing, so its id reveals nothing.
+	 */
+	public void attachSyllabus(Program program, UUID actorId, UUID documentId) {
+		if (documentId == null || documentId.equals(program.getSyllabusDocumentId())) {
+			return;
+		}
+		storedDocumentRepository.findById(documentId)
+				.filter(document -> actorId.equals(document.getUserId())
+						&& DocumentKind.SYLLABUS.value().equals(document.getKind()))
+				.orElseThrow(() -> new ResourceNotFoundException("Syllabus not found: " + documentId));
+		program.setSyllabusDocumentId(documentId);
+		programRepository.save(program);
 	}
 
 	/**
@@ -560,7 +586,18 @@ public class CoordinatorProgramService {
 								.flatMap(startup -> snapshot.meetingsByOrganization()
 										.getOrDefault(startup.getOrganizationId(), List.of()).stream())
 								.toList(),
-						snapshot.now()).size());
+						snapshot.now()).size(),
+				syllabusOf(program));
+	}
+
+	private CoordinatorProgramResponse.Syllabus syllabusOf(Program program) {
+		if (program.getSyllabusDocumentId() == null) {
+			return null;
+		}
+		return storedDocumentRepository.findById(program.getSyllabusDocumentId())
+				.map(document -> new CoordinatorProgramResponse.Syllabus(
+						document.getId(), document.getOriginalFilename(), document.getSizeBytes(), document.getCreatedAt()))
+				.orElse(null);
 	}
 
 	/** The creator first, then the coordinators added to the program. */
@@ -833,7 +870,8 @@ public class CoordinatorProgramService {
 
 	private static ProgramPhaseResponse toPhase(ProgramPhase phase) {
 		return new ProgramPhaseResponse(
-				phase.getId(), phase.getName(), phase.getPosition(), phase.getStartDate(), phase.getEndDate());
+				phase.getId(), phase.getName(), phase.getPosition(), phase.getStartDate(), phase.getEndDate(),
+				phase.getExpectedOutput());
 	}
 
 	private static ProgramEventResponse toEvent(ProgramEvent event) {

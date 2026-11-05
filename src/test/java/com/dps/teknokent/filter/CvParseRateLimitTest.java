@@ -33,6 +33,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.ProfileAnalysisService;
+import com.dps.teknokent.service.SyllabusPhaseService;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -49,6 +50,9 @@ class CvParseRateLimitTest {
 
 	@MockitoBean
 	private StringRedisTemplate redisTemplate;
+
+	@MockitoBean
+	private SyllabusPhaseService syllabusPhaseService;
 
 	@BeforeEach
 	void stubParse() {
@@ -82,6 +86,18 @@ class CvParseRateLimitTest {
 				.andExpect(header().doesNotExist("X-Rate-Limit-Retry-After-Seconds"));
 	}
 
+	@Test
+	void syllabusParsesGetTheSameTightBudget() throws Exception {
+		Authentication coordinator = signedIn(UserRole.COORDINATOR);
+		for (int i = 0; i < 10; i++) {
+			mockMvc.perform(syllabusParse().with(authentication(coordinator))).andExpect(status().isOk());
+		}
+
+		mockMvc.perform(syllabusParse().with(authentication(coordinator)))
+				.andExpect(status().isTooManyRequests())
+				.andExpect(header().exists("X-Rate-Limit-Retry-After-Seconds"));
+	}
+
 	private void spendCvBudget(Authentication caller) throws Exception {
 		for (int i = 0; i < 10; i++) {
 			mockMvc.perform(preview().with(authentication(caller))).andExpect(status().isOk());
@@ -93,10 +109,21 @@ class CvParseRateLimitTest {
 				.header("X-Forwarded-For", OFFICE_IP);
 	}
 
+	private static MockHttpServletRequestBuilder syllabusParse() {
+		return post("/api/coordinator/programs/syllabus/phases")
+				.contentType("application/json")
+				.content("{\"documentId\": \"" + UUID.randomUUID() + "\"}")
+				.header("X-Forwarded-For", OFFICE_IP);
+	}
+
 	private static Authentication signedIn() {
+		return signedIn(UserRole.MENTEE);
+	}
+
+	private static Authentication signedIn(UserRole role) {
 		AppUserPrincipal principal = new AppUserPrincipal(
-				UUID.randomUUID(), "founder@example.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid");
+				UUID.randomUUID(), "user@example.com", role, UserAccountStatus.APPROVED, "uid");
 		return UsernamePasswordAuthenticationToken.authenticated(
-				principal, "firebase", List.of(new SimpleGrantedAuthority("ROLE_MENTEE")));
+				principal, "firebase", List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
 	}
 }
