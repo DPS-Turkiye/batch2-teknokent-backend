@@ -152,6 +152,29 @@ class ProgramMatchingServiceTest {
 	}
 
 	@Test
+	void aMatchFromAnotherProgramNeitherCountsHereNorKeepsTheTeamFromWaiting() {
+		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program());
+		Organization terra = team("Terra", List.of());
+		Organization vega = team("Vega", List.of());
+		when(programStartupRepository.findByProgramIdIn(List.of(PROGRAM_ID)))
+				.thenReturn(List.of(startup(terra, 2), startup(vega, 1)));
+		when(organizationRepository.findAllById(any())).thenReturn(List.of(terra, vega));
+		Program kulucka = new Program();
+		kulucka.setId(UUID.randomUUID());
+		Mentorship elsewhere = mentorship(terra, mentor("Ayşe Demir"), MentorshipStatus.ACTIVE);
+		elsewhere.setProgram(kulucka);
+		Mentorship here = mentorship(vega, mentor("Mert Kaya"), MentorshipStatus.ACTIVE);
+		here.setProgram(program());
+		when(mentorshipRepository.findByOrganizationIdIn(any())).thenReturn(List.of(elsewhere, here));
+		when(mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
+
+		var overview = service.overview(ELIF, PROGRAM_ID);
+
+		assertThat(overview.waiting()).extracting(team -> team.name()).containsExactly("Terra");
+		assertThat(overview.active()).extracting(match -> match.teamName()).containsExactly("Vega");
+	}
+
+	@Test
 	void startupsWaitingForApprovalAreNeitherListedNorMatchable() {
 		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program());
 		Organization terra = team("Terra", List.of());
