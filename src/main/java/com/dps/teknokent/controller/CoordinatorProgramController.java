@@ -22,6 +22,7 @@ import com.dps.teknokent.dto.requests.CreateProgramMatchRequest;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.DecideApprovalRequest;
 import com.dps.teknokent.dto.requests.DecideProgramMentorRequest;
+import com.dps.teknokent.dto.requests.ExtractSyllabusPhasesRequest;
 import com.dps.teknokent.dto.requests.InviteProgramMentorRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.SetProgramArchivedRequest;
@@ -34,6 +35,7 @@ import com.dps.teknokent.dto.responses.ProgramMatchingResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamResponse;
+import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.MentorPoolService;
@@ -41,6 +43,7 @@ import com.dps.teknokent.service.ProgramApprovalService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
 import com.dps.teknokent.service.ProgramMatchingService;
+import com.dps.teknokent.service.SyllabusPhaseService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -58,6 +61,7 @@ public class CoordinatorProgramController {
 	private final MentorPoolService mentorPoolService;
 	private final ProgramMatchingService programMatchingService;
 	private final ProgramApprovalService programApprovalService;
+	private final SyllabusPhaseService syllabusPhaseService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -76,6 +80,12 @@ public class CoordinatorProgramController {
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateProgramDetailsRequest request) {
 		return coordinatorProgramService.updateDetails(CurrentActor.resolve(request.actorId()), id, request);
+	}
+
+	/** Proposes phases from an uploaded syllabus PDF; saves nothing. */
+	@PostMapping("/syllabus/phases")
+	public SyllabusPhasesResponse extractSyllabusPhases(@Valid @RequestBody ExtractSyllabusPhasesRequest request) {
+		return syllabusPhaseService.extract(CurrentActor.resolve(request.actorId()), request);
 	}
 
 	@PutMapping("/{id}/phases")

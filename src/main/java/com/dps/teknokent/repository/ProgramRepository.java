@@ -11,4 +11,6 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
 	List<Program> findByCreatedByOrderByCreatedAtDesc(UUID createdBy);
 
 	List<Program> findAllByOrderByCreatedAtDesc();
+
+	List<Program> findBySyllabusDocumentId(UUID syllabusDocumentId);
 }
