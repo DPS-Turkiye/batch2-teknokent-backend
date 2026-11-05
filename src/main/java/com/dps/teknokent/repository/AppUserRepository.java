@@ -29,6 +29,12 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
 	List<AppUser> findByRoleAndStatusOrderByFullNameAsc(UserRole role, UserAccountStatus status);
 
+	List<AppUser> findByProgramIdAndRoleAndStatusOrderByCreatedAtAsc(UUID programId, UserRole role,
+			UserAccountStatus status);
+
+	List<AppUser> findByProgramIdAndRoleAndStatusAndOrganizationIsNullOrderByFullNameAsc(UUID programId, UserRole role,
+			UserAccountStatus status);
+
 	// One column only, so a profile edit saved at the same moment is not overwritten.
 	@Transactional
 	@Modifying

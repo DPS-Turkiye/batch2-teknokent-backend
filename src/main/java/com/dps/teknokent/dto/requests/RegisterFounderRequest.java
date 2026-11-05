@@ -16,12 +16,12 @@ import jakarta.validation.constraints.Size;
 public record RegisterFounderRequest(
 		@NotBlank @Size(max = 255) String fullName,
 		@NotBlank @Email @Size(max = 255) String email,
-		@NotBlank @Size(max = 255) String organizationName,
+		// Required unless startupLater; checked in RegistrationService.
+		@Size(max = 255) String organizationName,
 		@Size(max = 5000) String description,
 		@Size(max = 255) String jobTitle,
 		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone,
-		// Optional: null is "no program", which is a real answer, not a missing one.
-		UUID programId,
+		@NotNull UUID programId,
 		@Size(max = 5000) String bio,
 		@Size(max = 255) String linkedinUrl,
 		List<@Size(max = 255) String> expertise,
@@ -37,5 +37,7 @@ public record RegisterFounderRequest(
 		@Size(max = 4) List<@NotNull ContactPreference> contactPreferences,
 		@Size(max = 255) String mvpUrl,
 		@Size(max = 20) List<@Valid OnboardingTeamMemberRequest> teamMembers,
-		@Min(1900) @Max(2100) Integer foundedYear) {
+		@Min(1900) @Max(2100) Integer foundedYear,
+		// "Startup'ı daha sonra oluşturacağım": the person signs up into the program without a startup.
+		Boolean startupLater) implements StartupProfileFields {
 }

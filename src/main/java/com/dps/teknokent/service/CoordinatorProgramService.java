@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -778,6 +779,13 @@ public class CoordinatorProgramService {
 		}
 		Map<UUID, Organization> organizations = organizationRepository.findAllById(organizationIds).stream()
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
+		// Startups still waiting for approval are listed only in the program's "Onaylar" tab.
+		Map<UUID, List<ProgramStartup>> teams = startups.entrySet().stream()
+				.collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().stream()
+						.filter(startup -> Optional.ofNullable(organizations.get(startup.getOrganizationId()))
+								.map(Organization::isApprovedForProgram)
+								.orElse(false))
+						.toList()));
 		Map<UUID, List<Mentorship>> mentorships = mentorshipRepository.findByOrganizationIdIn(organizationIds).stream()
 				.collect(Collectors.groupingBy(mentorship -> mentorship.getOrganization().getId()));
 		Map<String, Instant> lastMeeting = new HashMap<>();
@@ -800,7 +808,7 @@ public class CoordinatorProgramService {
 				.stream()
 				.map(item -> item.getOrganization().getId())
 				.collect(Collectors.toSet());
-		return new Snapshot(today, now, coordinators, phases, startups, mentors, organizations, mentorships,
+		return new Snapshot(today, now, coordinators, phases, teams, mentors, organizations, mentorships,
 				lastMeeting, meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
 				openBottlenecks, overdue);
 	}

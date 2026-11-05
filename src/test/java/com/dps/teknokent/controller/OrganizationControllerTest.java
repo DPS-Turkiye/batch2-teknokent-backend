@@ -41,6 +41,7 @@ import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
+import com.dps.teknokent.service.RegistrationService;
 
 @WebMvcTest(OrganizationController.class)
 @Import(SecurityConfig.class)
@@ -49,7 +50,7 @@ class OrganizationControllerTest {
     private static OrganizationResponse organizationResponse(UUID id, String name, String description,
             Instant createdAt, Instant updatedAt) {
         return new OrganizationResponse(id, name, description, null, null, null, null, null, null, null, null,
-                List.of(), null, null, null, null, null, null, createdAt, updatedAt);
+                List.of(), null, null, null, null, null, null, UserAccountStatus.APPROVED, createdAt, updatedAt);
     }
 
     private static OrganizationMemberResponse memberResponse(UUID id, UUID organizationId, String fullName,
@@ -68,10 +69,31 @@ class OrganizationControllerTest {
     @MockitoBean
     private AppUserService appUserService;
 
+    @MockitoBean
+    private RegistrationService registrationService;
+
     @Test
     void requiresAuthenticationForOrganizations() throws Exception {
         mockMvc.perform(get("/api/organizations"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void joinsAStartupByItsCode() throws Exception {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+
+        mockMvc.perform(post("/api/organizations/join")
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"actorId\":\"" + actorId + "\",\"inviteCode\":\"KARGO1\"}"))
+                .andExpect(status().isOk());
+        verify(registrationService).joinStartup(actorId, "KARGO1");
+
+        mockMvc.perform(post("/api/organizations/join")
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"actorId\":\"" + actorId + "\",\"inviteCode\":\" \"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -175,7 +197,8 @@ class OrganizationControllerTest {
         UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000003");
         OrganizationResponse updated = new OrganizationResponse(organizationId, "Döngü", null, null, null, null,
                 null, null, null, "MVP", null, List.of(), "v0.9.2", "Öğretmen modülü geliştiriliyor.", 72,
-                null, null, null, Instant.parse("2026-08-20T09:00:00Z"), Instant.parse("2026-09-11T09:00:00Z"));
+                null, null, null, UserAccountStatus.APPROVED, Instant.parse("2026-08-20T09:00:00Z"),
+                Instant.parse("2026-09-11T09:00:00Z"));
         when(organizationService.updateStatus(eq(organizationId), any(UpdateOrganizationStatusRequest.class)))
                 .thenReturn(updated);
 

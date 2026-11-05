@@ -192,6 +192,7 @@ public class ProgramMatchingService {
 		List<ProgramStartup> startups = programStartupRepository.findByProgramIdIn(List.of(program.getId()));
 		List<UUID> teamIds = startups.stream().map(ProgramStartup::getOrganizationId).toList();
 		Map<UUID, Organization> teams = organizationRepository.findAllById(teamIds).stream()
+				.filter(Organization::isApprovedForProgram)
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
 		List<Mentorship> mentorships = teamIds.isEmpty() ? List.of() : mentorshipRepository.findByOrganizationIdIn(teamIds);
 		Set<UUID> matchedTeams = mentorships.stream()
@@ -278,8 +279,12 @@ public class ProgramMatchingService {
 	private Organization requireTeam(Program program, UUID organizationId) {
 		programStartupRepository.findByProgramIdAndOrganizationId(program.getId(), organizationId)
 				.orElseThrow(() -> new ResourceNotFoundException("Team is not in this program: " + organizationId));
-		return organizationRepository.findById(organizationId)
+		Organization team = organizationRepository.findById(organizationId)
 				.orElseThrow(() -> new ResourceNotFoundException("Team not found: " + organizationId));
+		if (!team.isApprovedForProgram()) {
+			throw new InvalidRequestException(Texts.forRequest("error.startupNotApproved"));
+		}
+		return team;
 	}
 
 	private List<UUID> poolOf(Program program) {

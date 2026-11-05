@@ -59,6 +59,8 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProposedSlots;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -136,11 +138,11 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException(Texts.forRequest("error.slotTooSoon"));
 		}
 
-		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(
-				request,
-				requester,
-				domainLookupService.requireOrganization(request.organizationId()),
-				mentor);
+		Organization organization = domainLookupService.requireOrganization(request.organizationId());
+		if (organization.getApprovalStatus() != UserAccountStatus.APPROVED) {
+			throw new InvalidRequestException(Texts.forRequest("error.startupNotApproved"));
+		}
+		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(request, requester, organization, mentor);
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(mentorshipRequest);
 		if (request.recommendationSnapshot() != null) {
 			saveRecommendationSnapshot(savedRequest, request.recommendationSnapshot());
