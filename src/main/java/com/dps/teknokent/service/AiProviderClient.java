@@ -156,6 +156,21 @@ public class AiProviderClient {
 		return completeWithSchemaFallback(reportModel(), instructions, transcriptLines, schema);
 	}
 
+	/** Picks, for each open task of someone who left a team, the remaining member best placed to take it over. */
+	public JsonNode taskHandover(String teamAndTasks, JsonNode schema) {
+		String instructions = """
+			You hand over the open tasks of someone who left a startup team to the members who stay.
+			- The input lists the remaining members (id, job title, how many open tasks they already have, and
+			  whether they lead the team) and the tasks to hand over (id, title, description).
+			- For every task pick exactly one member whose job title fits the task best; when several fit equally,
+			  prefer the one with fewer open tasks. Use the team lead when nobody fits.
+			- Use only the given ids. Return every task id exactly once.
+			- Return ONLY a single JSON object. No markdown fences, no commentary.
+			- The JSON must match this schema:
+			""" + jsonUtils.writeValue(schema);
+		return completeWithSchemaFallback(reportModel(), instructions, teamAndTasks, schema);
+	}
+
 	private JsonNode completeWithSchemaFallback(
 			String model, String instructions, String input, JsonNode schema) {
 		boolean preferStrictSchema =

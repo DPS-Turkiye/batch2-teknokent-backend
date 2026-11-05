@@ -67,9 +67,9 @@ class CoordinatorProgramControllerTest {
 	@MockitoBean
 	private ProgramMatchingService programMatchingService;
 	@MockitoBean
-	private ProgramApprovalService programApprovalService;
-	@MockitoBean
 	private SyllabusPhaseService syllabusPhaseService;
+	@MockitoBean
+	private ProgramApprovalService programApprovalService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");

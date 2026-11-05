@@ -60,8 +60,8 @@ public class CoordinatorProgramController {
 	private final ProgramLaunchService programLaunchService;
 	private final MentorPoolService mentorPoolService;
 	private final ProgramMatchingService programMatchingService;
-	private final ProgramApprovalService programApprovalService;
 	private final SyllabusPhaseService syllabusPhaseService;
+	private final ProgramApprovalService programApprovalService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -231,6 +231,15 @@ public class CoordinatorProgramController {
 			@PathVariable UUID organizationId,
 			@Valid @RequestBody DecideApprovalRequest request) {
 		return programApprovalService.decideStartup(CurrentActor.resolve(request.actorId()), id, organizationId,
+				request.accepted());
+	}
+
+	@PostMapping("/{id}/approvals/team-changes/{requestId}")
+	public ProgramApprovalsResponse decideTeamChange(
+			@PathVariable UUID id,
+			@PathVariable UUID requestId,
+			@Valid @RequestBody DecideApprovalRequest request) {
+		return programApprovalService.decideTeamChange(CurrentActor.resolve(request.actorId()), id, requestId,
 				request.accepted());
 	}
 

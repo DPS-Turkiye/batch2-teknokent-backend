@@ -25,6 +25,9 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 
 	Optional<ActionItem> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
+	List<ActionItem> findByOrganizationIdAndOwnerIdAndStatusIn(
+			UUID organizationId, UUID ownerId, Collection<ActionItemStatus> statuses);
+
 	long countByStatusNotInAndDueDateBefore(Collection<ActionItemStatus> statuses, LocalDate threshold);
 
 	List<ActionItem> findByStatusInAndDeadlineRemindedAtIsNullAndDueDateBetween(

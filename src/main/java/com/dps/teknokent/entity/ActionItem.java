@@ -80,6 +80,14 @@ public class ActionItem {
 	@JoinColumn(name = "owner_id", nullable = false)
 	private AppUser owner;
 
+	/** Who had the task before they left the team; null for tasks never handed over. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "previous_owner_id")
+	private AppUser previousOwner;
+
+	@Column(name = "owner_left_at")
+	private Instant ownerLeftAt;
+
 	@Column(nullable = false)
 	private String title;
 

@@ -155,6 +155,12 @@ class RegistrationServiceTest {
     @Mock
     private InviteCodeGenerator inviteCodeGenerator;
 
+    @Mock
+    private TeamMembershipService teamMembershipService;
+
+    @Mock
+    private NotificationService notificationService;
+
     @InjectMocks
     private RegistrationService registrationService;
 
@@ -386,6 +392,27 @@ class RegistrationServiceTest {
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.status()).isEqualTo(UserAccountStatus.APPROVED);
         verify(pendingMemberRepository).deleteByOrganizationIdAndEmailIgnoreCase(ORGANIZATION_ID, "zeynep@kargo.ai");
+        verify(teamMembershipService).joined(person, startup);
+    }
+
+    @Test
+    void joinStartup_tellsTheTeamsCurrentLeader() {
+        AppUser person = menteeWithoutStartup();
+        Organization startup = startup();
+        AppUser leader = new AppUser();
+        leader.setId(UUID.fromString("00000000-0000-0000-0000-000000000901"));
+        leader.setFullName("Mehmet Can");
+        startup.setFounder(leader);
+        when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+        when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup));
+        when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.of(new ProgramStartup()));
+        when(appUserRepository.save(person)).thenReturn(person);
+
+        registrationService.joinStartup(USER_ID, "KARGO1");
+
+        verify(notificationService).create(argThat(recipient -> recipient == leader),
+                argThat(title -> title.contains(person.getFullName())), any(String.class), argThat("/startup/team"::equals));
     }
 
     @Test

@@ -126,6 +126,10 @@ public class Organization {
 	@Column(name = "approval_status", nullable = false, length = 16)
 	private UserAccountStatus approvalStatus = UserAccountStatus.APPROVED;
 
+	/** Set when the last member left: the startup is kept for history but is no longer a team. */
+	@Column(name = "archived_at")
+	private Instant archivedAt;
+
 	@Column(name = "status_version", length = 32)
 	private String statusVersion;
 
@@ -141,10 +145,11 @@ public class Organization {
 
 	/**
 	 * A program team: approved itself and, for a startup from signup, its founder approved too. Anything still
-	 * waiting is listed only in the coordinator's "Onaylar" tab, not among the teams or in matching.
+	 * waiting is listed only in the coordinator's "Onaylar" tab, not among the teams or in matching; an archived
+	 * startup (everyone left) is no team either.
 	 */
 	public boolean isApprovedForProgram() {
-		return approvalStatus == UserAccountStatus.APPROVED
+		return approvalStatus == UserAccountStatus.APPROVED && archivedAt == null
 				&& (founder == null || founder.getStatus() == UserAccountStatus.APPROVED);
 	}
 

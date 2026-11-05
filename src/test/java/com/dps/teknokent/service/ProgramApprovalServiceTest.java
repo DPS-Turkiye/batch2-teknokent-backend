@@ -30,6 +30,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.TeamChangeRequestRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ProgramApprovalServiceTest {
@@ -54,6 +55,10 @@ class ProgramApprovalServiceTest {
 	private OrganizationRepository organizationRepository;
 	@Mock
 	private ProgramStartupRepository programStartupRepository;
+	@Mock
+	private TeamChangeRequestRepository teamChangeRequestRepository;
+	@Mock
+	private TeamChangeService teamChangeService;
 
 	@InjectMocks
 	private ProgramApprovalService service;
@@ -131,6 +136,18 @@ class ProgramApprovalServiceTest {
 		assertThatThrownBy(() -> service.decideStartup(ACTOR_ID, PROGRAM_ID, ORGANIZATION_ID, true))
 				.isInstanceOf(InvalidRequestException.class);
 		verifyNoInteractions(notificationService);
+	}
+
+	@Test
+	void decideTeamChange_checksTheProgramThenDecidesAndListsWhatIsLeft() {
+		UUID requestId = UUID.randomUUID();
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
+
+		var result = service.decideTeamChange(ACTOR_ID, PROGRAM_ID, requestId, true);
+
+		verify(coordinatorProgramService).requireManagedProgram(ACTOR_ID, PROGRAM_ID);
+		verify(teamChangeService).decide(ACTOR_ID, PROGRAM_ID, requestId, true);
+		assertThat(result.teamChanges()).isEmpty();
 	}
 
 	private static AppUser mentee(UUID programId) {

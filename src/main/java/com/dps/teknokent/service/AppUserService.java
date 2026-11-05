@@ -48,6 +48,7 @@ public class AppUserService {
 	private final NotificationService notificationService;
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final LoginProvisioner loginProvisioner;
+	private final TeamMembershipService teamMembershipService;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -153,22 +154,6 @@ public class AppUserService {
 		pendingMemberRepository.delete(pending);
 	}
 
-	// Detaches rather than deletes: the account keeps its own history.
-	@Transactional
-	public void removeOrganizationMember(UUID organizationId, UUID memberId, UUID actorId) {
-		Organization organization = domainLookupService.requireOrganization(organizationId);
-		if (!isFounder(organization, actorId)) {
-			throw new InvalidRequestException("Only the organization founder can remove team members");
-		}
-		if (isFounder(organization, memberId)) {
-			throw new InvalidRequestException("The founder cannot be removed from the team");
-		}
-
-		AppUser member = requireMember(organization, memberId);
-		member.setOrganization(null);
-		appUserRepository.save(member);
-	}
-
 	@Transactional
 	public OrganizationMemberResponse addOrganizationMember(
 			UUID organizationId, CreateOrganizationMemberRequest request) {
@@ -185,7 +170,9 @@ public class AppUserService {
 		member.setStatus(UserAccountStatus.APPROVED);
 		member.setOrganization(organization);
 		member.setJobTitle(TextUtils.normalizeOptional(request.jobTitle()));
-		return OrganizationMemberResponse.fromEntity(appUserRepository.save(member), organization);
+		AppUser added = appUserRepository.save(member);
+		teamMembershipService.joined(added, organization);
+		return OrganizationMemberResponse.fromEntity(added, organization);
 	}
 
 	private AppUser requireMember(Organization organization, UUID memberId) {
