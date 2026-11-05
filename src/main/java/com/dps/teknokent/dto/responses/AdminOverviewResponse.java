@@ -77,7 +77,9 @@ public record AdminOverviewResponse(
 			int progressPercent,
 			Long daysSinceMeeting,
 			int goalDone,
-			int goalTotal) {
+			int goalTotal,
+			/** The program the mentorship was made in; null for one made before V82. */
+			UUID programId) {
 	}
 
 	public record MeetingMark(

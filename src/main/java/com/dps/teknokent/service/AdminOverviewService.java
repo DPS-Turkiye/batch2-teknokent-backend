@@ -95,24 +95,29 @@ public class AdminOverviewService {
 		List<RequestRow> requests = mentorshipRequestRepository.findByStatusInOrderByCreatedAtDesc(OPEN_REQUESTS).stream()
 				.map(AdminOverviewService::toRequest)
 				.toList();
-		return build(programRepository.findAllByOrderByCreatedAtDesc(), null, userEntities, users, requests);
+		return build(programRepository.findAllByOrderByCreatedAtDesc(), null, null, userEntities, users, requests);
 	}
 
 	/**
 	 * The Raporlama numbers for one program, for its coordinators' Program raporu; the caller checks access.
-	 * Only that program's teams count, and the user list and open requests are left out.
+	 * Only that program's teams count, and of their mentorships only the ones made in this program (plus older ones
+	 * made before V82, which have none). The user list and open requests are left out.
 	 */
 	@Transactional(readOnly = true)
 	public AdminOverviewResponse programReport(Program program) {
 		Set<UUID> teams = programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId()).stream()
 				.map(ProgramStartup::getOrganizationId)
 				.collect(Collectors.toSet());
-		return build(List.of(program), teams, appUserRepository.findAll(), List.of(), List.of());
+		return build(List.of(program), program.getId(), teams, appUserRepository.findAll(), List.of(), List.of());
 	}
 
-	/** {@code teams} limits mentorships, bottlenecks and meetings to those organizations; null keeps them all. */
+	/**
+	 * {@code teams} limits mentorships, bottlenecks and meetings to those organizations; null keeps them all.
+	 * {@code programId} further drops mentorships made in another program; null keeps them all.
+	 */
 	private AdminOverviewResponse build(
 			List<Program> programEntities,
+			UUID programId,
 			Set<UUID> teams,
 			List<AppUser> userEntities,
 			List<UserRow> users,
@@ -132,6 +137,8 @@ public class AdminOverviewService {
 				.toList();
 		List<MentorshipRow> mentorships = mentorshipService.findAll().stream()
 				.filter(mentorship -> inScope.test(mentorship.organizationId()))
+				.filter(mentorship -> programId == null || mentorship.programId() == null
+						|| programId.equals(mentorship.programId()))
 				.map(mentorship -> toMentorship(mentorship, lastMeeting, now))
 				.toList();
 		List<BottleneckRow> bottlenecks = bottleneckRepository.findAll().stream()
@@ -262,7 +269,8 @@ public class AdminOverviewService {
 				mentorship.progressPercent(),
 				days,
 				(int) mentorship.goalItems().stream().filter(goal -> goal.done()).count(),
-				mentorship.goalItems().size());
+				mentorship.goalItems().size(),
+				mentorship.programId());
 	}
 
 	private static RequestRow toRequest(MentorshipRequest request) {
