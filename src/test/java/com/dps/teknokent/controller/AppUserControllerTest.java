@@ -32,9 +32,11 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.TeamHistoryResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.TeamMembershipService;
 
 @WebMvcTest(AppUserController.class)
 @Import(SecurityConfig.class)
@@ -45,6 +47,9 @@ class AppUserControllerTest {
 
     @MockitoBean
     private AppUserService appUserService;
+
+    @MockitoBean
+    private TeamMembershipService teamMembershipService;
 
     @Test
     void requiresAuthenticationForUsersList() throws Exception {
@@ -248,5 +253,22 @@ class AppUserControllerTest {
                                 """.formatted(adminId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.signInsRevokedAt").value("2026-10-23T15:00:00Z"));
+    }
+
+    @Test
+    void returnsTheTeamHistoryForTheSignedInCaller() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000802");
+        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+        when(teamMembershipService.history(signedIn, userId))
+                .thenReturn(new TeamHistoryResponse(userId, "Deniz Yıldız", List.of()));
+
+        mockMvc.perform(get("/api/users/{id}/team-history", userId)
+                        .param("actorId", "00000000-0000-0000-0000-000000000999")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(
+                                new AppUserPrincipal(signedIn, "coordinator@tnt", UserRole.COORDINATOR,
+                                        UserAccountStatus.APPROVED, "uid"),
+                                null, List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
     }
 }

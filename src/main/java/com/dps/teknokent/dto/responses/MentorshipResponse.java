@@ -19,7 +19,10 @@ public record MentorshipResponse(
 		int daysPerWeek,
 		String goals,
 		List<MentorshipGoalResponse> goalItems,
-		int progressPercent) {
+		int progressPercent,
+		/** The program the mentorship belongs to; null for a startup outside any program. */
+		UUID programId,
+		String programName) {
 
 	public static MentorshipResponse fromEntity(Mentorship mentorship) {
 		return fromEntity(mentorship, List.of());
@@ -42,6 +45,8 @@ public record MentorshipResponse(
 				mentorship.getDaysPerWeek(),
 				mentorship.getGoals(),
 				goalItems,
-				progressPercent);
+				progressPercent,
+				mentorship.getProgram() == null ? null : mentorship.getProgram().getId(),
+				mentorship.getProgram() == null ? null : mentorship.getProgram().getName());
 	}
 }

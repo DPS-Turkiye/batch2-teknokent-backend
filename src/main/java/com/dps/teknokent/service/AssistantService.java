@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -33,18 +34,18 @@ public class AssistantService {
   private final TranscriptBotCapacityService capacityService;
 
   /**
-   * A bot asked for from the assistant, outside a booked meeting. Booked meetings reserve their slot when they are
-   * saved, so only this route checks the bots running right now; when that count is unknown it refuses.
+   * A bot asked for from the assistant, outside a booked meeting. It counts the bots running right now plus the
+   * booked meetings whose bots join within the hour, so booked recordings keep their slots; when the running count
+   * is unknown it refuses.
    */
   public AddBotResponse addAdHocBot(AddBotRequest request) {
     var parsed = MeetingUrlParser.parse(request.meetingUrl());
     Set<String> running = runningBotKeys()
         .orElseThrow(() -> new IllegalStateException("Running bots are unknown"));
-    // ponytail: live count with no lock, so two requests at the same moment can both pass and meetings booked
-    // later can still add their reserved bots on top; a shared ledger of ad-hoc and booked bots if the provider
-    // bill needs a hard ceiling.
+    // ponytail: no lock, so two requests at the same moment can both pass, and a meeting booked later does not see
+    // ad-hoc bots; the dispatcher's retry on Vexa's 429 covers that until a shared ledger is worth it.
     if (!running.contains(botKey(parsed.platform(), parsed.nativeMeetingId()))
-        && running.size() >= capacityService.capacity()) {
+        && running.size() + capacityService.reservedWithinHour(Instant.now()) >= capacityService.capacity()) {
       throw new ConflictException("All recording slots are in use.");
     }
     return addBot(request);

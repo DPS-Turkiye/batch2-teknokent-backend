@@ -55,7 +55,7 @@ class MentorRecommendationControllerTest {
         UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
         Instant generatedAt = Instant.parse("2026-09-01T12:00:00Z");
 
-        when(mentorRecommendationService.recommend(any(RecommendMentorsRequest.class)))
+        when(mentorRecommendationService.recommendFor(any(), any(RecommendMentorsRequest.class)))
                 .thenReturn(new MentorRecommendationResult(
                         "PGVECTOR_SEMANTIC",
                         "text-embedding-3-small",

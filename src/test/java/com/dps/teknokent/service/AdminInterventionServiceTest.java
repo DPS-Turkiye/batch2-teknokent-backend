@@ -213,6 +213,28 @@ class AdminInterventionServiceTest {
 	}
 
 	@Test
+	void openingGoesToTheProgramTheMentorshipWasMadeIn() {
+		Mentorship mentorship = mentorship();
+		mentorship.getOrganization().setActiveProgramId(UUID.randomUUID());
+		mentorship.setProgram(program());
+		when(domainLookupService.requireUser(ADMIN)).thenReturn(user(ADMIN, "Demo Administrator", UserRole.ADMIN));
+		when(domainLookupService.requireUser(COORDINATOR))
+				.thenReturn(user(COORDINATOR, "Deniz Acar", UserRole.COORDINATOR));
+		when(mentorshipRepository.findById(MENTORSHIP)).thenReturn(Optional.of(mentorship));
+		when(interventionRepository.findByMentorshipIdAndResolvedAtIsNull(MENTORSHIP)).thenReturn(Optional.empty());
+		Notification notification = new Notification();
+		notification.setId(NOTIFICATION);
+		when(notificationService.create(any(), anyString(), anyString(), anyString())).thenReturn(notification);
+		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(MENTOR, ORG))
+				.thenReturn(List.of());
+
+		var result = service.open(ADMIN, new OpenInterventionRequest(ADMIN, MENTORSHIP, "Ara", null));
+
+		assertThat(result.coordinatorId()).isEqualTo(COORDINATOR);
+		verify(programRepository, never()).findById(any());
+	}
+
+	@Test
 	void openingWithoutAnActiveProgramUsesTheLatestMembership() {
 		Mentorship mentorship = mentorship();
 		mentorship.getOrganization().setActiveProgramId(null);

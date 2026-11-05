@@ -247,8 +247,8 @@ class CoordinatorProgramServiceTest {
 				.thenReturn(List.of());
 
 		service.replacePhases(COORDINATOR_ID, PROGRAM_ID, new ReplaceProgramPhasesRequest(null, List.of(
-				new ReplaceProgramPhasesRequest.PhaseInput("  Başvuru ", today, today.plusDays(10)),
-				new ReplaceProgramPhasesRequest.PhaseInput("Demo Day", null, null))));
+				new ReplaceProgramPhasesRequest.PhaseInput("  Başvuru ", today, today.plusDays(10), null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Demo Day", null, null, null)), null));
 
 		InOrder order = inOrder(programPhaseRepository);
 		order.verify(programPhaseRepository).deleteByProgramId(PROGRAM_ID);
@@ -266,7 +266,7 @@ class CoordinatorProgramServiceTest {
 		stubManagedProgram(program(COORDINATOR_ID));
 
 		assertThatThrownBy(() -> service.replacePhases(COORDINATOR_ID, PROGRAM_ID, new ReplaceProgramPhasesRequest(
-				null, List.of(new ReplaceProgramPhasesRequest.PhaseInput("Seçim", today, today.minusDays(1))))))
+				null, List.of(new ReplaceProgramPhasesRequest.PhaseInput("Seçim", today, today.minusDays(1), null)), null)))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programPhaseRepository, never()).deleteByProgramId(any());
 	}

@@ -55,7 +55,7 @@ class MentorProfileControllerTest {
 	@Test
 	void returnsMentorProfiles() throws Exception {
 		UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000002");
-		when(mentorProfileService.findAll()).thenReturn(List.of(new MentorProfileResponse(
+		when(mentorProfileService.findReachable(any())).thenReturn(List.of(new MentorProfileResponse(
 				mentorId,
 				"Dr. Kemal Arslan",
 				"kemal.arslan@teknokent.demo",
@@ -182,5 +182,16 @@ class MentorProfileControllerTest {
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(mentorProfileService);
+	}
+
+	@Test
+	void listsTheMentorsTheNamedMenteeCanReach() throws Exception {
+		UUID menteeId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		when(mentorProfileService.findReachable(menteeId)).thenReturn(List.of());
+
+		mockMvc.perform(get("/api/mentors").param("actorId", menteeId.toString()).with(user("test-user")))
+				.andExpect(status().isOk());
+
+		verify(mentorProfileService).findReachable(menteeId);
 	}
 }

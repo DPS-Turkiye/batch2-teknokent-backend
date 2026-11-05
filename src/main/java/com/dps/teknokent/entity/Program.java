@@ -68,4 +68,7 @@ public class Program {
 
 	@Column(name = "bottleneck_flag_days", nullable = false)
 	private int bottleneckFlagDays = 21;
+
+	@Column(name = "syllabus_document_id")
+	private UUID syllabusDocumentId;
 }

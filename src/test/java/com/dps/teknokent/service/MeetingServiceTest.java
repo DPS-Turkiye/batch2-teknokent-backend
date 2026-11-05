@@ -106,6 +106,56 @@ class MeetingServiceTest {
 		return request;
 	}
 
+	private void recordingBotsBusyAt(Instant at) {
+		Meeting first = new Meeting();
+		first.setScheduledAt(at);
+		first.setDurationMinutes(60);
+		first.setMeetLink("https://meet.google.com/busy-one");
+		Meeting second = new Meeting();
+		second.setScheduledAt(at);
+		second.setDurationMinutes(60);
+		second.setMeetLink("https://meet.google.com/busy-two");
+		when(meetingRepository.findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(
+				eq(MeetingStatus.SCHEDULED), any(), any())).thenReturn(List.of(first, second));
+	}
+
+	private LogMeetingRequest recordedLogRequest(Instant at, String notes) {
+		return new LogMeetingRequest(
+				mentorId, at, 45, null, notes, null, MeetingStatus.SCHEDULED, "https://meet.google.com/abc-defg-hij",
+				true);
+	}
+
+	@Test
+	void logMeetingRefusesARecordedMeetingWhenEveryBotIsBusy() {
+		Instant at = Instant.parse("2026-09-10T10:00:00Z");
+		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
+		when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.empty());
+		recordingBotsBusyAt(at);
+
+		assertThatThrownBy(() -> meetingService.logMeeting(requestId, recordedLogRequest(at, null)))
+				.isInstanceOf(ConflictException.class);
+		verify(meetingRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void logMeetingLetsNotesBeEditedOnAnAlreadyBookedRecordingInAFullSlot() {
+		Instant at = Instant.parse("2026-09-10T10:00:00Z");
+		MentorshipRequest request = acceptedRequest();
+		Meeting existing = Meeting.forLoggedEntry(
+				request, at, 45, null, null, null, MeetingStatus.SCHEDULED, "https://meet.google.com/abc-defg-hij",
+				true);
+		existing.setId(UUID.randomUUID());
+		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+		when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.of(existing));
+		when(meetingRepository.saveAndFlush(existing)).thenReturn(existing);
+
+		MeetingResponse response = meetingService.logMeeting(requestId, recordedLogRequest(at, "Yeni not"));
+
+		assertThat(response.notes()).isEqualTo("Yeni not");
+		verify(meetingRepository, never()).findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(any(), any(),
+				any());
+	}
+
 	private LogMeetingRequest logRequest(UUID callerMentorId) {
 		return new LogMeetingRequest(
 				callerMentorId, Instant.now().minus(1, ChronoUnit.DAYS), 45, "Gündem", "Notlar", "Sonuçlar",

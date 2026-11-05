@@ -35,6 +35,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipGoalRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipWeekCheckRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 
 @ExtendWith(MockitoExtension.class)
 class MentorshipServiceTest {
@@ -56,6 +57,10 @@ class MentorshipServiceTest {
 
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private MenteeProgramService menteeProgramService;
+	@Mock
+	private ProgramRepository programRepository;
 
 	@InjectMocks
 	private MentorshipService mentorshipService;

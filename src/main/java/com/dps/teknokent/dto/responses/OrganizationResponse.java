@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.entity.Organization;
 
 public record OrganizationResponse(
@@ -25,6 +26,7 @@ public record OrganizationResponse(
 		String fundingStage,
 		Integer foundedYear,
 		String mvpUrl,
+		UserAccountStatus approvalStatus,
 		Instant createdAt,
 		Instant updatedAt) {
 
@@ -38,7 +40,7 @@ public record OrganizationResponse(
 				List.copyOf(organization.getSupportAreas()),
 				organization.getStatusVersion(), organization.getStatusSummary(), organization.getCompletionPercent(),
 				organization.getFundingStage() == null ? null : organization.getFundingStage().value(),
-				organization.getFoundedYear(), organization.getMvpUrl(),
+				organization.getFoundedYear(), organization.getMvpUrl(), organization.getApprovalStatus(),
 				organization.getCreatedAt(), organization.getUpdatedAt());
 	}
 }
