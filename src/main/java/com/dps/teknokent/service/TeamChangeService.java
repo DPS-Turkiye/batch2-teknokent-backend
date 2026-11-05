@@ -261,14 +261,14 @@ public class TeamChangeService {
 						"/coordinator/programs/" + programId + "/approvals")));
 	}
 
-	/** The program the startup is in: the one it is active in, else the first it joined. */
+	/** The program the startup is in: the one it is active in, else the last it joined (as for its mentor pool). */
 	private Optional<UUID> programOf(Organization organization) {
 		if (organization.getActiveProgramId() != null) {
 			return Optional.of(organization.getActiveProgramId());
 		}
-		return programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(organization.getId()).stream()
-				.map(ProgramStartup::getProgramId)
-				.findFirst();
+		List<ProgramStartup> joined = programStartupRepository
+				.findByOrganizationIdOrderByCreatedAtAsc(organization.getId());
+		return joined.isEmpty() ? Optional.empty() : Optional.of(joined.get(joined.size() - 1).getProgramId());
 	}
 
 	private static void requirePending(TeamChangeRequest request) {

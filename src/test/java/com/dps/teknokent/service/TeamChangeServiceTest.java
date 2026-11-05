@@ -31,6 +31,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.TeamChangeRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -121,6 +122,21 @@ class TeamChangeServiceTest {
 				&& request.getRequestedBy() == member && request.getMember() == member));
 		verify(notificationService).create(eq(coordinator), anyString(), anyString(),
 				eq("/coordinator/programs/" + PROGRAM_ID + "/approvals"));
+	}
+
+	@Test
+	void requestLeave_goesToTheLastProgramJoinedWhenNoneIsChosen() {
+		startup.setActiveProgramId(null);
+		ProgramStartup earlier = new ProgramStartup();
+		earlier.setProgramId(UUID.randomUUID());
+		ProgramStartup latest = new ProgramStartup();
+		latest.setProgramId(PROGRAM_ID);
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORGANIZATION_ID))
+				.thenReturn(List.of(earlier, latest));
+
+		service.requestLeave(MEMBER_ID, ORGANIZATION_ID);
+
+		verify(teamChangeRequestRepository).saveAndFlush(argThat(request -> request.getProgramId().equals(PROGRAM_ID)));
 	}
 
 	@Test
