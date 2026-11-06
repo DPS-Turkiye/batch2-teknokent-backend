@@ -249,6 +249,13 @@ public class ProgramService {
 	@Transactional
 	public ProgramResponse decideMentorRequest(UUID actorId, UUID programId, UUID mentorId, boolean accepted) {
 		Program program = requireOwnedProgram(actorId, programId);
+		settleMentorRequest(program, mentorId, accepted);
+		return toResponse(program);
+	}
+
+	/** Decides a mentor's request once the caller's right to the program was checked (coordinator or admin). */
+	@Transactional
+	public void settleMentorRequest(Program program, UUID mentorId, boolean accepted) {
 		ProgramMentor membership = programMentorRepository
 				.findByProgramIdAndMentorId(program.getId(), mentorId)
 				.orElseThrow(() -> new ResourceNotFoundException("Mentor request not found."));
@@ -264,7 +271,6 @@ public class ProgramService {
 				Texts.get(applicant, accepted ? "notification.joinRequestAccepted.body" : "notification.joinRequestDeclined.body",
 						program.getName()),
 				"/mentor-dashboard");
-		return toResponse(program);
 	}
 
 	private void upsertPending(UUID programId, UUID mentorId, ProgramMentorInvitedBy invitedBy) {

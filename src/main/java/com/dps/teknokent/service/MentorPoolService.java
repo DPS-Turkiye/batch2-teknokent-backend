@@ -187,7 +187,7 @@ public class MentorPoolService {
 			mentor.setStatus(accepted ? UserAccountStatus.APPROVED : UserAccountStatus.REJECTED);
 			appUserRepository.save(mentor);
 		}
-		programService.decideMentorRequest(actorId, programId, mentorId, accepted);
+		programService.settleMentorRequest(program, mentorId, accepted);
 		return rows(program);
 	}
 

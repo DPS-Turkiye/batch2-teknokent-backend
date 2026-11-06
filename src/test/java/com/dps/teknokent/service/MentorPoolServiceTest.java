@@ -110,7 +110,7 @@ class MentorPoolServiceTest {
 		service.decide(ELIF, PROGRAM_ID, mentor.getId(), true);
 
 		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
-		verify(programService).decideMentorRequest(ELIF, PROGRAM_ID, mentor.getId(), true);
+		verify(programService).settleMentorRequest(any(), org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(true));
 	}
 
 	@Test
@@ -120,7 +120,7 @@ class MentorPoolServiceTest {
 		service.decide(ELIF, PROGRAM_ID, mentor.getId(), true);
 
 		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
-		verify(programService).decideMentorRequest(ELIF, PROGRAM_ID, mentor.getId(), true);
+		verify(programService).settleMentorRequest(any(), org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(true));
 	}
 
 	@Test
@@ -133,7 +133,7 @@ class MentorPoolServiceTest {
 		service.decide(ELIF, PROGRAM_ID, mentor.getId(), false);
 
 		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.PENDING);
-		verify(programService).decideMentorRequest(ELIF, PROGRAM_ID, mentor.getId(), false);
+		verify(programService).settleMentorRequest(any(), org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(false));
 	}
 
 	@Test
