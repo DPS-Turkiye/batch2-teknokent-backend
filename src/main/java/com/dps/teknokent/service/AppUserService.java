@@ -49,6 +49,7 @@ public class AppUserService {
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final LoginProvisioner loginProvisioner;
 	private final TeamMembershipService teamMembershipService;
+	private final EmailDomainPolicy emailDomainPolicy;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -159,6 +160,7 @@ public class AppUserService {
 			UUID organizationId, CreateOrganizationMemberRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		String email = TextUtils.trim(request.email());
+		emailDomainPolicy.requireAllowed(email);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
 			throw new InvalidRequestException("A user with this email already exists.");
 		}
