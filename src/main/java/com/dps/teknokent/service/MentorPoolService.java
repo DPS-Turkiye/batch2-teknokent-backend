@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,6 +21,7 @@ import com.dps.teknokent.domain.MentorPoolStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.MentorPoolResponse;
@@ -38,6 +40,7 @@ import com.dps.teknokent.repository.MentorProgramName;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -54,9 +57,12 @@ public class MentorPoolService {
 	static final Duration INVITE_VALIDITY = Duration.ofDays(7);
 	static final Duration EXPIRING_SOON = Duration.ofDays(2);
 	private static final Set<MentorshipStatus> MATCHED = EnumSet.of(MentorshipStatus.ACTIVE, MentorshipStatus.PLANNED);
+	private static final Set<ProgramMentorStatus> OPEN_MEMBERSHIPS =
+			EnumSet.of(ProgramMentorStatus.PENDING, ProgramMentorStatus.ACCEPTED);
 
 	private final CoordinatorProgramService coordinatorProgramService;
 	private final ProgramService programService;
+	private final ProgramRepository programRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramMentorInviteRepository inviteRepository;
 	private final AppUserRepository appUserRepository;
@@ -166,8 +172,9 @@ public class MentorPoolService {
 	}
 
 	/**
-	 * "Onayla ve havuza ekle" / "Reddet". A mentor who signed up with this program's link is still waiting for
-	 * their account to be approved; the coordinator's decision settles both.
+	 * "Onayla ve havuza ekle" / "Reddet". A mentor who asked for programs while signing up is still waiting for
+	 * their account; the coordinator's decision settles it too. Approval approves the account; a rejection
+	 * rejects it only when no other program is still deciding or has taken them.
 	 */
 	@Transactional
 	public List<MentorPoolResponse.Row> decide(UUID actorId, UUID programId, UUID mentorId, boolean accepted) {
@@ -175,15 +182,74 @@ public class MentorPoolService {
 		requireAwaitingApproval(programId, mentorId);
 		AppUser mentor = appUserRepository.findById(mentorId)
 				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorNotFound", mentorId)));
-		if (mentor.getStatus() == UserAccountStatus.PENDING) {
-			if (inviteRepository.findByProgramIdAndMentorId(programId, mentorId).isEmpty()) {
-				throw new InvalidRequestException(Texts.forRequest("error.mentorNeedsAdminApproval"));
-			}
+		if (mentor.getStatus() == UserAccountStatus.PENDING && (accepted || !programMentorRepository
+				.existsByMentorIdAndProgramIdNotAndStatusIn(mentorId, programId, OPEN_MEMBERSHIPS))) {
 			mentor.setStatus(accepted ? UserAccountStatus.APPROVED : UserAccountStatus.REJECTED);
 			appUserRepository.save(mentor);
 		}
 		programService.decideMentorRequest(actorId, programId, mentorId, accepted);
 		return rows(program);
+	}
+
+	/** The programs a mentor asked for or belongs to, so onboarding shows them ticked. */
+	@Transactional(readOnly = true)
+	public List<UUID> chosenPrograms(String firebaseUid) {
+		return chosenProgramsOf(requireMentorByFirebaseUid(firebaseUid));
+	}
+
+	/**
+	 * Onboarding's program step. Each newly ticked active program gets a request its coordinator decides; an
+	 * unticked request nobody has answered is dropped. Decided memberships, coordinator invitations and
+	 * requests that came with an invite link stay as they are.
+	 */
+	@Transactional
+	public List<UUID> choosePrograms(String firebaseUid, List<UUID> programIds) {
+		AppUser mentor = requireMentorByFirebaseUid(firebaseUid);
+		Set<UUID> chosen = new LinkedHashSet<>(programIds);
+		Map<UUID, ProgramMentor> existing = programMentorRepository.findByMentorIdOrderByCreatedAtAsc(mentor.getId())
+				.stream()
+				.collect(Collectors.toMap(ProgramMentor::getProgramId, Function.identity()));
+		existing.values().stream()
+				.filter(membership -> !chosen.contains(membership.getProgramId()))
+				.filter(membership -> membership.getStatus() == ProgramMentorStatus.PENDING
+						&& membership.getInvitedBy() == ProgramMentorInvitedBy.MENTOR)
+				.filter(membership -> inviteRepository
+						.findByProgramIdAndMentorId(membership.getProgramId(), mentor.getId()).isEmpty())
+				.forEach(programMentorRepository::delete);
+
+		List<UUID> added = chosen.stream().filter(id -> !existing.containsKey(id)).toList();
+		if (!added.isEmpty()) {
+			List<Program> programs = programRepository.findAllById(added);
+			if (programs.size() != added.size()
+					|| programs.stream().anyMatch(program -> program.getStatus() != ProgramStatus.ACTIVE)) {
+				throw new InvalidRequestException(Texts.forRequest("error.programNotOpen"));
+			}
+			Instant now = Instant.now();
+			for (UUID programId : added) {
+				ProgramMentor membership = new ProgramMentor();
+				membership.setId(UUID.randomUUID());
+				membership.setProgramId(programId);
+				membership.setMentorId(mentor.getId());
+				membership.setStatus(ProgramMentorStatus.PENDING);
+				membership.setInvitedBy(ProgramMentorInvitedBy.MENTOR);
+				membership.setCreatedAt(now);
+				programMentorRepository.save(membership);
+			}
+		}
+		return chosenProgramsOf(mentor);
+	}
+
+	private List<UUID> chosenProgramsOf(AppUser mentor) {
+		return programMentorRepository.findByMentorIdOrderByCreatedAtAsc(mentor.getId()).stream()
+				.filter(membership -> OPEN_MEMBERSHIPS.contains(membership.getStatus()))
+				.map(ProgramMentor::getProgramId)
+				.toList();
+	}
+
+	private AppUser requireMentorByFirebaseUid(String firebaseUid) {
+		return appUserRepository.findByFirebaseUid(firebaseUid)
+				.filter(user -> user.getRole() == UserRole.MENTOR)
+				.orElseThrow(() -> new InvalidRequestException("Only a mentor can choose programs."));
 	}
 
 	private List<MentorPoolResponse.Row> rows(Program program) {

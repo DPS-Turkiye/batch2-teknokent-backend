@@ -9,17 +9,21 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
+import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.ProgramApprovalsResponse;
 import com.dps.teknokent.dto.responses.TeamChangeResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.util.Texts;
@@ -43,6 +47,8 @@ public class ProgramApprovalService {
 	private final ProgramStartupRepository programStartupRepository;
 	private final TeamChangeRequestRepository teamChangeRequestRepository;
 	private final TeamChangeService teamChangeService;
+	private final ProgramMentorRepository programMentorRepository;
+	private final MentorPoolService mentorPoolService;
 
 	@Transactional(readOnly = true)
 	public ProgramApprovalsResponse approvals(UUID actorId, UUID programId) {
@@ -95,6 +101,13 @@ public class ProgramApprovalService {
 		return approvalsOf(programId);
 	}
 
+	/** Same decision as the Mentor Havuzu's, so it also settles the account of a mentor still signing up. */
+	@Transactional
+	public ProgramApprovalsResponse decideMentor(UUID actorId, UUID programId, UUID mentorId, boolean accepted) {
+		mentorPoolService.decide(actorId, programId, mentorId, accepted);
+		return approvalsOf(programId);
+	}
+
 	@Transactional
 	public ProgramApprovalsResponse decideTeamChange(UUID actorId, UUID programId, UUID requestId, boolean accepted) {
 		coordinatorProgramService.requireManagedProgram(actorId, programId);
@@ -109,6 +122,15 @@ public class ProgramApprovalService {
 				.stream()
 				.map(ProgramApprovalsResponse.Person::of)
 				.toList();
+		List<UUID> mentorIds = programMentorRepository.findByProgramIdOrderByCreatedAtAsc(programId).stream()
+				.filter(membership -> membership.getStatus() == ProgramMentorStatus.PENDING
+						&& membership.getInvitedBy() == ProgramMentorInvitedBy.MENTOR)
+				.map(ProgramMentor::getMentorId)
+				.toList();
+		List<ProgramApprovalsResponse.Person> mentors = mentorIds.isEmpty() ? List.of()
+				: appUserRepository.findAllById(mentorIds).stream()
+						.map(ProgramApprovalsResponse.Person::of)
+						.toList();
 		Set<UUID> organizationIds = programStartupRepository.findByProgramIdOrderByCreatedAtAsc(programId).stream()
 				.map(ProgramStartup::getOrganizationId)
 				.collect(Collectors.toSet());
@@ -123,6 +145,6 @@ public class ProgramApprovalService {
 				.findByProgramIdAndStatusOrderByCreatedAtAsc(programId, TeamChangeStatus.PENDING).stream()
 				.map(TeamChangeResponse::of)
 				.toList();
-		return new ProgramApprovalsResponse(people, startups, teamChanges);
+		return new ProgramApprovalsResponse(people, mentors, startups, teamChanges);
 	}
 }

@@ -26,6 +26,24 @@ public final class CurrentActor {
 		return requestedActorId;
 	}
 
+	/**
+	 * The Firebase uid behind a bearer token, for /api/onboarding paths that run before the account is approved
+	 * (or exists). The proxy's shared credentials never carry one, so they cannot act for anybody here.
+	 */
+	public static String firebaseUid() {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication != null && authentication.getPrincipal() instanceof FirebaseIdentity identity) {
+			return identity.uid();
+		}
+		if (authentication != null
+				&& authentication.getPrincipal() instanceof AppUserPrincipal principal
+				&& principal.firebaseUid() != null
+				&& !principal.firebaseUid().isBlank()) {
+			return principal.firebaseUid();
+		}
+		throw new InvalidRequestException("A Firebase session is required.");
+	}
+
 	public static UUID resolve(UUID requestedActorId) {
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {

@@ -110,6 +110,7 @@ public class ProgramService {
 	public List<ProgramNameResponse> listNames() {
 		return programRepository.findAllByOrderByCreatedAtDesc()
 				.stream()
+				.filter(program -> program.getStatus() == ProgramStatus.ACTIVE)
 				.map(program -> new ProgramNameResponse(program.getId(), program.getName()))
 				.toList();
 	}

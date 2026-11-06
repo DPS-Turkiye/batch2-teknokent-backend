@@ -23,6 +23,13 @@ public interface ProgramMentorRepository extends JpaRepository<ProgramMentor, UU
 			ProgramMentorStatus status,
 			ProgramMentorInvitedBy invitedBy);
 
+	List<ProgramMentor> findByMentorIdOrderByCreatedAtAsc(UUID mentorId);
+
+	boolean existsByMentorIdAndProgramIdNotAndStatusIn(
+			UUID mentorId,
+			UUID programId,
+			Collection<ProgramMentorStatus> statuses);
+
 	List<ProgramMentor> findByMentorIdAndStatusOrderByCreatedAtDesc(
 			UUID mentorId,
 			ProgramMentorStatus status);

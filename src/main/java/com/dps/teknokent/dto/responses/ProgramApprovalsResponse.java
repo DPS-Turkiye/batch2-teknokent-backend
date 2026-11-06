@@ -8,9 +8,9 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 
 /** The coordinator's "Onaylar" tab: people and startups of one program waiting for a decision. */
-/** teamChanges: leave and removal requests waiting in the program. */
+/** mentors: mentors who asked to join the program; teamChanges: leave and removal requests waiting in it. */
 public record ProgramApprovalsResponse(
-		List<Person> people, List<Startup> startups, List<TeamChangeResponse> teamChanges) {
+		List<Person> people, List<Person> mentors, List<Startup> startups, List<TeamChangeResponse> teamChanges) {
 
 	/** organizationName is null for someone who signed up without a startup. */
 	public record Person(UUID id, String fullName, String email, String jobTitle, String organizationName,
