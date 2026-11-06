@@ -4,6 +4,9 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import com.dps.teknokent.exception.InvalidRequestException;
 
 public class DisabledLoginProvisioner implements LoginProvisioner {
@@ -16,6 +19,21 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	@Override
 	public Optional<String> passwordSetupLink(String email, String continueUrl) {
 		return Optional.empty();
+	}
+
+	@Override
+	public Optional<String> passwordResetLink(String email, String continueUrl) {
+		throw noFirebase();
+	}
+
+	@Override
+	public String emailVerificationLink(String email, String continueUrl) {
+		throw noFirebase();
+	}
+
+	// The frontend then falls back to Firebase's own e-mail.
+	private static ResponseStatusException noFirebase() {
+		return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase is not configured.");
 	}
 
 	@Override
