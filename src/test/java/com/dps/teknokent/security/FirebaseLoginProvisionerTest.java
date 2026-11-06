@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -20,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.google.firebase.ErrorCode;
+import com.google.firebase.auth.ActionCodeSettings;
 import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
@@ -113,6 +116,52 @@ class FirebaseLoginProvisionerTest {
 		when(user.getUid()).thenReturn(uid);
 		when(user.getProviderData()).thenReturn(providers);
 		return user;
+	}
+
+	@Test
+	void makesAVerificationLinkThatReturnsToTheSignInPage() throws Exception {
+		when(firebaseAuth.generateEmailVerificationLink(eq("mentor@bilkent.edu.tr"), any(ActionCodeSettings.class)))
+				.thenReturn("https://verify");
+
+		assertThat(provisioner.emailVerificationLink("mentor@bilkent.edu.tr", "https://menton.com.tr/login"))
+				.isEqualTo("https://verify");
+	}
+
+	// Firebase refuses a continue URL on a domain it has not authorized; the link then ends on Firebase's own page.
+	@Test
+	void dropsAContinueUrlFirebaseRefuses() throws Exception {
+		FirebaseAuthException unauthorized = failure(ErrorCode.INVALID_ARGUMENT, null);
+		when(firebaseAuth.generateEmailVerificationLink(eq("mentor@bilkent.edu.tr"), any(ActionCodeSettings.class)))
+				.thenThrow(unauthorized);
+		when(firebaseAuth.generateEmailVerificationLink(eq("mentor@bilkent.edu.tr"), isNull()))
+				.thenReturn("https://plain");
+
+		assertThat(provisioner.emailVerificationLink("mentor@bilkent.edu.tr", "https://menton.com.tr/login"))
+				.isEqualTo("https://plain");
+	}
+
+	@Test
+	void tellsAMissingLoginApartFromAFirebaseFailureForAReset() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);
+		when(firebaseAuth.generatePasswordResetLink(eq("kimse@tekno.com"), any())).thenThrow(notFound);
+		when(firebaseAuth.generatePasswordResetLink(eq("mentor@bilkent.edu.tr"), any())).thenThrow(denied);
+
+		assertThat(provisioner.passwordResetLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
+		verify(firebaseAuth, times(1)).generatePasswordResetLink(eq("kimse@tekno.com"), any());
+		assertThatThrownBy(() -> provisioner.passwordResetLink("mentor@bilkent.edu.tr", "https://menton.com.tr/login"))
+				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+	}
+
+	// Found in the live test: with e-mail enumeration protection Firebase gives no link instead of an error.
+	@Test
+	void readsAResetWithoutALinkAsNoLoginAndAVerificationWithoutOneAsUnavailable() throws Exception {
+		assertThat(provisioner.passwordResetLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
+		assertThat(provisioner.passwordSetupLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
+		assertThatThrownBy(() -> provisioner.emailVerificationLink("kimse@tekno.com", "https://menton.com.tr/login"))
+				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
 	}
 
 	private static FirebaseAuthException failure(ErrorCode errorCode, AuthErrorCode authErrorCode) {
