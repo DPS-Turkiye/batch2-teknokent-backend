@@ -20,15 +20,19 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
+import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
 
@@ -59,9 +63,54 @@ class ProgramApprovalServiceTest {
 	private TeamChangeRequestRepository teamChangeRequestRepository;
 	@Mock
 	private TeamChangeService teamChangeService;
+	@Mock
+	private ProgramMentorRepository programMentorRepository;
+	@Mock
+	private MentorPoolService mentorPoolService;
 
 	@InjectMocks
 	private ProgramApprovalService service;
+
+	@Test
+	void approvals_listsOnlyMentorsWhoAskedToJoinAndAreStillWaiting() {
+		UUID askedId = UUID.randomUUID();
+		ProgramMentor asked = mentorMembership(askedId, ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		ProgramMentor invited = mentorMembership(UUID.randomUUID(), ProgramMentorStatus.PENDING,
+				ProgramMentorInvitedBy.COORDINATOR);
+		ProgramMentor member = mentorMembership(UUID.randomUUID(), ProgramMentorStatus.ACCEPTED,
+				ProgramMentorInvitedBy.MENTOR);
+		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID))
+				.thenReturn(List.of(asked, invited, member));
+		AppUser mentor = mentee(null);
+		mentor.setId(askedId);
+		mentor.setRole(UserRole.MENTOR);
+		mentor.setFullName("Ayşe Demir");
+		when(appUserRepository.findAllById(List.of(askedId))).thenReturn(List.of(mentor));
+
+		var result = service.approvals(ACTOR_ID, PROGRAM_ID);
+
+		assertThat(result.mentors()).extracting(row -> row.fullName()).containsExactly("Ayşe Demir");
+	}
+
+	@Test
+	void decideMentor_usesTheMentorPoolDecisionThenListsWhatIsLeft() {
+		UUID mentorId = UUID.randomUUID();
+
+		var result = service.decideMentor(ACTOR_ID, PROGRAM_ID, mentorId, true);
+
+		verify(mentorPoolService).decide(ACTOR_ID, PROGRAM_ID, mentorId, true);
+		assertThat(result.mentors()).isEmpty();
+	}
+
+	private static ProgramMentor mentorMembership(UUID mentorId, ProgramMentorStatus status,
+			ProgramMentorInvitedBy invitedBy) {
+		ProgramMentor membership = new ProgramMentor();
+		membership.setProgramId(PROGRAM_ID);
+		membership.setMentorId(mentorId);
+		membership.setStatus(status);
+		membership.setInvitedBy(invitedBy);
+		return membership;
+	}
 
 	@Test
 	void approvals_listsThePendingPeopleAndStartupsOfTheProgram() {

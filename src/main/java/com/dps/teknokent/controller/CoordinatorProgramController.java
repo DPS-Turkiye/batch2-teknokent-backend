@@ -225,6 +225,15 @@ public class CoordinatorProgramController {
 				request.accepted());
 	}
 
+	@PostMapping("/{id}/approvals/mentors/{mentorId}")
+	public ProgramApprovalsResponse decideMentorRequest(
+			@PathVariable UUID id,
+			@PathVariable UUID mentorId,
+			@Valid @RequestBody DecideApprovalRequest request) {
+		return programApprovalService.decideMentor(CurrentActor.resolve(request.actorId()), id, mentorId,
+				request.accepted());
+	}
+
 	@PostMapping("/{id}/approvals/startups/{organizationId}")
 	public ProgramApprovalsResponse decideStartup(
 			@PathVariable UUID id,
