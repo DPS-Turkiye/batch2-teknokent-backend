@@ -154,6 +154,16 @@ class FirebaseLoginProvisionerTest {
 						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
 	}
 
+	// Found in the live test: with e-mail enumeration protection Firebase gives no link instead of an error.
+	@Test
+	void readsAResetWithoutALinkAsNoLoginAndAVerificationWithoutOneAsUnavailable() throws Exception {
+		assertThat(provisioner.passwordResetLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
+		assertThat(provisioner.passwordSetupLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
+		assertThatThrownBy(() -> provisioner.emailVerificationLink("kimse@tekno.com", "https://menton.com.tr/login"))
+				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+	}
+
 	private static FirebaseAuthException failure(ErrorCode errorCode, AuthErrorCode authErrorCode) {
 		FirebaseAuthException exception = mock(FirebaseAuthException.class);
 		when(exception.getErrorCode()).thenReturn(errorCode);

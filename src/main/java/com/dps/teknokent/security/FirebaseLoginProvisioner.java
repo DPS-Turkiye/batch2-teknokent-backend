@@ -78,17 +78,18 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	@Override
 	public Optional<String> passwordSetupLink(String email, String continueUrl) {
 		try {
-			return Optional.of(link(firebaseAuth::generatePasswordResetLink, email, continueUrl));
+			return Optional.ofNullable(link(firebaseAuth::generatePasswordResetLink, email, continueUrl));
 		} catch (FirebaseAuthException exception) {
 			log.warn("No password setup link for {}: {}", email, exception.getMessage());
 			return Optional.empty();
 		}
 	}
 
+	/** With e-mail enumeration protection on, Firebase answers an unknown address with no link instead of an error. */
 	@Override
 	public Optional<String> passwordResetLink(String email, String continueUrl) {
 		try {
-			return Optional.of(link(firebaseAuth::generatePasswordResetLink, email, continueUrl));
+			return Optional.ofNullable(link(firebaseAuth::generatePasswordResetLink, email, continueUrl));
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
 				return Optional.empty();
@@ -99,11 +100,16 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	@Override
 	public String emailVerificationLink(String email, String continueUrl) {
+		String link;
 		try {
-			return link(firebaseAuth::generateEmailVerificationLink, email, continueUrl);
+			link = link(firebaseAuth::generateEmailVerificationLink, email, continueUrl);
 		} catch (FirebaseAuthException exception) {
 			throw linkUnavailable(email, exception);
 		}
+		if (link == null) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase returned no verification link.");
+		}
+		return link;
 	}
 
 	/**
