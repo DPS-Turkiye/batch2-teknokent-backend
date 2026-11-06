@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,6 +48,7 @@ public class MentorRecommendationService {
 
 	private final MentorProfileService mentorProfileService;
 	private final PgVectorMentorRetrievalService pgVectorRetrievalService;
+	private final MenteeProgramService menteeProgramService;
 
 	@Value("${AI_PROVIDER:openrouter}")
 	private String provider;
@@ -61,6 +63,19 @@ public class MentorRecommendationService {
 		return rank(request, request.excludedMentorId() == null
 				? mentorProfileService.findAll()
 				: mentorProfileService.findAllExcept(request.excludedMentorId()));
+	}
+
+	/** What a mentee is offered: ranked among their program's accepted mentors when they are in a program. */
+	public MentorRecommendationResult recommendFor(UUID actorId, RecommendMentorsRequest request) {
+		return menteeProgramService.reachableMentorIds(actorId)
+				.map(ids -> {
+					Set<UUID> pool = new HashSet<>(ids);
+					if (request.excludedMentorId() != null) {
+						pool.remove(request.excludedMentorId());
+					}
+					return recommendAmong(request, pool);
+				})
+				.orElseGet(() -> recommend(request));
 	}
 
 	/** Ranks only {@code mentorIds}: a program's mentor pool when a coordinator matches one of its teams. */

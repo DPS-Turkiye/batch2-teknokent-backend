@@ -26,6 +26,7 @@ import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
+import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -95,6 +96,32 @@ class ProgramLaunchServiceTest {
 				.containsExactly("deniz@kavsak.co", "selin@mirabio.com");
 		assertThat(invites.getAllValues()).allSatisfy(invite -> assertThat(invite.getCode()).startsWith("BIGG26-"));
 		verify(programService).detail(any(), any());
+	}
+
+	@Test
+	void theWizardsPhasesAndSyllabusAreSavedWithTheProgram() {
+		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, UserRole.COORDINATOR));
+		List<ReplaceProgramPhasesRequest.PhaseInput> phases = List.of(
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", LocalDate.of(2026, 11, 3), null, "Rapor"));
+		UUID syllabusId = UUID.randomUUID();
+		CreateCoordinatorProgramRequest base = request(List.of(), List.of());
+
+		service.create(ELIF, new CreateCoordinatorProgramRequest(null, base.name(), base.description(),
+				base.startDate(), base.endDate(), base.coordinatorIds(), 4, 14, 14, 21, List.of(), phases, syllabusId));
+
+		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
+		verify(programRepository).save(program.capture());
+		verify(programService).writePhases(program.getValue().getId(), phases);
+		verify(programService).attachSyllabus(program.getValue(), ELIF, syllabusId);
+	}
+
+	@Test
+	void launchingWithoutPhasesLeavesThePhasesAlone() {
+		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, UserRole.COORDINATOR));
+
+		service.create(ELIF, request(List.of(), List.of()));
+
+		verify(programService, never()).writePhases(any(), any());
 	}
 
 	@Test
@@ -275,7 +302,7 @@ class ProgramLaunchServiceTest {
 
 	private static CreateCoordinatorProgramRequest request(List<UUID> coordinators, List<TeamInviteInput> teams) {
 		return new CreateCoordinatorProgramRequest(null, " METU BİGG 2026 ", "Kuluçka", LocalDate.of(2026, 11, 3),
-				LocalDate.of(2027, 9, 30), coordinators, 4, 14, 14, 21, teams);
+				LocalDate.of(2027, 9, 30), coordinators, 4, 14, 14, 21, teams, null, null);
 	}
 
 	private static AppUser user(UUID id, UserRole role) {

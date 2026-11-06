@@ -161,7 +161,7 @@ public class ProgramMatchingService {
 			throw new ConflictException("This mentor is already working with this team.");
 		}
 		Need need = needOf(team);
-		mentorshipRepository.save(Mentorship.fromRequest(
+		Mentorship matched = Mentorship.fromRequest(
 				new CreateMentorshipRequest(
 						mentorId,
 						team.getId(),
@@ -171,7 +171,9 @@ public class ProgramMatchingService {
 						1,
 						need.topic()),
 				mentor,
-				team));
+				team);
+		matched.setProgram(program);
+		mentorshipRepository.save(matched);
 		closeOpenRequests(team, mentorId);
 		notificationService.create(
 				mentor,
@@ -192,8 +194,13 @@ public class ProgramMatchingService {
 		List<ProgramStartup> startups = programStartupRepository.findByProgramIdIn(List.of(program.getId()));
 		List<UUID> teamIds = startups.stream().map(ProgramStartup::getOrganizationId).toList();
 		Map<UUID, Organization> teams = organizationRepository.findAllById(teamIds).stream()
+				.filter(Organization::isApprovedForProgram)
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
-		List<Mentorship> mentorships = teamIds.isEmpty() ? List.of() : mentorshipRepository.findByOrganizationIdIn(teamIds);
+		List<Mentorship> mentorships = teamIds.isEmpty()
+				? List.of()
+				: mentorshipRepository.findByOrganizationIdIn(teamIds).stream()
+						.filter(mentorship -> CoordinatorProgramService.countsIn(mentorship, Set.of(program.getId())))
+						.toList();
 		Set<UUID> matchedTeams = mentorships.stream()
 				.filter(mentorship -> MATCHED.contains(mentorship.getStatus()))
 				.map(mentorship -> mentorship.getOrganization().getId())
@@ -278,8 +285,12 @@ public class ProgramMatchingService {
 	private Organization requireTeam(Program program, UUID organizationId) {
 		programStartupRepository.findByProgramIdAndOrganizationId(program.getId(), organizationId)
 				.orElseThrow(() -> new ResourceNotFoundException("Team is not in this program: " + organizationId));
-		return organizationRepository.findById(organizationId)
+		Organization team = organizationRepository.findById(organizationId)
 				.orElseThrow(() -> new ResourceNotFoundException("Team not found: " + organizationId));
+		if (!team.isApprovedForProgram()) {
+			throw new InvalidRequestException(Texts.forRequest("error.startupNotApproved"));
+		}
+		return team;
 	}
 
 	private List<UUID> poolOf(Program program) {

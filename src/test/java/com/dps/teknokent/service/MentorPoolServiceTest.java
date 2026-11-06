@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dps.teknokent.domain.MentorPoolStatus;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -35,6 +36,7 @@ import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 
 @ExtendWith(MockitoExtension.class)
 class MentorPoolServiceTest {
@@ -43,6 +45,8 @@ class MentorPoolServiceTest {
 	private CoordinatorProgramService coordinatorProgramService;
 	@Mock
 	private ProgramService programService;
+	@Mock
+	private ProgramRepository programRepository;
 	@Mock
 	private ProgramMentorRepository programMentorRepository;
 	@Mock
@@ -102,27 +106,100 @@ class MentorPoolServiceTest {
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId()))
 				.thenReturn(Optional.of(membership(mentor.getId(), ProgramMentorInvitedBy.MENTOR)));
 		when(appUserRepository.findById(mentor.getId())).thenReturn(Optional.of(mentor));
-		when(inviteRepository.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId()))
-				.thenReturn(Optional.of(new ProgramMentorInvite()));
 
 		service.decide(ELIF, PROGRAM_ID, mentor.getId(), true);
 
 		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
-		verify(programService).decideMentorRequest(ELIF, PROGRAM_ID, mentor.getId(), true);
+		verify(programService).settleMentorRequest(any(), org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(true));
 	}
 
 	@Test
-	void aPendingAccountThatDidNotComeThroughTheLinkStillNeedsTheAdmin() {
+	void approvingAMentorWhoPickedTheProgramAtOnboardingApprovesTheirAccountWithoutTheAdmin() {
+		AppUser mentor = awaitingDecision();
+
+		service.decide(ELIF, PROGRAM_ID, mentor.getId(), true);
+
+		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
+		verify(programService).settleMentorRequest(any(), org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(true));
+	}
+
+	@Test
+	void aRejectionLeavesTheAccountWaitingWhileAnotherChosenProgramHasNotDecided() {
+		AppUser mentor = awaitingDecision();
+		when(programMentorRepository.existsByMentorIdAndProgramIdNotAndStatusIn(
+				org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(PROGRAM_ID), any()))
+				.thenReturn(true);
+
+		service.decide(ELIF, PROGRAM_ID, mentor.getId(), false);
+
+		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.PENDING);
+		verify(programService).settleMentorRequest(any(), org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(false));
+	}
+
+	@Test
+	void theLastChosenProgramRejectingAlsoRejectsTheAccount() {
+		AppUser mentor = awaitingDecision();
+
+		service.decide(ELIF, PROGRAM_ID, mentor.getId(), false);
+
+		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.REJECTED);
+	}
+
+	@Test
+	void onboardingAddsNewlyTickedProgramsAndDropsAnUntickedRequestNobodyAnswered() {
+		AppUser mentor = user(UUID.randomUUID(), UserRole.MENTOR, UserAccountStatus.PENDING);
+		when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
+		ProgramMentor unticked = membership(mentor.getId(), ProgramMentorInvitedBy.MENTOR);
+		ProgramMentor accepted = membership(mentor.getId(), ProgramMentorInvitedBy.COORDINATOR);
+		accepted.setProgramId(UUID.randomUUID());
+		accepted.setStatus(ProgramMentorStatus.ACCEPTED);
+		when(programMentorRepository.findByMentorIdOrderByCreatedAtAsc(mentor.getId()))
+				.thenReturn(List.of(unticked, accepted));
+		when(inviteRepository.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId())).thenReturn(Optional.empty());
+		Program open = program();
+		open.setId(UUID.randomUUID());
+		when(programRepository.findAllById(List.of(open.getId()))).thenReturn(List.of(open));
+
+		service.choosePrograms("uid-1", List.of(open.getId()));
+
+		verify(programMentorRepository).delete(unticked);
+		verify(programMentorRepository, never()).delete(accepted);
+		ArgumentCaptor<ProgramMentor> saved = ArgumentCaptor.forClass(ProgramMentor.class);
+		verify(programMentorRepository).save(saved.capture());
+		assertThat(saved.getValue().getProgramId()).isEqualTo(open.getId());
+		assertThat(saved.getValue().getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
+		assertThat(saved.getValue().getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.MENTOR);
+	}
+
+	@Test
+	void onboardingRefusesAProgramThatIsNoLongerOpen() {
+		AppUser mentor = user(UUID.randomUUID(), UserRole.MENTOR, UserAccountStatus.PENDING);
+		when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
+		Program finished = program();
+		finished.setStatus(ProgramStatus.COMPLETED);
+		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(finished));
+
+		assertThatThrownBy(() -> service.choosePrograms("uid-1", List.of(PROGRAM_ID)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programMentorRepository, never()).save(any());
+	}
+
+	@Test
+	void onlyAMentorCanChoosePrograms() {
+		AppUser mentee = user(UUID.randomUUID(), UserRole.MENTEE, UserAccountStatus.PENDING);
+		when(appUserRepository.findByFirebaseUid("uid-2")).thenReturn(Optional.of(mentee));
+
+		assertThatThrownBy(() -> service.choosePrograms("uid-2", List.of(PROGRAM_ID)))
+				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	private AppUser awaitingDecision() {
 		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program());
 		AppUser mentor = user(UUID.randomUUID(), UserRole.MENTOR, UserAccountStatus.PENDING);
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId()))
 				.thenReturn(Optional.of(membership(mentor.getId(), ProgramMentorInvitedBy.MENTOR)));
 		when(appUserRepository.findById(mentor.getId())).thenReturn(Optional.of(mentor));
-		when(inviteRepository.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId())).thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> service.decide(ELIF, PROGRAM_ID, mentor.getId(), true))
-				.isInstanceOf(InvalidRequestException.class);
-		verify(programService, never()).decideMentorRequest(any(), any(), any(), any(Boolean.class));
+		return mentor;
 	}
 
 	@Test

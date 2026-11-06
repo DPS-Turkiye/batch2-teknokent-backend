@@ -6,6 +6,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -64,27 +65,53 @@ public class AiProviderClient {
 			- Put document/extraction limitations in warnings.
 			- The source may be Turkish, English, or contain both languages.
 			""";
+		return structuredCompletion(instructions, redactedDocumentText, profileType + "_profile", schema, "profile");
+	}
+
+	/**
+	 * Program phases from a syllabus. Dates are only filled when the text states them, or states week numbers
+	 * that the program start date turns into dates.
+	 */
+	public JsonNode syllabusPhases(String redactedDocumentText, LocalDate programStart, LocalDate programEnd,
+			JsonNode schema) {
+		String instructions = """
+			Extract the program phases (stages, modules, periods) from the supplied syllabus text, in order.
+			- Extract only phases the source describes; never invent phases, dates or deliverables.
+			- name: the phase title as written, in the source language, at most 120 characters.
+			- expected_output: the phase's deliverables or outcome as one short line (at most 150 characters),
+			  or null when the source names none.
+			- start_date and end_date: ISO dates (YYYY-MM-DD). Use a date the source states. When the source
+			  gives week or month numbers and the program start date is known, count from that date. Otherwise null.
+			- Return at most 12 phases. Put extraction limitations in warnings.
+			- The source may be Turkish, English, or contain both languages.
+			Program start date: %s. Program end date: %s.
+			""".formatted(programStart == null ? "unknown" : programStart, programEnd == null ? "unknown" : programEnd);
+		return structuredCompletion(instructions, redactedDocumentText, "syllabus_phases", schema, "phase list");
+	}
+
+	private JsonNode structuredCompletion(
+			String instructions, String userText, String schemaName, JsonNode schema, String resultName) {
 		Map<String, Object> payload = Map.of(
 				"model", profileModel(),
 				"messages", List.of(
 						Map.of("role", "system", "content", instructions),
-						Map.of("role", "user", "content", redactedDocumentText)),
+						Map.of("role", "user", "content", userText)),
 				"response_format", Map.of(
 						"type", "json_schema",
 						"json_schema", Map.of(
-								"name", profileType + "_profile",
+								"name", schemaName,
 								"strict", true,
 								"schema", schema)));
 		JsonNode response = post(baseUrl() + "/chat/completions", payload);
 		JsonNode message = response.path("choices").path(0).path("message");
 		String content = message.path("content").asText("");
 		if (content.isBlank()) {
-			throw new InvalidRequestException("The AI provider returned an empty profile.");
+			throw new InvalidRequestException("The AI provider returned an empty " + resultName + ".");
 		}
 		try {
 			return jsonUtils.readTree(content);
 		} catch (IllegalStateException error) {
-			throw new InvalidRequestException("The AI provider returned an invalid structured profile.");
+			throw new InvalidRequestException("The AI provider returned an invalid structured " + resultName + ".");
 		}
 	}
 
@@ -127,6 +154,21 @@ public class AiProviderClient {
 			- The JSON must match this schema:
 			""" + jsonUtils.writeValue(schema);
 		return completeWithSchemaFallback(reportModel(), instructions, transcriptLines, schema);
+	}
+
+	/** Picks, for each open task of someone who left a team, the remaining member best placed to take it over. */
+	public JsonNode taskHandover(String teamAndTasks, JsonNode schema) {
+		String instructions = """
+			You hand over the open tasks of someone who left a startup team to the members who stay.
+			- The input lists the remaining members (id, job title, how many open tasks they already have, and
+			  whether they lead the team) and the tasks to hand over (id, title, description).
+			- For every task pick exactly one member whose job title fits the task best; when several fit equally,
+			  prefer the one with fewer open tasks. Use the team lead when nobody fits.
+			- Use only the given ids. Return every task id exactly once.
+			- Return ONLY a single JSON object. No markdown fences, no commentary.
+			- The JSON must match this schema:
+			""" + jsonUtils.writeValue(schema);
+		return completeWithSchemaFallback(reportModel(), instructions, teamAndTasks, schema);
 	}
 
 	private JsonNode completeWithSchemaFallback(

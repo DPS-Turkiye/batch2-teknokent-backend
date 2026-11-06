@@ -16,6 +16,15 @@ public interface LoginProvisioner {
 	 */
 	Optional<String> passwordSetupLink(String email, String continueUrl);
 
+	/**
+	 * Like {@link #passwordSetupLink}, but tells the two empty cases apart: empty means no login uses {@code email};
+	 * a 503 means Firebase could not answer.
+	 */
+	Optional<String> passwordResetLink(String email, String continueUrl);
+
+	/** A Firebase link that marks {@code email} as verified; a 503 when none can be made. */
+	String emailVerificationLink(String email, String continueUrl);
+
 	/** Whether each login has a password yet; a uid Firebase cannot answer for is left out. */
 	Map<String, Boolean> passwordsSet(Collection<String> uids);
 

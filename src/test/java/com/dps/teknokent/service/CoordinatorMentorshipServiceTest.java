@@ -85,6 +85,7 @@ class CoordinatorMentorshipServiceTest {
 	private static final UUID AYSE_ID = UUID.fromString("00000000-0000-0000-0000-000000000006");
 	private static final UUID KEREM_ID = UUID.fromString("00000000-0000-0000-0000-000000000016");
 	private static final UUID PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
+	private static final UUID OTHER_PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
 	private static final UUID LUMEN_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
 	private static final UUID KAVUN_ID = UUID.fromString("10000000-0000-0000-0000-000000000003");
 	private static final UUID TERRA_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
@@ -146,6 +147,50 @@ class CoordinatorMentorshipServiceTest {
 
 		assertThat(row.openActions()).isZero();
 		assertThat(row.lastMeetingAt()).isNull();
+	}
+
+	@Test
+	void aTeamInTwoProgramsHasEachMentorshipListedUnderTheProgramItWasMadeIn() {
+		Program kulucka = program();
+		kulucka.setId(OTHER_PROGRAM_ID);
+		kulucka.setName("Kuluçka 2026");
+		Mentorship metuMatch = mentorship(ayse, LUMEN_ID, "Lumen", MentorshipStatus.ACTIVE);
+		metuMatch.setProgram(program);
+		Mentorship kulucakMatch = mentorship(kerem, LUMEN_ID, "Lumen", MentorshipStatus.ACTIVE);
+		kulucakMatch.setProgram(kulucka);
+		ProgramStartup inKulucka = startup(LUMEN_ID);
+		inKulucka.setProgramId(OTHER_PROGRAM_ID);
+		Snapshot snapshot = new Snapshot(today, now, Map.of(), Map.of(),
+				Map.of(PROGRAM_ID, List.of(startup(LUMEN_ID)), OTHER_PROGRAM_ID, List.of(inKulucka)),
+				Map.of(), Map.of(), Map.of(LUMEN_ID, List.of(metuMatch, kulucakMatch)),
+				Map.of(), Map.of(), Map.of(), Set.of());
+		when(programService.requireCoordinatorOrAdmin(COORDINATOR_ID)).thenReturn(coordinator);
+		when(programService.managedPrograms(coordinator)).thenReturn(List.of(program, kulucka));
+		when(programService.scopeOf(COORDINATOR_ID, List.of(program, kulucka), null)).thenReturn(List.of(program, kulucka));
+		when(programService.scopeOf(COORDINATOR_ID, List.of(program, kulucka), OTHER_PROGRAM_ID))
+				.thenReturn(List.of(kulucka));
+		when(programService.snapshot(any())).thenReturn(snapshot);
+
+		assertThat(service.list(COORDINATOR_ID, null))
+				.extracting(row -> row.mentorName() + " / " + row.programName())
+				.containsExactlyInAnyOrder("Ayşe Demir / METU Stars 2026", "Kerem Sarı / Kuluçka 2026");
+		assertThat(service.list(COORDINATOR_ID, OTHER_PROGRAM_ID))
+				.extracting(row -> row.mentorName())
+				.containsExactly("Kerem Sarı");
+	}
+
+	@Test
+	void aMentorshipMadeInAnotherProgramCannotBeOpenedThroughTheTeam() {
+		Program kulucka = program();
+		kulucka.setId(OTHER_PROGRAM_ID);
+		Mentorship lumen = mentorship(ayse, LUMEN_ID, "Lumen", MentorshipStatus.ACTIVE);
+		lumen.setProgram(kulucka);
+		when(programService.requireCoordinatorOrAdmin(COORDINATOR_ID)).thenReturn(coordinator);
+		when(mentorshipRepository.findById(lumen.getId())).thenReturn(Optional.of(lumen));
+		when(programService.managedPrograms(coordinator)).thenReturn(List.of(program));
+
+		assertThatThrownBy(() -> service.detail(COORDINATOR_ID, lumen.getId()))
+				.isInstanceOf(InvalidRequestException.class);
 	}
 
 	@Test

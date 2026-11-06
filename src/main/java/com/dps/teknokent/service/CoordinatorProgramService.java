@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
@@ -66,6 +68,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramCoordination;
@@ -98,6 +101,7 @@ public class CoordinatorProgramService {
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramPhaseRepository programPhaseRepository;
+	private final StoredDocumentRepository storedDocumentRepository;
 	private final ProgramEventRepository programEventRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
@@ -185,7 +189,14 @@ public class CoordinatorProgramService {
 			UUID programId,
 			ReplaceProgramPhasesRequest request) {
 		Program program = requireEditableProgram(actorId, programId);
-		for (ReplaceProgramPhasesRequest.PhaseInput input : request.phases()) {
+		writePhases(programId, request.phases());
+		attachSyllabus(program, actorId, request.syllabusDocumentId());
+		return detailOf(program);
+	}
+
+	/** Replaces the program's phases with {@code inputs}, in that order. */
+	public void writePhases(UUID programId, List<ReplaceProgramPhasesRequest.PhaseInput> inputs) {
+		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
 			requireOrderedDates(input.startDate(), input.endDate(), "A phase cannot end before it starts.");
 		}
 		programPhaseRepository.deleteByProgramId(programId);
@@ -194,7 +205,7 @@ public class CoordinatorProgramService {
 		programPhaseRepository.flush();
 		List<ProgramPhase> phases = new ArrayList<>();
 		int position = 0;
-		for (ReplaceProgramPhasesRequest.PhaseInput input : request.phases()) {
+		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
 			ProgramPhase phase = new ProgramPhase();
 			phase.setId(UUID.randomUUID());
 			phase.setProgramId(programId);
@@ -202,10 +213,26 @@ public class CoordinatorProgramService {
 			phase.setPosition(position++);
 			phase.setStartDate(input.startDate());
 			phase.setEndDate(input.endDate());
+			phase.setExpectedOutput(blankToNull(input.expectedOutput()));
 			phases.add(phase);
 		}
 		programPhaseRepository.saveAll(phases);
-		return detailOf(program);
+	}
+
+	/**
+	 * Links a syllabus the actor uploaded to the program; null leaves the current one. Someone else's file
+	 * reads as missing, so its id reveals nothing.
+	 */
+	public void attachSyllabus(Program program, UUID actorId, UUID documentId) {
+		if (documentId == null || documentId.equals(program.getSyllabusDocumentId())) {
+			return;
+		}
+		storedDocumentRepository.findById(documentId)
+				.filter(document -> actorId.equals(document.getUserId())
+						&& DocumentKind.SYLLABUS.value().equals(document.getKind()))
+				.orElseThrow(() -> new ResourceNotFoundException("Syllabus not found: " + documentId));
+		program.setSyllabusDocumentId(documentId);
+		programRepository.save(program);
 	}
 
 	/**
@@ -282,7 +309,7 @@ public class CoordinatorProgramService {
 				: meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds);
 		return new CoordinatorOverviewResponse(
 				options,
-				overviewMetrics(programOf, snapshot),
+				overviewMetrics(programOf, idsOf(scope), snapshot),
 				nextMeeting(meetings, snapshot.now()),
 				agenda(scope, organizationIds, meetings, snapshot),
 				new CoordinatorOverviewResponse.Actions(
@@ -291,7 +318,12 @@ public class CoordinatorProgramService {
 						missingNotes(meetings, snapshot.now())));
 	}
 
-	private CoordinatorOverviewResponse.Metrics overviewMetrics(Map<UUID, Program> programOf, Snapshot snapshot) {
+	private static Set<UUID> idsOf(List<Program> programs) {
+		return programs.stream().map(Program::getId).collect(Collectors.toSet());
+	}
+
+	private CoordinatorOverviewResponse.Metrics overviewMetrics(
+			Map<UUID, Program> programOf, Set<UUID> scopeIds, Snapshot snapshot) {
 		Set<UUID> matchedMentorships = new HashSet<>();
 		Set<UUID> mentoredTeams = new HashSet<>();
 		Set<UUID> activeMentors = new HashSet<>();
@@ -300,7 +332,7 @@ public class CoordinatorProgramService {
 		for (Map.Entry<UUID, Program> entry : programOf.entrySet()) {
 			UUID organizationId = entry.getKey();
 			bottlenecks += snapshot.openBottlenecks().getOrDefault(organizationId, List.of()).size();
-			for (Mentorship mentorship : mentorshipsOf(snapshot, organizationId)) {
+			for (Mentorship mentorship : mentorshipsOf(snapshot, scopeIds, organizationId)) {
 				if (!MATCHED.contains(mentorship.getStatus())) {
 					continue;
 				}
@@ -468,7 +500,7 @@ public class CoordinatorProgramService {
 		List<CoordinatorOverviewResponse.AwaitingTeam> teams = new ArrayList<>();
 		for (Program program : scope) {
 			for (ProgramStartup startup : awaitingMatch(
-					snapshot.startups().getOrDefault(program.getId(), List.of()), snapshot)) {
+					program, snapshot.startups().getOrDefault(program.getId(), List.of()), snapshot)) {
 				teams.add(new CoordinatorOverviewResponse.AwaitingTeam(
 						startup.getOrganizationId(),
 						organizationName(snapshot, startup.getOrganizationId()),
@@ -523,7 +555,7 @@ public class CoordinatorProgramService {
 		Snapshot snapshot = snapshot(List.of(program));
 		CoordinatorProgramResponse summary = summarize(program, snapshot);
 		List<ProgramStartup> startups = snapshot.startups().getOrDefault(program.getId(), List.of());
-		List<ProgramStartup> awaiting = awaitingMatch(startups, snapshot);
+		List<ProgramStartup> awaiting = awaitingMatch(program, startups, snapshot);
 		List<CoordinatorProgramResponse.AwaitingTeam> awaitingTeams = awaiting.stream()
 				.map(startup -> new CoordinatorProgramResponse.AwaitingTeam(
 						startup.getOrganizationId(),
@@ -560,7 +592,18 @@ public class CoordinatorProgramService {
 								.flatMap(startup -> snapshot.meetingsByOrganization()
 										.getOrDefault(startup.getOrganizationId(), List.of()).stream())
 								.toList(),
-						snapshot.now()).size());
+						snapshot.now()).size(),
+				syllabusOf(program));
+	}
+
+	private CoordinatorProgramResponse.Syllabus syllabusOf(Program program) {
+		if (program.getSyllabusDocumentId() == null) {
+			return null;
+		}
+		return storedDocumentRepository.findById(program.getSyllabusDocumentId())
+				.map(document -> new CoordinatorProgramResponse.Syllabus(
+						document.getId(), document.getOriginalFilename(), document.getSizeBytes(), document.getCreatedAt()))
+				.orElse(null);
 	}
 
 	/** The creator first, then the coordinators added to the program. */
@@ -579,10 +622,10 @@ public class CoordinatorProgramService {
 		List<ProgramStartup> startups = snapshot.startups().getOrDefault(program.getId(), List.of());
 		List<ProgramMentor> mentors = snapshot.mentors().getOrDefault(program.getId(), List.of());
 		List<ProgramPhase> phases = snapshot.phases().getOrDefault(program.getId(), List.of());
-		List<ProgramStartup> awaiting = awaitingMatch(startups, snapshot);
+		List<ProgramStartup> awaiting = awaitingMatch(program, startups, snapshot);
 		int activeMentorships = 0;
 		for (ProgramStartup startup : startups) {
-			for (Mentorship mentorship : mentorshipsOf(snapshot, startup.getOrganizationId())) {
+			for (Mentorship mentorship : mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId())) {
 				if (MATCHED.contains(mentorship.getStatus())) {
 					activeMentorships++;
 				}
@@ -626,7 +669,7 @@ public class CoordinatorProgramService {
 			UUID organizationId = startup.getOrganizationId();
 			List<Bottleneck> openIssues = snapshot.openBottlenecks().getOrDefault(organizationId, List.of());
 			boolean hasOpenIssue = !openIssues.isEmpty() || snapshot.overdueActionOrganizations().contains(organizationId);
-			for (Mentorship mentorship : mentorshipsOf(snapshot, organizationId)) {
+			for (Mentorship mentorship : mentorshipsOf(snapshot, Set.of(program.getId()), organizationId)) {
 				if (mentorship.getStatus() != MentorshipStatus.ACTIVE) {
 					continue;
 				}
@@ -690,9 +733,9 @@ public class CoordinatorProgramService {
 		return new CoordinatorProgramResponse.MentorDistribution(withCapacity, full, idle, pending);
 	}
 
-	private List<ProgramStartup> awaitingMatch(List<ProgramStartup> startups, Snapshot snapshot) {
+	private List<ProgramStartup> awaitingMatch(Program program, List<ProgramStartup> startups, Snapshot snapshot) {
 		return startups.stream()
-				.filter(startup -> mentorshipsOf(snapshot, startup.getOrganizationId()).stream()
+				.filter(startup -> mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId()).stream()
 						.noneMatch(mentorship -> MATCHED.contains(mentorship.getStatus())))
 				.toList();
 	}
@@ -741,6 +784,13 @@ public class CoordinatorProgramService {
 		}
 		Map<UUID, Organization> organizations = organizationRepository.findAllById(organizationIds).stream()
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
+		// Startups still waiting for approval are listed only in the program's "Onaylar" tab.
+		Map<UUID, List<ProgramStartup>> teams = startups.entrySet().stream()
+				.collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().stream()
+						.filter(startup -> Optional.ofNullable(organizations.get(startup.getOrganizationId()))
+								.map(Organization::isApprovedForProgram)
+								.orElse(false))
+						.toList()));
 		Map<UUID, List<Mentorship>> mentorships = mentorshipRepository.findByOrganizationIdIn(organizationIds).stream()
 				.collect(Collectors.groupingBy(mentorship -> mentorship.getOrganization().getId()));
 		Map<String, Instant> lastMeeting = new HashMap<>();
@@ -763,7 +813,7 @@ public class CoordinatorProgramService {
 				.stream()
 				.map(item -> item.getOrganization().getId())
 				.collect(Collectors.toSet());
-		return new Snapshot(today, now, coordinators, phases, startups, mentors, organizations, mentorships,
+		return new Snapshot(today, now, coordinators, phases, teams, mentors, organizations, mentorships,
 				lastMeeting, meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
 				openBottlenecks, overdue);
 	}
@@ -814,8 +864,16 @@ public class CoordinatorProgramService {
 		}
 	}
 
-	static List<Mentorship> mentorshipsOf(Snapshot snapshot, UUID organizationId) {
-		return snapshot.mentorships().getOrDefault(organizationId, List.of());
+	/** The team's mentorships that count in these programs: the ones made there, plus older ones made before V82. */
+	static List<Mentorship> mentorshipsOf(Snapshot snapshot, Set<UUID> programIds, UUID organizationId) {
+		return snapshot.mentorships().getOrDefault(organizationId, List.of()).stream()
+				.filter(mentorship -> countsIn(mentorship, programIds))
+				.toList();
+	}
+
+	/** A mentorship belongs to the program it was made in; one made before V82 has none and counts in each. */
+	static boolean countsIn(Mentorship mentorship, Set<UUID> programIds) {
+		return mentorship.getProgram() == null || programIds.contains(mentorship.getProgram().getId());
 	}
 
 	static String organizationName(Snapshot snapshot, UUID organizationId) {
@@ -833,7 +891,8 @@ public class CoordinatorProgramService {
 
 	private static ProgramPhaseResponse toPhase(ProgramPhase phase) {
 		return new ProgramPhaseResponse(
-				phase.getId(), phase.getName(), phase.getPosition(), phase.getStartDate(), phase.getEndDate());
+				phase.getId(), phase.getName(), phase.getPosition(), phase.getStartDate(), phase.getEndDate(),
+				phase.getExpectedOutput());
 	}
 
 	private static ProgramEventResponse toEvent(ProgramEvent event) {

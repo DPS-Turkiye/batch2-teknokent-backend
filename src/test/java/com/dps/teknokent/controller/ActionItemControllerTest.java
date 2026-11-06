@@ -69,6 +69,8 @@ class ActionItemControllerTest {
                 null,
                 Instant.parse("2026-08-20T10:00:00Z"),
                 Instant.parse("2026-08-20T10:00:00Z"),
+                null,
+                null,
                 null
         )));
 
@@ -126,6 +128,8 @@ class ActionItemControllerTest {
                 null,
                 Instant.parse("2026-08-20T10:30:00Z"),
                 Instant.parse("2026-08-20T10:30:00Z"),
+                null,
+                null,
                 null
         ));
 
@@ -184,6 +188,8 @@ class ActionItemControllerTest {
                 "Completed after review",
                 Instant.parse("2026-08-20T11:00:00Z"),
                 Instant.parse("2026-08-20T11:05:00Z"),
+                null,
+                null,
                 null
         ));
 
@@ -225,7 +231,9 @@ class ActionItemControllerTest {
                 null,
                 Instant.parse("2026-08-20T10:00:00Z"),
                 Instant.parse("2026-08-20T10:00:00Z"),
-                second
+                second,
+                null,
+                null
         )));
 
         mockMvc.perform(get("/api/actions")

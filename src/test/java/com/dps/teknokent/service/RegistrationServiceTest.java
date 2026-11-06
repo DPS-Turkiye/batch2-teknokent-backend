@@ -33,6 +33,7 @@ import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.CreateStartupRequest;
 import com.dps.teknokent.dto.requests.RegisterFounderRequest;
 import com.dps.teknokent.dto.requests.RegisterMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterMentorRequest;
@@ -56,6 +57,7 @@ import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.security.FirebaseIdentity;
+import com.dps.teknokent.util.InviteCodeGenerator;
 
 @ExtendWith(MockitoExtension.class)
 class RegistrationServiceTest {
@@ -70,10 +72,10 @@ class RegistrationServiceTest {
 
         registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "Döngü", "Gönüllülük platformu", "Kurucu", "+905551112233",
-                null, null, null, null,
+                PROGRAM_ID, null, null, null,
                 "dongu.co", "Gönüllüler bulunamıyor", "Beceri bazlı eşleştirme", "Elle tutulan listeler",
                 "STK'lar", "SaaS", "Prototip", "MVP",
-                java.util.List.of("Finans", "Pazarlama"), null, null, null, null));
+                java.util.List.of("Finans", "Pazarlama"), null, null, null, null, false));
 
         ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
         verify(organizationRepository, atLeastOnce()).saveAndFlush(saved.capture());
@@ -94,7 +96,7 @@ class RegistrationServiceTest {
         stubFounderSaves();
 
         registrationService.registerFounder(founderRequest(
-                "Ayşe Demir", "ayse@startup.com", "Döngü", null, null, null, null, null, null, null));
+                "Ayşe Demir", "ayse@startup.com", "Döngü", null, null, null, PROGRAM_ID, null, null, null));
 
         ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
         verify(organizationRepository, atLeastOnce()).saveAndFlush(saved.capture());
@@ -108,7 +110,7 @@ class RegistrationServiceTest {
     void registerFounder_rejectsAnUnknownSector() {
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "Döngü", null, null, null, null, null, null, null,
-                null, null, null, null, null, "Uzay Sektörü", null, null, null, null, null, null, null)))
+                null, null, null, null, null, "Uzay Sektörü", null, null, null, null, null, null, null, false)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("Uzay Sektörü");
     }
@@ -117,7 +119,8 @@ class RegistrationServiceTest {
             String description, String jobTitle, String phone, UUID programId, String bio, String linkedinUrl,
             java.util.List<String> expertise) {
         return new RegisterFounderRequest(fullName, email, organizationName, description, jobTitle, phone, programId,
-                bio, linkedinUrl, expertise, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                bio, linkedinUrl, expertise, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                false);
     }
 
     @Mock
@@ -147,6 +150,17 @@ class RegistrationServiceTest {
     @Mock
     private ProgramMentorRepository programMentorRepository;
 
+    @Mock
+    private DomainLookupService domainLookupService;
+    @Mock
+    private InviteCodeGenerator inviteCodeGenerator;
+
+    @Mock
+    private TeamMembershipService teamMembershipService;
+
+    @Mock
+    private NotificationService notificationService;
+
     @InjectMocks
     private RegistrationService registrationService;
 
@@ -157,6 +171,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerFounder_createsPendingMenteeAndLinksOrganization() {
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
             Organization organization = invocation.getArgument(0);
@@ -178,7 +193,7 @@ class RegistrationServiceTest {
                 "Climate tech",
                 "Kurucu",
                 "+905551112233",
-                null, null, null, null));
+                PROGRAM_ID, null, null, null));
 
         assertThat(result.id()).isEqualTo(USER_ID);
         assertThat(result.email()).isEqualTo("ayse@startup.com");
@@ -196,6 +211,7 @@ class RegistrationServiceTest {
         signIn(new FirebaseIdentity("uid-1", "ayse@startup.com"));
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
             Organization organization = invocation.getArgument(0);
             if (organization.getId() == null) {
@@ -216,8 +232,8 @@ class RegistrationServiceTest {
                 "Climate tech",
                 "Kurucu",
                 "+905551112233",
-                null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null));
+                PROGRAM_ID, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, false));
 
         verify(onboardingDraftRepository).deleteById("uid-1");
     }
@@ -258,30 +274,6 @@ class RegistrationServiceTest {
         assertThat(saved.getValue().getActiveProgramId()).isEqualTo(PROGRAM_ID);
     }
 
-    // "No program" is a real answer, not a missing field.
-    @Test
-    void registerFounder_leavesTheProgramUnsetWhenNoneIsChosen() {
-        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
-        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
-            Organization organization = invocation.getArgument(0);
-            if (organization.getId() == null) {
-                organization.setId(ORGANIZATION_ID);
-            }
-            return organization;
-        });
-        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
-            AppUser user = invocation.getArgument(0);
-            user.setId(USER_ID);
-            return user;
-        });
-
-        registrationService.registerFounder(founderRequest(
-                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null,
-                null, null, null));
-
-        verifyNoInteractions(programStartupRepository);
-    }
-
     @Test
     void registerFounder_rejectsAProgramThatDoesNotExist() {
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
@@ -312,7 +304,7 @@ class RegistrationServiceTest {
         stubFounderSaves();
 
         registrationService.registerFounder(founderRequest(
-                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", null,
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233", PROGRAM_ID,
                 "Ürün odaklı kurucu", "linkedin.com/in/ayse",
                 java.util.List.of("Ürün Yönetimi", "PyTorch")));
 
@@ -331,7 +323,7 @@ class RegistrationServiceTest {
         stubFounderSaves();
 
         registrationService.registerFounder(founderRequest(
-                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null,
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, PROGRAM_ID, null, null,
                 java.util.Arrays.asList("Ürün", "   ", "Ürün", null, "Analitik")));
 
         ArgumentCaptor<AppUser> saved = ArgumentCaptor.forClass(AppUser.class);
@@ -344,7 +336,7 @@ class RegistrationServiceTest {
         stubFounderSaves();
 
         registrationService.registerFounder(founderRequest(
-                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, null, null, null, null));
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, PROGRAM_ID, null, null, null));
 
         ArgumentCaptor<AppUser> saved = ArgumentCaptor.forClass(AppUser.class);
         verify(appUserRepository, atLeastOnce()).saveAndFlush(saved.capture());
@@ -353,7 +345,155 @@ class RegistrationServiceTest {
         assertThat(saved.getValue().getExpertise()).isEmpty();
     }
 
+    @Test
+    void registerFounder_withStartupLaterSignsUpIntoTheProgramWithoutAStartup() {
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", null, null, "Ürün yöneticisi", null, PROGRAM_ID,
+                "Ürün odaklı", null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, true));
+
+        assertThat(result.status()).isEqualTo(UserAccountStatus.PENDING);
+        assertThat(result.organizationId()).isNull();
+        ArgumentCaptor<AppUser> saved = ArgumentCaptor.forClass(AppUser.class);
+        verify(appUserRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
+        assertThat(saved.getValue().getBio()).isEqualTo("Ürün odaklı");
+        verifyNoInteractions(organizationRepository, programStartupRepository);
+    }
+
+    @Test
+    void registerFounder_requiresAProgram() {
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, true)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("program is required");
+        verify(appUserRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void joinStartup_joinsAStartupOfTheSameProgramAtOnce() {
+        AppUser person = menteeWithoutStartup();
+        Organization startup = startup();
+        when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+        when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup));
+        when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.of(new ProgramStartup()));
+        when(appUserRepository.save(person)).thenReturn(person);
+
+        var result = registrationService.joinStartup(USER_ID, " kargo1 ");
+
+        assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
+        assertThat(result.status()).isEqualTo(UserAccountStatus.APPROVED);
+        verify(pendingMemberRepository).deleteByOrganizationIdAndEmailIgnoreCase(ORGANIZATION_ID, "zeynep@kargo.ai");
+        verify(teamMembershipService).joined(person, startup);
+    }
+
+    @Test
+    void joinStartup_tellsTheTeamsCurrentLeader() {
+        AppUser person = menteeWithoutStartup();
+        Organization startup = startup();
+        AppUser leader = new AppUser();
+        leader.setId(UUID.fromString("00000000-0000-0000-0000-000000000901"));
+        leader.setFullName("Mehmet Can");
+        startup.setFounder(leader);
+        when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+        when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup));
+        when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.of(new ProgramStartup()));
+        when(appUserRepository.save(person)).thenReturn(person);
+
+        registrationService.joinStartup(USER_ID, "KARGO1");
+
+        verify(notificationService).create(argThat(recipient -> recipient == leader),
+                argThat(title -> title.contains(person.getFullName())), any(String.class), argThat("/startup/team"::equals));
+    }
+
+    @Test
+    void joinStartup_refusesAStartupOfAnotherProgram() {
+        AppUser person = menteeWithoutStartup();
+        when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+        when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup()));
+        when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> registrationService.joinStartup(USER_ID, "KARGO1"))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("başka bir programdaki");
+        assertThat(person.getOrganization()).isNull();
+        verify(appUserRepository, never()).save(any());
+    }
+
+    @Test
+    void joinStartup_refusesSomeoneWhoAlreadyHasAStartup() {
+        AppUser person = menteeWithoutStartup();
+        person.setOrganization(startup());
+        when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+
+        assertThatThrownBy(() -> registrationService.joinStartup(USER_ID, "KARGO1"))
+                .isInstanceOf(InvalidRequestException.class);
+        verifyNoInteractions(organizationRepository);
+    }
+
+    @Test
+    void createStartup_waitsForTheCoordinatorInTheCreatorsProgram() {
+        AppUser person = menteeWithoutStartup();
+        when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+        when(inviteCodeGenerator.nextUnique(any())).thenReturn("KARGO1");
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            organization.setId(ORGANIZATION_ID);
+            return organization;
+        });
+        when(appUserRepository.save(person)).thenReturn(person);
+
+        var result = registrationService.createStartup(USER_ID, new CreateStartupRequest(USER_ID, " Kargo AI ",
+                "Rota optimizasyonu", null, null, 2026, null, null, null, null, null, "MVP", null,
+                List.of("Finans"), List.of(new OnboardingTeamMemberRequest("Mert Ak", null, null))));
+
+        assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
+        ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
+        verify(organizationRepository).save(saved.capture());
+        Organization startup = saved.getValue();
+        assertThat(startup.getName()).isEqualTo("Kargo AI");
+        assertThat(startup.getApprovalStatus()).isEqualTo(UserAccountStatus.PENDING);
+        assertThat(startup.getFounder()).isSameAs(person);
+        assertThat(startup.getInviteCode()).isEqualTo("KARGO1");
+        assertThat(startup.getActiveProgramId()).isEqualTo(PROGRAM_ID);
+        assertThat(startup.getMaturity()).isEqualTo(StartupMaturity.MVP);
+        ArgumentCaptor<ProgramStartup> membership = ArgumentCaptor.forClass(ProgramStartup.class);
+        verify(programStartupRepository).save(membership.capture());
+        assertThat(membership.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
+        verify(pendingMemberRepository).save(any(OrganizationPendingMember.class));
+    }
+
+    private static AppUser menteeWithoutStartup() {
+        AppUser person = new AppUser();
+        person.setId(USER_ID);
+        person.setEmail("zeynep@kargo.ai");
+        person.setFullName("Zeynep Kaya");
+        person.setRole(UserRole.MENTEE);
+        person.setStatus(UserAccountStatus.APPROVED);
+        person.setProgramId(PROGRAM_ID);
+        return person;
+    }
+
+    private static Organization startup() {
+        Organization organization = new Organization();
+        organization.setId(ORGANIZATION_ID);
+        organization.setName("Kargo AI");
+        return organization;
+    }
+
     private void stubFounderSaves() {
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
             Organization organization = invocation.getArgument(0);
@@ -498,13 +638,13 @@ class RegistrationServiceTest {
 
         registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "Döngü", null, "Kurucu", null,
-                null, null, null, null,
+                PROGRAM_ID, null, null, null,
                 null, null, null, null, null, null, "MVP", null, null,
                 List.of(ContactPreference.IN_APP_MESSAGE, ContactPreference.VIDEO_CALL,
                         ContactPreference.IN_APP_MESSAGE),
                 "  dongu.app  ",
                 List.of(new OnboardingTeamMemberRequest("Sude Arya", "Developer", "sude@dongu.app"),
-                        new OnboardingTeamMemberRequest(" Doğa Çağrı ", null, null)), 2026));
+                        new OnboardingTeamMemberRequest(" Doğa Çağrı ", null, null)), 2026, false));
 
         ArgumentCaptor<AppUser> founder = ArgumentCaptor.forClass(AppUser.class);
         verify(appUserRepository, atLeastOnce()).saveAndFlush(founder.capture());

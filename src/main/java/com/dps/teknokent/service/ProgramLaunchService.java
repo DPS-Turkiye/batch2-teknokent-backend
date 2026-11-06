@@ -104,6 +104,10 @@ public class ProgramLaunchService {
 			row.setCreatedAt(Instant.now());
 			programCoordinatorRepository.save(row);
 		}
+		if (request.phases() != null) {
+			programService.writePhases(program.getId(), request.phases());
+		}
+		programService.attachSyllabus(program, actor.getId(), request.syllabusDocumentId());
 		invite(program, request.teams(), actor.getId());
 		return programService.detail(actorId, program.getId());
 	}
@@ -257,6 +261,7 @@ public class ProgramLaunchService {
 		List<ProgramStartup> startups = programStartupRepository.findByProgramIdIn(List.of(programId));
 		Set<UUID> organizationIds = startups.stream().map(ProgramStartup::getOrganizationId).collect(Collectors.toSet());
 		Map<UUID, Organization> organizations = organizationRepository.findAllById(organizationIds).stream()
+				.filter(Organization::isApprovedForProgram)
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
 
 		List<ProgramTeamResponse> rows = new ArrayList<>();

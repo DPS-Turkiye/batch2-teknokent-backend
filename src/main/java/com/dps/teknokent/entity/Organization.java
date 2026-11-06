@@ -18,6 +18,7 @@ import com.dps.teknokent.domain.StartupProgramLevelConverter;
 import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.StartupSectorConverter;
 import com.dps.teknokent.domain.StartupStage;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.dto.requests.CreateOrganizationRequest;
 import com.dps.teknokent.util.TextUtils;
 
@@ -120,6 +121,15 @@ public class Organization {
 	@Column(name = "active_program_id")
 	private UUID activeProgramId;
 
+	/** Only a startup created after signup waits for its own approval; one from signup is approved with its founder. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "approval_status", nullable = false, length = 16)
+	private UserAccountStatus approvalStatus = UserAccountStatus.APPROVED;
+
+	/** Set when the last member left: the startup is kept for history but is no longer a team. */
+	@Column(name = "archived_at")
+	private Instant archivedAt;
+
 	@Column(name = "status_version", length = 32)
 	private String statusVersion;
 
@@ -132,6 +142,16 @@ public class Organization {
 	@Enumerated(EnumType.STRING)
 	@Column(name = "current_stage", length = 32)
 	private StartupStage currentStage;
+
+	/**
+	 * A program team: approved itself and, for a startup from signup, its founder approved too. Anything still
+	 * waiting is listed only in the coordinator's "Onaylar" tab, not among the teams or in matching; an archived
+	 * startup (everyone left) is no team either.
+	 */
+	public boolean isApprovedForProgram() {
+		return approvalStatus == UserAccountStatus.APPROVED && archivedAt == null
+				&& (founder == null || founder.getStatus() == UserAccountStatus.APPROVED);
+	}
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)

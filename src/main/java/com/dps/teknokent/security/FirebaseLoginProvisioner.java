@@ -73,23 +73,71 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	}
 
 	/**
-	 * The same reset link Firebase's own "Şifremi unuttum" email carries. The continue URL has to be an authorized
-	 * domain in Firebase; if it is not, the link still works and simply ends on Firebase's own page.
+	 * The same reset link Firebase's own "Şifremi unuttum" email carries.
 	 */
 	@Override
 	public Optional<String> passwordSetupLink(String email, String continueUrl) {
 		try {
-			return Optional.of(firebaseAuth.generatePasswordResetLink(
-					email,
-					ActionCodeSettings.builder().setUrl(continueUrl).build()));
-		} catch (FirebaseAuthException | IllegalArgumentException withContinueUrl) {
-			try {
-				return Optional.of(firebaseAuth.generatePasswordResetLink(email));
-			} catch (FirebaseAuthException exception) {
-				log.warn("No password setup link for {}: {}", email, exception.getMessage());
+			return Optional.ofNullable(link(firebaseAuth::generatePasswordResetLink, email, continueUrl));
+		} catch (FirebaseAuthException exception) {
+			log.warn("No password setup link for {}: {}", email, exception.getMessage());
+			return Optional.empty();
+		}
+	}
+
+	/** With e-mail enumeration protection on, Firebase answers an unknown address with no link instead of an error. */
+	@Override
+	public Optional<String> passwordResetLink(String email, String continueUrl) {
+		try {
+			return Optional.ofNullable(link(firebaseAuth::generatePasswordResetLink, email, continueUrl));
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
 				return Optional.empty();
 			}
+			throw linkUnavailable(email, exception);
 		}
+	}
+
+	@Override
+	public String emailVerificationLink(String email, String continueUrl) {
+		String link;
+		try {
+			link = link(firebaseAuth::generateEmailVerificationLink, email, continueUrl);
+		} catch (FirebaseAuthException exception) {
+			throw linkUnavailable(email, exception);
+		}
+		if (link == null) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase returned no verification link.");
+		}
+		return link;
+	}
+
+	/**
+	 * The continue URL has to be an authorized domain in Firebase; if it is not, the link still works and simply
+	 * ends on Firebase's own page. A missing login is the same answer either way, so it is not asked twice.
+	 */
+	private static String link(LinkRequest request, String email, String continueUrl) throws FirebaseAuthException {
+		try {
+			return request.generate(email, ActionCodeSettings.builder().setUrl(continueUrl).build());
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				throw exception;
+			}
+			return request.generate(email, null);
+		} catch (IllegalArgumentException invalidContinueUrl) {
+			return request.generate(email, null);
+		}
+	}
+
+	private static ResponseStatusException linkUnavailable(String email, FirebaseAuthException exception) {
+		log.warn("No Firebase e-mail link for {}: {} {}", email, exception.getErrorCode(), exception.getMessage());
+		return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase could not make the e-mail link.",
+				exception);
+	}
+
+	@FunctionalInterface
+	private interface LinkRequest {
+		String generate(String email, ActionCodeSettings settings) throws FirebaseAuthException;
 	}
 
 	/**

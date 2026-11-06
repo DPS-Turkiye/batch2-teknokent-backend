@@ -66,6 +66,9 @@ class AppUserServiceTest {
     @Mock
     private LoginProvisioner loginProvisioner;
 
+    @Mock
+    private TeamMembershipService teamMembershipService;
+
     @InjectMocks
     private AppUserService appUserService;
 
@@ -248,45 +251,6 @@ class AppUserServiceTest {
         assertThatThrownBy(() -> appUserService.updateOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID,
                 new UpdateOrganizationMemberRequest(TEAM_FOUNDER_ID, "Yeni Ad", null)))
                 .isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    @Test
-    void removeOrganizationMember_detachesTheMemberFromTheTeam() {
-        Organization organization = teamWithFounder();
-        AppUser member = user(TEAM_MEMBER_ID, "sude@dongu.app", "Sude", UserRole.MENTEE, organization, null);
-        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
-        when(domainLookupService.requireUser(TEAM_MEMBER_ID)).thenReturn(member);
-
-        appUserService.removeOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID, TEAM_FOUNDER_ID);
-
-        assertThat(member.getOrganization()).isNull();
-        verify(appUserRepository).save(member);
-    }
-
-    @Test
-    void removeOrganizationMember_refusesToRemoveTheFounder() {
-        Organization organization = teamWithFounder();
-        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
-
-        assertThatThrownBy(() -> appUserService.removeOrganizationMember(TEAM_ORG_ID, TEAM_FOUNDER_ID,
-                TEAM_FOUNDER_ID))
-                .isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("founder cannot be removed");
-
-        verify(appUserRepository, never()).save(any(AppUser.class));
-    }
-
-    @Test
-    void removeOrganizationMember_rejectsAnActorWhoIsNotTheFounder() {
-        Organization organization = teamWithFounder();
-        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
-
-        assertThatThrownBy(() -> appUserService.removeOrganizationMember(TEAM_ORG_ID, TEAM_MEMBER_ID,
-                TEAM_MEMBER_ID))
-                .isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("Only the organization founder");
-
-        verify(appUserRepository, never()).save(any(AppUser.class));
     }
 
     @Test

@@ -57,6 +57,10 @@ public class AppUser {
 	@JoinColumn(name = "organization_id")
 	private Organization organization;
 
+	/** The program chosen at signup; the startup's program once the person has one. */
+	@Column(name = "program_id")
+	private UUID programId;
+
 	@Column(name = "job_title")
 	private String jobTitle;
 

@@ -35,7 +35,10 @@ public record MentorshipRequestResponse(
 		Integer plannedSessionCount,
 		Instant mentorReadAt,
 		Instant menteeReadAt,
-		String expectedOutcome) {
+		String expectedOutcome,
+		/** The mentee's program when they asked; null for a startup outside any program. */
+		UUID programId,
+		String programName) {
 
 	public static MentorshipRequestResponse fromEntity(
 			MentorshipRequest request,
@@ -66,6 +69,8 @@ public record MentorshipRequestResponse(
 				request.getPlannedSessionCount(),
 				request.getMentorReadAt(),
 				request.getMenteeReadAt(),
-				request.getExpectedOutcome());
+				request.getExpectedOutcome(),
+				request.getProgram() == null ? null : request.getProgram().getId(),
+				request.getProgram() == null ? null : request.getProgram().getName());
 	}
 }

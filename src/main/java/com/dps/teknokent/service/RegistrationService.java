@@ -19,9 +19,11 @@ import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.CreateStartupRequest;
 import com.dps.teknokent.dto.requests.RegisterFounderRequest;
 import com.dps.teknokent.dto.requests.RegisterMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterMentorRequest;
+import com.dps.teknokent.dto.requests.StartupProfileFields;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
@@ -35,6 +37,7 @@ import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
+import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -62,10 +65,20 @@ public class RegistrationService {
 	private final ProgramTeamInviteRepository programTeamInviteRepository;
 	private final ProgramMentorInviteRepository programMentorInviteRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final DomainLookupService domainLookupService;
+	private final InviteCodeGenerator inviteCodeGenerator;
+	private final TeamMembershipService teamMembershipService;
+	private final NotificationService notificationService;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
 		String email = requireUniqueEmail(request.email());
+		if (Boolean.TRUE.equals(request.startupLater())) {
+			return registerWithoutStartup(request, email);
+		}
+		if (TextUtils.normalizeOptional(request.organizationName()) == null) {
+			throw new InvalidRequestException("The startup name is required.");
+		}
 
 		Organization organization = new Organization();
 		organization.setName(TextUtils.trim(request.organizationName()));
@@ -76,16 +89,86 @@ public class RegistrationService {
 		AppUser founder = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
 				UserAccountStatus.PENDING, organization);
 		applyProfileFields(founder, request);
+		founder.setProgramId(request.programId());
 		applyFirebaseIdentity(founder, email);
 		appUserRepository.saveAndFlush(founder);
 
 		organization.setFounder(founder);
 		attachDeclaredProgram(organization, request.programId());
 		organizationRepository.saveAndFlush(organization);
+		teamMembershipService.joined(founder, organization);
 		savePendingMembers(organization, request.teamMembers());
 		discardOnboardingDraft();
 
 		return UserResponse.fromEntity(founder);
+	}
+
+	/**
+	 * "Startup'ı daha sonra oluşturacağım": the person waits for the program's coordinator like a founder does, then
+	 * joins or creates a startup from /startup.
+	 */
+	private UserResponse registerWithoutStartup(RegisterFounderRequest request, String email) {
+		requireProgram(request.programId());
+		AppUser person = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
+				UserAccountStatus.PENDING, null);
+		applyProfileFields(person, request);
+		person.setProgramId(request.programId());
+		applyFirebaseIdentity(person, email);
+		appUserRepository.saveAndFlush(person);
+		discardOnboardingDraft();
+		return UserResponse.fromEntity(person);
+	}
+
+	/** "Kodum var" on /startup: joins at once, but only a startup of the person's own program. */
+	@Transactional
+	public UserResponse joinStartup(UUID actorId, String rawCode) {
+		AppUser person = requireWithoutStartup(actorId);
+		Organization organization = organizationRepository.findByInviteCode(TextUtils.normalizeInviteCode(rawCode))
+				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid")));
+		if (person.getProgramId() == null || programStartupRepository
+				.findByProgramIdAndOrganizationId(person.getProgramId(), organization.getId()).isEmpty()) {
+			throw new InvalidRequestException(Texts.forRequest("error.startupCodeOtherProgram"));
+		}
+		person.setOrganization(organization);
+		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), person.getEmail());
+		AppUser joined = appUserRepository.save(person);
+		teamMembershipService.joined(joined, organization);
+		notifyLeaderOfNewMember(organization, joined);
+		return UserResponse.fromEntity(joined);
+	}
+
+	/**
+	 * "Startup'ımı oluştur" on /startup: the startup joins the creator's program and waits for its coordinator. The
+	 * code exists from the start so the creator can already bring the team in.
+	 */
+	@Transactional
+	public UserResponse createStartup(UUID actorId, CreateStartupRequest request) {
+		AppUser person = requireWithoutStartup(actorId);
+		Organization organization = new Organization();
+		organization.setName(TextUtils.trim(request.name()));
+		organization.setDescription(TextUtils.normalizeOptional(request.description()));
+		applyStartupFields(organization, request);
+		organization.setApprovalStatus(UserAccountStatus.PENDING);
+		organization.setInviteCode(inviteCodeGenerator.nextUnique(organizationRepository::existsByInviteCode));
+		organization.setFounder(person);
+		organizationRepository.saveAndFlush(organization);
+		attachDeclaredProgram(organization, person.getProgramId());
+		organizationRepository.save(organization);
+		savePendingMembers(organization, request.teamMembers());
+
+		person.setOrganization(organization);
+		AppUser founder = appUserRepository.save(person);
+		teamMembershipService.joined(founder, organization);
+		return UserResponse.fromEntity(founder);
+	}
+
+	private AppUser requireWithoutStartup(UUID actorId) {
+		AppUser person = domainLookupService.requireUser(actorId);
+		if (person.getRole() != UserRole.MENTEE || person.getStatus() != UserAccountStatus.APPROVED
+				|| person.getOrganization() != null) {
+			throw new InvalidRequestException(Texts.forRequest("error.withoutStartupOnly"));
+		}
+		return person;
 	}
 
 	/**
@@ -110,6 +193,7 @@ public class RegistrationService {
 		appUserRepository.saveAndFlush(lead);
 		organization.setFounder(lead);
 		organizationRepository.saveAndFlush(organization);
+		teamMembershipService.joined(lead, organization);
 
 		ProgramStartup membership = new ProgramStartup();
 		membership.setId(UUID.randomUUID());
@@ -135,7 +219,7 @@ public class RegistrationService {
 		}
 	}
 
-	private void applyStartupFields(Organization organization, RegisterFounderRequest request) {
+	private static void applyStartupFields(Organization organization, StartupProfileFields request) {
 		organization.setWebsite(TextUtils.normalizeOptional(request.website()));
 		organization.setMvpUrl(TextUtils.normalizeOptional(request.mvpUrl()));
 		organization.setFoundedYear(request.foundedYear());
@@ -175,19 +259,12 @@ public class RegistrationService {
 	/**
 	 * The program the founder chose during signup. This is a declaration made
 	 * with the application, not a self-assignment behind the coordinator's back:
-	 * the account stays PENDING until a coordinator approves it, and the
-	 * coordinator can remove the startup from the program at any point.
-	 *
-	 * <p>A null programId is a real answer — "no program" — and leaves both the
-	 * membership and the active choice unset.
+	 * the account (or a startup created later) stays PENDING until a coordinator
+	 * approves it, and the coordinator can remove the startup from the program at
+	 * any point.
 	 */
 	private void attachDeclaredProgram(Organization organization, UUID programId) {
-		if (programId == null) {
-			return;
-		}
-		if (!programRepository.existsById(programId)) {
-			throw new InvalidRequestException("The selected program does not exist.");
-		}
+		requireProgram(programId);
 		ProgramStartup membership = new ProgramStartup();
 		membership.setId(UUID.randomUUID());
 		membership.setProgramId(programId);
@@ -195,6 +272,15 @@ public class RegistrationService {
 		membership.setCreatedAt(Instant.now());
 		programStartupRepository.save(membership);
 		organization.setActiveProgramId(programId);
+	}
+
+	private void requireProgram(UUID programId) {
+		if (programId == null) {
+			throw new InvalidRequestException("A program is required.");
+		}
+		if (!programRepository.existsById(programId)) {
+			throw new InvalidRequestException("The selected program does not exist.");
+		}
 	}
 
 	@Transactional
@@ -282,7 +368,22 @@ public class RegistrationService {
 				UserAccountStatus.APPROVED, organization);
 		applyFirebaseIdentity(member, email);
 		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), email);
-		return UserResponse.fromEntity(appUserRepository.save(member));
+		AppUser joined = appUserRepository.save(member);
+		teamMembershipService.joined(joined, organization);
+		notifyLeaderOfNewMember(organization, joined);
+		return UserResponse.fromEntity(joined);
+	}
+
+	/** Whoever joins with the startup's code, at signup or later, is announced to the team's current leader. */
+	private void notifyLeaderOfNewMember(Organization organization, AppUser member) {
+		AppUser leader = organization.getFounder();
+		if (leader == null || leader.getId().equals(member.getId())) {
+			return;
+		}
+		notificationService.create(leader, Texts.get(leader, "notification.teamMemberJoined.title",
+				member.getFullName()),
+				Texts.get(leader, "notification.teamMemberJoined.body", member.getFullName(), organization.getName()),
+				"/startup/team");
 	}
 
 	private void applyFirebaseIdentity(AppUser user, String email) {

@@ -20,9 +20,11 @@ import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.requests.RevokeSignInsRequest;
 import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.TeamHistoryResponse;
 import com.dps.teknokent.dto.responses.UserProfileResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.TeamMembershipService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -35,6 +37,7 @@ import lombok.RequiredArgsConstructor;
 public class AppUserController {
 
 	private final AppUserService appUserService;
+	private final TeamMembershipService teamMembershipService;
 
 	@GetMapping
 	public List<UserResponse> findAll(
@@ -46,6 +49,12 @@ public class AppUserController {
 	@GetMapping("/{id}")
 	public UserResponse findById(@PathVariable UUID id) {
 		return appUserService.findById(id);
+	}
+
+	/** Every startup the person was in; for admins and the person's coordinators only. */
+	@GetMapping("/{id}/team-history")
+	public TeamHistoryResponse teamHistory(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return teamMembershipService.history(CurrentActor.resolve(actorId), id);
 	}
 
 	@GetMapping("/{id}/profile")

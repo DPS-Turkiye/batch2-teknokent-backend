@@ -48,6 +48,7 @@ public class AppUserService {
 	private final NotificationService notificationService;
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final LoginProvisioner loginProvisioner;
+	private final TeamMembershipService teamMembershipService;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -153,22 +154,6 @@ public class AppUserService {
 		pendingMemberRepository.delete(pending);
 	}
 
-	// Detaches rather than deletes: the account keeps its own history.
-	@Transactional
-	public void removeOrganizationMember(UUID organizationId, UUID memberId, UUID actorId) {
-		Organization organization = domainLookupService.requireOrganization(organizationId);
-		if (!isFounder(organization, actorId)) {
-			throw new InvalidRequestException("Only the organization founder can remove team members");
-		}
-		if (isFounder(organization, memberId)) {
-			throw new InvalidRequestException("The founder cannot be removed from the team");
-		}
-
-		AppUser member = requireMember(organization, memberId);
-		member.setOrganization(null);
-		appUserRepository.save(member);
-	}
-
 	@Transactional
 	public OrganizationMemberResponse addOrganizationMember(
 			UUID organizationId, CreateOrganizationMemberRequest request) {
@@ -185,7 +170,9 @@ public class AppUserService {
 		member.setStatus(UserAccountStatus.APPROVED);
 		member.setOrganization(organization);
 		member.setJobTitle(TextUtils.normalizeOptional(request.jobTitle()));
-		return OrganizationMemberResponse.fromEntity(appUserRepository.save(member), organization);
+		AppUser added = appUserRepository.save(member);
+		teamMembershipService.joined(added, organization);
+		return OrganizationMemberResponse.fromEntity(added, organization);
 	}
 
 	private AppUser requireMember(Organization organization, UUID memberId) {
@@ -206,30 +193,34 @@ public class AppUserService {
 		if (actor.getRole() != UserRole.ADMIN) {
 			throw new InvalidRequestException("Only an admin can decide account status");
 		}
-		if (request.status() != UserAccountStatus.APPROVED && request.status() != UserAccountStatus.REJECTED) {
+		return decide(domainLookupService.requireUser(userId), request.status());
+	}
+
+	/** Shared by the admin's account list and a coordinator's "Onaylar" tab. */
+	@Transactional
+	public AccountDecisionResponse decide(AppUser target, UserAccountStatus status) {
+		if (status != UserAccountStatus.APPROVED && status != UserAccountStatus.REJECTED) {
 			throw new InvalidRequestException("Account status can only be set to APPROVED or REJECTED");
 		}
-
-		AppUser target = domainLookupService.requireUser(userId);
 		if (target.getStatus() != UserAccountStatus.PENDING) {
 			throw new InvalidRequestException("Only pending accounts can be decided");
 		}
 
-		target.setStatus(request.status());
+		target.setStatus(status);
 		appUserRepository.save(target);
 
 		String inviteCode = null;
-		if (request.status() == UserAccountStatus.APPROVED) {
+		if (status == UserAccountStatus.APPROVED) {
 			inviteCode = organizationRepository.findByFounderId(target.getId())
 					.map(this::ensureInviteCode)
 					.orElse(null);
 		}
 		notificationService.create(
 				target,
-				request.status() == UserAccountStatus.APPROVED
+				status == UserAccountStatus.APPROVED
 						? Texts.get(target, "notification.applicationApproved.title")
 						: Texts.get(target, "notification.applicationRejected.title"),
-				request.status() == UserAccountStatus.APPROVED
+				status == UserAccountStatus.APPROVED
 						? Texts.get(target, "notification.applicationApproved.body")
 						: Texts.get(target, "notification.applicationRejected.body"),
 				"/application-status");

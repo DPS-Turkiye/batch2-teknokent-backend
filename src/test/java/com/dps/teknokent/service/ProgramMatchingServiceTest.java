@@ -26,6 +26,7 @@ import com.dps.teknokent.domain.MatchNeedSource;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Mentorship;
@@ -147,6 +148,56 @@ class ProgramMatchingServiceTest {
 				.thenReturn(List.of(mentorship(terra, nihan, MentorshipStatus.ACTIVE)));
 		assertThatThrownBy(() -> service.match(ELIF, PROGRAM_ID, terra.getId(), nihan.getId()))
 				.isInstanceOf(ConflictException.class);
+		verify(mentorshipRepository, never()).save(any());
+	}
+
+	@Test
+	void aMatchFromAnotherProgramNeitherCountsHereNorKeepsTheTeamFromWaiting() {
+		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program());
+		Organization terra = team("Terra", List.of());
+		Organization vega = team("Vega", List.of());
+		when(programStartupRepository.findByProgramIdIn(List.of(PROGRAM_ID)))
+				.thenReturn(List.of(startup(terra, 2), startup(vega, 1)));
+		when(organizationRepository.findAllById(any())).thenReturn(List.of(terra, vega));
+		Program kulucka = new Program();
+		kulucka.setId(UUID.randomUUID());
+		Mentorship elsewhere = mentorship(terra, mentor("Ayşe Demir"), MentorshipStatus.ACTIVE);
+		elsewhere.setProgram(kulucka);
+		Mentorship here = mentorship(vega, mentor("Mert Kaya"), MentorshipStatus.ACTIVE);
+		here.setProgram(program());
+		when(mentorshipRepository.findByOrganizationIdIn(any())).thenReturn(List.of(elsewhere, here));
+		when(mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
+
+		var overview = service.overview(ELIF, PROGRAM_ID);
+
+		assertThat(overview.waiting()).extracting(team -> team.name()).containsExactly("Terra");
+		assertThat(overview.active()).extracting(match -> match.teamName()).containsExactly("Vega");
+	}
+
+	@Test
+	void startupsWaitingForApprovalAreNeitherListedNorMatchable() {
+		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program());
+		Organization terra = team("Terra", List.of());
+		Organization kargo = team("Kargo AI", List.of());
+		kargo.setApprovalStatus(UserAccountStatus.PENDING);
+		Organization dongu = team("Döngü", List.of());
+		AppUser waitingFounder = user("Ayşe Demir", UserRole.MENTEE);
+		waitingFounder.setStatus(UserAccountStatus.PENDING);
+		dongu.setFounder(waitingFounder);
+		when(programStartupRepository.findByProgramIdIn(List.of(PROGRAM_ID)))
+				.thenReturn(List.of(startup(terra, 3), startup(kargo, 2), startup(dongu, 1)));
+		when(organizationRepository.findAllById(any())).thenReturn(List.of(terra, kargo, dongu));
+		when(mentorshipRepository.findByOrganizationIdIn(any())).thenReturn(List.of());
+		when(mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
+
+		assertThat(service.overview(ELIF, PROGRAM_ID).waiting()).extracting(team -> team.name())
+				.containsExactly("Terra");
+
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, kargo.getId()))
+				.thenReturn(Optional.of(startup(kargo, 2)));
+		when(organizationRepository.findById(kargo.getId())).thenReturn(Optional.of(kargo));
+		assertThatThrownBy(() -> service.match(ELIF, PROGRAM_ID, kargo.getId(), UUID.randomUUID()))
+				.isInstanceOf(InvalidRequestException.class);
 		verify(mentorshipRepository, never()).save(any());
 	}
 
