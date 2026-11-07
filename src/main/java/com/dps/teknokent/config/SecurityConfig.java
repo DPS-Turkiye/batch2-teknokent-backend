@@ -10,10 +10,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
@@ -34,6 +37,7 @@ public class SecurityConfig {
 
 	private static final String[] PUBLIC_PATHS = {
 			"/api/health",
+			"/api/lti/jwks",
 			"/ws/**",
 			"/api/docs",
 			"/api/docs/**",
@@ -62,6 +66,11 @@ public class SecurityConfig {
 			"/api/profile-analyses",
 			"/api/profile-analyses/preview",
 			"/api/profile-analyses/preview/documents/*",
+	};
+
+	private static final String[] SERVICE_ONLY_PATHS = {
+			"/api/lti/**",
+			"/api/office-hours/**"
 	};
 
 	private static final String NOTIFICATION_PATH = "/api/notifications/**";
@@ -124,6 +133,15 @@ public class SecurityConfig {
 		return source;
 	}
 
+	/**
+	 * The shared Basic credential signs in as Spring's own user (a {@link UserDetails}, with no roles); a Firebase
+	 * token signs in as a Menton account or someone registering, never as one.
+	 */
+	static boolean isServiceCredential(Authentication authentication) {
+		return authentication != null && authentication.isAuthenticated()
+				&& authentication.getPrincipal() instanceof UserDetails;
+	}
+
 	@Bean
 	SecurityFilterChain securityFilterChain(
 			HttpSecurity http,
@@ -133,6 +151,10 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(PUBLIC_PATHS).permitAll()
+						// Office hours trust only the frontend's server (the Basic service credential): a Menton
+						// account's Firebase token must not reach another person's office-hours data.
+						.requestMatchers(SERVICE_ONLY_PATHS).access((authentication, context) ->
+								new AuthorizationDecision(isServiceCredential(authentication.get())))
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults())
 				.cors(Customizer.withDefaults());
