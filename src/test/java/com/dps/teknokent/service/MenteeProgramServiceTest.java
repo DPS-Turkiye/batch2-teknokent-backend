@@ -18,10 +18,12 @@ import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +39,8 @@ class MenteeProgramServiceTest {
 	private ProgramStartupRepository programStartupRepository;
 	@Mock
 	private ProgramMentorRepository programMentorRepository;
+	@Mock
+	private ProgramRepository programRepository;
 
 	@InjectMocks
 	private MenteeProgramService service;
@@ -100,6 +104,36 @@ class MenteeProgramServiceTest {
 		assertThat(service.reachableMentorIds(coordinator.getId())).isEmpty();
 		assertThat(service.reachableMentorIds(independent.getId())).isEmpty();
 		assertThat(service.reachableMentorIds(null)).isEmpty();
+	}
+
+	@Test
+	void inIndividualProgram_followsTheStartupsCurrentProgram() {
+		Organization team = startup();
+		team.setActiveProgramId(FIRST_PROGRAM);
+		Program individual = new Program();
+		individual.setIndividualMentees(true);
+		when(programRepository.findById(FIRST_PROGRAM)).thenReturn(Optional.of(individual));
+
+		assertThat(service.inIndividualProgram(mentee(team))).isTrue();
+	}
+
+	@Test
+	void inIndividualProgram_isFalseForAStartupProgramAndForMentors() {
+		Organization team = startup();
+		team.setActiveProgramId(FIRST_PROGRAM);
+		when(programRepository.findById(FIRST_PROGRAM)).thenReturn(Optional.of(new Program()));
+		AppUser mentor = mentee(team);
+		mentor.setRole(UserRole.MENTOR);
+
+		assertThat(service.inIndividualProgram(mentee(team))).isFalse();
+		assertThat(service.inIndividualProgram(mentor)).isFalse();
+	}
+
+	private static AppUser mentee(Organization organization) {
+		AppUser user = new AppUser();
+		user.setRole(UserRole.MENTEE);
+		user.setOrganization(organization);
+		return user;
 	}
 
 	private static Organization startup() {

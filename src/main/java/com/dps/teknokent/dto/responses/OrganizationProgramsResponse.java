@@ -11,6 +11,9 @@ import java.util.UUID;
  *
  * <p>{@code activeProgramId} is null when the startup has no assignment, or has
  * one but has not chosen yet — both render as the "no program" state.
+ *
+ * <p>{@code individualMentees}: the program's mentees are students who joined as a team of one, so their screens
+ * drop the startup pages and wording.
  */
 public record OrganizationProgramsResponse(
 		List<OrganizationProgramResponse> programs,
@@ -19,6 +22,7 @@ public record OrganizationProgramsResponse(
 	public record OrganizationProgramResponse(
 			UUID id,
 			String name,
-			String coordinatorName) {
+			String coordinatorName,
+			boolean individualMentees) {
 	}
 }

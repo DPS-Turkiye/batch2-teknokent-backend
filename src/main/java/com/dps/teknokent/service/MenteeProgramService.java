@@ -13,10 +13,12 @@ import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ public class MenteeProgramService {
 	private final AppUserRepository appUserRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final ProgramRepository programRepository;
 
 	/** The startup's chosen program, else the last program it joined. */
 	public Optional<UUID> programOf(Organization organization) {
@@ -49,6 +52,14 @@ public class MenteeProgramService {
 			return programOf(mentee.getOrganization());
 		}
 		return Optional.ofNullable(mentee.getProgramId());
+	}
+
+	/** Whether the mentee's program takes students as teams of one (İŞKUR-style). */
+	public boolean inIndividualProgram(AppUser user) {
+		if (user.getRole() != UserRole.MENTEE) {
+			return false;
+		}
+		return programOf(user).flatMap(programRepository::findById).map(Program::isIndividualMentees).orElse(false);
 	}
 
 	/**

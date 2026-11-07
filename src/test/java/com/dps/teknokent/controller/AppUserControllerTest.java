@@ -71,7 +71,8 @@ class AppUserControllerTest {
                 organizationId,
                 "Teknokent",
                 "Ürün & Araştırma Direktörü",
-                null
+                null,
+                false
         )));
 
         mockMvc.perform(get("/api/users").param("role", "MENTOR").with(user("test-user")))
@@ -95,7 +96,8 @@ class AppUserControllerTest {
                 organizationId,
                 "Teknokent",
                 "Product Designer",
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(get("/api/users/{id}", userId).with(user("test-user")))
@@ -120,7 +122,8 @@ class AppUserControllerTest {
                         null,
                         null,
                         "Platform Admin",
-                        null
+                        null,
+                        false
                 ),
                 new UserResponse(
                         secondUserId,
@@ -131,7 +134,8 @@ class AppUserControllerTest {
                         null,
                         null,
                         "Mentor",
-                        null
+                        null,
+                        false
                 )
         ));
 
@@ -173,7 +177,8 @@ class AppUserControllerTest {
                                 organizationId,
                                 "GreenLoop",
                                 "Kurucu",
-                                null
+                                null,
+                                false
                         ),
                         "ABCD2345"
                 ));
@@ -243,7 +248,7 @@ class AppUserControllerTest {
         Instant revokedAt = Instant.parse("2026-10-23T15:00:00Z");
         when(appUserService.revokeSignIns(userId, adminId)).thenReturn(new UserResponse(
                 userId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE, UserAccountStatus.APPROVED,
-                null, null, "Kurucu", revokedAt));
+                null, null, "Kurucu", revokedAt, false));
 
         mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
                         .with(user("test-user"))

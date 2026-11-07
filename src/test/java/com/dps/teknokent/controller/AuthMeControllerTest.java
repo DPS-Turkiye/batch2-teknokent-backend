@@ -60,7 +60,7 @@ class AuthMeControllerTest {
         AppUserPrincipal principal = new AppUserPrincipal(
                 USER_ID, "ayse@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-1");
 
-        when(appUserService.findById(USER_ID)).thenReturn(new UserResponse(
+        when(appUserService.findSignedIn(USER_ID)).thenReturn(new UserResponse(
                 USER_ID,
                 "ayse@startup.com",
                 "Ayşe Demir",
@@ -69,7 +69,8 @@ class AuthMeControllerTest {
                 organizationId,
                 "GreenLoop",
                 "Kurucu",
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(get("/api/auth/me")

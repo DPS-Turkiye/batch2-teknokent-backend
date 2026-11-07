@@ -445,7 +445,8 @@ public class ProgramService {
 
 	private OrganizationProgramResponse toOrganizationProgram(Program program) {
 		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
-		return new OrganizationProgramResponse(program.getId(), program.getName(), coordinator.getFullName());
+		return new OrganizationProgramResponse(program.getId(), program.getName(), coordinator.getFullName(),
+				program.isIndividualMentees());
 	}
 
 	private ProgramResponse toResponse(Program program) {
