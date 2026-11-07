@@ -9,7 +9,7 @@ import com.dps.teknokent.entity.AppUser;
 
 /**
  * {@code individualMentee}: a mentee whose current program takes students as teams of one, so their screens drop the
- * startup wording. Only {@code AppUserService.findById} (behind /api/auth/me) works it out; elsewhere it is false.
+ * startup wording. Filled by /api/auth/me ({@code AppUserService.findSignedIn}) and founder sign-up; false elsewhere.
  */
 public record UserResponse(
 		UUID id,

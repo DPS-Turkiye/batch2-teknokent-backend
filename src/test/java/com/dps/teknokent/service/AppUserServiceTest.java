@@ -127,14 +127,15 @@ class AppUserServiceTest {
     }
 
     @Test
-    void findById_saysWhenTheMenteesProgramTakesIndividuals() {
+    void findSignedIn_saysWhenTheMenteesProgramTakesIndividuals() {
         UUID id = UUID.fromString("00000000-0000-0000-0000-000000000302");
         Organization team = organization(UUID.fromString("00000000-0000-0000-0000-000000000402"), "Elif Kaya");
         AppUser student = user(id, "elif@metu.edu.tr", "Elif Kaya", UserRole.MENTEE, team, "Öğrenci");
         when(appUserRepository.findById(id)).thenReturn(Optional.of(student));
         when(menteeProgramService.inIndividualProgram(student)).thenReturn(true);
 
-        assertThat(appUserService.findById(id).individualMentee()).isTrue();
+        assertThat(appUserService.findSignedIn(id).individualMentee()).isTrue();
+        assertThat(appUserService.findById(id).individualMentee()).isFalse();
     }
 
     @Test

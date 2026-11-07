@@ -32,7 +32,7 @@ public class AuthMeController {
 
 	@GetMapping("/me")
 	public UserResponse me() {
-		return appUserService.findById(signedInUserId());
+		return appUserService.findSignedIn(signedInUserId());
 	}
 
 	/** The language this user's notifications and e-mails are written in. */

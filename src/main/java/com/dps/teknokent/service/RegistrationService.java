@@ -109,7 +109,7 @@ public class RegistrationService {
 		}
 		discardOnboardingDraft();
 
-		return UserResponse.fromEntity(founder);
+		return UserResponse.fromEntity(founder, individual);
 	}
 
 	private boolean isIndividualProgram(UUID programId) {

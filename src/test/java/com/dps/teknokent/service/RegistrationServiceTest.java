@@ -208,6 +208,7 @@ class RegistrationServiceTest {
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.organizationName()).isEqualTo("GreenLoop");
         assertThat(result.jobTitle()).isEqualTo("Kurucu");
+        assertThat(result.individualMentee()).isFalse();
         verifyNoInteractions(onboardingDraftRepository);
     }
 
@@ -237,6 +238,7 @@ class RegistrationServiceTest {
 
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.organizationName()).isEqualTo("Ali Veli");
+        assertThat(result.individualMentee()).isTrue();
         verify(programEligibilityService).requirePerson(PROGRAM_ID, "e1@metu.edu.tr");
         verifyNoInteractions(pendingMemberRepository);
     }
