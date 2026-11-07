@@ -82,6 +82,7 @@ public class CoordinatorConversationService {
 			case MENTEE -> actor.getOrganization() == null
 					? List.of()
 					: conversationRepository.findByOrganizationId(actor.getOrganization().getId());
+			case ACADEMICIAN -> List.of();
 		};
 		Side side = actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR
 				? Side.COORDINATOR

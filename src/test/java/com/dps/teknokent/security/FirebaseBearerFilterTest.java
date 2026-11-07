@@ -211,6 +211,40 @@ class FirebaseBearerFilterTest {
     }
 
     @Test
+    void grantsOneAuthorityPerActivePermission() throws Exception {
+        AppUser user = user(UserAccountStatus.APPROVED);
+        user.setFirebaseUid("uid-1");
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good"))
+                .thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
+
+        filter.doFilter(request("/api/auth/me", "Bearer good"), new MockHttpServletResponse(), new MockFilterChain());
+
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(authentication.getAuthorities()).extracting(Object::toString).containsExactly("ROLE_MENTEE");
+        assertThat(((AppUserPrincipal) authentication.getPrincipal()).permissions()).containsExactly(UserRole.MENTEE);
+    }
+
+    @Test
+    void aRevokedPrimaryGrantDoesNotBecomeASpringAuthority() throws Exception {
+        AppUser user = user(UserAccountStatus.APPROVED);
+        user.setFirebaseUid("uid-1");
+        @SuppressWarnings("unchecked")
+        var grants = (java.util.List<com.dps.teknokent.entity.AppUserPermission>)
+                org.springframework.test.util.ReflectionTestUtils.getField(user, "permissions");
+        grants.getFirst().setStatus(com.dps.teknokent.domain.PermissionStatus.REVOKED);
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good"))
+                .thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
+
+        filter.doFilter(request("/api/auth/me", "Bearer good"), new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities()).isEmpty();
+    }
+
+    @Test
     void anAdminLinkedByUidSignsIn() throws Exception {
         AppUser admin = user(UserAccountStatus.APPROVED);
         admin.setRole(UserRole.ADMIN);

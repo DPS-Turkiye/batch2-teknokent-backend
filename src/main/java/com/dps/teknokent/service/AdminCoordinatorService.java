@@ -156,6 +156,7 @@ public class AdminCoordinatorService {
 			case MENTOR -> mentorshipRepository.countByMentorIdAndStatusIn(user.getId(), ONGOING) > 0
 					? CoordinatorCandidateStatus.MENTOR_IN_MENTORSHIP
 					: CoordinatorCandidateStatus.PROMOTABLE;
+			case ACADEMICIAN -> CoordinatorCandidateStatus.PROMOTABLE;
 		};
 	}
 
