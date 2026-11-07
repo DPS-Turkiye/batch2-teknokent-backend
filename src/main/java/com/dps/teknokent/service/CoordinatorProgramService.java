@@ -31,6 +31,7 @@ import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -248,11 +249,7 @@ public class CoordinatorProgramService {
 		programRepository.save(program);
 	}
 
-	/**
-	 * Archiving marks the program COMPLETED, which makes it read-only here. Mentorships are not closed:
-	 * they belong to the team and mentor, and may continue in another program.
-	 */
-	/** Taslak → Aktif. Only an admin launches, and only a program that has a coordinator. */
+	/** Taslak → Aktif. Only an admin launches, and only a program with an approved coordinator to run it. */
 	@Transactional
 	public CoordinatorProgramResponse.Detail launch(UUID actorId, UUID programId) {
 		if (requireCoordinatorOrAdmin(actorId).getRole() != UserRole.ADMIN) {
@@ -262,7 +259,11 @@ public class CoordinatorProgramService {
 		if (program.getStatus() != ProgramStatus.DRAFT) {
 			throw new InvalidRequestException("This program has already been launched.");
 		}
-		if (coordinatorsOf(program).isEmpty()) {
+		boolean staffed = ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository)
+				.stream()
+				.anyMatch(user -> user.getRole() == UserRole.COORDINATOR
+						&& user.getStatus() == UserAccountStatus.APPROVED);
+		if (!staffed) {
 			throw new InvalidRequestException("Assign a coordinator before launching the program.");
 		}
 		program.setStatus(ProgramStatus.ACTIVE);
@@ -270,6 +271,10 @@ public class CoordinatorProgramService {
 		return detailOf(program);
 	}
 
+	/**
+	 * Archiving marks the program COMPLETED, which makes it read-only here. Mentorships are not closed:
+	 * they belong to the team and mentor, and may continue in another program.
+	 */
 	@Transactional
 	public CoordinatorProgramResponse.Detail setArchived(UUID actorId, UUID programId, boolean archived) {
 		Program program = requireManagedProgram(actorId, programId);
@@ -673,7 +678,7 @@ public class CoordinatorProgramService {
 				.max(Integer::compare)
 				.orElse(null);
 		ProgramPhase current = ProgramCalendar.currentPhase(phases, snapshot.today());
-		AppUser coordinator = snapshot.coordinators().get(program.getCreatedBy());
+		AppUser coordinator = snapshot.coordinators().get(program.getId());
 		return new CoordinatorProgramResponse(
 				program.getId(),
 				program.getName(),
@@ -683,7 +688,7 @@ public class CoordinatorProgramService {
 				program.getDescription(),
 				program.getStartDate(),
 				program.getEndDate(),
-				program.getCreatedBy(),
+				coordinator == null ? program.getCreatedBy() : coordinator.getId(),
 				coordinator == null ? null : coordinator.getFullName(),
 				startups.size(),
 				(int) mentors.stream().filter(m -> m.getStatus() == ProgramMentorStatus.ACCEPTED).count(),
@@ -801,10 +806,13 @@ public class CoordinatorProgramService {
 					Map.of(), Map.of(), Set.of());
 		}
 		List<UUID> programIds = programs.stream().map(Program::getId).toList();
-		Map<UUID, AppUser> coordinators = appUserRepository
-				.findAllById(programs.stream().map(Program::getCreatedBy).collect(Collectors.toSet()))
-				.stream()
-				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		Map<UUID, AppUser> coordinators = new HashMap<>();
+		ProgramCoordination.runners(programs, programCoordinatorRepository, appUserRepository)
+				.forEach((programId, runners) -> {
+					if (!runners.isEmpty()) {
+						coordinators.put(programId, runners.get(0));
+					}
+				});
 		Map<UUID, List<ProgramPhase>> phases = programPhaseRepository.findByProgramIdInOrderByPositionAsc(programIds)
 				.stream()
 				.collect(Collectors.groupingBy(ProgramPhase::getProgramId));
@@ -953,6 +961,7 @@ public class CoordinatorProgramService {
 	}
 
 	/** Everything the summaries need, fetched once per call for a set of programs. */
+	/** {@code coordinators}: the coordinator each program names, by program id. */
 	public record Snapshot(
 			LocalDate today,
 			Instant now,

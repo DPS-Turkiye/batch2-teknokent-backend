@@ -30,6 +30,7 @@ import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -382,7 +383,6 @@ class ProgramServiceTest {
 	@Test
 	void requestToJoinLeavesTheRequestPendingAndTellsTheCoordinator() {
 		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
-		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
 		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID)).thenReturn(Optional.empty());
@@ -504,8 +504,54 @@ class ProgramServiceTest {
 
 		assertThatThrownBy(() -> programService.requestToJoin(MENTOR_ID, PROGRAM_ID))
 				.isInstanceOf(InvalidRequestException.class)
-				.hasMessageContaining("not been launched");
+				.hasMessageContaining("henüz başlatılmadı");
 		verify(programMentorRepository, never()).save(any());
+	}
+
+	@Test
+	void requestToJoinTellsTheCoordinatorsOfAnAdminCreatedProgramNotTheAdmin() {
+		UUID adminId = UUID.fromString("00000000-0000-0000-0000-0000000000a9");
+		AppUser admin = coordinator();
+		admin.setId(adminId);
+		admin.setRole(UserRole.ADMIN);
+		Program program = program();
+		program.setCreatedBy(adminId);
+		ProgramCoordinator row = new ProgramCoordinator();
+		row.setId(UUID.randomUUID());
+		row.setProgramId(PROGRAM_ID);
+		row.setUserId(COORDINATOR_ID);
+		row.setAddedBy(adminId);
+		row.setCreatedAt(Instant.now());
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		when(programCoordinatorRepository.findByProgramIdIn(any())).thenReturn(List.of(row));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(admin, coordinator()));
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID)).thenReturn(Optional.empty());
+
+		programService.requestToJoin(MENTOR_ID, PROGRAM_ID);
+
+		verify(notificationService).create(argThat(user -> COORDINATOR_ID.equals(user.getId())), any(), any(),
+				eq("/programs"));
+		verify(notificationService, never()).create(argThat(user -> adminId.equals(user.getId())), any(), any(),
+				any());
+	}
+
+	@Test
+	void aDraftTakesNoMentorInviteAndNoStartupYet() {
+		Program draft = program();
+		draft.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(draft));
+
+		assertThatThrownBy(() -> programService.inviteMentor(COORDINATOR_ID, PROGRAM_ID, MENTOR_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("henüz başlatılmadı");
+		assertThatThrownBy(() -> programService.addStartup(COORDINATOR_ID, PROGRAM_ID, ORG_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("henüz başlatılmadı");
+		verify(programMentorRepository, never()).save(any());
+		verify(programStartupRepository, never()).save(any());
+		verify(notificationService, never()).create(any(), any(), any(), any());
 	}
 
 	private static AppUser mentee(UUID activeProgramId) {

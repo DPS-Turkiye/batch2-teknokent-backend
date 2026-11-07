@@ -41,6 +41,7 @@ import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
+import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.TeamCodes;
 import com.dps.teknokent.util.Texts;
 
@@ -178,6 +179,7 @@ public class ProgramLaunchService {
 		readOnly.setReadOnly(true);
 		CodeMail mail = readOnly.execute(status -> {
 			Program program = programService.requireManagedProgram(actorId, programId);
+			ProgramDrafts.requireLaunched(program);
 			ProgramTeamInvite invite = requireWaitingInvite(programId, inviteId);
 			if (!mailService.isConfigured()) {
 				throw new InvalidRequestException(Texts.forRequest("error.mailDisabled"));

@@ -701,6 +701,24 @@ class RegistrationServiceTest {
     }
 
     @Test
+    void registerMember_aDraftProgramsCodeDoesNotCreateTheTeamYet() {
+        ProgramTeamInvite invite = new ProgramTeamInvite();
+        invite.setProgramId(PROGRAM_ID);
+        invite.setLeadEmail("deniz@kavsak.co");
+        invite.setCode("BIGG26-K4TX");
+        when(appUserRepository.existsByEmailIgnoreCase("deniz@kavsak.co")).thenReturn(false);
+        when(programTeamInviteRepository.findByCode("BIGG26-K4TX")).thenReturn(Optional.of(invite));
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.DRAFT)));
+
+        assertThatThrownBy(() -> registrationService.registerMember(new RegisterMemberRequest(
+                "Deniz Arı", "deniz@kavsak.co", "BIGG26-K4TX", null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("henüz başlatılmadı");
+        verify(organizationRepository, never()).saveAndFlush(any());
+        verify(programStartupRepository, never()).save(any());
+    }
+
+    @Test
     void registerMember_someoneElseCannotClaimATeamWithItsLeadsCode() {
         ProgramTeamInvite invite = new ProgramTeamInvite();
         invite.setLeadEmail("deniz@kavsak.co");

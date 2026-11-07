@@ -112,7 +112,7 @@ public class AdminProgramMembershipService {
 	}
 
 	private void notifyCoordinators(Program program, String memberName) {
-		appUserRepository.findAllById(ProgramCoordination.coordinatorIds(program, programCoordinatorRepository))
+		ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository)
 				.forEach(coordinator -> notificationService.create(coordinator,
 						Texts.get(coordinator, "notification.adminAddedToProgram.title"),
 						Texts.get(coordinator, "notification.adminAddedToProgram.body", memberName, program.getName()),

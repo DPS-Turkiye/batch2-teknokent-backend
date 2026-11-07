@@ -106,7 +106,7 @@ class TeamChangeServiceTest {
 		program.setId(PROGRAM_ID);
 		program.setCreatedBy(COORDINATOR_ID);
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
-		when(appUserRepository.findAllById(List.of(COORDINATOR_ID))).thenReturn(List.of(coordinator));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator));
 		when(teamChangeRequestRepository.saveAndFlush(any(TeamChangeRequest.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
 	}

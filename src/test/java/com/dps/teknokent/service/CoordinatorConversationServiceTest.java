@@ -116,7 +116,7 @@ class CoordinatorConversationServiceTest {
 		CoordinatorConversation conversation = teamConversation();
 		when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
-		when(appUserRepository.findAllById(List.of(COORDINATOR_ID))).thenReturn(List.of(user(COORDINATOR_ID, UserRole.COORDINATOR, null)));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(user(COORDINATOR_ID, UserRole.COORDINATOR, null)));
 
 		var message = service.send(FOUNDER_ID, CONVERSATION_ID, new SendCoordinatorMessageRequest(null, "  Merhaba  "));
 

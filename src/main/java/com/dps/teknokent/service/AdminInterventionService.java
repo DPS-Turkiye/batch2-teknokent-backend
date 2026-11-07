@@ -22,12 +22,15 @@ import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipInterventionRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.NotificationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
@@ -51,6 +54,8 @@ public class AdminInterventionService {
 	private final MeetingRepository meetingRepository;
 	private final NotificationRepository notificationRepository;
 	private final NotificationService notificationService;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
+	private final AppUserRepository appUserRepository;
 
 	@Transactional(readOnly = true)
 	public List<AdminInterventionResponse> list(UUID actorId) {
@@ -68,7 +73,8 @@ public class AdminInterventionService {
 		Program program = mentorship.getProgram() != null
 				? mentorship.getProgram()
 				: programOf(mentorship.getOrganization());
-		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
+		List<AppUser> runners = ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository);
+		AppUser coordinator = runners.isEmpty() ? domainLookupService.requireUser(program.getCreatedBy()) : runners.get(0);
 		String action = request.action().trim();
 		String note = TextUtils.normalizeOptional(request.note());
 		String pair = mentorship.getMentor().getFullName() + " ↔ " + mentorship.getOrganization().getName();
@@ -79,11 +85,17 @@ public class AdminInterventionService {
 		if (body.length() > BODY_LIMIT) {
 			body = body.substring(0, BODY_LIMIT);
 		}
-		Notification notification = notificationService.create(
-				coordinator,
-				Texts.get(coordinator, "notification.interventionNeeded.title"),
-				body,
-				"/coordinator/mentorships?mentorship=" + mentorship.getId());
+		Notification notification = null;
+		for (AppUser runner : runners.isEmpty() ? List.of(coordinator) : runners) {
+			Notification sent = notificationService.create(
+					runner,
+					Texts.get(runner, "notification.interventionNeeded.title"),
+					body,
+					"/coordinator/mentorships?mentorship=" + mentorship.getId());
+			if (runner.getId().equals(coordinator.getId())) {
+				notification = sent;
+			}
+		}
 
 		MentorshipIntervention row = new MentorshipIntervention();
 		row.setId(UUID.randomUUID());

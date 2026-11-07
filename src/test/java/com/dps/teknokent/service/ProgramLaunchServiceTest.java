@@ -292,6 +292,20 @@ class ProgramLaunchServiceTest {
 	}
 
 	@Test
+	void aDraftsCodeIsNotEmailedBeforeLaunch() {
+		UUID programId = UUID.randomUUID();
+		Program draft = new Program();
+		draft.setId(programId);
+		draft.setStatus(ProgramStatus.DRAFT);
+		when(programService.requireManagedProgram(ELIF, programId)).thenReturn(draft);
+
+		assertThatThrownBy(() -> service.sendCode(ELIF, programId, UUID.randomUUID()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("henüz başlatılmadı");
+		verify(mailService, never()).sendNow(any(), any(), any());
+	}
+
+	@Test
 	void theTeamDrawerShowsTheLeadMembersAndOnlyThisTeamsMentorships() {
 		UUID programId = UUID.randomUUID();
 		AppUser lead = user(UUID.randomUUID(), UserRole.MENTEE);

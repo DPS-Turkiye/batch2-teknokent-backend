@@ -36,6 +36,7 @@ import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -335,8 +336,10 @@ class CoordinatorProgramServiceTest {
 		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
 		ProgramCoordinator assigned = new ProgramCoordinator();
+		assigned.setProgramId(PROGRAM_ID);
 		assigned.setUserId(COORDINATOR_ID);
 		when(programCoordinatorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of(assigned));
+		when(programCoordinatorRepository.findByProgramIdIn(any())).thenReturn(List.of(assigned));
 		when(appUserRepository.findAllById(any()))
 				.thenReturn(List.of(user(ADMIN_ID, UserRole.ADMIN), user(COORDINATOR_ID, UserRole.COORDINATOR)));
 		when(programPhaseRepository.findByProgramIdInOrderByPositionAsc(anyList())).thenReturn(List.of());
@@ -351,7 +354,28 @@ class CoordinatorProgramServiceTest {
 		assertThat(detail.program().lifecycle()).isNotEqualTo(ProgramLifecycle.DRAFT);
 		assertThat(detail.coordinators()).extracting(CoordinatorProgramResponse.CoordinatorRef::id)
 				.containsExactly(COORDINATOR_ID);
+		assertThat(detail.program().coordinatorId()).isEqualTo(COORDINATOR_ID);
 		verify(programRepository).save(program);
+	}
+
+	@Test
+	void aDraftWhoseOnlyCoordinatorWasRejectedIsNotLaunched() {
+		Program program = program(ADMIN_ID);
+		program.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		ProgramCoordinator assigned = new ProgramCoordinator();
+		assigned.setProgramId(PROGRAM_ID);
+		assigned.setUserId(COORDINATOR_ID);
+		when(programCoordinatorRepository.findByProgramIdIn(any())).thenReturn(List.of(assigned));
+		AppUser rejected = user(COORDINATOR_ID, UserRole.COORDINATOR);
+		rejected.setStatus(UserAccountStatus.REJECTED);
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(user(ADMIN_ID, UserRole.ADMIN), rejected));
+
+		assertThatThrownBy(() -> service.launch(ADMIN_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Assign a coordinator");
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.DRAFT);
 	}
 
 	@Test

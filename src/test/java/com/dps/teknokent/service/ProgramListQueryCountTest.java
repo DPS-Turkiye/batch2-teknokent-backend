@@ -55,8 +55,9 @@ class ProgramListQueryCountTest {
 		long largeQueries = countQueries(() -> programService.list(large.getId()));
 
 		assertThat(largeQueries).isEqualTo(smallQueries);
-		// Actor, programs, coordinated programs, startups, mentors, organizations, users, support areas: 71 before.
-		assertThat(largeQueries).isLessThanOrEqualTo(8);
+		// Actor, programs, coordinated programs, startups, mentors, organizations, users, support areas,
+		// plus each program's coordinators and their accounts: 71 before.
+		assertThat(largeQueries).isLessThanOrEqualTo(10);
 	}
 
 	@Test
@@ -69,7 +70,7 @@ class ProgramListQueryCountTest {
 		long largeQueries = countQueries(() -> programService.findDetail(coordinator.getId(), large.getId()));
 
 		assertThat(largeQueries).isEqualTo(smallQueries);
-		assertThat(largeQueries).isLessThanOrEqualTo(7); // 22 before
+		assertThat(largeQueries).isLessThanOrEqualTo(9); // 22 before; 2 of these name the program's coordinator
 	}
 
 	private long countQueries(Supplier<?> call) {
