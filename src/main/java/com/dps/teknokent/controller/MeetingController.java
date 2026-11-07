@@ -73,6 +73,17 @@ public class MeetingController {
 				.orElseGet(() -> ResponseEntity.noContent().build());
 	}
 
+	/** The mentor confirms the meeting was held; only confirmed meetings count in the program's sessions report. */
+	@PostMapping("/{id}/held")
+	public MeetingResponse confirmHeld(@PathVariable UUID id, @RequestParam UUID mentorId) {
+		return meetingService.confirmHeld(id, mentorId, true);
+	}
+
+	@DeleteMapping("/{id}/held")
+	public MeetingResponse undoHeld(@PathVariable UUID id, @RequestParam UUID mentorId) {
+		return meetingService.confirmHeld(id, mentorId, false);
+	}
+
 	@PatchMapping("/{id}")
 	public MeetingResponse update(
 			@PathVariable UUID id,

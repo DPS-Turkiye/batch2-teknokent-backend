@@ -1,12 +1,21 @@
 package com.dps.teknokent.service;
 
+import java.text.Collator;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,10 +24,14 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse;
 import com.dps.teknokent.dto.responses.ProgramMeetingRatingsResponse;
+import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
@@ -32,8 +45,10 @@ import lombok.RequiredArgsConstructor;
 public class ProgramReportService {
 
 	private static final int SCALE = 5;
+	private static final Collator TURKISH = Collator.getInstance(Locale.forLanguageTag("tr"));
 
 	private final CoordinatorProgramService programService;
+	private final AppUserRepository appUserRepository;
 	private final AdminOverviewService adminOverviewService;
 	private final ProgramStartupRepository programStartupRepository;
 	private final MeetingRepository meetingRepository;
@@ -51,10 +66,7 @@ public class ProgramReportService {
 	@Transactional(readOnly = true)
 	public ProgramMeetingRatingsResponse meetingRatings(UUID actorId, UUID programId, LocalDate from) {
 		Program program = programService.requireManagedProgram(actorId, programId);
-		Set<UUID> teams = new HashSet<>();
-		for (ProgramStartup startup : programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())) {
-			teams.add(startup.getOrganizationId());
-		}
+		Set<UUID> teams = teamsOf(program);
 		Instant now = Instant.now();
 		Instant since = from == null ? null : from.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant();
 		List<UUID> held = teams.isEmpty()
@@ -70,6 +82,90 @@ public class ProgramReportService {
 				? List.of()
 				: meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(held, UserRole.MENTEE);
 		return summarize(program.getId(), held.size(), feedback);
+	}
+
+	/**
+	 * Sessions per mentor and per team between {@code from} and {@code to}: inclusive days in the app's time zone,
+	 * the current month when left out. Only meetings the mentor confirmed as held count, and a group session (one
+	 * meeting row per team at the same start) counts once for its mentor.
+	 */
+	@Transactional(readOnly = true)
+	public ProgramSessionsResponse sessions(UUID actorId, UUID programId, LocalDate from, LocalDate to) {
+		Program program = programService.requireManagedProgram(actorId, programId);
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		LocalDate first = from != null ? from : today.withDayOfMonth(1);
+		LocalDate last = to != null ? to : today.with(TemporalAdjusters.lastDayOfMonth());
+		if (last.isBefore(first)) {
+			throw new InvalidRequestException("The report cannot end before it starts.");
+		}
+		Set<UUID> teams = teamsOf(program);
+		List<Meeting> held = teams.isEmpty()
+				? List.of()
+				: meetingRepository
+						.findByOrganizationIdInAndHeldConfirmedAtIsNotNullAndScheduledAtGreaterThanEqualAndScheduledAtLessThan(
+								teams,
+								first.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant(),
+								last.plusDays(1).atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant())
+						.stream()
+						.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED)
+						.toList();
+		Set<UUID> heldTeams = new HashSet<>();
+		held.forEach(meeting -> heldTeams.add(meeting.getOrganization().getId()));
+		Map<UUID, String> teamEmails = heldTeams.isEmpty()
+				? Map.of()
+				: appUserRepository.findByOrganizationIdInOrderByFullNameAsc(heldTeams).stream()
+						.collect(Collectors.groupingBy(
+								user -> user.getOrganization().getId(),
+								Collectors.mapping(AppUser::getEmail, Collectors.joining(", "))));
+		return new ProgramSessionsResponse(
+				program.getId(),
+				first,
+				last,
+				rows(held.stream().filter(meeting -> meeting.getMentor() != null).toList(),
+						meeting -> meeting.getMentor().getId(),
+						meeting -> meeting.getMentor().getFullName(),
+						meeting -> meeting.getMentor().getEmail()),
+				rows(held,
+						meeting -> meeting.getOrganization().getId(),
+						meeting -> meeting.getOrganization().getName(),
+						meeting -> teamEmails.get(meeting.getOrganization().getId())));
+	}
+
+	static List<ProgramSessionsResponse.Row> rows(
+			List<Meeting> meetings,
+			Function<Meeting, UUID> key,
+			Function<Meeting, String> name,
+			Function<Meeting, String> email) {
+		Map<UUID, List<Meeting>> groups = new LinkedHashMap<>();
+		for (Meeting meeting : meetings) {
+			groups.computeIfAbsent(key.apply(meeting), id -> new ArrayList<>()).add(meeting);
+		}
+		List<ProgramSessionsResponse.Row> rows = new ArrayList<>();
+		groups.forEach((id, group) -> {
+			Map<Instant, Integer> slots = new HashMap<>();
+			for (Meeting meeting : group) {
+				int minutes = meeting.getDurationMinutes() == null ? 0 : meeting.getDurationMinutes();
+				slots.merge(meeting.getScheduledAt(), minutes, Math::max);
+			}
+			long days = slots.keySet().stream()
+					.map(start -> start.atZone(MeetingSlotTimes.APP_ZONE).toLocalDate())
+					.distinct()
+					.count();
+			int minutes = slots.values().stream().mapToInt(Integer::intValue).sum();
+			Meeting any = group.get(0);
+			rows.add(new ProgramSessionsResponse.Row(id, name.apply(any), email.apply(any), slots.size(), minutes,
+					(int) days));
+		});
+		rows.sort(Comparator.comparing(ProgramSessionsResponse.Row::name, Comparator.nullsLast(TURKISH)));
+		return rows;
+	}
+
+	private Set<UUID> teamsOf(Program program) {
+		Set<UUID> teams = new HashSet<>();
+		for (ProgramStartup startup : programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())) {
+			teams.add(startup.getOrganizationId());
+		}
+		return teams;
 	}
 
 	static ProgramMeetingRatingsResponse summarize(UUID programId, int heldMeetings, List<MeetingFeedback> feedback) {

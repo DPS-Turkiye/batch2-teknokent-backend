@@ -65,6 +65,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/xyz-abc-def",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings").with(user("test-user")))
@@ -95,6 +96,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/abc-defg-hij",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings")
@@ -125,6 +127,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/mno-pqr-stu",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings")
@@ -156,6 +159,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/alpha-beta-gamma",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null));
 
                 mockMvc.perform(post("/api/meetings")

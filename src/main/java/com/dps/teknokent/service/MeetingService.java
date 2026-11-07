@@ -401,6 +401,39 @@ public class MeetingService {
 		return MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
 	}
 
+	/**
+	 * The mentor's "Görüşme yapıldı" on a meeting that has started, or its undo. It covers the whole room, so a
+	 * group session counts once for the mentor and once for each team in it.
+	 */
+	@Transactional
+	public MeetingResponse confirmHeld(UUID meetingId, UUID mentorId, boolean held) {
+		Meeting meeting = requireMeeting(meetingId);
+		if (meeting.getMentor() == null || !meeting.getMentor().getId().equals(mentorId)) {
+			throw new InvalidRequestException("Only the meeting's mentor can confirm that it was held.");
+		}
+		if (held && meeting.getStatus() == MeetingStatus.CANCELLED) {
+			throw new InvalidRequestException("A cancelled meeting cannot be confirmed as held.");
+		}
+		Instant now = Instant.now();
+		if (held && meeting.getScheduledAt().isAfter(now)) {
+			throw new InvalidRequestException("A meeting can be confirmed as held only after it starts.");
+		}
+		// A reused Meet link joins older meetings into the room too, so only the same mentor's same slot counts.
+		List<Meeting> room = roommates(meeting).stream()
+				.filter(mate -> mate.getMentor() != null && mate.getMentor().getId().equals(mentorId))
+				.filter(mate -> meeting.getScheduledAt().equals(mate.getScheduledAt()))
+				.toList();
+		for (Meeting mate : room) {
+			if (!held) {
+				mate.setHeldConfirmedAt(null);
+			} else if (mate.getHeldConfirmedAt() == null && mate.getStatus() != MeetingStatus.CANCELLED) {
+				mate.setHeldConfirmedAt(now);
+			}
+		}
+		meetingRepository.saveAll(room);
+		return MeetingResponse.fromEntity(meeting);
+	}
+
 	@Transactional(readOnly = true)
 	public Optional<MeetingFeedbackResponse> findFeedback(UUID meetingId, UUID authorId) {
 		return meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, authorId)
