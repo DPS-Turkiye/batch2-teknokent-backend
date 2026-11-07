@@ -1,5 +1,9 @@
 package com.dps.teknokent.service;
 
+import com.dps.teknokent.dto.responses.StudentProfileResponse;
+
+import com.dps.teknokent.dto.requests.StudentProfileRequest;
+
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorProgramName;
@@ -413,6 +417,57 @@ class MentorProfileServiceTest {
 		profile.getLanguages().add(MentorLanguage.GERMAN);
 		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
 		return profile;
+	}
+
+	private UpdateMentorProfileRequest requestWithStudent(StudentProfileRequest student) {
+		UpdateMentorProfileRequest request = updateRequest();
+		return new UpdateMentorProfileRequest(
+				request.professionalTitle(), request.company(), request.availabilityLabel(),
+				request.responseTimeLabel(), request.meetingMode(), request.communicationPreference(),
+				request.mentoringStyle(), request.fitLabel(), request.experienceLevel(), request.sectorExperience(),
+				request.startupStages(), request.specialties(), null, null, null, null, null, null, null, null,
+				student);
+	}
+
+	@Test
+	void updateProfileStoresAStudentMentorsStudies() {
+		MentorProfile profile = editableProfile();
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		var response = mentorProfileService.updateProfile(mentorId, requestWithStudent(new StudentProfileRequest(
+				" Bilgisayar Mühendisliği ", "4. sınıf", List.of(" CENG 140 ", "MATH 119"),
+				List.of("Kampüs etkinlik uygulaması"), "  TU Delft, 2025 güz ")));
+
+		assertThat(profile.getDepartment()).isEqualTo("Bilgisayar Mühendisliği");
+		assertThat(profile.getStudyYear()).isEqualTo("4. sınıf");
+		assertThat(profile.getStrongCourses()).containsExactly("CENG 140", "MATH 119");
+		assertThat(profile.getProjects()).containsExactly("Kampüs etkinlik uygulaması");
+		assertThat(profile.getErasmus()).isEqualTo("TU Delft, 2025 güz");
+		assertThat(response.studentProfile().department()).isEqualTo("Bilgisayar Mühendisliği");
+		assertThat(response.studentProfile().strongCourses()).containsExactly("CENG 140", "MATH 119");
+	}
+
+	@Test
+	void updateProfileWithoutAStudentProfileKeepsTheStoredOne() {
+		MentorProfile profile = editableProfile();
+		profile.setDepartment("Endüstri Mühendisliği");
+		profile.getStrongCourses().add("IE 251");
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		mentorProfileService.updateProfile(mentorId, requestWithStudent(null));
+
+		assertThat(profile.getDepartment()).isEqualTo("Endüstri Mühendisliği");
+		assertThat(profile.getStrongCourses()).containsExactly("IE 251");
+	}
+
+	@Test
+	void aMentorWhoIsNotAStudentHasNoStudentProfile() {
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+
+		assertThat(StudentProfileResponse.fromEntity(profile)).isNull();
+		assertThat(MentorProfileResponse.fromEntity(profile).studentProfile()).isNull();
 	}
 
 	@Test
