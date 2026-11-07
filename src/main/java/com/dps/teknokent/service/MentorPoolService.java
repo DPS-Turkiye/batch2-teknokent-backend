@@ -69,6 +69,8 @@ public class MentorPoolService {
 	private final MentorProfileRepository mentorProfileRepository;
 	private final MentorshipRepository mentorshipRepository;
 	private final MailService mailService;
+	private final ProgramEligibilityService programEligibilityService;
+
 
 	@Transactional(readOnly = true)
 	public List<MentorPoolResponse.Row> pool(UUID actorId, UUID programId) {
@@ -88,6 +90,7 @@ public class MentorPoolService {
 			programService.inviteMentor(actorId, programId, user.getId());
 			return rows(program);
 		}
+		programEligibilityService.requirePerson(program, email);
 		ProgramMentorInvite invite = inviteRepository.findByProgramIdAndEmailIgnoreCase(programId, email)
 				.orElseGet(ProgramMentorInvite::new);
 		if (invite.getId() == null) {
@@ -224,6 +227,7 @@ public class MentorPoolService {
 					|| programs.stream().anyMatch(program -> program.getStatus() != ProgramStatus.ACTIVE)) {
 				throw new InvalidRequestException(Texts.forRequest("error.programNotOpen"));
 			}
+			programs.forEach(program -> programEligibilityService.requirePerson(program, mentor.getEmail()));
 			Instant now = Instant.now();
 			for (UUID programId : added) {
 				ProgramMentor membership = new ProgramMentor();

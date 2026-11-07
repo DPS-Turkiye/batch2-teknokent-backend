@@ -60,6 +60,8 @@ public class ProgramService {
 	private final AppUserRepository appUserRepository;
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
+	private final ProgramEligibilityService programEligibilityService;
+
 
 	@Transactional
 	public ProgramResponse create(UUID actorId, String name) {
@@ -111,7 +113,8 @@ public class ProgramService {
 		return programRepository.findAllByOrderByCreatedAtDesc()
 				.stream()
 				.filter(program -> program.getStatus() == ProgramStatus.ACTIVE)
-				.map(program -> new ProgramNameResponse(program.getId(), program.getName()))
+				.map(program -> new ProgramNameResponse(program.getId(), program.getName(),
+						program.isIndividualMentees()))
 				.toList();
 	}
 
@@ -179,6 +182,7 @@ public class ProgramService {
 		if (programStartupRepository.findByProgramIdAndOrganizationId(program.getId(), organizationId).isPresent()) {
 			throw new ConflictException("This startup is already in the program.");
 		}
+		programEligibilityService.requireTeam(program, organizationId);
 		ProgramStartup row = new ProgramStartup();
 		row.setId(UUID.randomUUID());
 		row.setProgramId(program.getId());
@@ -274,6 +278,7 @@ public class ProgramService {
 	}
 
 	private void upsertPending(UUID programId, UUID mentorId, ProgramMentorInvitedBy invitedBy) {
+		programEligibilityService.requireMentor(programId, domainLookupService.requireUser(mentorId));
 		programMentorRepository.findByProgramIdAndMentorId(programId, mentorId).ifPresentOrElse(existing -> {
 			if (existing.getStatus() == ProgramMentorStatus.ACCEPTED) {
 				throw new ConflictException("This mentor is already in the program.");
@@ -299,6 +304,10 @@ public class ProgramService {
 	}
 
 	private void applyDecision(ProgramMentor membership, boolean accepted) {
+		if (accepted) {
+			programEligibilityService.requireMentor(membership.getProgramId(),
+					domainLookupService.requireUser(membership.getMentorId()));
+		}
 		membership.setStatus(accepted ? ProgramMentorStatus.ACCEPTED : ProgramMentorStatus.REJECTED);
 		membership.setDecidedAt(Instant.now());
 		programMentorRepository.save(membership);

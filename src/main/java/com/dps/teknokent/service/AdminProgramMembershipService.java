@@ -48,6 +48,7 @@ public class AdminProgramMembershipService {
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramStartupRepository programStartupRepository;
+	private final ProgramEligibilityService programEligibilityService;
 
 	@Transactional
 	public void assignMentor(UUID actorId, UUID programId, UUID mentorId) {
@@ -57,6 +58,7 @@ public class AdminProgramMembershipService {
 		if (mentor.getRole() != UserRole.MENTOR) {
 			throw new InvalidRequestException("The selected user is not a mentor.");
 		}
+		programEligibilityService.requirePerson(program, mentor.getEmail());
 		ProgramMentor membership = programMentorRepository.findByProgramIdAndMentorId(programId, mentorId)
 				.orElseGet(() -> newMembership(programId, mentorId));
 		if (membership.getStatus() == ProgramMentorStatus.ACCEPTED) {
@@ -81,6 +83,7 @@ public class AdminProgramMembershipService {
 		if (programStartupRepository.findByProgramIdAndOrganizationId(programId, organizationId).isPresent()) {
 			throw new ConflictException("This startup is already in the program.");
 		}
+		programEligibilityService.requireTeam(program, organizationId);
 		ProgramStartup row = new ProgramStartup();
 		row.setId(UUID.randomUUID());
 		row.setProgramId(programId);

@@ -59,7 +59,10 @@ public record CoordinatorProgramResponse(
 			boolean autoMatchSuggestions,
 			int defaultMentorCapacity,
 			int communicationGapDays,
-			int bottleneckFlagDays) {
+			int bottleneckFlagDays,
+			String eligibleEmailDomain,
+			boolean rosterOnly,
+			boolean individualMentees) {
 	}
 
 	/** Active mentorships by how recently the team met its mentor; see CoordinatorProgramService#classify. */

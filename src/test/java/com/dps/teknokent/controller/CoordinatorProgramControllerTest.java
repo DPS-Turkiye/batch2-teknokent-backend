@@ -1,5 +1,9 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.dto.responses.ProgramEligibleEmailResponse;
+
+import com.dps.teknokent.service.ProgramRosterService;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -70,6 +74,8 @@ class CoordinatorProgramControllerTest {
 	private SyllabusPhaseService syllabusPhaseService;
 	@MockitoBean
 	private ProgramApprovalService programApprovalService;
+	@MockitoBean
+	private ProgramRosterService programRosterService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");
@@ -207,6 +213,37 @@ class CoordinatorProgramControllerTest {
 						.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programCoordinatorService).remove(SIGNED_IN_ID, PROGRAM_ID, other);
+	}
+
+	@Test
+	void managesTheProgramListAsTheSignedInUser() throws Exception {
+		UUID entryId = UUID.fromString("00000000-0000-0000-0000-0000000000e1");
+		when(programRosterService.add(eq(SIGNED_IN_ID), eq(PROGRAM_ID), any())).thenReturn(List.of(
+				new ProgramEligibleEmailResponse(entryId, "e1@metu.edu.tr", Instant.parse("2026-11-07T10:00:00Z"), false)));
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/eligible-emails", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"emails\":[\"e1@metu.edu.tr\"]}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].email").value("e1@metu.edu.tr"))
+				.andExpect(jsonPath("$[0].registered").value(false));
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/eligible-emails", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"emails\":[]}"))
+				.andExpect(status().isBadRequest());
+
+		mockMvc.perform(get("/api/coordinator/programs/{id}/eligible-emails", PROGRAM_ID)
+						.with(authentication(signedIn())))
+				.andExpect(status().isOk());
+		verify(programRosterService).list(SIGNED_IN_ID, PROGRAM_ID);
+
+		mockMvc.perform(delete("/api/coordinator/programs/{id}/eligible-emails/{entryId}", PROGRAM_ID, entryId)
+						.with(authentication(signedIn())))
+				.andExpect(status().isOk());
+		verify(programRosterService).remove(SIGNED_IN_ID, PROGRAM_ID, entryId);
 	}
 
 	@Test

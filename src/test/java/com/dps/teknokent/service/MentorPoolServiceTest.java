@@ -59,6 +59,9 @@ class MentorPoolServiceTest {
 	private MentorshipRepository mentorshipRepository;
 	@Mock
 	private MailService mailService;
+	@Mock
+	private ProgramEligibilityService programEligibilityService;
+
 	@InjectMocks
 	private MentorPoolService service;
 

@@ -66,6 +66,9 @@ class ProgramLaunchServiceTest {
 	private CoordinatorMentorshipService mentorshipService;
 	@Mock
 	private PlatformTransactionManager transactionManager;
+	@Mock
+	private ProgramEligibilityService programEligibilityService;
+
 	@InjectMocks
 	private ProgramLaunchService service;
 

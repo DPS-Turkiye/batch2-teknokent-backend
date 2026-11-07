@@ -69,6 +69,13 @@ public class Program {
 	@Column(name = "bottleneck_flag_days", nullable = false)
 	private int bottleneckFlagDays = 21;
 
+	/** Lowercase, no "@"; subdomains count. Null lets any address join. */
+	@Column(name = "eligible_email_domain")
+	private String eligibleEmailDomain;
+	@Column(name = "roster_only", nullable = false)
+	private boolean rosterOnly;
+	@Column(name = "individual_mentees", nullable = false)
+	private boolean individualMentees;
 	@Column(name = "syllabus_document_id")
 	private UUID syllabusDocumentId;
 }

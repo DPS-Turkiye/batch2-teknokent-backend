@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -40,6 +41,7 @@ import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -161,6 +163,9 @@ class RegistrationServiceTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private ProgramEligibilityService programEligibilityService;
+
     @InjectMocks
     private RegistrationService registrationService;
 
@@ -204,6 +209,49 @@ class RegistrationServiceTest {
         assertThat(result.organizationName()).isEqualTo("GreenLoop");
         assertThat(result.jobTitle()).isEqualTo("Kurucu");
         verifyNoInteractions(onboardingDraftRepository);
+    }
+
+    @Test
+    void registerFounder_givesAStudentOfAnIndividualProgramATeamOfOne() {
+        Program iskur = new Program();
+        iskur.setId(PROGRAM_ID);
+        iskur.setIndividualMentees(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(iskur));
+        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+
+        var result = registrationService.registerFounder(new RegisterFounderRequest(
+                "Ali Veli", "e1@metu.edu.tr", null, null, null, null, PROGRAM_ID, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, true));
+
+        assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
+        assertThat(result.organizationName()).isEqualTo("Ali Veli");
+        verify(programEligibilityService).requirePerson(PROGRAM_ID, "e1@metu.edu.tr");
+        verifyNoInteractions(pendingMemberRepository);
+    }
+
+    @Test
+    void registerFounder_refusesSomeoneTheProgramDoesNotAllow() {
+        doThrow(new InvalidRequestException("not on list"))
+                .when(programEligibilityService).requirePerson(PROGRAM_ID, "ali@gmail.com");
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ali Veli", "ali@gmail.com", "Döngü", null, null, null, PROGRAM_ID, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("not on list");
+        verify(appUserRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(organizationRepository);
     }
 
     @Test

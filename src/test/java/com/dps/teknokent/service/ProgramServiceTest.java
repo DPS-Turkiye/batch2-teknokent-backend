@@ -59,6 +59,9 @@ class ProgramServiceTest {
 	private DomainLookupService domainLookupService;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private ProgramEligibilityService programEligibilityService;
+
 	@InjectMocks
 	private ProgramService programService;
 
