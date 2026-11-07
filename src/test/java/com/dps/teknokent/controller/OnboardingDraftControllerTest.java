@@ -110,6 +110,6 @@ class OnboardingDraftControllerTest {
 
 	private static org.springframework.test.web.servlet.request.RequestPostProcessor firebase() {
 		return authentication(UsernamePasswordAuthenticationToken.authenticated(
-				new FirebaseIdentity("uid-1", "ayse@startup.com"), "firebase", List.of()));
+				new FirebaseIdentity("uid-1", "ayse@startup.com", true), "firebase", List.of()));
 	}
 }
