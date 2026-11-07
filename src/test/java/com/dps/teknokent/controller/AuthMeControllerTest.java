@@ -69,7 +69,8 @@ class AuthMeControllerTest {
                 organizationId,
                 "GreenLoop",
                 "Kurucu",
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(get("/api/auth/me")

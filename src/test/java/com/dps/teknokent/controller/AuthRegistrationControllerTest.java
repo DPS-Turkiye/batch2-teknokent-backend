@@ -117,7 +117,8 @@ class AuthRegistrationControllerTest {
                 organizationId,
                 "GreenLoop",
                 "Kurucu",
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(post("/api/auth/register/founder")
@@ -153,7 +154,8 @@ class AuthRegistrationControllerTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(post("/api/auth/register/mentor")
@@ -185,7 +187,8 @@ class AuthRegistrationControllerTest {
                 organizationId,
                 "GreenLoop",
                 null,
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(post("/api/auth/register/member")

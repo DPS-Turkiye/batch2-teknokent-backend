@@ -50,6 +50,7 @@ public class AppUserService {
 	private final LoginProvisioner loginProvisioner;
 	private final TeamMembershipService teamMembershipService;
 	private final ProgramEligibilityService programEligibilityService;
+	private final MenteeProgramService menteeProgramService;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -68,7 +69,8 @@ public class AppUserService {
 
 	@Transactional(readOnly = true)
 	public UserResponse findById(UUID id) {
-		return appUserRepository.findById(id).map(UserResponse::fromEntity)
+		return appUserRepository.findById(id)
+				.map(user -> UserResponse.fromEntity(user, menteeProgramService.inIndividualProgram(user)))
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
 	}
 

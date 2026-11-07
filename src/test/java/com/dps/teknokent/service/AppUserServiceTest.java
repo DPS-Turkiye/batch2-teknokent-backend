@@ -72,6 +72,9 @@ class AppUserServiceTest {
     @Mock
     private ProgramEligibilityService programEligibilityService;
 
+    @Mock
+    private MenteeProgramService menteeProgramService;
+
     @InjectMocks
     private AppUserService appUserService;
 
@@ -120,6 +123,18 @@ class AppUserServiceTest {
         assertThat(result.role()).isEqualTo(UserRole.MENTOR);
         assertThat(result.organizationId()).isEqualTo(organization.getId());
         assertThat(result.organizationName()).isEqualTo("Teknokent");
+        assertThat(result.individualMentee()).isFalse();
+    }
+
+    @Test
+    void findById_saysWhenTheMenteesProgramTakesIndividuals() {
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000302");
+        Organization team = organization(UUID.fromString("00000000-0000-0000-0000-000000000402"), "Elif Kaya");
+        AppUser student = user(id, "elif@metu.edu.tr", "Elif Kaya", UserRole.MENTEE, team, "Öğrenci");
+        when(appUserRepository.findById(id)).thenReturn(Optional.of(student));
+        when(menteeProgramService.inIndividualProgram(student)).thenReturn(true);
+
+        assertThat(appUserService.findById(id).individualMentee()).isTrue();
     }
 
     @Test
