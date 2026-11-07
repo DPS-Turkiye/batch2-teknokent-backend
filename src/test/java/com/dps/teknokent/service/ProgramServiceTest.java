@@ -248,8 +248,23 @@ class ProgramServiceTest {
 					assertThat(entry.id()).isEqualTo(PROGRAM_ID);
 					assertThat(entry.name()).isEqualTo("Seed 2026");
 					assertThat(entry.coordinatorName()).isEqualTo("Demo Coordinator");
+					assertThat(entry.individualMentees()).isFalse();
 				});
 		assertThat(result.activeProgramId()).isNull();
+	}
+
+	@Test
+	void listForOrganizationFlagsAnIndividualProgram() {
+		Program individual = program();
+		individual.setIndividualMentees(true);
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(mentee(PROGRAM_ID));
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID))
+				.thenReturn(List.of(assignment(PROGRAM_ID)));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(individual));
+
+		assertThat(programService.listForOrganization(MENTEE_ID).programs()).singleElement()
+				.satisfies(entry -> assertThat(entry.individualMentees()).isTrue());
 	}
 
 	@Test
