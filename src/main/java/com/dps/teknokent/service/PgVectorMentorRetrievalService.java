@@ -100,8 +100,10 @@ public class PgVectorMentorRetrievalService {
 		String evidence = mentor.recommendationEvidence().stream()
 				.map(item -> item.category() + ": " + item.claim() + " — " + item.quote())
 				.collect(Collectors.joining("\n"));
-		return String.join("\n", mentor.professionalTitle(), mentor.company(), mentor.sectorExperience(),
+		String text = String.join("\n", mentor.professionalTitle(), mentor.company(), mentor.sectorExperience(),
 				mentor.startupStages(), String.join(", ", mentor.specialties()), evidence);
+		// Only student mentors get the extra lines, so every other mentor keeps its cached embedding.
+		return mentor.studentProfile() == null ? text : text + "\n" + mentor.studentProfile().matchingText();
 	}
 
 	private String fingerprint(String text) {

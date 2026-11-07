@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.dto.responses.StudentProfileResponse;
 import com.dps.teknokent.dto.responses.MentorRecommendationResult;
 import com.dps.teknokent.util.Texts;
 
@@ -45,6 +46,9 @@ public class MentorRecommendationService {
 			Map.entry("iklim", "climate"), Map.entry("sürdürülebilirlik", "sustainability"),
 			Map.entry("üretim", "manufacturing"), Map.entry("tedarik", "supply"),
 			Map.entry("zinciri", "chain"));
+
+	/** Words a student uses when they want help going abroad, matched against a mentor's Erasmus experience. */
+	private static final Set<String> ABROAD_WORDS = Set.of("erasmus", "yurt", "dışı", "abroad", "exchange", "değişim");
 
 	private final MentorProfileService mentorProfileService;
 	private final PgVectorMentorRetrievalService pgVectorRetrievalService;
@@ -146,7 +150,7 @@ public class MentorRecommendationService {
 				.collect(Collectors.joining(" "));
 		Set<String> mentorTokens = meaningfulTokens(
 				String.join(" ", mentor.specialties()) + " " + mentor.sectorExperience()
-						+ " " + mentor.professionalTitle() + " " + confirmedEvidence);
+						+ " " + mentor.professionalTitle() + " " + confirmedEvidence + " " + studentText(mentor));
 		return (int) query.stream().filter(mentorTokens::contains).count();
 	}
 
@@ -171,6 +175,12 @@ public class MentorRecommendationService {
 				.limit(2)
 				.forEach(specialty -> reasons.add(Texts.forRequest("match.reason.specialty", specialty)));
 
+		if (mentor.studentProfile() != null) {
+			studentReasons(requestTokens, mentor.studentProfile()).stream()
+					.limit(3 - reasons.size())
+					.forEach(reasons::add);
+		}
+
 		if (reasons.size() < 3) {
 			sectorSegments(mentor.sectorExperience()).stream()
 					.filter(sector -> overlaps(requestTokens, sector))
@@ -187,6 +197,27 @@ public class MentorRecommendationService {
 			reasons.add(Texts.forRequest("match.reason.timing", mentor.availabilityLabel()));
 		}
 		return reasons.stream().distinct().limit(3).toList();
+	}
+
+	/** A student mentor's own reasons: a strong course, a similar project, or Erasmus for a student going abroad. */
+	private List<String> studentReasons(Set<String> requestTokens, StudentProfileResponse student) {
+		List<String> reasons = new ArrayList<>();
+		student.strongCourses().stream()
+				.filter(course -> overlaps(requestTokens, course))
+				.findFirst()
+				.ifPresent(course -> reasons.add(Texts.forRequest("match.reason.course", course)));
+		student.projects().stream()
+				.filter(project -> overlaps(requestTokens, project))
+				.findFirst()
+				.ifPresent(project -> reasons.add(Texts.forRequest("match.reason.project", project)));
+		if (student.erasmus() != null && requestTokens.stream().anyMatch(ABROAD_WORDS::contains)) {
+			reasons.add(Texts.forRequest("match.reason.erasmus", student.erasmus()));
+		}
+		return reasons;
+	}
+
+	private String studentText(MentorProfileResponse mentor) {
+		return mentor.studentProfile() == null ? "" : mentor.studentProfile().matchingText();
 	}
 
 	private boolean overlaps(Set<String> requestTokens, String candidate) {
