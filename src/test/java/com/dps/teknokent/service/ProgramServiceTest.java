@@ -74,15 +74,17 @@ class ProgramServiceTest {
 	private static final UUID OTHER_PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
 
 	@Test
-	void createPersistsAProgramForTheCoordinator() {
-		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+	void createMakesAnAdminsProgramADraft() {
+		AppUser admin = coordinator();
+		admin.setRole(UserRole.ADMIN);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(admin);
 		when(programRepository.save(any(Program.class))).thenAnswer(invocation -> invocation.getArgument(0));
-		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(admin));
 
 		var result = programService.create(COORDINATOR_ID, "  Seed 2026  ");
 
 		assertThat(result.name()).isEqualTo("Seed 2026");
-		assertThat(result.coordinatorId()).isEqualTo(COORDINATOR_ID);
+		assertThat(result.status()).isEqualTo(ProgramStatus.DRAFT);
 		ArgumentCaptor<Program> captor = ArgumentCaptor.forClass(Program.class);
 		verify(programRepository).save(captor.capture());
 		assertThat(captor.getValue().getCreatedBy()).isEqualTo(COORDINATOR_ID);
@@ -90,12 +92,16 @@ class ProgramServiceTest {
 	}
 
 	@Test
-	void createRejectsAMentor() {
+	void createRejectsACoordinatorAndAMentor() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
 		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
 
-		assertThatThrownBy(() -> programService.create(MENTOR_ID, "Seed"))
+		assertThatThrownBy(() -> programService.create(COORDINATOR_ID, "Seed"))
 				.isInstanceOf(InvalidRequestException.class)
-				.hasMessageContaining("coordinator");
+				.hasMessageContaining("admin");
+		assertThatThrownBy(() -> programService.create(MENTOR_ID, "Seed"))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programRepository, never()).save(any());
 	}
 
 	@Test

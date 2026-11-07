@@ -66,8 +66,8 @@ public class ProgramService {
 	@Transactional
 	public ProgramResponse create(UUID actorId, String name) {
 		AppUser actor = requireActor(actorId);
-		if (actor.getRole() != UserRole.COORDINATOR && actor.getRole() != UserRole.ADMIN) {
-			throw new InvalidRequestException("Only a coordinator can manage programs.");
+		if (actor.getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin creates programs.");
 		}
 		String trimmed = TextUtils.trim(name);
 		if (trimmed == null || trimmed.isBlank()) {
@@ -78,6 +78,7 @@ public class ProgramService {
 		program.setName(trimmed);
 		program.setCreatedBy(actor.getId());
 		program.setCreatedAt(Instant.now());
+		program.setStatus(ProgramStatus.DRAFT);
 		return toResponse(programRepository.save(program));
 	}
 

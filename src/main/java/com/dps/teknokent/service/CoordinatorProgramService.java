@@ -154,7 +154,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			UpdateProgramDetailsRequest request) {
-		Program program = requireEditableProgram(actorId, programId);
+		Program program = requireSettingsEditor(actorId, programId);
 		requireOrderedDates(request.startDate(), request.endDate(), "The program cannot end before it starts.");
 		program.setName(request.name().trim());
 		program.setDescription(blankToNull(request.description()));
@@ -201,7 +201,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			ReplaceProgramPhasesRequest request) {
-		Program program = requireEditableProgram(actorId, programId);
+		Program program = requireSettingsEditor(actorId, programId);
 		writePhases(programId, request.phases());
 		attachSyllabus(program, actorId, request.syllabusDocumentId());
 		return detailOf(program);
@@ -252,6 +252,24 @@ public class CoordinatorProgramService {
 	 * Archiving marks the program COMPLETED, which makes it read-only here. Mentorships are not closed:
 	 * they belong to the team and mentor, and may continue in another program.
 	 */
+	/** Taslak → Aktif. Only an admin launches, and only a program that has a coordinator. */
+	@Transactional
+	public CoordinatorProgramResponse.Detail launch(UUID actorId, UUID programId) {
+		if (requireCoordinatorOrAdmin(actorId).getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin launches a program.");
+		}
+		Program program = requireManagedProgram(actorId, programId);
+		if (program.getStatus() != ProgramStatus.DRAFT) {
+			throw new InvalidRequestException("This program has already been launched.");
+		}
+		if (coordinatorsOf(program).isEmpty()) {
+			throw new InvalidRequestException("Assign a coordinator before launching the program.");
+		}
+		program.setStatus(ProgramStatus.ACTIVE);
+		programRepository.save(program);
+		return detailOf(program);
+	}
+
 	@Transactional
 	public CoordinatorProgramResponse.Detail setArchived(UUID actorId, UUID programId, boolean archived) {
 		Program program = requireManagedProgram(actorId, programId);
@@ -625,13 +643,13 @@ public class CoordinatorProgramService {
 				.orElse(null);
 	}
 
-	/** The creator first, then the coordinators added to the program. */
+	/** The creator first when it is a coordinator (an admin who created the program is not), then the added ones. */
 	public List<CoordinatorProgramResponse.CoordinatorRef> coordinatorsOf(Program program) {
 		List<UUID> ids = ProgramCoordination.coordinatorIds(program, programCoordinatorRepository);
 		Map<UUID, AppUser> users = appUserRepository.findAllById(ids).stream()
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		return ids.stream()
-				.filter(users::containsKey)
+				.filter(id -> users.containsKey(id) && users.get(id).getRole() == UserRole.COORDINATOR)
 				.map(id -> new CoordinatorProgramResponse.CoordinatorRef(
 						id, users.get(id).getFullName(), id.equals(program.getCreatedBy())))
 				.toList();
@@ -857,6 +875,14 @@ public class CoordinatorProgramService {
 			throw new InvalidRequestException("Only a coordinator can manage programs.");
 		}
 		return actor;
+	}
+
+	/** Program Ayarları belong to the program's coordinators; an admin only views them. */
+	public Program requireSettingsEditor(UUID actorId, UUID programId) {
+		if (requireCoordinatorOrAdmin(actorId).getRole() == UserRole.ADMIN) {
+			throw new InvalidRequestException("An admin views program settings; the program's coordinators change them.");
+		}
+		return requireEditableProgram(actorId, programId);
 	}
 
 	private Program requireEditableProgram(UUID actorId, UUID programId) {

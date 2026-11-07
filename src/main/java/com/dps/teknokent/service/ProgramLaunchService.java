@@ -17,6 +17,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -45,8 +47,8 @@ import com.dps.teknokent.util.Texts;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Flow 03.3: a coordinator launches a program with its rules and teams, and follows which team leads have
- * joined with their code. The coordinator copies a code or emails it to the lead through SES.
+ * Flow 03.3: an admin creates a program as a draft with its coordinators; its coordinators add teams and follow
+ * which team leads have joined with their code. The coordinator copies a code or emails it to the lead through SES.
  */
 @Service
 @RequiredArgsConstructor
@@ -65,11 +67,16 @@ public class ProgramLaunchService {
 	private final CoordinatorMentorshipService mentorshipService;
 	private final PlatformTransactionManager transactionManager;
 	private final ProgramEligibilityService programEligibilityService;
+	private final NotificationService notificationService;
 
 
+	/** An admin creates every program as a draft (Taslak) with its coordinators; launching is a separate step. */
 	@Transactional
 	public CoordinatorProgramResponse.Detail create(UUID actorId, CreateCoordinatorProgramRequest request) {
 		AppUser actor = programService.requireCoordinatorOrAdmin(actorId);
+		if (actor.getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin creates programs.");
+		}
 		if (request.startDate() != null && request.endDate() != null && request.endDate().isBefore(request.startDate())) {
 			throw new InvalidRequestException("The program cannot end before it starts.");
 		}
@@ -83,17 +90,25 @@ public class ProgramLaunchService {
 		program.setEndDate(request.endDate());
 		program.setCreatedBy(actor.getId());
 		program.setCreatedAt(Instant.now());
-		program.setDefaultMentorCapacity(request.defaultMentorCapacity());
-		program.setMeetingFrequencyDays(request.meetingFrequencyDays());
-		program.setStaleAfterDays(request.communicationGapDays());
-		program.setCommunicationGapDays(request.communicationGapDays());
-		program.setBottleneckFlagDays(request.bottleneckFlagDays());
+		program.setProgramType(request.type());
+		program.setStatus(ProgramStatus.DRAFT);
+		program.setIndividualMentees(request.type() == ProgramType.PEER_MENTORING);
+		if (request.defaultMentorCapacity() != null) {
+			program.setDefaultMentorCapacity(request.defaultMentorCapacity());
+		}
+		if (request.meetingFrequencyDays() != null) {
+			program.setMeetingFrequencyDays(request.meetingFrequencyDays());
+		}
+		if (request.communicationGapDays() != null) {
+			program.setStaleAfterDays(request.communicationGapDays());
+			program.setCommunicationGapDays(request.communicationGapDays());
+		}
+		if (request.bottleneckFlagDays() != null) {
+			program.setBottleneckFlagDays(request.bottleneckFlagDays());
+		}
 		programRepository.save(program);
 
 		for (UUID coordinatorId : new LinkedHashSet<>(request.coordinatorIds())) {
-			if (coordinatorId.equals(actor.getId())) {
-				continue;
-			}
 			AppUser coordinator = appUserRepository.findById(coordinatorId)
 					.filter(user -> user.getRole() == UserRole.COORDINATOR
 							&& user.getStatus() == UserAccountStatus.APPROVED)
@@ -105,12 +120,19 @@ public class ProgramLaunchService {
 			row.setAddedBy(actor.getId());
 			row.setCreatedAt(Instant.now());
 			programCoordinatorRepository.save(row);
+			notificationService.create(
+					coordinator,
+					Texts.get(coordinator, "notification.addedAsCoordinator.title"),
+					Texts.get(coordinator, "notification.addedAsCoordinator.body", program.getName()),
+					"/coordinator/programs/" + program.getId());
 		}
 		if (request.phases() != null) {
 			programService.writePhases(program.getId(), request.phases());
 		}
 		programService.attachSyllabus(program, actor.getId(), request.syllabusDocumentId());
-		invite(program, request.teams(), actor.getId());
+		if (request.teams() != null) {
+			invite(program, request.teams(), actor.getId());
+		}
 		return programService.detail(actorId, program.getId());
 	}
 

@@ -40,6 +40,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
+import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Bottleneck;
@@ -49,6 +50,7 @@ import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramEvent;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramPhase;
@@ -324,6 +326,66 @@ class CoordinatorProgramServiceTest {
 		assertThat(program.isIndividualMentees()).isTrue();
 		assertThat(detail.rules().individualMentees()).isTrue();
 		assertThat(detail.program().type()).isEqualTo(ProgramType.PEER_MENTORING);
+	}
+
+	@Test
+	void anAdminLaunchesADraftAndItsCoordinatorsLeaveOutTheAdmin() {
+		Program program = program(ADMIN_ID);
+		program.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		ProgramCoordinator assigned = new ProgramCoordinator();
+		assigned.setUserId(COORDINATOR_ID);
+		when(programCoordinatorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of(assigned));
+		when(appUserRepository.findAllById(any()))
+				.thenReturn(List.of(user(ADMIN_ID, UserRole.ADMIN), user(COORDINATOR_ID, UserRole.COORDINATOR)));
+		when(programPhaseRepository.findByProgramIdInOrderByPositionAsc(anyList())).thenReturn(List.of());
+		when(programStartupRepository.findByProgramIdIn(anyList())).thenReturn(List.of());
+		when(programMentorRepository.findByProgramIdIn(anyList())).thenReturn(List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+
+		var detail = service.launch(ADMIN_ID, PROGRAM_ID);
+
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.ACTIVE);
+		assertThat(detail.program().lifecycle()).isNotEqualTo(ProgramLifecycle.DRAFT);
+		assertThat(detail.coordinators()).extracting(CoordinatorProgramResponse.CoordinatorRef::id)
+				.containsExactly(COORDINATOR_ID);
+		verify(programRepository).save(program);
+	}
+
+	@Test
+	void onlyAnAdminLaunchesOnlyADraftAndOnlyWithACoordinator() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR));
+		assertThatThrownBy(() -> service.launch(COORDINATOR_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+
+		Program program = program(ADMIN_ID);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		assertThatThrownBy(() -> service.launch(ADMIN_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("already");
+
+		program.setStatus(ProgramStatus.DRAFT);
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(user(ADMIN_ID, UserRole.ADMIN)));
+		assertThatThrownBy(() -> service.launch(ADMIN_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("coordinator");
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.DRAFT);
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void anAdminOnlyViewsProgramSettings() {
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+
+		assertThatThrownBy(() -> service.updateDetails(ADMIN_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null, null, null, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin views");
+		verify(programRepository, never()).save(any());
 	}
 
 	@Test
