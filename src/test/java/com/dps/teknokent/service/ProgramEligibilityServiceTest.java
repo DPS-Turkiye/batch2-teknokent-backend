@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,6 +21,7 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramEligibleEmailRepository;
 import com.dps.teknokent.repository.ProgramRepository;
@@ -119,6 +121,41 @@ class ProgramEligibilityServiceTest {
         assertThatThrownBy(() -> service.requireTeamMember(TEAM_ID, "c@gmail.com"))
                 .isInstanceOf(InvalidRequestException.class);
         assertThatCode(() -> service.requireTeamMember(TEAM_ID, "c@metu.edu.tr")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void checkSaysWhyAStudentMayNotJoinWithoutThrowing() {
+        Program iskur = program("metu.edu.tr", true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(iskur));
+        when(eligibleEmailRepository.existsByProgramIdAndEmail(PROGRAM_ID, "e2@metu.edu.tr")).thenReturn(false);
+
+        var offList = service.check(PROGRAM_ID, "e2@metu.edu.tr");
+        var offDomain = service.check(PROGRAM_ID, "ali@gmail.com");
+
+        assertThat(offList.eligible()).isFalse();
+        assertThat(offList.message()).contains("e2@metu.edu.tr");
+        assertThat(offDomain.eligible()).isFalse();
+        assertThat(offDomain.message()).contains("@metu.edu.tr");
+    }
+
+    @Test
+    void checkLetsAListedStudentAndAnyoneIntoAnOpenProgram() {
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program("metu.edu.tr", true)));
+        when(eligibleEmailRepository.existsByProgramIdAndEmail(PROGRAM_ID, "e1@metu.edu.tr")).thenReturn(true);
+        assertThat(service.check(PROGRAM_ID, "E1@metu.edu.tr").eligible()).isTrue();
+
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(null, false)));
+        var open = service.check(PROGRAM_ID, "ayse@gmail.com");
+        assertThat(open.eligible()).isTrue();
+        assertThat(open.message()).isNull();
+    }
+
+    @Test
+    void checkOfAnUnknownProgramIsNotFound() {
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.check(PROGRAM_ID, "ali@metu.edu.tr"))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

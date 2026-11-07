@@ -1,5 +1,25 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.service.ProgramEligibilityService;
+
+import com.dps.teknokent.security.FirebaseIdentity;
+
+import com.dps.teknokent.dto.responses.ProgramEligibilityResponse;
+
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+
+import java.util.List;
+
+import static org.mockito.Mockito.verifyNoInteractions;
+
+import static org.mockito.Mockito.verify;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -35,6 +55,39 @@ class AuthRegistrationControllerTest {
 
     @MockitoBean
     private RegistrationService registrationService;
+
+    @MockitoBean
+    private ProgramEligibilityService programEligibilityService;
+
+    private static final UUID ISKUR_ID = UUID.fromString("00000000-0000-0000-0000-0000000009a1");
+
+    private static UsernamePasswordAuthenticationToken registering(String email) {
+        return new UsernamePasswordAuthenticationToken(
+                new FirebaseIdentity("uid-1", email), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+    }
+
+    @Test
+    void answersProgramEligibilityForTheSignedInAddressOnly() throws Exception {
+        when(programEligibilityService.check(ISKUR_ID, "e1@metu.edu.tr"))
+                .thenReturn(ProgramEligibilityResponse.refused("not on the list"));
+
+        mockMvc.perform(get("/api/auth/register/program-eligibility")
+                        .param("programId", ISKUR_ID.toString())
+                        .param("email", "someone-else@metu.edu.tr")
+                        .with(authentication(registering("e1@metu.edu.tr"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligible").value(false))
+                .andExpect(jsonPath("$.message").value("not on the list"));
+        verify(programEligibilityService).check(ISKUR_ID, "e1@metu.edu.tr");
+    }
+
+    @Test
+    void programEligibilityNeedsAFirebaseSignIn() throws Exception {
+        mockMvc.perform(get("/api/auth/register/program-eligibility").param("programId", ISKUR_ID.toString())
+                        .with(user("proxy").roles("ADMIN")))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(programEligibilityService);
+    }
 
     @Test
     void requiresAuthenticationForFounderRegister() throws Exception {
