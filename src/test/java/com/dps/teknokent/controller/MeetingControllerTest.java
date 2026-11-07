@@ -1,6 +1,7 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -65,6 +66,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/xyz-abc-def",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings").with(user("test-user")))
@@ -95,6 +97,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/abc-defg-hij",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings")
@@ -125,6 +128,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/mno-pqr-stu",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings")
@@ -156,6 +160,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/alpha-beta-gamma",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null));
 
                 mockMvc.perform(post("/api/meetings")
@@ -204,6 +209,24 @@ class MeetingControllerTest {
 
                 mockMvc.perform(delete("/api/meetings/" + meetingId).with(user("test-user")))
                                 .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void confirmsAndUndoesAHeldMeetingForTheNamedMentorOnServiceCredentials() throws Exception {
+                UUID meetingId = UUID.randomUUID();
+                UUID mentorId = UUID.randomUUID();
+
+                mockMvc.perform(post("/api/meetings/" + meetingId + "/held")
+                                .param("mentorId", mentorId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk());
+                mockMvc.perform(delete("/api/meetings/" + meetingId + "/held")
+                                .param("mentorId", mentorId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk());
+
+                verify(meetingService).confirmHeld(meetingId, mentorId, true);
+                verify(meetingService).confirmHeld(meetingId, mentorId, false);
         }
 
         @Test

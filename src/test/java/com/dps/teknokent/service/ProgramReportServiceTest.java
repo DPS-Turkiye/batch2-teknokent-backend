@@ -23,11 +23,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingFeedback;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
@@ -46,6 +50,8 @@ class ProgramReportServiceTest {
 	private MeetingRepository meetingRepository;
 	@Mock
 	private MeetingFeedbackRepository meetingFeedbackRepository;
+	@Mock
+	private AppUserRepository appUserRepository;
 
 	@InjectMocks
 	private ProgramReportService service;
@@ -114,6 +120,88 @@ class ProgramReportServiceTest {
 		assertThatThrownBy(() -> service.meetingRatings(actorId, programId, null))
 				.isInstanceOf(InvalidRequestException.class);
 		verifyNoInteractions(meetingFeedbackRepository);
+	}
+
+	@Test
+	void sessionsCountAGroupSessionOnceForTheMentorAndOncePerTeam() {
+		UUID actorId = UUID.randomUUID();
+		Program program = new Program();
+		program.setId(UUID.randomUUID());
+		Organization ayse = organization("Ayşe Yılmaz");
+		Organization can = organization("Can Demir");
+		AppUser mentor = user("Zeynep Mentor", "zeynep@example.edu.tr", null);
+		LocalDate from = LocalDate.of(2026, 11, 1);
+		LocalDate to = LocalDate.of(2026, 11, 30);
+		Instant monday = LocalDate.of(2026, 11, 2).atTime(10, 0).atZone(MeetingSlotTimes.APP_ZONE).toInstant();
+		Instant tuesday = monday.plus(Duration.ofDays(1));
+		Meeting groupAyse = held(mentor, ayse, monday, 60, MeetingStatus.SCHEDULED);
+		Meeting groupCan = held(mentor, can, monday, 60, MeetingStatus.COMPLETED);
+		Meeting oneToOne = held(mentor, ayse, tuesday, 30, MeetingStatus.SCHEDULED);
+		Meeting cancelledLater = held(mentor, can, tuesday, 45, MeetingStatus.CANCELLED);
+		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId()))
+				.thenReturn(List.of(startup(program, ayse), startup(program, can)));
+		when(meetingRepository
+				.findByOrganizationIdInAndHeldConfirmedAtIsNotNullAndScheduledAtGreaterThanEqualAndScheduledAtLessThan(
+						any(),
+						eq(from.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant()),
+						eq(LocalDate.of(2026, 12, 1).atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant())))
+				.thenReturn(List.of(groupAyse, groupCan, oneToOne, cancelledLater));
+		when(appUserRepository.findByOrganizationIdInOrderByFullNameAsc(any())).thenReturn(List.of(
+				user("Ayşe Yılmaz", "ayse@example.edu.tr", ayse),
+				user("Can Demir", "can@example.edu.tr", can)));
+
+		var report = service.sessions(actorId, program.getId(), from, to);
+
+		assertThat(report.mentors()).containsExactly(new ProgramSessionsResponse.Row(
+				mentor.getId(), "Zeynep Mentor", "zeynep@example.edu.tr", 2, 90, 2));
+		assertThat(report.students()).containsExactly(
+				new ProgramSessionsResponse.Row(ayse.getId(), "Ayşe Yılmaz", "ayse@example.edu.tr", 2, 90, 2),
+				new ProgramSessionsResponse.Row(can.getId(), "Can Demir", "can@example.edu.tr", 1, 60, 1));
+	}
+
+	@Test
+	void sessionsRefuseARangeThatEndsBeforeItStarts() {
+		UUID actorId = UUID.randomUUID();
+		Program program = new Program();
+		program.setId(UUID.randomUUID());
+		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
+
+		assertThatThrownBy(() -> service.sessions(
+				actorId, program.getId(), LocalDate.of(2026, 11, 30), LocalDate.of(2026, 11, 1)))
+				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	private static Organization organization(String name) {
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		organization.setName(name);
+		return organization;
+	}
+
+	private static AppUser user(String name, String email, Organization organization) {
+		AppUser user = new AppUser();
+		user.setId(UUID.randomUUID());
+		user.setFullName(name);
+		user.setEmail(email);
+		user.setOrganization(organization);
+		return user;
+	}
+
+	private static ProgramStartup startup(Program program, Organization organization) {
+		ProgramStartup startup = new ProgramStartup();
+		startup.setProgramId(program.getId());
+		startup.setOrganizationId(organization.getId());
+		return startup;
+	}
+
+	private static Meeting held(AppUser mentor, Organization team, Instant at, int minutes, MeetingStatus status) {
+		Meeting meeting = meeting(status, at);
+		meeting.setMentor(mentor);
+		meeting.setOrganization(team);
+		meeting.setDurationMinutes(minutes);
+		meeting.setHeldConfirmedAt(at.plus(Duration.ofHours(1)));
+		return meeting;
 	}
 
 	private static Meeting meeting(MeetingStatus status, Instant scheduledAt) {

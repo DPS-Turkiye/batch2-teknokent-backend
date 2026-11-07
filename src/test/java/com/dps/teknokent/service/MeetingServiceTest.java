@@ -91,6 +91,82 @@ class MeetingServiceTest {
 		return user;
 	}
 
+	private Meeting heldCandidate(UUID mentor, Instant at, String meetLink, MeetingStatus status) {
+		Meeting meeting = new Meeting();
+		meeting.setId(UUID.randomUUID());
+		meeting.setMentor(mentor(mentor));
+		meeting.setOrganization(organization());
+		meeting.setScheduledAt(at);
+		meeting.setDurationMinutes(60);
+		meeting.setMeetLink(meetLink);
+		meeting.setStatus(status);
+		return meeting;
+	}
+
+	@Test
+	void confirmHeldCoversTheGroupSessionButNotACancelledSeat() {
+		Instant at = Instant.now().minus(2, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		Meeting otherTeam = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		Meeting cancelledSeat = heldCandidate(mentorId, at, null, MeetingStatus.CANCELLED);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at))
+				.thenReturn(List.of(meeting, otherTeam, cancelledSeat));
+
+		MeetingResponse response = meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		assertThat(response.heldConfirmedAt()).isNotNull();
+		assertThat(otherTeam.getHeldConfirmedAt()).isEqualTo(meeting.getHeldConfirmedAt());
+		assertThat(cancelledSeat.getHeldConfirmedAt()).isNull();
+	}
+
+	@Test
+	void confirmHeldLeavesOlderMeetingsOnTheSameMeetLinkAlone() {
+		String link = "https://meet.google.com/abc-defg-hij";
+		Instant at = Instant.now().minus(1, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		Meeting lastWeek = heldCandidate(mentorId, at.minus(7, ChronoUnit.DAYS), link, MeetingStatus.SCHEDULED);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMeetLinkContainingIgnoreCase("abc-defg-hij"))
+				.thenReturn(List.of(meeting, lastWeek));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(link, at)).thenReturn(List.of(meeting));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		assertThat(meeting.getHeldConfirmedAt()).isNotNull();
+		assertThat(lastWeek.getHeldConfirmedAt()).isNull();
+	}
+
+	@Test
+	void confirmHeldUndoClearsTheConfirmation() {
+		Instant at = Instant.now().minus(1, ChronoUnit.DAYS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		meeting.setHeldConfirmedAt(at);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting));
+
+		assertThat(meetingService.confirmHeld(meeting.getId(), mentorId, false).heldConfirmedAt()).isNull();
+	}
+
+	@Test
+	void confirmHeldRefusesAnotherMentorAFutureMeetingAndACancelledOne() {
+		Meeting past = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null, MeetingStatus.SCHEDULED);
+		Meeting future = heldCandidate(mentorId, Instant.now().plus(1, ChronoUnit.HOURS), null, MeetingStatus.SCHEDULED);
+		Meeting cancelled = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null,
+				MeetingStatus.CANCELLED);
+		when(meetingRepository.findById(past.getId())).thenReturn(Optional.of(past));
+		when(meetingRepository.findById(future.getId())).thenReturn(Optional.of(future));
+		when(meetingRepository.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+
+		assertThatThrownBy(() -> meetingService.confirmHeld(past.getId(), otherMentorId, true))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> meetingService.confirmHeld(future.getId(), mentorId, true))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> meetingService.confirmHeld(cancelled.getId(), mentorId, true))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(meetingRepository, never()).saveAll(any());
+	}
+
 	private Organization organization() {
 		Organization organization = new Organization();
 		organization.setId(organizationId);

@@ -70,6 +70,10 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
 	List<Meeting> findByOrganizationIdInOrderByScheduledAtDesc(Collection<UUID> organizationIds);
 
+	/** Meetings the mentor confirmed as held, starting in [from, until). */
+	List<Meeting> findByOrganizationIdInAndHeldConfirmedAtIsNotNullAndScheduledAtGreaterThanEqualAndScheduledAtLessThan(
+			Collection<UUID> organizationIds, Instant from, Instant until);
+
 	List<Meeting> findByStatusAndReminderSentAtIsNullAndScheduledAtBetween(
 			MeetingStatus status, Instant from, Instant until);
 }
