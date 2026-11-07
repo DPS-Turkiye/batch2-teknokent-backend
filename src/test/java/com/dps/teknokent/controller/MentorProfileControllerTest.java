@@ -132,6 +132,21 @@ class MentorProfileControllerTest {
 	}
 
 	@Test
+	void refusesInvalidSchoolsBeforeUpdatingTheProfile() throws Exception {
+		UUID mentor = UUID.fromString("00000000-0000-0000-0000-000000000701");
+		for (String educations : List.of("[null]", "[{\"school\": \" \"}]")) {
+			String request = PROFILE_UPDATE.replace("\"specialties\": []",
+					"\"specialties\": [], \"educations\": " + educations);
+			mockMvc.perform(put("/api/mentors/{id}", mentor)
+						.with(authentication(signedInAs(mentor)))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(request))
+					.andExpect(status().isBadRequest());
+		}
+		verifyNoInteractions(mentorProfileService);
+	}
+
+	@Test
 	void letsAMentorEditTheirOwnProfile() throws Exception {
 		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000701");
 

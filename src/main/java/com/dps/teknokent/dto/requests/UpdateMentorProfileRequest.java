@@ -35,7 +35,7 @@ public record UpdateMentorProfileRequest(
 		@Size(max = 50) List<@NotNull @Valid MentorProgramRoleRequest> programRoles,
 		@Size(max = 10) List<@NotBlank @Size(max = 255) String> offerings,
 		@Valid StudentProfileRequest studentProfile,
-		@Size(max = 10) List<@Valid MentorEducationRequest> educations) {
+		@Size(max = 10) List<@NotNull @Valid MentorEducationRequest> educations) {
 
 	/** Without schools: null leaves the stored ones as they were. */
 	public UpdateMentorProfileRequest(
