@@ -22,6 +22,13 @@ class ProgramCalendarTest {
 	}
 
 	@Test
+	void aDraftStaysADraftWhateverItsDates() {
+		assertThat(ProgramCalendar.lifecycle(ProgramStatus.DRAFT, TODAY.minusDays(10), TODAY))
+				.isEqualTo(ProgramLifecycle.DRAFT);
+		assertThat(ProgramCalendar.lifecycle(ProgramStatus.DRAFT, null, TODAY)).isEqualTo(ProgramLifecycle.DRAFT);
+	}
+
+	@Test
 	void anActiveProgramThatHasNotStartedIsUpcoming() {
 		assertThat(ProgramCalendar.lifecycle(ProgramStatus.ACTIVE, TODAY.plusDays(1), TODAY))
 				.isEqualTo(ProgramLifecycle.UPCOMING);

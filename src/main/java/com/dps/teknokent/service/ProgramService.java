@@ -84,6 +84,9 @@ public class ProgramService {
 	@Transactional
 	public ProgramResponse setStatus(UUID actorId, UUID programId, ProgramStatus status) {
 		Program program = requireOwnedProgram(actorId, programId);
+		if (program.getStatus() == ProgramStatus.DRAFT || status == ProgramStatus.DRAFT) {
+			throw new InvalidRequestException("Only an admin launches a draft program.");
+		}
 		program.setStatus(status);
 		return toResponse(programRepository.save(program));
 	}
@@ -94,8 +97,12 @@ public class ProgramService {
 		List<Program> programs;
 		if (actor.getRole() == UserRole.COORDINATOR) {
 			programs = ProgramCoordination.programsOf(actor.getId(), programRepository, programCoordinatorRepository);
-		} else if (actor.getRole() == UserRole.MENTOR || actor.getRole() == UserRole.ADMIN) {
+		} else if (actor.getRole() == UserRole.ADMIN) {
 			programs = programRepository.findAllByOrderByCreatedAtDesc();
+		} else if (actor.getRole() == UserRole.MENTOR) {
+			programs = programRepository.findAllByOrderByCreatedAtDesc().stream()
+					.filter(program -> program.getStatus() != ProgramStatus.DRAFT)
+					.toList();
 		} else {
 			throw new InvalidRequestException("Only a coordinator or mentor can view programs.");
 		}
@@ -219,6 +226,9 @@ public class ProgramService {
 	public ProgramResponse requestToJoin(UUID actorId, UUID programId) {
 		AppUser mentor = requireMentor(actorId);
 		Program program = requireProgram(programId);
+		if (program.getStatus() == ProgramStatus.DRAFT) {
+			throw new InvalidRequestException("This program has not been launched yet.");
+		}
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.MENTOR);
 		AppUser creator = domainLookupService.requireUser(program.getCreatedBy());
 		notificationService.create(
