@@ -15,6 +15,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
+import com.dps.teknokent.dto.responses.StudentProfileResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -144,6 +145,56 @@ class MentorRecommendationServiceTest {
 		return new MentorProfileResponse(UUID.randomUUID(), fullName, "mentor@example.com", "ME", title,
 				"DPS", "Müsait", "24 saat", "Online", "E-posta", "Yapılandırılmış", "Yüksek",
 				"Kıdemli", "Teknoloji", "MVP", specialties, List.of(), evidence);
+	}
+
+
+	private static MentorProfileResponse withStudent(MentorProfileResponse m, StudentProfileResponse student) {
+		return new MentorProfileResponse(m.id(), m.fullName(), m.email(), m.initials(), m.professionalTitle(),
+				m.company(), m.availabilityLabel(), m.responseTimeLabel(), m.meetingMode(),
+				m.communicationPreference(), m.mentoringStyle(), m.fitLabel(), m.experienceLevel(),
+				m.sectorExperience(), m.startupStages(), m.specialties(), m.recommendationReasons(),
+				m.recommendationEvidence(), m.menteeCapacity(), m.about(), m.defaultMeetingDurationMinutes(),
+				m.meetingBufferMinutes(), m.meetingFrequency(), m.prepFileRequirement(), m.languages(),
+				m.activeMenteeCount(), m.completedMentorshipCount(), m.programNames(), m.programs(),
+				m.experiences(), m.offerings(), student);
+	}
+
+	private static RecommendMentorsRequest studentRequest(String supportArea, String summary) {
+		return new RecommendMentorsRequest(supportArea, summary, "THIS_WEEK", "SINGLE_MEETING", "ONLINE", null,
+				null, null, List.of(), null);
+	}
+
+	@Test
+	void ranksAStudentMentorByTheirStudiesAndSaysWhy() {
+		MentorProfileResponse plain = mentor("Deniz Öğrenci", "Öğrenci mentor", List.of("Dersler"));
+		MentorProfileResponse abroad = withStudent(mentor("Ece Öğrenci", "Öğrenci mentor", List.of("Staj")),
+				new StudentProfileResponse("Bilgisayar Mühendisliği", "4. sınıf", List.of("CENG 140"),
+						List.of("Kampüs etkinlik uygulaması"), "TU Delft, 2025 güz"));
+		when(mentorProfileService.findAll()).thenReturn(List.of(plain, abroad));
+
+		var result = recommendationService.recommend(studentRequest(
+				"Erasmus & yurt dışı", "Erasmus başvurusu ve CENG 140 dersi için destek istiyorum."));
+
+		assertThat(result.mentors()).extracting(MentorProfileResponse::fullName)
+				.startsWith("Ece Öğrenci");
+		assertThat(result.mentors().getFirst().recommendationReasons()).contains(
+				"Bu derste güçlü: CENG 140",
+				"Yurt dışı deneyimi var: TU Delft, 2025 güz");
+	}
+
+	@Test
+	void namesASimilarProjectAndSkipsErasmusWhenTheStudentIsNotGoingAbroad() throws Exception {
+		MentorProfileResponse student = withStudent(mentor("Ece Öğrenci", "Öğrenci mentor", List.of("Proje")),
+				new StudentProfileResponse("Endüstri Mühendisliği", "3. sınıf", List.of(),
+						List.of("Kampüs etkinlik uygulaması"), "TU Delft, 2025 güz"));
+		when(mentorProfileService.findAll()).thenReturn(List.of(student));
+
+		var result = recommendationService.recommend(studentRequest(
+				"Proje & girişimcilik", "Kampüs için bir etkinlik uygulaması geliştiriyorum."));
+
+		assertThat(result.mentors().getFirst().recommendationReasons())
+				.contains("Benzer bir projede çalıştı: Kampüs etkinlik uygulaması")
+				.noneMatch(reason -> reason.startsWith("Yurt dışı"));
 	}
 
 	@Test
