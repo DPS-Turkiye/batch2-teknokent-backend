@@ -37,6 +37,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
 import com.dps.teknokent.dto.requests.MentorProgramRoleRequest;
+import com.dps.teknokent.dto.requests.StudentProfileRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
@@ -406,6 +407,9 @@ public class MentorProfileService {
 			profile.getLanguages().clear();
 			request.languages().stream().distinct().forEach(profile.getLanguages()::add);
 		}
+		if (request.studentProfile() != null) {
+			applyStudentProfile(profile, request.studentProfile());
+		}
 		if (request.offerings() != null) {
 			profile.getOfferings().clear();
 			profile.getOfferings().addAll(TextUtils.normalizedList(request.offerings()));
@@ -447,5 +451,19 @@ public class MentorProfileService {
 			throw new InvalidRequestException("User is not a mentor: " + mentorId);
 		}
 		return mentor;
+	}
+
+	private static void applyStudentProfile(MentorProfile profile, StudentProfileRequest student) {
+		profile.setDepartment(TextUtils.normalizeOptional(student.department()));
+		profile.setStudyYear(TextUtils.normalizeOptional(student.studyYear()));
+		profile.setErasmus(TextUtils.normalizeOptional(student.erasmus()));
+		profile.getStrongCourses().clear();
+		if (student.strongCourses() != null) {
+			profile.getStrongCourses().addAll(TextUtils.normalizedList(student.strongCourses()));
+		}
+		profile.getProjects().clear();
+		if (student.projects() != null) {
+			profile.getProjects().addAll(TextUtils.normalizedList(student.projects()));
+		}
 	}
 }

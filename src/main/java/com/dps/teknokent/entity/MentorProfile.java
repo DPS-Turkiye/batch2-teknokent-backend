@@ -142,4 +142,28 @@ public class MentorProfile {
 	@Column(name = "offering", nullable = false)
 	@BatchSize(size = 50)
 	private List<String> offerings = new ArrayList<>();
+
+	/** Student mentors (İŞKUR) only; null for everyone else. */
+	@Column(name = "department")
+	private String department;
+
+	@Column(name = "study_year", length = 32)
+	private String studyYear;
+
+	@Column(name = "erasmus", length = 500)
+	private String erasmus;
+
+	@ElementCollection
+	@CollectionTable(name = "mentor_strong_course", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@Column(name = "course", nullable = false)
+	@BatchSize(size = 50)
+	private List<String> strongCourses = new ArrayList<>();
+
+	@ElementCollection
+	@CollectionTable(name = "mentor_project", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@Column(name = "project", nullable = false, length = 500)
+	@BatchSize(size = 50)
+	private List<String> projects = new ArrayList<>();
 }
