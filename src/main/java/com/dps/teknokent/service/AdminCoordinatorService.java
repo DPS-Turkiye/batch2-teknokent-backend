@@ -98,7 +98,7 @@ public class AdminCoordinatorService {
 	public CoordinatorAccountResponse resendPasswordSetup(UUID actorId, UUID coordinatorId) {
 		requireAdmin(actorId);
 		AppUser coordinator = domainLookupService.requireUser(coordinatorId);
-		if (coordinator.getRole() != UserRole.COORDINATOR || coordinator.getStatus() != UserAccountStatus.APPROVED) {
+		if (!coordinator.has(UserRole.COORDINATOR) || coordinator.getStatus() != UserAccountStatus.APPROVED) {
 			throw new InvalidRequestException("Only an active coordinator can be sent a password setup email.");
 		}
 		if (!sendPasswordSetup(coordinator)) {
@@ -112,7 +112,7 @@ public class AdminCoordinatorService {
 	public CoordinatorAccountResponse setAccess(UUID actorId, UUID coordinatorId, boolean active) {
 		AppUser admin = requireAdmin(actorId);
 		AppUser coordinator = domainLookupService.requireUser(coordinatorId);
-		if (coordinator.getRole() != UserRole.COORDINATOR) {
+		if (!coordinator.has(UserRole.COORDINATOR)) {
 			throw new InvalidRequestException("Only a coordinator's access can be changed here.");
 		}
 		if (coordinator.getId().equals(admin.getId())) {
@@ -179,7 +179,7 @@ public class AdminCoordinatorService {
 
 	private AppUser requireAdmin(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can manage coordinators.");
 		}
 		return actor;

@@ -85,7 +85,7 @@ public class DocumentRequestService {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		boolean teamMember = actor.getOrganization() != null
 				&& organizationId.equals(actor.getOrganization().getId());
-		boolean staff = actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR;
+		boolean staff = actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR);
 		if (!teamMember && !staff) {
 			throw new InvalidRequestException("Only the startup's team can list its document requests");
 		}
@@ -181,7 +181,7 @@ public class DocumentRequestService {
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.COORDINATOR
+		if (!actor.has(UserRole.COORDINATOR)
 				|| !ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("Only the program coordinator can request documents from its startups");
 		}
@@ -408,7 +408,7 @@ public class DocumentRequestService {
 
 	private AppUser requireMentorActor(UUID actorId, UUID mentorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.MENTOR || !actor.getId().equals(mentorId)) {
+		if (!actor.has(UserRole.MENTOR) || !actor.getId().equals(mentorId)) {
 			throw new InvalidRequestException("Only the assigned mentor can manage document requests");
 		}
 		return actor;
@@ -416,7 +416,7 @@ public class DocumentRequestService {
 
 	private AppUser requireMeetingMentor(UUID actorId, Meeting meeting) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.MENTOR) {
+		if (!actor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Only mentors can manage meeting document requests");
 		}
 		if (meeting.getMentor() != null && !meeting.getMentor().getId().equals(actor.getId())) {
@@ -468,7 +468,7 @@ public class DocumentRequestService {
 		}
 		String titles = items.stream().map(DocumentRequestItem::getTitle).collect(Collectors.joining(", "));
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(organization.getId()).stream()
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.forEach(mentee -> notificationService.create(
 						mentee,
 						NotificationCategory.TASK_ASSIGNED,

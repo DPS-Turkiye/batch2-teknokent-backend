@@ -43,7 +43,7 @@ public class DomainLookupService {
 	@Transactional(readOnly = true)
 	public AppUser requireOrganizationMentee(UUID organizationId) {
 		return appUserRepository.findByOrganizationIdOrderByFullNameAsc(organizationId).stream()
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.findFirst()
 				.orElseThrow(() -> new InvalidRequestException(
 						"No mentee found in the startup to attach this calendar meeting"));

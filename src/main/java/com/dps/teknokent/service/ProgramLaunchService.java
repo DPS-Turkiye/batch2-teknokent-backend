@@ -111,7 +111,7 @@ public class ProgramLaunchService {
 
 		for (UUID coordinatorId : new LinkedHashSet<>(request.coordinatorIds())) {
 			AppUser coordinator = appUserRepository.findById(coordinatorId)
-					.filter(user -> user.getRole() == UserRole.COORDINATOR
+					.filter(user -> user.has(UserRole.COORDINATOR)
 							&& user.getStatus() == UserAccountStatus.APPROVED)
 					.orElseThrow(() -> new InvalidRequestException("Only approved coordinators can run a program."));
 			ProgramCoordinator row = new ProgramCoordinator();

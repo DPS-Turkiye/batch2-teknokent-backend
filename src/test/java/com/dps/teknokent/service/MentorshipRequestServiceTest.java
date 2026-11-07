@@ -107,6 +107,16 @@ class MentorshipRequestServiceTest {
         private MentorshipRequestService mentorshipRequestService;
 
         @Test
+        void create_refusesASelfRequestBeforeLookingUpEitherSide() {
+                UUID actorId = UUID.randomUUID();
+                assertThatThrownBy(() -> mentorshipRequestService.create(
+                                submission(actorId, UUID.randomUUID(), actorId)))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessage(Texts.forRequest("error.selfMentorshipRequest"));
+                verify(mentorshipRequestRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
         void findAll_returnsMappedRequestsInDescendingCreationOrder() {
                 UUID requesterId = UUID.fromString("00000000-0000-0000-0000-000000000101");
                 AppUser requester = user(requesterId, "requester@tekno.com", "Ayşe Demir", UserRole.MENTEE);

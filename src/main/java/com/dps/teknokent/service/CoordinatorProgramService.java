@@ -865,7 +865,7 @@ public class CoordinatorProgramService {
 	}
 
 	public List<Program> managedPrograms(AppUser actor) {
-		return actor.getRole() == UserRole.ADMIN
+		return actor.has(UserRole.ADMIN)
 				? programRepository.findAllByOrderByCreatedAtDesc()
 				: ProgramCoordination.programsOf(actor.getId(), programRepository, programCoordinatorRepository);
 	}
@@ -879,7 +879,7 @@ public class CoordinatorProgramService {
 
 	public AppUser requireCoordinatorOrAdmin(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.COORDINATOR && actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.COORDINATOR) && !actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only a coordinator can manage programs.");
 		}
 		return actor;
@@ -905,7 +905,7 @@ public class CoordinatorProgramService {
 		AppUser actor = requireCoordinatorOrAdmin(actorId);
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
-		if (actor.getRole() == UserRole.COORDINATOR
+		if (!actor.has(UserRole.ADMIN)
 				&& !ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("Only the program coordinator can change this program.");
 		}

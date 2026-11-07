@@ -60,7 +60,7 @@ public class ProgramApprovalService {
 	@Transactional(readOnly = true)
 	public List<ProgramApprovalsResponse.Person> withoutTeam(UUID actorId, UUID programId) {
 		coordinatorProgramService.requireManagedProgram(actorId, programId);
-		return appUserRepository.findByProgramIdAndRoleAndStatusAndOrganizationIsNullOrderByFullNameAsc(
+		return appUserRepository.findByProgramIdAndPermissionAndStatusAndOrganizationIsNullOrderByFullNameAsc(
 				programId, UserRole.MENTEE, UserAccountStatus.APPROVED).stream()
 				.map(ProgramApprovalsResponse.Person::of)
 				.toList();
@@ -70,7 +70,7 @@ public class ProgramApprovalService {
 	public ProgramApprovalsResponse decidePerson(UUID actorId, UUID programId, UUID userId, boolean accepted) {
 		coordinatorProgramService.requireManagedProgram(actorId, programId);
 		AppUser person = domainLookupService.requireUser(userId);
-		if (person.getRole() != UserRole.MENTEE || !programId.equals(person.getProgramId())) {
+		if (!person.has(UserRole.MENTEE) || !programId.equals(person.getProgramId())) {
 			throw new ResourceNotFoundException("No applicant " + userId + " in this program");
 		}
 		appUserService.decide(person, accepted ? UserAccountStatus.APPROVED : UserAccountStatus.REJECTED);
@@ -117,7 +117,7 @@ public class ProgramApprovalService {
 
 	private ProgramApprovalsResponse approvalsOf(UUID programId) {
 		List<ProgramApprovalsResponse.Person> people = appUserRepository
-				.findByProgramIdAndRoleAndStatusOrderByCreatedAtAsc(programId, UserRole.MENTEE,
+				.findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(programId, UserRole.MENTEE,
 						UserAccountStatus.PENDING)
 				.stream()
 				.map(ProgramApprovalsResponse.Person::of)

@@ -43,7 +43,7 @@ public class ProgramCoordinatorService {
 	public List<CoordinatorProgramResponse.CoordinatorRef> candidates(UUID actorId, UUID programId) {
 		Program program = programService.requireManagedProgram(actorId, programId);
 		Set<UUID> current = Set.copyOf(ProgramCoordination.coordinatorIds(program, programCoordinatorRepository));
-		return appUserRepository.findByRoleAndStatusOrderByFullNameAsc(UserRole.COORDINATOR, UserAccountStatus.APPROVED)
+		return appUserRepository.findByPermissionAndStatusOrderByFullNameAsc(UserRole.COORDINATOR, UserAccountStatus.APPROVED)
 				.stream()
 				.filter(user -> !current.contains(user.getId()))
 				.map(user -> new CoordinatorProgramResponse.CoordinatorRef(user.getId(), user.getFullName(), false))
@@ -56,7 +56,7 @@ public class ProgramCoordinatorService {
 		Program program = programService.requireManagedProgram(actorId, programId);
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-		if (user.getRole() != UserRole.COORDINATOR || user.getStatus() != UserAccountStatus.APPROVED) {
+		if (!user.has(UserRole.COORDINATOR) || user.getStatus() != UserAccountStatus.APPROVED) {
 			throw new InvalidRequestException("Only an approved coordinator can run a program.");
 		}
 		if (ProgramCoordination.coordinates(program, userId, programCoordinatorRepository)) {

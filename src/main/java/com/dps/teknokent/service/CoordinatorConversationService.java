@@ -69,22 +69,25 @@ public class CoordinatorConversationService {
 	@Transactional(readOnly = true)
 	public List<CoordinatorConversationResponse> list(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		List<CoordinatorConversation> conversations = switch (actor.getRole()) {
-			case ADMIN -> conversationRepository.findAll();
-			case COORDINATOR -> {
-				List<UUID> programIds = ProgramCoordination.programsOf(
-						actor.getId(), programRepository, programCoordinatorRepository).stream()
-						.map(Program::getId)
-						.toList();
-				yield programIds.isEmpty() ? List.of() : conversationRepository.findByProgramIdIn(programIds);
-			}
-			case MENTOR -> conversationRepository.findByMentorId(actor.getId());
-			case MENTEE -> actor.getOrganization() == null
-					? List.of()
-					: conversationRepository.findByOrganizationId(actor.getOrganization().getId());
-			case ACADEMICIAN -> List.of();
-		};
-		Side side = actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR
+		List<CoordinatorConversation> conversations;
+		if (actor.has(UserRole.ADMIN)) {
+			conversations = conversationRepository.findAll();
+		} else if (actor.has(UserRole.COORDINATOR)) {
+			List<UUID> programIds = ProgramCoordination.programsOf(
+					actor.getId(), programRepository, programCoordinatorRepository).stream()
+					.map(Program::getId).toList();
+			conversations = programIds.isEmpty() ? List.of() : conversationRepository.findByProgramIdIn(programIds);
+		} else {
+			conversations = switch (actor.getRole()) {
+				case MENTOR -> actor.has(UserRole.MENTOR)
+						? conversationRepository.findByMentorId(actor.getId()) : List.of();
+				case MENTEE -> actor.has(UserRole.MENTEE) && actor.getOrganization() != null
+						? conversationRepository.findByOrganizationId(actor.getOrganization().getId()) : List.of();
+				default -> List.of();
+			};
+		}
+
+		Side side = actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR)
 				? Side.COORDINATOR
 				: Side.COUNTERPART;
 		return toResponses(conversations, side);
@@ -219,8 +222,8 @@ public class CoordinatorConversationService {
 	}
 
 	private boolean coordinates(AppUser actor, Program program) {
-		return actor.getRole() == UserRole.ADMIN
-				|| (actor.getRole() == UserRole.COORDINATOR
+		return actor.has(UserRole.ADMIN)
+				|| (actor.has(UserRole.COORDINATOR)
 						&& ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository));
 	}
 

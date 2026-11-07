@@ -80,7 +80,7 @@ public class AdminOverviewService {
 	@Transactional(readOnly = true)
 	public AdminOverviewResponse overview(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can view the admin overview.");
 		}
 		List<AppUser> userEntities = appUserRepository.findAll();
@@ -170,7 +170,7 @@ public class AdminOverviewService {
 
 	// An added coordinator is APPROVED at once, but cannot sign in before setting a password.
 	private static boolean mayLackPassword(AppUser user) {
-		return user.getRole() == UserRole.COORDINATOR && user.getStatus() == UserAccountStatus.APPROVED
+		return user.has(UserRole.COORDINATOR) && user.getStatus() == UserAccountStatus.APPROVED
 				&& user.getFirebaseUid() != null;
 	}
 
@@ -197,7 +197,7 @@ public class AdminOverviewService {
 		// An admin who created the program is not its coordinator.
 		List<AppUser> coordinators = ProgramCoordination.coordinatorIds(program, programCoordinatorRepository).stream()
 				.map(usersById::get)
-				.filter(user -> user != null && user.getRole() == UserRole.COORDINATOR)
+				.filter(user -> user != null && user.has(UserRole.COORDINATOR))
 				.toList();
 		List<StartupRow> startups = programStartupRepository
 				.findByProgramIdOrderByCreatedAtAsc(program.getId())

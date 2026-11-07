@@ -143,7 +143,7 @@ public class OrganizationService {
 	}
 
 	private static boolean isAdmin(AppUser actor) {
-		return actor.getRole() == UserRole.ADMIN;
+		return actor.has(UserRole.ADMIN);
 	}
 
 	private static boolean isFounder(Organization organization, UUID actorId) {
