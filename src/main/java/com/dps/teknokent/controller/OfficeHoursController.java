@@ -1,18 +1,31 @@
 package com.dps.teknokent.controller;
 
+import java.util.List;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.dto.requests.AcceptOfficeHoursSlotRequest;
+import com.dps.teknokent.dto.requests.CreateOfficeHoursRequest;
+import com.dps.teknokent.dto.requests.DecideOfficeHoursRequest;
+import com.dps.teknokent.dto.requests.ReplyOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.UpdateOfficeHoursAvailabilityRequest;
 import com.dps.teknokent.dto.responses.OfficeHoursAvailabilityResponse;
 import com.dps.teknokent.dto.responses.OfficeHoursCourseResponse;
+import com.dps.teknokent.dto.responses.OfficeHoursMeetingResponse;
+import com.dps.teknokent.dto.responses.OfficeHoursPersonResponse;
+import com.dps.teknokent.dto.responses.OfficeHoursRequestResponse;
+import com.dps.teknokent.dto.responses.OfficeHoursSlotResponse;
 import com.dps.teknokent.service.OfficeHoursAvailabilityService;
+import com.dps.teknokent.service.OfficeHoursBookingService;
 import com.dps.teknokent.service.OfficeHoursCourseService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +41,7 @@ public class OfficeHoursController {
 
 	private final OfficeHoursCourseService courseService;
 	private final OfficeHoursAvailabilityService availabilityService;
+	private final OfficeHoursBookingService bookingService;
 
 	@GetMapping("/users/{userId}/courses/{courseId}")
 	public OfficeHoursCourseResponse course(@PathVariable UUID userId, @PathVariable UUID courseId) {
@@ -44,5 +58,60 @@ public class OfficeHoursController {
 	public OfficeHoursAvailabilityResponse saveAvailability(@PathVariable UUID userId,
 			@Valid @RequestBody UpdateOfficeHoursAvailabilityRequest request) {
 		return availabilityService.update(userId, request);
+	}
+
+	private static final String COURSE = "/users/{userId}/courses/{courseId}";
+
+	@GetMapping(COURSE + "/instructors")
+	public List<OfficeHoursPersonResponse> instructors(@PathVariable UUID userId, @PathVariable UUID courseId) {
+		return bookingService.instructors(userId, courseId);
+	}
+
+	/** The times a student can ask an academic of the course for. */
+	@GetMapping(COURSE + "/instructors/{instructorId}/slots")
+	public List<OfficeHoursSlotResponse> slots(@PathVariable UUID userId, @PathVariable UUID courseId,
+			@PathVariable UUID instructorId) {
+		return bookingService.slots(userId, courseId, instructorId);
+	}
+
+	@GetMapping(COURSE + "/requests")
+	public List<OfficeHoursRequestResponse> requests(@PathVariable UUID userId, @PathVariable UUID courseId) {
+		return bookingService.requests(userId, courseId);
+	}
+
+	@PostMapping(COURSE + "/requests")
+	@ResponseStatus(HttpStatus.CREATED)
+	public OfficeHoursRequestResponse createRequest(@PathVariable UUID userId, @PathVariable UUID courseId,
+			@Valid @RequestBody CreateOfficeHoursRequest request) {
+		return bookingService.create(userId, courseId, request);
+	}
+
+	@PostMapping(COURSE + "/requests/{requestId}/decision")
+	public OfficeHoursRequestResponse decide(@PathVariable UUID userId, @PathVariable UUID courseId,
+			@PathVariable UUID requestId, @Valid @RequestBody DecideOfficeHoursRequest decision) {
+		return bookingService.decide(userId, courseId, requestId, decision);
+	}
+
+	@PostMapping(COURSE + "/requests/{requestId}/reply")
+	public OfficeHoursRequestResponse reply(@PathVariable UUID userId, @PathVariable UUID courseId,
+			@PathVariable UUID requestId, @Valid @RequestBody ReplyOfficeHoursRequest reply) {
+		return bookingService.reply(userId, courseId, requestId, reply);
+	}
+
+	@PostMapping(COURSE + "/requests/{requestId}/accept-proposed")
+	public OfficeHoursRequestResponse acceptProposed(@PathVariable UUID userId, @PathVariable UUID courseId,
+			@PathVariable UUID requestId, @Valid @RequestBody AcceptOfficeHoursSlotRequest acceptance) {
+		return bookingService.acceptProposedSlot(userId, courseId, requestId, acceptance);
+	}
+
+	@PostMapping(COURSE + "/requests/{requestId}/withdraw")
+	public OfficeHoursRequestResponse withdraw(@PathVariable UUID userId, @PathVariable UUID courseId,
+			@PathVariable UUID requestId) {
+		return bookingService.withdraw(userId, courseId, requestId);
+	}
+
+	@GetMapping(COURSE + "/meetings")
+	public List<OfficeHoursMeetingResponse> meetings(@PathVariable UUID userId, @PathVariable UUID courseId) {
+		return bookingService.upcomingMeetings(userId, courseId);
 	}
 }
