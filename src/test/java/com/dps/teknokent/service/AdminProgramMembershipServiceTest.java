@@ -65,6 +65,9 @@ class AdminProgramMembershipServiceTest {
 	private ProgramMentorRepository programMentorRepository;
 	@Mock
 	private ProgramStartupRepository programStartupRepository;
+	@Mock
+	private ProgramEligibilityService programEligibilityService;
+
 	@InjectMocks
 	private AdminProgramMembershipService service;
 

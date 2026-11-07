@@ -64,6 +64,8 @@ public class ProgramLaunchService {
 	private final MailService mailService;
 	private final CoordinatorMentorshipService mentorshipService;
 	private final PlatformTransactionManager transactionManager;
+	private final ProgramEligibilityService programEligibilityService;
+
 
 	@Transactional
 	public CoordinatorProgramResponse.Detail create(UUID actorId, CreateCoordinatorProgramRequest request) {
@@ -233,6 +235,7 @@ public class ProgramLaunchService {
 			if (!emails.add(email) || inviteRepository.existsByProgramIdAndLeadEmailIgnoreCase(program.getId(), email)) {
 				throw new InvalidRequestException("Each team needs its own lead email: " + email);
 			}
+			programEligibilityService.requirePerson(program, email);
 			ProgramTeamInvite invite = new ProgramTeamInvite();
 			invite.setId(UUID.randomUUID());
 			invite.setProgramId(program.getId());

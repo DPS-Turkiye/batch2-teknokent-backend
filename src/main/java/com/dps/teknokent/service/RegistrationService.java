@@ -28,6 +28,7 @@ import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
@@ -69,19 +70,25 @@ public class RegistrationService {
 	private final InviteCodeGenerator inviteCodeGenerator;
 	private final TeamMembershipService teamMembershipService;
 	private final NotificationService notificationService;
+	private final ProgramEligibilityService programEligibilityService;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
 		String email = requireUniqueEmail(request.email());
-		if (Boolean.TRUE.equals(request.startupLater())) {
+		programEligibilityService.requirePerson(request.programId(), email);
+		boolean individual = isIndividualProgram(request.programId());
+		if (!individual && Boolean.TRUE.equals(request.startupLater())) {
 			return registerWithoutStartup(request, email);
 		}
-		if (TextUtils.normalizeOptional(request.organizationName()) == null) {
+		// In an individual-mentee program (İŞKUR) each student is a team of one, named after them, so requests,
+		// matching and meetings work unchanged without the student creating a startup.
+		String organizationName = individual ? request.fullName() : request.organizationName();
+		if (TextUtils.normalizeOptional(organizationName) == null) {
 			throw new InvalidRequestException("The startup name is required.");
 		}
 
 		Organization organization = new Organization();
-		organization.setName(TextUtils.trim(request.organizationName()));
+		organization.setName(TextUtils.trim(organizationName));
 		organization.setDescription(TextUtils.normalizeOptional(request.description()));
 		applyStartupFields(organization, request);
 		organizationRepository.saveAndFlush(organization);
@@ -97,10 +104,17 @@ public class RegistrationService {
 		attachDeclaredProgram(organization, request.programId());
 		organizationRepository.saveAndFlush(organization);
 		teamMembershipService.joined(founder, organization);
-		savePendingMembers(organization, request.teamMembers());
+		if (!individual) {
+			savePendingMembers(organization, request.teamMembers());
+		}
 		discardOnboardingDraft();
 
 		return UserResponse.fromEntity(founder);
+	}
+
+	private boolean isIndividualProgram(UUID programId) {
+		return programId != null
+				&& programRepository.findById(programId).map(Program::isIndividualMentees).orElse(false);
 	}
 
 	/**
@@ -129,6 +143,7 @@ public class RegistrationService {
 				.findByProgramIdAndOrganizationId(person.getProgramId(), organization.getId()).isEmpty()) {
 			throw new InvalidRequestException(Texts.forRequest("error.startupCodeOtherProgram"));
 		}
+		programEligibilityService.requireTeamMember(organization.getId(), person.getEmail());
 		person.setOrganization(organization);
 		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), person.getEmail());
 		AppUser joined = appUserRepository.save(person);
@@ -181,6 +196,7 @@ public class RegistrationService {
 			throw new InvalidRequestException(
 					"This code is for the team's lead; members can use it once the lead has joined.");
 		}
+		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		Organization organization = new Organization();
 		organization.setName(invite.getTeamName());
 		organization.setInviteCode(invite.getCode());
@@ -310,6 +326,7 @@ public class RegistrationService {
 		if (!invite.getEmail().equalsIgnoreCase(email)) {
 			throw new InvalidRequestException(Texts.forRequest("error.programInviteWrongEmail"));
 		}
+		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		return Optional.of(invite);
 	}
 
@@ -363,6 +380,7 @@ public class RegistrationService {
 		}
 		Organization organization = organizationRepository.findByInviteCode(inviteCode)
 				.orElseThrow(() -> new InvalidRequestException("Invalid invite code."));
+		programEligibilityService.requireTeamMember(organization.getId(), email);
 
 		AppUser member = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
 				UserAccountStatus.APPROVED, organization);

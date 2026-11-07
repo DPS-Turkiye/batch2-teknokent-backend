@@ -69,6 +69,7 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramCoordination;
@@ -178,6 +179,15 @@ public class CoordinatorProgramService {
 		}
 		if (request.bottleneckFlagDays() != null) {
 			program.setBottleneckFlagDays(request.bottleneckFlagDays());
+		}
+		if (request.eligibleEmailDomain() != null) {
+			program.setEligibleEmailDomain(EmailDomains.normalizeDomain(request.eligibleEmailDomain()));
+		}
+		if (request.rosterOnly() != null) {
+			program.setRosterOnly(request.rosterOnly());
+		}
+		if (request.individualMentees() != null) {
+			program.setIndividualMentees(request.individualMentees());
 		}
 		programRepository.save(program);
 		return detailOf(program);
@@ -580,7 +590,10 @@ public class CoordinatorProgramService {
 						program.isAutoMatchSuggestions(),
 						program.getDefaultMentorCapacity(),
 						program.getCommunicationGapDays(),
-						program.getBottleneckFlagDays()),
+						program.getBottleneckFlagDays(),
+						program.getEligibleEmailDomain(),
+						program.isRosterOnly(),
+						program.isIndividualMentees()),
 				health(program, startups, snapshot),
 				awaitingTeams,
 				upcoming,

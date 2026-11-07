@@ -8,7 +8,10 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-/** A null rule leaves the stored value unchanged; dates and description are replaced as sent. */
+/**
+ * A null rule leaves the stored value unchanged; dates and description are replaced as sent. An empty
+ * {@code eligibleEmailDomain} clears the domain.
+ */
 public record UpdateProgramDetailsRequest(
 		UUID actorId,
 		@NotBlank @Size(max = 255) String name,
@@ -21,5 +24,8 @@ public record UpdateProgramDetailsRequest(
 		Boolean autoMatchSuggestions,
 		@Min(1) @Max(20) Integer defaultMentorCapacity,
 		@Min(1) @Max(180) Integer communicationGapDays,
-		@Min(1) @Max(365) Integer bottleneckFlagDays) {
+		@Min(1) @Max(365) Integer bottleneckFlagDays,
+		@Size(max = 255) String eligibleEmailDomain,
+		Boolean rosterOnly,
+		Boolean individualMentees) {
 }

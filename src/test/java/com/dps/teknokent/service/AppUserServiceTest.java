@@ -69,6 +69,9 @@ class AppUserServiceTest {
     @Mock
     private TeamMembershipService teamMembershipService;
 
+    @Mock
+    private ProgramEligibilityService programEligibilityService;
+
     @InjectMocks
     private AppUserService appUserService;
 

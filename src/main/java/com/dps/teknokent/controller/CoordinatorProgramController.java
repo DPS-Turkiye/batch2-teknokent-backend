@@ -27,7 +27,9 @@ import com.dps.teknokent.dto.requests.InviteProgramMentorRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.SetProgramArchivedRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
+import com.dps.teknokent.dto.requests.AddProgramEligibleEmailsRequest;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
+import com.dps.teknokent.dto.responses.ProgramEligibleEmailResponse;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.MentorPoolResponse;
 import com.dps.teknokent.dto.responses.ProgramApprovalsResponse;
@@ -40,6 +42,7 @@ import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.MentorPoolService;
 import com.dps.teknokent.service.ProgramApprovalService;
+import com.dps.teknokent.service.ProgramRosterService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
 import com.dps.teknokent.service.ProgramMatchingService;
@@ -62,6 +65,7 @@ public class CoordinatorProgramController {
 	private final ProgramMatchingService programMatchingService;
 	private final SyllabusPhaseService syllabusPhaseService;
 	private final ProgramApprovalService programApprovalService;
+	private final ProgramRosterService programRosterService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -108,6 +112,29 @@ public class CoordinatorProgramController {
 			@PathVariable UUID id,
 			@Valid @RequestBody CreateProgramEventRequest request) {
 		return coordinatorProgramService.createEvent(CurrentActor.resolve(request.actorId()), id, request);
+	}
+
+	/** The list of addresses allowed into a roster-only program (İŞKUR). */
+	@GetMapping("/{id}/eligible-emails")
+	public List<ProgramEligibleEmailResponse> eligibleEmails(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return programRosterService.list(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/eligible-emails")
+	public List<ProgramEligibleEmailResponse> addEligibleEmails(
+			@PathVariable UUID id,
+			@Valid @RequestBody AddProgramEligibleEmailsRequest request) {
+		return programRosterService.add(CurrentActor.resolve(request.actorId()), id, request);
+	}
+
+	@DeleteMapping("/{id}/eligible-emails/{entryId}")
+	public List<ProgramEligibleEmailResponse> removeEligibleEmail(
+			@PathVariable UUID id,
+			@PathVariable UUID entryId,
+			@RequestParam(required = false) UUID actorId) {
+		return programRosterService.remove(CurrentActor.resolve(actorId), id, entryId);
 	}
 
 	@DeleteMapping("/{id}/events/{eventId}")

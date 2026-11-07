@@ -49,6 +49,7 @@ public class AppUserService {
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final LoginProvisioner loginProvisioner;
 	private final TeamMembershipService teamMembershipService;
+	private final ProgramEligibilityService programEligibilityService;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
@@ -162,6 +163,7 @@ public class AppUserService {
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
 			throw new InvalidRequestException("A user with this email already exists.");
 		}
+		programEligibilityService.requireTeamMember(organizationId, email);
 
 		AppUser member = new AppUser();
 		member.setFullName(TextUtils.trim(request.fullName()));
