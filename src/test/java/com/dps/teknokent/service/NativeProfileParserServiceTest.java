@@ -123,6 +123,10 @@ class NativeProfileParserServiceTest {
         assertThat(studyYear.get("type").toString()).contains("null");
         assertThat(studyYear.get("description").asText()).contains("Hazırlık", "4. sınıf", "Doktora");
         assertThat(schema.get("properties").get("strong_courses").get("type").asText()).isEqualTo("array");
+        JsonNode school = schema.get("properties").get("education").get("items");
+        assertThat(school.get("required").toString()).contains("school", "degree", "period");
+        assertThat(schema.get("properties").get("work_history").get("description").asText())
+                .contains("internships", "part-time", "club", "volunteer");
     }
 
     @Test

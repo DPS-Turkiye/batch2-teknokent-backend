@@ -74,9 +74,19 @@ public class NativeProfileParserService {
 					field("experience_level", nullableString()), field("years_of_experience", nullableInteger()),
 					field("professional_functions", stringArray()), field("industries", stringArray()),
 					field("technologies", stringArray()), field("languages", stringArray()),
-					field("work_history", arrayOf(objectSchema(List.of(
+					field("work_history", described(arrayOf(objectSchema(List.of(
 							field("title", string()), field("organization", nullableString()),
-							field("period", nullableString()), field("summary", nullableString()))))),
+							field("period", nullableString()), field("summary", nullableString())))),
+							"Every role the person held, including internships, part-time jobs, student club or "
+									+ "society roles and volunteer work, newest first")),
+					field("education", described(arrayOf(objectSchema(List.of(
+							field("school", string()), field("degree", nullableString()),
+							field("period", nullableString())))),
+							"Schools, newest first. degree holds the level and department, e.g. "
+									+ "\"Lisans, Bilgisayar Mühendisliği\", or \"Erasmus\" for an exchange "
+									+ "semester; period holds only the years or term, e.g. \"2022 – 2026\" or "
+									+ "\"2025 Güz\". Include exchange semesters and high school only if the CV "
+									+ "lists them")),
 					// Student mentors (İŞKUR) fill the studies card from these; professionals get null and [].
 					field("department", described(nullableString(),
 							"University department or major, only if the person is currently a student")),

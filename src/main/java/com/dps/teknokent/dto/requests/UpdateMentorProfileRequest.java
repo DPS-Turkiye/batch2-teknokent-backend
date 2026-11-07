@@ -34,7 +34,22 @@ public record UpdateMentorProfileRequest(
 		@Size(max = 7) List<@NotNull MentorLanguage> languages,
 		@Size(max = 50) List<@NotNull @Valid MentorProgramRoleRequest> programRoles,
 		@Size(max = 10) List<@NotBlank @Size(max = 255) String> offerings,
-		@Valid StudentProfileRequest studentProfile) {
+		@Valid StudentProfileRequest studentProfile,
+		@Size(max = 10) List<@Valid MentorEducationRequest> educations) {
+
+	/** Without schools: null leaves the stored ones as they were. */
+	public UpdateMentorProfileRequest(
+			String professionalTitle, String company, String availabilityLabel, String responseTimeLabel,
+			String meetingMode, String communicationPreference, String mentoringStyle, String fitLabel,
+			String experienceLevel, String sectorExperience, String startupStages, List<String> specialties,
+			Integer menteeCapacity, List<MentorExperienceRequest> experiences, String about,
+			MeetingFrequency meetingFrequency, PrepFileRequirement prepFileRequirement, List<MentorLanguage> languages,
+			List<MentorProgramRoleRequest> programRoles, List<String> offerings, StudentProfileRequest studentProfile) {
+		this(professionalTitle, company, availabilityLabel, responseTimeLabel, meetingMode, communicationPreference,
+				mentoringStyle, fitLabel, experienceLevel, sectorExperience, startupStages, specialties,
+				menteeCapacity, experiences, about, meetingFrequency, prepFileRequirement, languages, programRoles,
+				offerings, studentProfile, null);
+	}
 
 	/** Without a student profile: every mentor who is not a student, and callers from before it existed. */
 	public UpdateMentorProfileRequest(
@@ -47,7 +62,7 @@ public record UpdateMentorProfileRequest(
 		this(professionalTitle, company, availabilityLabel, responseTimeLabel, meetingMode, communicationPreference,
 				mentoringStyle, fitLabel, experienceLevel, sectorExperience, startupStages, specialties,
 				menteeCapacity, experiences, about, meetingFrequency, prepFileRequirement, languages, programRoles,
-				offerings, null);
+				offerings, null, null);
 	}
 
 	/** Keeps older clients and focused tests source-compatible while about rolls out. */
@@ -58,6 +73,6 @@ public record UpdateMentorProfileRequest(
 			Integer menteeCapacity, List<MentorExperienceRequest> experiences) {
 		this(professionalTitle, company, availabilityLabel, responseTimeLabel, meetingMode, communicationPreference,
 				mentoringStyle, fitLabel, experienceLevel, sectorExperience, startupStages, specialties,
-				menteeCapacity, experiences, null, null, null, null, null, null, null);
+				menteeCapacity, experiences, null, null, null, null, null, null, null, null);
 	}
 }
