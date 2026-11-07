@@ -22,6 +22,7 @@ import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.MeetingService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -73,15 +74,18 @@ public class MeetingController {
 				.orElseGet(() -> ResponseEntity.noContent().build());
 	}
 
-	/** The mentor confirms the meeting was held; only confirmed meetings count in the program's sessions report. */
+	/**
+	 * The mentor confirms the meeting was held; only confirmed meetings count in the program's sessions report.
+	 * A bearer caller is always themselves; {@code mentorId} is read only on the proxy's service credentials.
+	 */
 	@PostMapping("/{id}/held")
-	public MeetingResponse confirmHeld(@PathVariable UUID id, @RequestParam UUID mentorId) {
-		return meetingService.confirmHeld(id, mentorId, true);
+	public MeetingResponse confirmHeld(@PathVariable UUID id, @RequestParam(required = false) UUID mentorId) {
+		return meetingService.confirmHeld(id, CurrentActor.resolve(mentorId), true);
 	}
 
 	@DeleteMapping("/{id}/held")
-	public MeetingResponse undoHeld(@PathVariable UUID id, @RequestParam UUID mentorId) {
-		return meetingService.confirmHeld(id, mentorId, false);
+	public MeetingResponse undoHeld(@PathVariable UUID id, @RequestParam(required = false) UUID mentorId) {
+		return meetingService.confirmHeld(id, CurrentActor.resolve(mentorId), false);
 	}
 
 	@PatchMapping("/{id}")
