@@ -10,7 +10,7 @@
       "departmentCode": "CENG",
       "departmentName": "Bilgisayar Mühendisliği",
       "classYear": 3,
-      "programLevel": "LISANS",
+      "programLevel": "BACHELOR",
       "iskurParticipant": false,
       "advisorIds": ["dev-akademisyen-1"]
     },
@@ -24,7 +24,7 @@
       "departmentCode": "EE",
       "departmentName": "Elektrik-Elektronik Mühendisliği",
       "classYear": 2,
-      "programLevel": "LISANS",
+      "programLevel": "BACHELOR",
       "iskurParticipant": true,
       "advisorIds": ["dev-akademisyen-3"]
     },
@@ -38,7 +38,7 @@
       "departmentCode": "IE",
       "departmentName": "Endüstri Mühendisliği",
       "classYear": 4,
-      "programLevel": "LISANS",
+      "programLevel": "BACHELOR",
       "iskurParticipant": true,
       "advisorIds": ["dev-akademisyen-2"],
       "extraGrants": ["MENTOR"]
@@ -63,7 +63,7 @@
       "faculty": "Mühendislik Fakültesi",
       "departmentCode": "CENG",
       "departmentName": "Bilgisayar Mühendisliği",
-      "programLevel": "DOKTORA",
+      "programLevel": "DOCTORATE",
       "academicTitle": "Arş. Gör.",
       "iskurParticipant": false,
       "advisorIds": ["dev-akademisyen-1"]

@@ -35,7 +35,7 @@ CREATE TABLE institution_person (
     synced_at          TIMESTAMPTZ NOT NULL,
     CONSTRAINT uq_institution_person UNIQUE (institution, persistent_id),
     CONSTRAINT chk_institution_person_program_level
-        CHECK (program_level IS NULL OR program_level IN ('LISANS', 'YUKSEK_LISANS', 'DOKTORA')),
+        CHECK (program_level IS NULL OR program_level IN ('BACHELOR', 'MASTER', 'DOCTORATE')),
     CONSTRAINT chk_institution_person_source CHECK (source IN ('LOGIN', 'IMPORT', 'DEV_STUB'))
 );
 
