@@ -39,6 +39,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.util.InviteCodeGenerator;
+import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -46,6 +47,7 @@ import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
@@ -196,6 +198,7 @@ public class RegistrationService {
 			throw new InvalidRequestException(
 					"This code is for the team's lead; members can use it once the lead has joined.");
 		}
+		requireLaunched(invite.getProgramId());
 		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		Organization organization = new Organization();
 		organization.setName(invite.getTeamName());
@@ -290,11 +293,18 @@ public class RegistrationService {
 		organization.setActiveProgramId(programId);
 	}
 
+	private void requireLaunched(UUID programId) {
+		programRepository.findById(programId).ifPresent(ProgramDrafts::requireLaunched);
+	}
+
 	private void requireProgram(UUID programId) {
 		if (programId == null) {
 			throw new InvalidRequestException("A program is required.");
 		}
-		if (!programRepository.existsById(programId)) {
+		boolean open = programRepository.findById(programId)
+				.filter(program -> program.getStatus() != ProgramStatus.DRAFT)
+				.isPresent();
+		if (!open) {
 			throw new InvalidRequestException("The selected program does not exist.");
 		}
 	}
@@ -326,6 +336,7 @@ public class RegistrationService {
 		if (!invite.getEmail().equalsIgnoreCase(email)) {
 			throw new InvalidRequestException(Texts.forRequest("error.programInviteWrongEmail"));
 		}
+		requireLaunched(invite.getProgramId());
 		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		return Optional.of(invite);
 	}

@@ -78,7 +78,7 @@ class AdminProgramMembershipServiceTest {
 		when(domainLookupService.requireUser(mentor.getId())).thenReturn(mentor);
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId())).thenReturn(Optional.empty());
 		AppUser coordinator = user(COORDINATOR_ID, UserRole.COORDINATOR, UserAccountStatus.APPROVED);
-		when(appUserRepository.findAllById(List.of(COORDINATOR_ID))).thenReturn(List.of(coordinator));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator));
 
 		service.assignMentor(ADMIN_ID, PROGRAM_ID, mentor.getId());
 

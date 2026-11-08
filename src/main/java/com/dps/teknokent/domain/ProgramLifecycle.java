@@ -5,6 +5,7 @@ package com.dps.teknokent.domain;
  * so an active program that has not started yet reads as upcoming.
  */
 public enum ProgramLifecycle {
+	DRAFT,
 	UPCOMING,
 	ACTIVE,
 	COMPLETED

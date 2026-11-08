@@ -37,6 +37,7 @@ import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
@@ -249,7 +250,8 @@ class CoordinatorProgramControllerTest {
 	@Test
 	void launchesAProgramAndRejectsABadLeadEmail() throws Exception {
 		String body = """
-				{"name":"METU BİGG 2026","coordinatorIds":[],"defaultMentorCapacity":4,"meetingFrequencyDays":14,
+				{"type":"STARTUP_MENTORING","name":"METU BİGG 2026",
+				 "coordinatorIds":["00000000-0000-0000-0000-0000000000c2"],"defaultMentorCapacity":4,"meetingFrequencyDays":14,
 				 "communicationGapDays":14,"bottleneckFlagDays":21,
 				 "teams":[{"teamName":"Kavşak","leadEmail":"%s"}]}
 				""";
@@ -265,6 +267,31 @@ class CoordinatorProgramControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(body.formatted("can@tohum")))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void anAdminLaunchesADraftAndAProgramNeedsATypeAndACoordinator() throws Exception {
+		mockMvc.perform(post("/api/coordinator/programs/{id}/launch", PROGRAM_ID)
+						.with(authentication(signedIn())))
+				.andExpect(status().isOk());
+		verify(coordinatorProgramService).launch(SIGNED_IN_ID, PROGRAM_ID);
+
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"name\":\"ODTÜ Akran\",\"coordinatorIds\":[\"00000000-0000-0000-0000-0000000000c2\"]}"))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\",\"coordinatorIds\":[]}"))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+								+ "\"coordinatorIds\":[\"00000000-0000-0000-0000-0000000000c2\"]}"))
+				.andExpect(status().isCreated());
 	}
 
 	@Test
@@ -370,7 +397,8 @@ class CoordinatorProgramControllerTest {
 
 	private static CoordinatorProgramResponse summary() {
 		return new CoordinatorProgramResponse(
-				PROGRAM_ID, "METU Stars 2026", ProgramStatus.ACTIVE, ProgramLifecycle.ACTIVE, null, null, null,
+				PROGRAM_ID, "METU Stars 2026", ProgramStatus.ACTIVE, ProgramLifecycle.ACTIVE, ProgramType.STARTUP_MENTORING,
+				null, null, null,
 				ACTOR_ID, "Elif Demir", 42, 28, 3, 64, 6, 5, 4, null, List.of(), null, null);
 	}
 }

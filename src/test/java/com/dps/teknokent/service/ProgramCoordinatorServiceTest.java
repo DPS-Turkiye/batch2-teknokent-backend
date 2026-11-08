@@ -47,52 +47,87 @@ class ProgramCoordinatorServiceTest {
 
 	private static final UUID ELIF = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID BURCU = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+	private static final UUID ADMIN = UUID.fromString("00000000-0000-0000-0000-0000000000ad");
 	private static final UUID PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
 
 	private final Program program = program();
 
 	@Test
 	void anApprovedCoordinatorIsAddedAndTold() {
-		when(programService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program);
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
+		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(program);
 		when(appUserRepository.findById(BURCU)).thenReturn(Optional.of(user(BURCU, "Burcu Şen", UserRole.COORDINATOR)));
 		when(programService.coordinatorsOf(program)).thenReturn(List.of(
 				new CoordinatorRef(ELIF, "Elif Demir", true), new CoordinatorRef(BURCU, "Burcu Şen", false)));
 
-		var result = service.add(ELIF, PROGRAM_ID, BURCU);
+		var result = service.add(ADMIN, PROGRAM_ID, BURCU);
 
 		ArgumentCaptor<ProgramCoordinator> saved = ArgumentCaptor.forClass(ProgramCoordinator.class);
 		verify(programCoordinatorRepository).save(saved.capture());
 		assertThat(saved.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
 		assertThat(saved.getValue().getUserId()).isEqualTo(BURCU);
-		assertThat(saved.getValue().getAddedBy()).isEqualTo(ELIF);
+		assertThat(saved.getValue().getAddedBy()).isEqualTo(ADMIN);
 		assertThat(result).extracting(CoordinatorRef::fullName).containsExactly("Elif Demir", "Burcu Şen");
 		verify(notificationService).create(any(), anyString(), anyString(), eq("/coordinator/programs/" + PROGRAM_ID));
 	}
 
 	@Test
 	void mentorsAndCoordinatorsAlreadyOnTheProgramAreRefused() {
-		when(programService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program);
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
+		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(program);
 		UUID mentorId = UUID.randomUUID();
 		when(appUserRepository.findById(mentorId)).thenReturn(Optional.of(user(mentorId, "Ayşe", UserRole.MENTOR)));
 		when(appUserRepository.findById(BURCU)).thenReturn(Optional.of(user(BURCU, "Burcu Şen", UserRole.COORDINATOR)));
 		when(programCoordinatorRepository.existsByProgramIdAndUserId(PROGRAM_ID, BURCU)).thenReturn(true);
 
-		assertThatThrownBy(() -> service.add(ELIF, PROGRAM_ID, mentorId)).isInstanceOf(InvalidRequestException.class);
-		assertThatThrownBy(() -> service.add(ELIF, PROGRAM_ID, BURCU)).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.add(ADMIN, PROGRAM_ID, mentorId)).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.add(ADMIN, PROGRAM_ID, BURCU)).isInstanceOf(InvalidRequestException.class);
 		verify(programCoordinatorRepository, never()).save(any());
 	}
 
 	@Test
 	void theCreatorCannotBeRemovedButAnAddedCoordinatorCan() {
-		when(programService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program);
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
+		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(program);
 		ProgramCoordinator row = new ProgramCoordinator();
 		row.setUserId(BURCU);
 		when(programCoordinatorRepository.findByProgramIdAndUserId(PROGRAM_ID, BURCU)).thenReturn(Optional.of(row));
+		when(programService.coordinatorsOf(program)).thenReturn(List.of(
+				new CoordinatorRef(ELIF, "Elif Demir", true), new CoordinatorRef(BURCU, "Burcu Şen", false)));
 
-		assertThatThrownBy(() -> service.remove(ELIF, PROGRAM_ID, ELIF)).isInstanceOf(InvalidRequestException.class);
-		service.remove(ELIF, PROGRAM_ID, BURCU);
+		assertThatThrownBy(() -> service.remove(ADMIN, PROGRAM_ID, ELIF)).isInstanceOf(InvalidRequestException.class);
+		service.remove(ADMIN, PROGRAM_ID, BURCU);
 
 		verify(programCoordinatorRepository).delete(row);
+	}
+
+	@Test
+	void onlyTheAdminChangesAProgramsCoordinators() {
+		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, "Elif Demir", UserRole.COORDINATOR));
+
+		assertThatThrownBy(() -> service.add(ELIF, PROGRAM_ID, BURCU))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+		assertThatThrownBy(() -> service.remove(ELIF, PROGRAM_ID, BURCU)).isInstanceOf(InvalidRequestException.class);
+		verify(programCoordinatorRepository, never()).save(any());
+		verify(programCoordinatorRepository, never()).delete(any());
+	}
+
+	@Test
+	void theLastCoordinatorOfAnAdminsProgramStays() {
+		Program byAdmin = program();
+		byAdmin.setCreatedBy(ADMIN);
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
+		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(byAdmin);
+		ProgramCoordinator row = new ProgramCoordinator();
+		row.setUserId(BURCU);
+		when(programCoordinatorRepository.findByProgramIdAndUserId(PROGRAM_ID, BURCU)).thenReturn(Optional.of(row));
+		when(programService.coordinatorsOf(byAdmin)).thenReturn(List.of(new CoordinatorRef(BURCU, "Burcu Şen", false)));
+
+		assertThatThrownBy(() -> service.remove(ADMIN, PROGRAM_ID, BURCU))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("at least one");
+		verify(programCoordinatorRepository, never()).delete(any());
 	}
 
 	@Test

@@ -21,6 +21,7 @@ public record AdminOverviewResponse(
 			UUID id,
 			String name,
 			String status,
+			String type,
 			Instant createdAt,
 			/** The first coordinator; null when the program has none yet ("Atanmadı"). */
 			UUID coordinatorId,

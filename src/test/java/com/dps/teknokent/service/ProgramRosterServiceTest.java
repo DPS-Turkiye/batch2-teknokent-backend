@@ -48,7 +48,11 @@ class ProgramRosterServiceTest {
         Program program = new Program();
         program.setId(PROGRAM_ID);
         program.setEligibleEmailDomain(domain);
-        when(coordinatorProgramService.requireManagedProgram(ACTOR_ID, PROGRAM_ID)).thenReturn(program);
+        // the list is read through the managed-program check, changed through the settings-editor one
+        org.mockito.Mockito.lenient().when(coordinatorProgramService.requireManagedProgram(ACTOR_ID, PROGRAM_ID))
+                .thenReturn(program);
+        org.mockito.Mockito.lenient().when(coordinatorProgramService.requireSettingsEditor(ACTOR_ID, PROGRAM_ID))
+                .thenReturn(program);
         return program;
     }
 
