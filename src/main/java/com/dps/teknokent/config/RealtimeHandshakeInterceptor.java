@@ -1,5 +1,6 @@
 package com.dps.teknokent.config;
 
+import java.time.Instant;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
 
 	public static final String IDENTITY_ATTRIBUTE = "realtimeIdentity";
+	public static final String CONNECTED_AT_ATTRIBUTE = "realtimeConnectedAt";
 
 	private final RealtimeTokenService realtimeTokenService;
 
@@ -37,6 +39,7 @@ public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
 		}
 
 		attributes.put(IDENTITY_ATTRIBUTE, identity);
+		attributes.put(CONNECTED_AT_ATTRIBUTE, Instant.now());
 		return true;
 	}
 
