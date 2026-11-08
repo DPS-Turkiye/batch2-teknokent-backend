@@ -39,6 +39,9 @@ spring:
     user:
       name: ${SECURITY_USERNAME}
       password: ${SECURITY_PASSWORD}
+      # The frontend's service credential. Paths only the frontend may call check for this role
+      # (SecurityConfig.SERVICE_ONLY_PATHS); no Menton account ever gets it.
+      roles: SERVICE
 
   data:
     redis:

@@ -76,7 +76,7 @@ public class LtiLaunchVerifier {
 		require(subject != null && !subject.isBlank(), "The launch has no user.");
 
 		Map<String, Object> context = mapClaim(claims, CLAIM_PREFIX + "context");
-		String contextId = context == null ? null : (String) context.get("id");
+		String contextId = context == null ? null : text(context.get("id"));
 		require(contextId != null && !contextId.isBlank(), "Office hours open from a course only.");
 
 		return new LtiLaunchClaims(
@@ -85,8 +85,8 @@ public class LtiLaunchVerifier {
 				fullName(claims),
 				stringClaim(claims, "email"),
 				contextId,
-				(String) context.get("label"),
-				(String) context.get("title"),
+				text(context.get("label")),
+				text(context.get("title")),
 				roles(claims));
 	}
 
@@ -120,6 +120,14 @@ public class LtiLaunchVerifier {
 			return List.of();
 		}
 		return list.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+	}
+
+	/** A context value as text: LMSes send ids as strings or as numbers, so either is accepted. */
+	private static String text(Object value) {
+		if (value instanceof String string) {
+			return string;
+		}
+		return value instanceof Number number ? number.toString() : null;
 	}
 
 	private static String stringClaim(JWTClaimsSet claims, String name) {

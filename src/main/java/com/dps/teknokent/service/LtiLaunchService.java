@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.net.URI;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
@@ -78,6 +79,14 @@ public class LtiLaunchService {
 		if (request.clientId() != null && !properties.clientId().equals(request.clientId())) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown LTI client.");
 		}
+		// Both are hints the platform may send; when it does, they must name this tool's own deployment and URL.
+		if (request.deploymentId() != null && !request.deploymentId().isBlank()
+				&& !properties.deploymentIdList().contains(request.deploymentId().trim())) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown LTI deployment.");
+		}
+		if (!sameOrigin(request.targetLinkUri(), properties.toolLaunchUrl())) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The launch is not for this tool.");
+		}
 		String state = randomToken();
 		String nonce = randomToken();
 		stateStore.save(state, nonce);
@@ -108,8 +117,11 @@ public class LtiLaunchService {
 		OfficeHoursRole role = roleIn(claims.roles());
 		Instant now = clock.instant();
 
+		// Insert-if-absent then read: two first launches at once both land on the same rows instead of one of
+		// them failing on a unique constraint after its single-use state is already spent.
+		userRepository.insertIfAbsent(UUID.randomUUID(), claims.issuer(), claims.subject(), claims.fullName(), now);
 		OfficeHoursUser user = userRepository.findByIssuerAndSubject(claims.issuer(), claims.subject())
-				.orElseGet(() -> newUser(claims, now));
+				.orElseThrow(() -> new IllegalStateException("The office-hours user was not saved."));
 		user.setFullName(claims.fullName());
 		if (claims.email() != null && !claims.email().isBlank()) {
 			user.setEmail(claims.email().trim().toLowerCase());
@@ -117,14 +129,17 @@ public class LtiLaunchService {
 		user.setLastLaunchAt(now);
 		userRepository.save(user);
 
+		String title = courseTitle(claims);
+		courseRepository.insertIfAbsent(UUID.randomUUID(), claims.issuer(), claims.contextId(), title, now);
 		OfficeHoursCourse course = courseRepository.findByIssuerAndContextId(claims.issuer(), claims.contextId())
-				.orElseGet(() -> newCourse(claims, now));
+				.orElseThrow(() -> new IllegalStateException("The office-hours course was not saved."));
 		course.setShortName(claims.contextLabel());
-		course.setTitle(courseTitle(claims));
+		course.setTitle(title);
 		courseRepository.save(course);
 
+		enrollmentRepository.insertIfAbsent(UUID.randomUUID(), user.getId(), course.getId(), role.name(), now);
 		OfficeHoursEnrollment enrollment = enrollmentRepository.findByUserIdAndCourseId(user.getId(), course.getId())
-				.orElseGet(() -> newEnrollment(user, course));
+				.orElseThrow(() -> new IllegalStateException("The office-hours enrolment was not saved."));
 		enrollment.setRole(role);
 		enrollment.setUpdatedAt(now);
 		enrollmentRepository.save(enrollment);
@@ -143,6 +158,26 @@ public class LtiLaunchService {
 		throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Office hours are for a course's instructors and students.");
 	}
 
+	/** The target link must point at this tool: same scheme, host and port as the configured launch URL. */
+	static boolean sameOrigin(String candidate, String toolUrl) {
+		try {
+			URI target = URI.create(candidate.trim());
+			URI tool = URI.create(toolUrl.trim());
+			return target.getScheme() != null && target.getScheme().equalsIgnoreCase(tool.getScheme())
+					&& target.getHost() != null && target.getHost().equalsIgnoreCase(tool.getHost())
+					&& port(target) == port(tool);
+		} catch (IllegalArgumentException exception) {
+			return false;
+		}
+	}
+
+	private static int port(URI uri) {
+		if (uri.getPort() != -1) {
+			return uri.getPort();
+		}
+		return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+	}
+
 	private void requireConfigured() {
 		if (!properties.configured()) {
 			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "LTI is not configured.");
@@ -156,32 +191,6 @@ public class LtiLaunchService {
 		return claims.contextLabel() != null && !claims.contextLabel().isBlank()
 				? claims.contextLabel().trim()
 				: claims.contextId();
-	}
-
-	private static OfficeHoursUser newUser(LtiLaunchClaims claims, Instant now) {
-		OfficeHoursUser user = new OfficeHoursUser();
-		user.setId(UUID.randomUUID());
-		user.setIssuer(claims.issuer());
-		user.setSubject(claims.subject());
-		user.setCreatedAt(now);
-		return user;
-	}
-
-	private static OfficeHoursCourse newCourse(LtiLaunchClaims claims, Instant now) {
-		OfficeHoursCourse course = new OfficeHoursCourse();
-		course.setId(UUID.randomUUID());
-		course.setIssuer(claims.issuer());
-		course.setContextId(claims.contextId());
-		course.setCreatedAt(now);
-		return course;
-	}
-
-	private static OfficeHoursEnrollment newEnrollment(OfficeHoursUser user, OfficeHoursCourse course) {
-		OfficeHoursEnrollment enrollment = new OfficeHoursEnrollment();
-		enrollment.setId(UUID.randomUUID());
-		enrollment.setUserId(user.getId());
-		enrollment.setCourseId(course.getId());
-		return enrollment;
 	}
 
 	private static String randomToken() {
