@@ -20,6 +20,7 @@ import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.PeerTopicCategory;
+import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
@@ -34,6 +35,7 @@ import com.dps.teknokent.entity.InstitutionPerson;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -41,6 +43,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -69,18 +72,37 @@ public class PeerMentoringService {
 	private final MentorProfileRepository mentorProfileRepository;
 	private final AppUserRepository appUserRepository;
 	private final BadgeService badgeService;
+	private final ProgramPeerCategoryService programPeerCategoryService;
+	private final ProgramMentorRepository programMentorRepository;
 
 	/** The peer mentors of the student's program, the student left out; empty for a student in no program. */
 	@Transactional(readOnly = true)
 	public List<PeerMentorCardResponse> mentors(UUID actorId, PeerTopicCategory category, String query) {
 		AppUser student = requireStudent(actorId);
+		Set<PeerTopicCategory> active = activeForStudent(student);
+		if (category != null && !active.contains(category)) {
+			return List.of();
+		}
 		String department = departmentOf(student.getId(), null);
 		String needle = query == null || query.isBlank() ? null : query.trim().toLowerCase(TR);
 		return peerMentorsFor(student).stream()
-				.map(profile -> toCard(profile, department))
+				.map(profile -> toCard(profile, department, active))
+				.filter(card -> !card.categories().isEmpty())
 				.filter(card -> category == null || card.categories().contains(category))
 				.filter(card -> needle == null || matches(card, needle))
 				.toList();
+	}
+
+	/**
+	 * The categories the caller may use: as {@code MENTEE}, the ones active in the student's program; as
+	 * {@code MENTOR}, the ones active in any program the student mentors in. Empty outside every program.
+	 */
+	@Transactional(readOnly = true)
+	public List<PeerTopicCategory> categories(UUID actorId, UserRole side) {
+		Set<PeerTopicCategory> active = side == UserRole.MENTOR
+				? activeForMentor(requirePeerMentor(actorId))
+				: activeForStudent(requireStudent(actorId));
+		return active.stream().sorted().toList();
 	}
 
 	/** The student's own requests ({@code MENTEE}), or the ones a peer mentor received ({@code MENTOR}). */
@@ -103,6 +125,9 @@ public class PeerMentoringService {
 	@Transactional
 	public PeerMentoringRequestResponse create(UUID actorId, CreatePeerMentoringRequest request) {
 		AppUser student = requireStudent(actorId);
+		if (!activeForStudent(student).contains(request.category())) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerCategoryInactive"));
+		}
 		if (student.getId().equals(request.mentorId())) {
 			throw new InvalidRequestException(Texts.forRequest("error.selfMentorshipRequest"));
 		}
@@ -152,6 +177,9 @@ public class PeerMentoringService {
 	@Transactional
 	public PeerMentorProfileResponse saveProfile(UUID actorId, SavePeerMentorProfileRequest request) {
 		AppUser mentor = requirePeerMentor(actorId);
+		if (!activeForMentor(mentor).containsAll(request.categories())) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerCategoryInactive"));
+		}
 		MentorProfile profile = mentorProfileRepository.findById(mentor.getId())
 				.orElseGet(() -> MentorProfile.blankFor(mentor, mentorProfileRepository.findMaxSortOrder() + 1));
 		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(
@@ -237,7 +265,22 @@ public class PeerMentoringService {
 		return institutionDirectoryService.kindsOf(user.getId()).contains(IdentityKind.STUDENT);
 	}
 
-	private PeerMentorCardResponse toCard(MentorProfileResponse profile, String studentDepartment) {
+	private Set<PeerTopicCategory> activeForStudent(AppUser student) {
+		return menteeProgramService.programOf(student)
+				.map(programPeerCategoryService::activeIn)
+				.orElseGet(() -> EnumSet.noneOf(PeerTopicCategory.class));
+	}
+
+	private Set<PeerTopicCategory> activeForMentor(AppUser mentor) {
+		return programPeerCategoryService.activeIn(programMentorRepository
+				.findByMentorIdAndStatusOrderByCreatedAtDesc(mentor.getId(), ProgramMentorStatus.ACCEPTED).stream()
+				.map(ProgramMentor::getProgramId)
+				.toList());
+	}
+
+	/** Only the categories active in the student's program show on the card. */
+	private PeerMentorCardResponse toCard(MentorProfileResponse profile, String studentDepartment,
+			Set<PeerTopicCategory> active) {
 		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(profile.id());
 		String fallbackDepartment = profile.studentProfile() == null ? null : profile.studentProfile().department();
 		String department = person.map(InstitutionPerson::getDepartmentName).orElse(fallbackDepartment);
@@ -247,6 +290,7 @@ public class PeerMentoringService {
 				.stream()
 				.map(PeerTopicCategory::fromText)
 				.filter(Objects::nonNull)
+				.filter(active::contains)
 				.distinct()
 				.toList();
 		String helpWith = profile.about() != null && !profile.about().isBlank()
