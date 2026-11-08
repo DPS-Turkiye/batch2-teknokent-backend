@@ -93,6 +93,9 @@ app:
   firebase:
     project-id: ${FIREBASE_PROJECT_ID:}
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
+  institution-login:
+    # Local development only: a persona picker stands in for ODTÜ's login. Never on a shared or production server.
+    dev-stub: ${INSTITUTION_LOGIN_DEV_STUB:false}
   notifications:
     reminders:
       enabled: ${NOTIFICATION_REMINDERS_ENABLED:true}

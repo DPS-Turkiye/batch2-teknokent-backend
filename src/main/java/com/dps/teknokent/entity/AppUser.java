@@ -168,4 +168,35 @@ public class AppUser {
 	public boolean has(UserRole permission) {
 		return activePermissions().contains(permission);
 	}
+
+	/**
+	 * Adds {@code permission} next to the others (unlike {@link #setRole}), or brings it back if it lapsed. An
+	 * active grant keeps its original source, so withdrawing one source never takes away what another gave.
+	 */
+	public void grant(UserRole permission, PermissionSource source, Instant now) {
+		for (AppUserPermission grant : permissions) {
+			if (grant.getPermission() == permission) {
+				if (!grant.activeAt(now)) {
+					grant.reactivate(source, now);
+				}
+				return;
+			}
+		}
+		permissions.add(new AppUserPermission(this, permission, source, now));
+	}
+
+	/** Revokes the active grants {@code source} gave that it no longer backs; grants from other sources stay. */
+	public void withdraw(PermissionSource source, Set<UserRole> stillBacked, Instant now) {
+		for (AppUserPermission grant : permissions) {
+			if (grant.getSource() == source && grant.getStatus() == PermissionStatus.ACTIVE
+					&& !stillBacked.contains(grant.getPermission())) {
+				grant.revoke(now);
+			}
+		}
+	}
+
+	/** Sets the primary role alone, for an account whose grants come from {@link #grant} rather than sign-up. */
+	public void setPrimaryRole(UserRole role) {
+		this.role = role;
+	}
 }
