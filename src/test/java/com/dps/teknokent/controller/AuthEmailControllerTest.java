@@ -45,7 +45,7 @@ class AuthEmailControllerTest {
     @Test
     void sendsNoVerificationMailWithoutAFirebaseSignIn() throws Exception {
         mockMvc.perform(post("/api/auth/register/verification-email").with(user("proxy")))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden());
 
         verifyNoInteractions(authEmailService);
     }

@@ -23,6 +23,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -51,7 +52,7 @@ class OnboardingDraftControllerTest {
 	@Test
 	void rejectsMachineCredentialsWithoutFirebase() throws Exception {
 		mockMvc.perform(get("/api/onboarding/draft").with(user("test-user")))
-				.andExpect(status().isBadRequest());
+				.andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -110,6 +111,7 @@ class OnboardingDraftControllerTest {
 
 	private static org.springframework.test.web.servlet.request.RequestPostProcessor firebase() {
 		return authentication(UsernamePasswordAuthenticationToken.authenticated(
-				new FirebaseIdentity("uid-1", "ayse@startup.com", true), "firebase", List.of()));
+				new FirebaseIdentity("uid-1", "ayse@startup.com", true), "firebase",
+				List.of(new SimpleGrantedAuthority("ROLE_REGISTERING"))));
 	}
 }
