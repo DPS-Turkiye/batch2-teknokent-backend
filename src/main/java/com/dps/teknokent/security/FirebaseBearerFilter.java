@@ -3,6 +3,7 @@ package com.dps.teknokent.security;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -109,9 +110,12 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 			appUserRepository.save(user);
 		}
 
+		Set<UserRole> permissions = user.activePermissions();
 		AppUserPrincipal principal = new AppUserPrincipal(
-				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getFirebaseUid());
-		authenticate(principal, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
+				user.getId(), user.getEmail(), user.getRole(), permissions, user.getStatus(), user.getFirebaseUid());
+		authenticate(principal, permissions.stream()
+				.<GrantedAuthority>map(permission -> new SimpleGrantedAuthority("ROLE_" + permission.name()))
+				.toList());
 		filterChain.doFilter(request, response);
 	}
 
@@ -129,7 +133,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	}
 
 	private static boolean claimableByEmail(AppUser user) {
-		return user.getRole() != UserRole.ADMIN && user.getRole() != UserRole.COORDINATOR;
+		return !user.has(UserRole.ADMIN) && !user.has(UserRole.COORDINATOR);
 	}
 
 	/**
@@ -139,7 +143,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	 * matching regardless, because MentorProfileService filters to APPROVED.
 	 */
 	private static boolean isOwnMentorProfileUpdate(HttpServletRequest request, AppUser user) {
-		if (!"PUT".equalsIgnoreCase(request.getMethod()) || user.getRole() != UserRole.MENTOR) {
+		if (!"PUT".equalsIgnoreCase(request.getMethod()) || !user.has(UserRole.MENTOR)) {
 			return false;
 		}
 		String ownProfile = MENTOR_PROFILE_PATH_PREFIX + user.getId();

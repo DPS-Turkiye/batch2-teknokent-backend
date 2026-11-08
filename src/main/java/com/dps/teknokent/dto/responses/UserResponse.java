@@ -1,6 +1,7 @@
 package com.dps.teknokent.dto.responses;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -10,6 +11,7 @@ import com.dps.teknokent.entity.AppUser;
 /**
  * {@code individualMentee}: a mentee whose current program takes students as teams of one, so their screens drop the
  * startup wording. Filled by /api/auth/me ({@code AppUserService.findSignedIn}) and founder sign-up; false elsewhere.
+ * {@code permissions}: every active permission, in {@link UserRole} order; {@code role} is the primary one.
  */
 public record UserResponse(
 		UUID id,
@@ -21,7 +23,15 @@ public record UserResponse(
 		String organizationName,
 		String jobTitle,
 		Instant signInsRevokedAt,
-		boolean individualMentee) {
+		boolean individualMentee,
+		List<UserRole> permissions) {
+
+	public UserResponse(UUID id, String email, String fullName, UserRole role, UserAccountStatus status,
+			UUID organizationId, String organizationName, String jobTitle, Instant signInsRevokedAt,
+			boolean individualMentee) {
+		this(id, email, fullName, role, status, organizationId, organizationName, jobTitle, signInsRevokedAt,
+				individualMentee, role == null ? List.of() : List.of(role));
+	}
 
 	public static UserResponse fromEntity(AppUser user) {
 		return fromEntity(user, false);
@@ -35,6 +45,6 @@ public record UserResponse(
 				user.getId(), user.getEmail(), user.getFullName(), user.getRole(), status,
 				user.getOrganization() == null ? null : user.getOrganization().getId(),
 				user.getOrganization() == null ? null : user.getOrganization().getName(), user.getJobTitle(),
-				user.getSignInsRevokedAt(), individualMentee);
+				user.getSignInsRevokedAt(), individualMentee, List.copyOf(user.activePermissions()));
 	}
 }
