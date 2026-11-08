@@ -394,6 +394,10 @@ public class MentorProfileService {
 			profile.getExperiences().clear();
 			request.experiences().forEach(experience -> profile.getExperiences().add(experience.toEntity()));
 		}
+		if (request.educations() != null) {
+			profile.getEducations().clear();
+			request.educations().forEach(education -> profile.getEducations().add(education.toEntity()));
+		}
 		if (request.about() != null) {
 			profile.setAbout(request.about().trim());
 		}
