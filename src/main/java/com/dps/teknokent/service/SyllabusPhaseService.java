@@ -74,7 +74,7 @@ public class SyllabusPhaseService {
 
 	private boolean runsProgramWith(AppUser actor, UUID documentId) {
 		return programRepository.findBySyllabusDocumentId(documentId).stream()
-				.anyMatch(program -> actor.getRole() == UserRole.ADMIN
+				.anyMatch(program -> actor.has(UserRole.ADMIN)
 						|| ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository));
 	}
 

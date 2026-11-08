@@ -93,7 +93,7 @@ public class NotificationReminderService {
 
 	private List<AppUser> organizationMentees(Meeting meeting) {
 		return appUserRepository.findByOrganizationIdOrderByFullNameAsc(meeting.getOrganization().getId()).stream()
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.toList();
 	}
 }

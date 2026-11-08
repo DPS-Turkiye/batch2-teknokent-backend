@@ -122,7 +122,7 @@ public class ProgramAnnouncementService {
 				.collect(Collectors.toSet());
 		List<AppUser> members = organizationIds.stream()
 				.flatMap(id -> appUserRepository.findByOrganizationIdOrderByFullNameAsc(id).stream())
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.toList();
 		List<UUID> mentorIds = programMentorRepository.findByProgramIdOrderByCreatedAtAsc(programId).stream()
 				.filter(row -> row.getStatus() == ProgramMentorStatus.ACCEPTED)

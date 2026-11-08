@@ -90,7 +90,7 @@ public class MeetingService {
 		AppUser mentor = null;
 		if (request.mentorId() != null) {
 			mentor = domainLookupService.requireUser(request.mentorId());
-			if (mentor.getRole() != UserRole.MENTOR) {
+			if (!mentor.has(UserRole.MENTOR)) {
 				throw new InvalidRequestException("Selected user does not have the MENTOR role");
 			}
 		}
@@ -114,7 +114,7 @@ public class MeetingService {
 			return;
 		}
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(meeting.getOrganization().getId()).stream()
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.forEach(mentee -> notificationService.create(
 						mentee,
 						NotificationCategory.MEETING_CHANGE,
@@ -477,7 +477,7 @@ public class MeetingService {
 
 	private AppUser requireMentor(UUID mentorId) {
 		AppUser mentor = domainLookupService.requireUser(mentorId);
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 		return mentor;

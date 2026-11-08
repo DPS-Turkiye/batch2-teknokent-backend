@@ -135,7 +135,7 @@ class ProgramCoordinatorServiceTest {
 		when(programService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program);
 		UUID can = UUID.randomUUID();
 		when(programCoordinatorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
-		when(appUserRepository.findByRoleAndStatusOrderByFullNameAsc(UserRole.COORDINATOR, UserAccountStatus.APPROVED))
+		when(appUserRepository.findByPermissionAndStatusOrderByFullNameAsc(UserRole.COORDINATOR, UserAccountStatus.APPROVED))
 				.thenReturn(List.of(user(ELIF, "Elif Demir", UserRole.COORDINATOR), user(can, "Can Yılmaz", UserRole.COORDINATOR)));
 
 		assertThat(service.candidates(ELIF, PROGRAM_ID)).extracting(CoordinatorRef::id).containsExactly(can);

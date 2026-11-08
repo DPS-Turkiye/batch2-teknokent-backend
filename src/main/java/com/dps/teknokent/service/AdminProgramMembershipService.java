@@ -55,7 +55,7 @@ public class AdminProgramMembershipService {
 		requireAdmin(actorId);
 		Program program = requireActiveProgram(programId);
 		AppUser mentor = domainLookupService.requireUser(mentorId);
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("The selected user is not a mentor.");
 		}
 		programEligibilityService.requirePerson(program, mentor.getEmail());
@@ -139,7 +139,7 @@ public class AdminProgramMembershipService {
 	}
 
 	private void requireAdmin(UUID actorId) {
-		if (domainLookupService.requireUser(actorId).getRole() != UserRole.ADMIN) {
+		if (!domainLookupService.requireUser(actorId).has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can assign people to programs.");
 		}
 	}

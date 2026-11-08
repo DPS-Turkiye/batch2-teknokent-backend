@@ -62,14 +62,14 @@ public class TeamMembershipService {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		AppUser person = domainLookupService.requireUser(userId);
 		List<TeamMembership> stays = teamMembershipRepository.findByUserIdOrderByJoinedAtDesc(userId);
-		if (actor.getRole() != UserRole.ADMIN && !coordinatesPerson(actor, person, stays)) {
+		if (!actor.has(UserRole.ADMIN) && !coordinatesPerson(actor, person, stays)) {
 			throw new ResourceNotFoundException("User not found: " + userId);
 		}
 		return TeamHistoryResponse.of(person, stays);
 	}
 
 	private boolean coordinatesPerson(AppUser actor, AppUser person, List<TeamMembership> stays) {
-		if (actor.getRole() != UserRole.COORDINATOR) {
+		if (!actor.has(UserRole.COORDINATOR)) {
 			return false;
 		}
 		Set<UUID> programIds = new HashSet<>();

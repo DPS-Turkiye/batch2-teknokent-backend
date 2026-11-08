@@ -66,7 +66,7 @@ public class ProgramService {
 	@Transactional
 	public ProgramResponse create(UUID actorId, String name) {
 		AppUser actor = requireActor(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin creates programs.");
 		}
 		String trimmed = TextUtils.trim(name);
@@ -96,11 +96,11 @@ public class ProgramService {
 	public List<ProgramResponse> list(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		List<Program> programs;
-		if (actor.getRole() == UserRole.COORDINATOR) {
+		if (actor.has(UserRole.COORDINATOR) && !actor.has(UserRole.ADMIN)) {
 			programs = ProgramCoordination.programsOf(actor.getId(), programRepository, programCoordinatorRepository);
-		} else if (actor.getRole() == UserRole.ADMIN) {
+		} else if (actor.has(UserRole.ADMIN)) {
 			programs = programRepository.findAllByOrderByCreatedAtDesc();
-		} else if (actor.getRole() == UserRole.MENTOR) {
+		} else if (actor.has(UserRole.MENTOR)) {
 			programs = programRepository.findAllByOrderByCreatedAtDesc().stream()
 					.filter(program -> program.getStatus() != ProgramStatus.DRAFT)
 					.toList();
@@ -328,7 +328,7 @@ public class ProgramService {
 
 	private AppUser requireCoordinator(UUID actorId) {
 		AppUser actor = requireActor(actorId);
-		if (actor.getRole() != UserRole.COORDINATOR) {
+		if (!actor.has(UserRole.COORDINATOR)) {
 			throw new InvalidRequestException("Only a coordinator can manage programs.");
 		}
 		return actor;
@@ -336,7 +336,7 @@ public class ProgramService {
 
 	private AppUser requireMentor(UUID actorId) {
 		AppUser actor = requireActor(actorId);
-		if (actor.getRole() != UserRole.MENTOR) {
+		if (!actor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Only a mentor can do this.");
 		}
 		return actor;
@@ -344,7 +344,7 @@ public class ProgramService {
 
 	private AppUser requireApprovedMentor(UUID mentorId) {
 		AppUser mentor = domainLookupService.requireUser(mentorId);
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("The selected user is not a mentor.");
 		}
 		if (mentor.getStatus() != UserAccountStatus.APPROVED) {
@@ -384,10 +384,10 @@ public class ProgramService {
 	}
 
 	private void assertCanViewProgram(AppUser actor, Program program) {
-		if (actor.getRole() == UserRole.ADMIN) {
+		if (actor.has(UserRole.ADMIN)) {
 			return;
 		}
-		if (actor.getRole() == UserRole.COORDINATOR
+		if (actor.has(UserRole.COORDINATOR)
 				&& ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			return;
 		}

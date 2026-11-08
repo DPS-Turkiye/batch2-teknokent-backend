@@ -330,7 +330,7 @@ public class MeetingProposalService {
 
 	private static String proposerLink(MeetingProposal proposal, AppUser proposer) {
 		if (proposal.getMentorship() != null
-				&& (proposer.getRole() == UserRole.COORDINATOR || proposer.getRole() == UserRole.ADMIN)) {
+				&& (proposer.has(UserRole.COORDINATOR) || proposer.has(UserRole.ADMIN))) {
 			return "/coordinator/mentorships?mentorship=" + proposal.getMentorship().getId();
 		}
 		return proposer.getRole() == UserRole.MENTOR ? "/mentor-dashboard/calendar" : TEAM_HOME;
@@ -348,7 +348,7 @@ public class MeetingProposalService {
 
 	private List<AppUser> members(Organization organization) {
 		return appUserRepository.findByOrganizationIdOrderByFullNameAsc(organization.getId()).stream()
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.toList();
 	}
 
