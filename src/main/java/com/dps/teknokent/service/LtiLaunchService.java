@@ -126,6 +126,7 @@ public class LtiLaunchService {
 		if (claims.email() != null && !claims.email().isBlank()) {
 			user.setEmail(claims.email().trim().toLowerCase());
 		}
+		user.setPreferredLanguage(claims.language());
 		user.setLastLaunchAt(now);
 		userRepository.save(user);
 

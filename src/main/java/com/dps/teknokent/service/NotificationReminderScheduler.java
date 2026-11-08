@@ -18,11 +18,13 @@ import lombok.RequiredArgsConstructor;
 public class NotificationReminderScheduler {
 
 	private final NotificationReminderService reminderService;
+	private final OfficeHoursReminderService officeHoursReminderService;
 
 	@Scheduled(fixedDelayString = "${app.notifications.reminders.interval-ms:60000}")
 	public void sendDueReminders() {
 		Instant now = Instant.now();
 		reminderService.remindUpcomingMeetings(now);
 		reminderService.remindTaskDeadlines(now);
+		officeHoursReminderService.remindUpcomingMeetings(now);
 	}
 }

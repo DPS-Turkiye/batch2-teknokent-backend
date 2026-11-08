@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -46,6 +48,7 @@ import com.dps.teknokent.repository.OfficeHoursRequestMessageRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestRepository;
 import com.dps.teknokent.repository.OfficeHoursSettingsRepository;
 import com.dps.teknokent.repository.OfficeHoursUserRepository;
+import com.dps.teknokent.service.OfficeHoursMailService.Event;
 
 @ExtendWith(MockitoExtension.class)
 class OfficeHoursBookingServiceTest {
@@ -73,13 +76,15 @@ class OfficeHoursBookingServiceTest {
     private OfficeHoursSettingsRepository settingsRepository;
     @Mock
     private OfficeHoursSlotService slotService;
+    @Mock
+    private OfficeHoursMailService mailService;
 
     private OfficeHoursBookingService service;
 
     @BeforeEach
     void setUp() {
         service = new OfficeHoursBookingService(enrollmentRepository, userRepository, requestRepository,
-                messageRepository, meetingRepository, settingsRepository, slotService,
+                messageRepository, meetingRepository, settingsRepository, slotService, mailService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(requestRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(userRepository.findAllById(any())).thenReturn(List.of());
@@ -128,6 +133,7 @@ class OfficeHoursBookingServiceTest {
         assertThat(response.topic()).isEqualTo("Ödev 2 hakkında");
         assertThat(response.expectedOutcome()).isNull();
         assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);
+        verify(mailService).requestChanged(any(), eq(Event.NEW_REQUEST), isNull());
     }
 
     @Test
@@ -144,6 +150,7 @@ class OfficeHoursBookingServiceTest {
                 new CreateOfficeHoursRequest(ACADEMIC, "Soru", null, List.of(TUESDAY_2PM))))
                 .isInstanceOf(ConflictException.class);
         verify(requestRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(mailService);
     }
 
     @Test
@@ -198,6 +205,7 @@ class OfficeHoursBookingServiceTest {
         verify(meetingRepository).saveAndFlush(meeting.capture());
         assertThat(meeting.getValue().getScheduledAt()).isEqualTo(at);
         assertThat(meeting.getValue().getDurationMinutes()).isEqualTo(20);
+        verify(mailService).requestChanged(any(), eq(Event.ACCEPTED), eq("Görüşürüz"));
         assertThat(meeting.getValue().getStudentId()).isEqualTo(STUDENT);
     }
 
@@ -257,6 +265,7 @@ class OfficeHoursBookingServiceTest {
         assertThat(request.getStatus()).isEqualTo(OfficeHoursRequestStatus.DECLINED);
         assertThat(request.getRejectionReason()).isEqualTo("Bu hafta yokum");
         verify(meetingRepository, never()).saveAndFlush(any());
+        verify(mailService).requestChanged(request, Event.DECLINED, "Bu hafta yokum");
     }
 
     @Test
@@ -274,6 +283,8 @@ class OfficeHoursBookingServiceTest {
         verify(messageRepository, org.mockito.Mockito.times(2)).save(messages.capture());
         assertThat(messages.getAllValues()).extracting(OfficeHoursRequestMessage::getType)
                 .containsExactly(OfficeHoursMessageType.INSTRUCTOR_QUESTION, OfficeHoursMessageType.STUDENT_REPLY);
+        verify(mailService).requestChanged(request, Event.MORE_INFO_REQUESTED, "Hangi soru?");
+        verify(mailService).requestChanged(request, Event.REPLIED, "3. soru");
     }
 
     @Test
@@ -292,6 +303,8 @@ class OfficeHoursBookingServiceTest {
 
         assertThat(request.getStatus()).isEqualTo(OfficeHoursRequestStatus.ACCEPTED);
         verify(meetingRepository).saveAndFlush(any());
+        verify(mailService).requestChanged(request, Event.COUNTER_PROPOSED, "Şunlar uygun");
+        verify(mailService).requestChanged(request, Event.SLOT_CHOSEN, null);
     }
 
     @Test
@@ -309,6 +322,7 @@ class OfficeHoursBookingServiceTest {
 
         service.withdraw(STUDENT, COURSE, REQUEST);
         assertThat(request.getStatus()).isEqualTo(OfficeHoursRequestStatus.WITHDRAWN);
+        verify(mailService).requestChanged(request, Event.WITHDRAWN, null);
 
         assertThatThrownBy(() -> service.withdraw(STUDENT, COURSE, REQUEST))
                 .isInstanceOf(InvalidRequestException.class);

@@ -2,6 +2,8 @@ package com.dps.teknokent.security;
 
 import java.util.List;
 
+import com.dps.teknokent.domain.AppLanguage;
+
 /** What office hours keep from a verified LTI 1.3 resource-link launch. */
 public record LtiLaunchClaims(
 		String issuer,
@@ -11,5 +13,6 @@ public record LtiLaunchClaims(
 		String contextId,
 		String contextLabel,
 		String contextTitle,
-		List<String> roles) {
+		List<String> roles,
+		AppLanguage language) {
 }

@@ -3,8 +3,12 @@ package com.dps.teknokent.entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.AppLanguage;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -36,6 +40,11 @@ public class OfficeHoursUser {
 	/** Only when the Moodle site shares e-mail addresses with the tool. */
 	@Column(length = 320)
 	private String email;
+
+	/** The language Moodle launched them in; their e-mails are written in it. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "preferred_language", nullable = false, length = 8)
+	private AppLanguage preferredLanguage = AppLanguage.TR;
 
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;

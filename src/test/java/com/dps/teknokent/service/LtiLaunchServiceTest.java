@@ -30,6 +30,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.dps.teknokent.config.LtiProperties;
+import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.OfficeHoursRole;
 import com.dps.teknokent.dto.requests.LtiLaunchRequest;
 import com.dps.teknokent.dto.requests.LtiLoginRequest;
@@ -72,7 +73,7 @@ class LtiLaunchServiceTest {
 
     private static LtiLaunchClaims claims(String role) {
         return new LtiLaunchClaims(ISSUER, "42", "Ayşe Yılmaz", "Ayse@METU.edu.tr", "7", "CENG 101",
-                "Introduction to Computing", List.of(role));
+                "Introduction to Computing", List.of(role), AppLanguage.EN);
     }
 
     @Test
@@ -129,6 +130,7 @@ class LtiLaunchServiceTest {
         verify(enrollmentRepository).insertIfAbsent(any(), eq(inserted.getId()), eq(insertedCourse.getId()),
                 eq("STUDENT"), eq(NOW));
         assertThat(inserted.getEmail()).isEqualTo("ayse@metu.edu.tr");
+        assertThat(inserted.getPreferredLanguage()).isEqualTo(AppLanguage.EN);
         assertThat(inserted.getLastLaunchAt()).isEqualTo(NOW);
         assertThat(insertedCourse.getShortName()).isEqualTo("CENG 101");
         assertThat(insertedEnrollment.getRole()).isEqualTo(OfficeHoursRole.STUDENT);

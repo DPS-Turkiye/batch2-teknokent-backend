@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.config.LtiProperties;
+import com.dps.teknokent.domain.AppLanguage;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -95,6 +96,16 @@ class LtiLaunchVerifierTest {
         assertThat(claims.contextLabel()).isEqualTo("CENG 101");
         assertThat(claims.contextTitle()).isEqualTo("Introduction to Computing");
         assertThat(claims.roles()).containsExactly("http://purl.imsglobal.org/vocab/lis/v2/membership#Learner");
+        assertThat(claims.language()).isEqualTo(AppLanguage.TR);
+    }
+
+    @Test
+    void readsTheLanguageMoodleLaunchedThePersonIn() throws Exception {
+        String english = token(builder -> builder.claim(CLAIM + "launch_presentation", Map.of("locale", "en_us")));
+        String turkish = token(builder -> builder.claim(CLAIM + "launch_presentation", Map.of("locale", "tr")));
+
+        assertThat(verifier().verify(english, NONCE).language()).isEqualTo(AppLanguage.EN);
+        assertThat(verifier().verify(turkish, NONCE).language()).isEqualTo(AppLanguage.TR);
     }
 
     @Test

@@ -46,6 +46,7 @@ import com.dps.teknokent.repository.OfficeHoursRequestMessageRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestRepository;
 import com.dps.teknokent.repository.OfficeHoursSettingsRepository;
 import com.dps.teknokent.repository.OfficeHoursUserRepository;
+import com.dps.teknokent.service.OfficeHoursMailService.Event;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.Texts;
 import com.dps.teknokent.util.TextUtils;
@@ -69,21 +70,24 @@ public class OfficeHoursBookingService {
 	private final OfficeHoursMeetingRepository meetingRepository;
 	private final OfficeHoursSettingsRepository settingsRepository;
 	private final OfficeHoursSlotService slotService;
+	private final OfficeHoursMailService mailService;
 	private final Clock clock;
 
 	@Autowired
 	public OfficeHoursBookingService(OfficeHoursEnrollmentRepository enrollmentRepository,
 			OfficeHoursUserRepository userRepository, OfficeHoursRequestRepository requestRepository,
 			OfficeHoursRequestMessageRepository messageRepository, OfficeHoursMeetingRepository meetingRepository,
-			OfficeHoursSettingsRepository settingsRepository, OfficeHoursSlotService slotService) {
+			OfficeHoursSettingsRepository settingsRepository, OfficeHoursSlotService slotService,
+			OfficeHoursMailService mailService) {
 		this(enrollmentRepository, userRepository, requestRepository, messageRepository, meetingRepository,
-				settingsRepository, slotService, Clock.systemUTC());
+				settingsRepository, slotService, mailService, Clock.systemUTC());
 	}
 
 	OfficeHoursBookingService(OfficeHoursEnrollmentRepository enrollmentRepository,
 			OfficeHoursUserRepository userRepository, OfficeHoursRequestRepository requestRepository,
 			OfficeHoursRequestMessageRepository messageRepository, OfficeHoursMeetingRepository meetingRepository,
-			OfficeHoursSettingsRepository settingsRepository, OfficeHoursSlotService slotService, Clock clock) {
+			OfficeHoursSettingsRepository settingsRepository, OfficeHoursSlotService slotService,
+			OfficeHoursMailService mailService, Clock clock) {
 		this.enrollmentRepository = enrollmentRepository;
 		this.userRepository = userRepository;
 		this.requestRepository = requestRepository;
@@ -91,6 +95,7 @@ public class OfficeHoursBookingService {
 		this.meetingRepository = meetingRepository;
 		this.settingsRepository = settingsRepository;
 		this.slotService = slotService;
+		this.mailService = mailService;
 		this.clock = clock;
 	}
 
@@ -161,7 +166,9 @@ public class OfficeHoursBookingService {
 		request.setPreferredSlots(String.join(",", slots));
 		request.setCreatedAt(now);
 		request.setUpdatedAt(now);
-		return responses(List.of(requestRepository.saveAndFlush(request))).getFirst();
+		OfficeHoursRequestResponse response = responses(List.of(requestRepository.saveAndFlush(request))).getFirst();
+		mailService.requestChanged(request, Event.NEW_REQUEST, null);
+		return response;
 	}
 
 	@Transactional
@@ -176,7 +183,7 @@ public class OfficeHoursBookingService {
 			throw new InvalidRequestException("Only pending requests can be decided");
 		}
 		String message = TextUtils.normalizeOptional(decision.message());
-		switch (decision.status()) {
+		Event event = switch (decision.status()) {
 			case ACCEPTED -> {
 				String slot = decision.slot() != null ? decision.slot() : firstFreePreferred(request);
 				if (slot == null || !slots(request.getPreferredSlots()).contains(slot)) {
@@ -186,10 +193,12 @@ public class OfficeHoursBookingService {
 				request.setInstructorMessage(message);
 				request.setStatus(OfficeHoursRequestStatus.ACCEPTED);
 				book(request, slot);
+				yield Event.ACCEPTED;
 			}
 			case DECLINED -> {
 				request.setRejectionReason(message);
 				request.setStatus(OfficeHoursRequestStatus.DECLINED);
+				yield Event.DECLINED;
 			}
 			case MORE_INFO_REQUESTED -> {
 				if (message == null) {
@@ -197,6 +206,7 @@ public class OfficeHoursBookingService {
 				}
 				saveMessage(request, instructorId, OfficeHoursMessageType.INSTRUCTOR_QUESTION, message);
 				request.setStatus(OfficeHoursRequestStatus.MORE_INFO_REQUESTED);
+				yield Event.MORE_INFO_REQUESTED;
 			}
 			case COUNTER_PROPOSED -> {
 				List<String> proposed = decision.proposedSlots() == null ? List.of()
@@ -208,11 +218,12 @@ public class OfficeHoursBookingService {
 				request.setProposedSlots(String.join(",", proposed));
 				request.setInstructorMessage(message);
 				request.setStatus(OfficeHoursRequestStatus.COUNTER_PROPOSED);
+				yield Event.COUNTER_PROPOSED;
 			}
 			default -> throw new InvalidRequestException(
 					"Decision status must be ACCEPTED, DECLINED, MORE_INFO_REQUESTED, or COUNTER_PROPOSED");
-		}
-		return save(request);
+		};
+		return saveAndTell(request, event, message);
 	}
 
 	@Transactional
@@ -228,7 +239,7 @@ public class OfficeHoursBookingService {
 		requireBookable(List.of(acceptance.slot()));
 		request.setStatus(OfficeHoursRequestStatus.ACCEPTED);
 		book(request, acceptance.slot());
-		return save(request);
+		return saveAndTell(request, Event.SLOT_CHOSEN, null);
 	}
 
 	@Transactional
@@ -238,9 +249,10 @@ public class OfficeHoursBookingService {
 		if (request.getStatus() != OfficeHoursRequestStatus.MORE_INFO_REQUESTED) {
 			throw new InvalidRequestException("Only a request with a question can be answered");
 		}
-		saveMessage(request, studentId, OfficeHoursMessageType.STUDENT_REPLY, TextUtils.trim(reply.message()));
+		String answer = TextUtils.trim(reply.message());
+		saveMessage(request, studentId, OfficeHoursMessageType.STUDENT_REPLY, answer);
 		request.setStatus(OfficeHoursRequestStatus.PENDING);
-		return save(request);
+		return saveAndTell(request, Event.REPLIED, answer);
 	}
 
 	@Transactional
@@ -250,7 +262,7 @@ public class OfficeHoursBookingService {
 			throw new InvalidRequestException("Only an unanswered request can be withdrawn");
 		}
 		request.setStatus(OfficeHoursRequestStatus.WITHDRAWN);
-		return save(request);
+		return saveAndTell(request, Event.WITHDRAWN, null);
 	}
 
 	/**
@@ -368,9 +380,11 @@ public class OfficeHoursBookingService {
 		messageRepository.save(message);
 	}
 
-	private OfficeHoursRequestResponse save(OfficeHoursRequest request) {
+	private OfficeHoursRequestResponse saveAndTell(OfficeHoursRequest request, Event event, String note) {
 		request.setUpdatedAt(clock.instant());
-		return responses(List.of(requestRepository.saveAndFlush(request))).getFirst();
+		OfficeHoursRequestResponse response = responses(List.of(requestRepository.saveAndFlush(request))).getFirst();
+		mailService.requestChanged(request, event, note);
+		return response;
 	}
 
 	private List<OfficeHoursRequestResponse> responses(List<OfficeHoursRequest> requests) {
@@ -410,7 +424,7 @@ public class OfficeHoursBookingService {
 		return user == null ? null : new OfficeHoursPersonResponse(user.getId(), user.getFullName());
 	}
 
-	private static List<String> slots(String joined) {
+	static List<String> slots(String joined) {
 		if (joined == null || joined.isBlank()) {
 			return List.of();
 		}

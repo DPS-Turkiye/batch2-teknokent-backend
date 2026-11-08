@@ -42,4 +42,7 @@ public class OfficeHoursMeeting {
 
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
+
+	@Column(name = "reminder_sent_at")
+	private Instant reminderSentAt;
 }
