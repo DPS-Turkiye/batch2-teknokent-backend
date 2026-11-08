@@ -50,9 +50,9 @@ class LtiControllerTest {
     @MockitoBean
     private OfficeHoursCourseService courseService;
 
-    /** The frontend's server: Spring's Basic user, which has no roles at all. */
+    /** The frontend's server: Spring's Basic user, given ROLE_SERVICE by spring.security.user.roles. */
     private static org.springframework.test.web.servlet.request.RequestPostProcessor frontendServer() {
-        return user("frontend").authorities(List.of());
+        return user("frontend").roles("SERVICE");
     }
 
     /** A Menton account signed in with Firebase, which must not reach office-hours data. */
@@ -104,6 +104,15 @@ class LtiControllerTest {
                         .with(authentication(mentonMentee())))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(launchService, courseService);
+    }
+
+    @Test
+    void refusesAnySignedInUserWithoutTheServiceRole() throws Exception {
+        mockMvc.perform(post("/api/lti/launches").with(user("someone").roles("USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idToken\":\"t\",\"state\":\"s\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(launchService);
     }
 
     @Test
