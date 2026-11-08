@@ -42,7 +42,7 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
-	public void revokeSignIns(String uid) {
+	public void revokeSignIns(String email) {
 		// Without Firebase there are no Firebase sign-ins; the recorded time still ends app sessions.
 	}
 }

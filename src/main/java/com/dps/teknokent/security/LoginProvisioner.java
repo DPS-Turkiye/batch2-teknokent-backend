@@ -28,6 +28,9 @@ public interface LoginProvisioner {
 	/** Whether each login has a password yet; a uid Firebase cannot answer for is left out. */
 	Map<String, Boolean> passwordsSet(Collection<String> uids);
 
-	/** Ends every Firebase sign-in of {@code uid}: its tokens stop working and it must sign in again. */
-	void revokeSignIns(String uid);
+	/**
+	 * Ends every Firebase sign-in of the login for {@code email}: its tokens stop working and it must sign in again.
+	 * Looked up by email, not by a stored uid, which goes stale when a login is deleted and created again.
+	 */
+	void revokeSignIns(String email);
 }

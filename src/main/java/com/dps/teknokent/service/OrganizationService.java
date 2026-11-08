@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -104,7 +106,8 @@ public class OrganizationService {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		AppUser actor = domainLookupService.requireUser(actorId);
 		if (!isAdmin(actor) && !isFounder(organization, actorId)) {
-			throw new InvalidRequestException("Only an admin or the organization founder can view the invite code");
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					"Only an admin or the organization founder can view the invite code");
 		}
 		if (organization.getInviteCode() == null) {
 			throw new InvalidRequestException("Invite code has not been generated yet.");

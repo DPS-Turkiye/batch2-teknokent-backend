@@ -104,7 +104,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 			write(response, HttpServletResponse.SC_FORBIDDEN, "This endpoint is only reachable through the app");
 			return;
 		}
-		if (user.getFirebaseUid() == null) {
+		// A login deleted and created again in Firebase gets a new uid; the row was matched by email above.
+		if (!identity.get().uid().equals(user.getFirebaseUid())) {
 			user.setFirebaseUid(identity.get().uid());
 			appUserRepository.save(user);
 		}

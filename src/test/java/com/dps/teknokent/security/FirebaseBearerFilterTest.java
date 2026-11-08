@@ -105,6 +105,23 @@ class FirebaseBearerFilterTest {
         assertThat(chain.getRequest()).isNull();
     }
 
+    // A login deleted and created again in Firebase signs in with a new uid; the old one would stay behind.
+    @Test
+    void replacesAStaleFirebaseUidWhenTheAccountIsFoundByEmail() throws Exception {
+        AppUser user = user(UserAccountStatus.APPROVED);
+        user.setFirebaseUid("uid-old");
+
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-new", "ayse@startup.com")));
+        when(appUserRepository.findByFirebaseUid("uid-new")).thenReturn(Optional.empty());
+        when(appUserRepository.findByEmailIgnoreCase("ayse@startup.com")).thenReturn(Optional.of(user));
+
+        filter.doFilter(request("/api/auth/me", "Bearer good"), new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(user.getFirebaseUid()).isEqualTo("uid-new");
+        verify(appUserRepository).save(user);
+    }
+
     @Test
     void authenticatesApprovedUserAndBacksfillsFirebaseUid() throws Exception {
         AppUser user = user(UserAccountStatus.APPROVED);

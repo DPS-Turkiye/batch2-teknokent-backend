@@ -249,9 +249,7 @@ public class AppUserService {
 			throw new InvalidRequestException("Only an admin can end someone's sign-ins");
 		}
 		AppUser target = domainLookupService.requireUser(userId);
-		if (target.getFirebaseUid() != null) {
-			loginProvisioner.revokeSignIns(target.getFirebaseUid());
-		}
+		loginProvisioner.revokeSignIns(target.getEmail());
 		Instant revokedAt = Instant.now();
 		appUserRepository.recordSignInsRevokedAt(target.getId(), revokedAt);
 		target.setSignInsRevokedAt(revokedAt);

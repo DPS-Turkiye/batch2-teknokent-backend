@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -87,26 +89,35 @@ class FirebaseLoginProvisionerTest {
 	}
 
 	@Test
-	void revokesTheFirebaseSignInsOfALogin() throws Exception {
-		provisioner.revokeSignIns("uid-1");
+	void revokesTheSignInsOfTheLoginFirebaseHasForTheEmailNow() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-current");
+		when(firebaseAuth.getUserByEmail("ayse@startup.com")).thenReturn(login);
 
-		verify(firebaseAuth).revokeRefreshTokens("uid-1");
+		provisioner.revokeSignIns("ayse@startup.com");
+
+		verify(firebaseAuth).revokeRefreshTokens("uid-current");
 	}
 
-	// A login deleted in Firebase has nothing left to revoke.
+	// An address with no Firebase login has nothing left to revoke.
 	@Test
 	void treatsAMissingLoginAsAlreadySignedOut() throws Exception {
-		doThrow(failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND))
-				.when(firebaseAuth).revokeRefreshTokens("uid-gone");
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUserByEmail("gone@startup.com")).thenThrow(notFound);
 
-		provisioner.revokeSignIns("uid-gone");
+		provisioner.revokeSignIns("gone@startup.com");
+
+		verify(firebaseAuth, never()).revokeRefreshTokens(anyString());
 	}
 
 	@Test
 	void reportsAFirebaseFailureAsABadGateway() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-1");
+		when(firebaseAuth.getUserByEmail("ayse@startup.com")).thenReturn(login);
 		doThrow(failure(ErrorCode.PERMISSION_DENIED, null)).when(firebaseAuth).revokeRefreshTokens("uid-1");
 
-		assertThatThrownBy(() -> provisioner.revokeSignIns("uid-1"))
+		assertThatThrownBy(() -> provisioner.revokeSignIns("ayse@startup.com"))
 				.isInstanceOfSatisfying(ResponseStatusException.class,
 						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
 	}

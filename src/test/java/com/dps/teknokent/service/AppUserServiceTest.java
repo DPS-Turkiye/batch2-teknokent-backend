@@ -398,11 +398,12 @@ class AppUserServiceTest {
     }
 
     @Test
-    void revokeSignIns_recordsTheTimeAndEndsTheFirebaseSignIns() {
+    void revokeSignIns_recordsTheTimeAndEndsTheFirebaseSignInsByEmail() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
         AppUser target = user(targetId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
-        target.setFirebaseUid("uid-811");
+        // A stored uid can be stale (login deleted and created again), so Firebase is asked by email.
+        target.setFirebaseUid("uid-stale");
         when(domainLookupService.requireUser(adminId))
                 .thenReturn(user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN));
         when(domainLookupService.requireUser(targetId)).thenReturn(target);
@@ -413,7 +414,7 @@ class AppUserServiceTest {
         assertThat(target.getSignInsRevokedAt()).isAfterOrEqualTo(before);
         assertThat(response.signInsRevokedAt()).isEqualTo(target.getSignInsRevokedAt());
         InOrder order = inOrder(loginProvisioner, appUserRepository);
-        order.verify(loginProvisioner).revokeSignIns("uid-811");
+        order.verify(loginProvisioner).revokeSignIns("ayse@startup.com");
         order.verify(appUserRepository).recordSignInsRevokedAt(targetId, target.getSignInsRevokedAt());
     }
 
@@ -427,7 +428,7 @@ class AppUserServiceTest {
                 .thenReturn(user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN));
         when(domainLookupService.requireUser(targetId)).thenReturn(target);
         doThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY))
-                .when(loginProvisioner).revokeSignIns("uid-811");
+                .when(loginProvisioner).revokeSignIns("ayse@startup.com");
 
         assertThatThrownBy(() -> appUserService.revokeSignIns(targetId, adminId))
                 .isInstanceOf(ResponseStatusException.class);
@@ -436,7 +437,7 @@ class AppUserServiceTest {
     }
 
     @Test
-    void revokeSignIns_stillEndsAppSessionsForAnAccountWithoutAFirebaseLogin() {
+    void revokeSignIns_asksFirebaseEvenWhenNoUidIsStored() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
         AppUser target = user(targetId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
@@ -447,7 +448,7 @@ class AppUserServiceTest {
         appUserService.revokeSignIns(targetId, adminId);
 
         assertThat(target.getSignInsRevokedAt()).isNotNull();
-        verify(loginProvisioner, never()).revokeSignIns(any());
+        verify(loginProvisioner).revokeSignIns("ayse@startup.com");
     }
 
     @Test
