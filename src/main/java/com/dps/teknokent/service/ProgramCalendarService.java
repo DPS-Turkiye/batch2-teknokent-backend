@@ -2,8 +2,10 @@ package com.dps.teknokent.service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -15,8 +17,6 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.MemberProgramEventResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
-import com.dps.teknokent.entity.ProgramMentor;
-import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.ProgramEventRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
@@ -58,23 +58,19 @@ public class ProgramCalendarService {
 				.toList();
 	}
 
+	/** Both sides for an account that mentors in some programs and is a mentee in others. */
 	private List<UUID> programsOf(AppUser actor) {
-		if (actor.getRole() == UserRole.MENTOR) {
-			return programMentorRepository
+		Set<UUID> programIds = new LinkedHashSet<>();
+		if (actor.has(UserRole.MENTOR)) {
+			programMentorRepository
 					.findByMentorIdAndStatusOrderByCreatedAtDesc(actor.getId(), ProgramMentorStatus.ACCEPTED)
-					.stream()
-					.map(ProgramMentor::getProgramId)
-					.distinct()
-					.toList();
+					.forEach(row -> programIds.add(row.getProgramId()));
 		}
-		if (actor.getRole() == UserRole.MENTEE && actor.getOrganization() != null) {
-			return programStartupRepository
+		if (actor.has(UserRole.MENTEE) && actor.getOrganization() != null) {
+			programStartupRepository
 					.findByOrganizationIdOrderByCreatedAtAsc(actor.getOrganization().getId())
-					.stream()
-					.map(ProgramStartup::getProgramId)
-					.distinct()
-					.toList();
+					.forEach(row -> programIds.add(row.getProgramId()));
 		}
-		return List.of();
+		return List.copyOf(programIds);
 	}
 }

@@ -320,7 +320,7 @@ public class DocumentRequestService {
 		DocumentRequestItem item = itemRepository.findById(itemId)
 				.orElseThrow(() -> new ResourceNotFoundException("Document request item not found: " + itemId));
 		AppUser actor = domainLookupService.requireUser(request.actorId());
-		assertOrgMember(actor, item.getOrganization().getId());
+		assertCanAttach(actor, item);
 		StoredDocument document = storedDocumentRepository.findById(request.storedDocumentId())
 				.orElseThrow(() -> new ResourceNotFoundException(
 						"Stored document not found: " + request.storedDocumentId()));
@@ -343,8 +343,7 @@ public class DocumentRequestService {
 				.orElseThrow(() -> new ResourceNotFoundException("Document request upload not found: " + uploadId));
 		AppUser actor = domainLookupService.requireUser(actorId);
 		boolean isUploader = upload.getUploadedBy().getId().equals(actor.getId());
-		boolean isMentor = actor.getRole() == UserRole.MENTOR
-				&& isMentorForItem(actor, upload.getItem());
+		boolean isMentor = actor.has(UserRole.MENTOR) && isMentorForItem(actor, upload.getItem());
 		if (!isUploader && !isMentor) {
 			throw new InvalidRequestException("Only the uploader or mentor can remove this file");
 		}
@@ -438,10 +437,12 @@ public class DocumentRequestService {
 		return false;
 	}
 
-	private void assertOrgMember(AppUser actor, UUID organizationId) {
-		if (actor.getRole() == UserRole.MENTOR) {
+	/** The item's own mentor, or a member of the team it asks; being a mentor somewhere else is not enough. */
+	private void assertCanAttach(AppUser actor, DocumentRequestItem item) {
+		if (actor.has(UserRole.MENTOR) && isMentorForItem(actor, item)) {
 			return;
 		}
+		UUID organizationId = item.getOrganization().getId();
 		if (actor.getOrganization() == null || !actor.getOrganization().getId().equals(organizationId)) {
 			throw new InvalidRequestException("You can only upload documents for your organization");
 		}

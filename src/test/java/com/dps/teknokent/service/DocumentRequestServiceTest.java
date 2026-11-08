@@ -35,7 +35,9 @@ import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.dto.requests.AttachDocumentRequestUploadRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import java.time.LocalDate;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -314,6 +316,46 @@ class DocumentRequestServiceTest {
 		user.setRole(role);
 		user.setFullName(fullName);
 		return user;
+	}
+
+	// Before dual role any mentor could attach a file to any team's checklist; now only that request's own mentor.
+	@Test
+	void attachUploadRefusesAMentorWhoIsNotTheItemsMentor() {
+		AppUser stranger = user(UserRole.MENTOR, "Başka Mentor");
+		DocumentRequestItem item = mentorRequestItem(user(UserRole.MENTOR, "Kendi Mentoru"));
+		when(itemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+		when(domainLookupService.requireUser(stranger.getId())).thenReturn(stranger);
+
+		assertThatThrownBy(() -> documentRequestService.attachUpload(item.getId(),
+				new AttachDocumentRequestUploadRequest(stranger.getId(), UUID.randomUUID())))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(storedDocumentRepository, never()).findById(any());
+	}
+
+	@Test
+	void attachUploadLetsTheItemsOwnMentorThrough() {
+		AppUser ownMentor = user(UserRole.MENTOR, "Kendi Mentoru");
+		DocumentRequestItem item = mentorRequestItem(ownMentor);
+		UUID documentId = UUID.randomUUID();
+		when(itemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+		when(domainLookupService.requireUser(ownMentor.getId())).thenReturn(ownMentor);
+		when(storedDocumentRepository.findById(documentId)).thenReturn(Optional.empty());
+
+		// Past the permission check, the missing document is what stops it.
+		assertThatThrownBy(() -> documentRequestService.attachUpload(item.getId(),
+				new AttachDocumentRequestUploadRequest(ownMentor.getId(), documentId)))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	private static DocumentRequestItem mentorRequestItem(AppUser mentor) {
+		MentorshipRequest request = new MentorshipRequest();
+		request.setId(UUID.randomUUID());
+		request.setMentor(mentor);
+		DocumentRequestItem item = new DocumentRequestItem();
+		item.setId(UUID.randomUUID());
+		item.setOrganization(organization());
+		item.setMentorshipRequest(request);
+		return item;
 	}
 
 	private static Organization organization() {

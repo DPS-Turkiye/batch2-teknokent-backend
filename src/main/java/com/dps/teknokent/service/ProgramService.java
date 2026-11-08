@@ -391,7 +391,7 @@ public class ProgramService {
 				&& ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			return;
 		}
-		if (actor.getRole() == UserRole.MENTOR
+		if (actor.has(UserRole.MENTOR)
 				&& programMentorRepository
 						.findByProgramIdAndMentorId(program.getId(), actor.getId())
 						.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)

@@ -1,7 +1,9 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -123,7 +125,7 @@ public class MeetingProposalService {
 			throw new InvalidRequestException(Texts.forRequest("error.newTimeOnlyPlanned"));
 		}
 		boolean mentorSide = meeting.getMentor().getId().equals(actorId);
-		boolean teamSide = actor.getRole() == UserRole.MENTEE && actor.getOrganization() != null
+		boolean teamSide = actor.has(UserRole.MENTEE) && actor.getOrganization() != null
 				&& actor.getOrganization().getId().equals(meeting.getOrganization().getId());
 		if (!mentorSide && !teamSide) {
 			throw new InvalidRequestException(Texts.forRequest("error.newTimeOnlyParticipants"));
@@ -187,16 +189,20 @@ public class MeetingProposalService {
 	@Transactional(readOnly = true)
 	public List<MeetingProposalResponse> mine(UUID actorId) {
 		AppUser actor = requireUser(actorId);
-		List<MeetingProposal> proposals;
-		if (actor.getRole() == UserRole.MENTOR) {
-			proposals = proposalRepository.findByStatusAndMentorIdOrderByScheduledAtAsc(
-					MeetingProposalStatus.PENDING, actorId);
-		} else if (actor.getOrganization() != null) {
-			proposals = proposalRepository.findByStatusAndOrganizationIdOrderByScheduledAtAsc(
-					MeetingProposalStatus.PENDING, actor.getOrganization().getId());
-		} else {
-			proposals = List.of();
+		// An account on both sides (a student who mentors and is mentored) sees both, soonest first.
+		Map<UUID, MeetingProposal> open = new LinkedHashMap<>();
+		if (actor.has(UserRole.MENTOR)) {
+			proposalRepository.findByStatusAndMentorIdOrderByScheduledAtAsc(MeetingProposalStatus.PENDING, actorId)
+					.forEach(proposal -> open.put(proposal.getId(), proposal));
 		}
+		if (actor.getOrganization() != null) {
+			proposalRepository.findByStatusAndOrganizationIdOrderByScheduledAtAsc(
+					MeetingProposalStatus.PENDING, actor.getOrganization().getId())
+					.forEach(proposal -> open.putIfAbsent(proposal.getId(), proposal));
+		}
+		List<MeetingProposal> proposals = open.values().stream()
+				.sorted(Comparator.comparing(MeetingProposal::getScheduledAt))
+				.toList();
 		Map<UUID, Program> programs = programRepository
 				.findAllById(proposals.stream().map(MeetingProposal::getProgramId).filter(java.util.Objects::nonNull)
 						.distinct().toList()).stream()
@@ -333,7 +339,8 @@ public class MeetingProposalService {
 				&& (proposer.has(UserRole.COORDINATOR) || proposer.has(UserRole.ADMIN))) {
 			return "/coordinator/mentorships?mentorship=" + proposal.getMentorship().getId();
 		}
-		return proposer.getRole() == UserRole.MENTOR ? "/mentor-dashboard/calendar" : TEAM_HOME;
+		boolean mentorSide = proposal.getMentor() != null && proposal.getMentor().getId().equals(proposer.getId());
+		return mentorSide ? "/mentor-dashboard/calendar" : TEAM_HOME;
 	}
 
 	private Program programOf(MeetingProposal proposal) {

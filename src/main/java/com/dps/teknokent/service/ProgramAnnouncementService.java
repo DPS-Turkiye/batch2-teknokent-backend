@@ -86,7 +86,7 @@ public class ProgramAnnouncementService {
 		AppUser actor = appUserRepository.findById(actorId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorId));
 		List<UUID> programIds = new ArrayList<>();
-		if (actor.getRole() == UserRole.MENTOR) {
+		if (actor.has(UserRole.MENTOR)) {
 			programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(actorId, ProgramMentorStatus.ACCEPTED)
 					.forEach(row -> programIds.add(row.getProgramId()));
 		}

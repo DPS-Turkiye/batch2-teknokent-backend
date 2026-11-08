@@ -181,7 +181,7 @@ public class RegistrationService {
 
 	private AppUser requireWithoutStartup(UUID actorId) {
 		AppUser person = domainLookupService.requireUser(actorId);
-		if (person.getRole() != UserRole.MENTEE || person.getStatus() != UserAccountStatus.APPROVED
+		if (!person.has(UserRole.MENTEE) || person.getStatus() != UserAccountStatus.APPROVED
 				|| person.getOrganization() != null) {
 			throw new InvalidRequestException(Texts.forRequest("error.withoutStartupOnly"));
 		}
