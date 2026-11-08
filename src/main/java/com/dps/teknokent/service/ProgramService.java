@@ -82,12 +82,12 @@ public class ProgramService {
 	}
 
 	@Transactional
-	public ProgramResponse setStatus(UUID actorId, UUID programId, ProgramStatus status) {
+	public ProgramResponse setStatus(UUID actorId, UUID programId, ProgramStatus newStatus) {
 		Program program = requireOwnedProgram(actorId, programId);
-		if (program.getStatus() == ProgramStatus.DRAFT || status == ProgramStatus.DRAFT) {
+		if (program.getStatus() == ProgramStatus.DRAFT || newStatus == ProgramStatus.DRAFT) {
 			throw new InvalidRequestException("Only an admin launches a draft program.");
 		}
-		program.setStatus(status);
+		program.setStatus(newStatus);
 		return toResponse(programRepository.save(program));
 	}
 
