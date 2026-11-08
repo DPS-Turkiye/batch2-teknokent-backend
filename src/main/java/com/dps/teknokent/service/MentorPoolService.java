@@ -41,6 +41,7 @@ import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -80,6 +81,7 @@ public class MentorPoolService {
 	@Transactional
 	public List<MentorPoolResponse.Row> invite(UUID actorId, UUID programId, String rawEmail) {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		ProgramDrafts.requireLaunched(program);
 		String email = rawEmail.trim().toLowerCase(Locale.ROOT);
 		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(email);
 		if (existing.isPresent()) {
@@ -113,6 +115,7 @@ public class MentorPoolService {
 	@Transactional
 	public List<MentorPoolResponse.Row> renewInvite(UUID actorId, UUID programId, UUID inviteId) {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		ProgramDrafts.requireLaunched(program);
 		ProgramMentorInvite invite = requireOpenInvite(programId, inviteId);
 		invite.setExpiresAt(Instant.now().plus(INVITE_VALIDITY));
 		inviteRepository.save(invite);

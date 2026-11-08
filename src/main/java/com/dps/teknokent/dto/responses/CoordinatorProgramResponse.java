@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 
 /** A program as its coordinator sees it: the list card, and with {@link Detail} the overview tab. */
 public record CoordinatorProgramResponse(
@@ -14,6 +15,7 @@ public record CoordinatorProgramResponse(
 		String name,
 		ProgramStatus status,
 		ProgramLifecycle lifecycle,
+		ProgramType type,
 		String description,
 		LocalDate startDate,
 		LocalDate endDate,

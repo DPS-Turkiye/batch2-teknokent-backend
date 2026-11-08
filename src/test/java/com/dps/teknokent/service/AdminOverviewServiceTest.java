@@ -103,6 +103,7 @@ class AdminOverviewServiceTest {
 				.containsExactly("Elif Demir, Burcu Şen", "Elif Demir", null);
 		assertThat(programs.get(0).coordinatorId()).isEqualTo(elif.getId());
 		assertThat(programs.get(2).coordinatorId()).isNull();
+		assertThat(programs).extracting(row -> row.type()).containsOnly("STARTUP_MENTORING");
 	}
 
 	@Test
