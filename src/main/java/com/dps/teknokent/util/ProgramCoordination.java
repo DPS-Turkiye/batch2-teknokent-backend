@@ -102,7 +102,7 @@ public final class ProgramCoordination {
 					.map(byId::get)
 					.filter(user -> user != null)
 					.toList();
-			List<AppUser> running = known.stream().filter(user -> user.getRole() == UserRole.COORDINATOR).toList();
+			List<AppUser> running = known.stream().filter(user -> user.has(UserRole.COORDINATOR)).toList();
 			runners.put(program.getId(), running.isEmpty()
 					? known.stream().filter(user -> user.getId().equals(program.getCreatedBy())).toList()
 					: running);

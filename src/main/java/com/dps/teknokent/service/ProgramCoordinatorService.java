@@ -96,7 +96,7 @@ public class ProgramCoordinatorService {
 
 	/** The admin assigns and changes a program's coordinators; coordinators only see them. */
 	private void requireAdmin(UUID actorId) {
-		if (programService.requireCoordinatorOrAdmin(actorId).getRole() != UserRole.ADMIN) {
+		if (!programService.requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin changes a program's coordinators.");
 		}
 	}

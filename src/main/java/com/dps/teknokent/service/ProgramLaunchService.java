@@ -75,7 +75,7 @@ public class ProgramLaunchService {
 	@Transactional
 	public CoordinatorProgramResponse.Detail create(UUID actorId, CreateCoordinatorProgramRequest request) {
 		AppUser actor = programService.requireCoordinatorOrAdmin(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin creates programs.");
 		}
 		if (request.startDate() != null && request.endDate() != null && request.endDate().isBefore(request.startDate())) {

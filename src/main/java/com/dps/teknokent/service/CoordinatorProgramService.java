@@ -252,7 +252,7 @@ public class CoordinatorProgramService {
 	/** Taslak → Aktif. Only an admin launches, and only a program with an approved coordinator to run it. */
 	@Transactional
 	public CoordinatorProgramResponse.Detail launch(UUID actorId, UUID programId) {
-		if (requireCoordinatorOrAdmin(actorId).getRole() != UserRole.ADMIN) {
+		if (!requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin launches a program.");
 		}
 		Program program = requireManagedProgram(actorId, programId);
@@ -261,7 +261,7 @@ public class CoordinatorProgramService {
 		}
 		boolean staffed = ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository)
 				.stream()
-				.anyMatch(user -> user.getRole() == UserRole.COORDINATOR
+				.anyMatch(user -> user.has(UserRole.COORDINATOR)
 						&& user.getStatus() == UserAccountStatus.APPROVED);
 		if (!staffed) {
 			throw new InvalidRequestException("Assign a coordinator before launching the program.");
@@ -654,7 +654,7 @@ public class CoordinatorProgramService {
 		Map<UUID, AppUser> users = appUserRepository.findAllById(ids).stream()
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		return ids.stream()
-				.filter(id -> users.containsKey(id) && users.get(id).getRole() == UserRole.COORDINATOR)
+				.filter(id -> users.containsKey(id) && users.get(id).has(UserRole.COORDINATOR))
 				.map(id -> new CoordinatorProgramResponse.CoordinatorRef(
 						id, users.get(id).getFullName(), id.equals(program.getCreatedBy())))
 				.toList();
@@ -887,7 +887,7 @@ public class CoordinatorProgramService {
 
 	/** Program Ayarları belong to the program's coordinators; an admin only views them. */
 	public Program requireSettingsEditor(UUID actorId, UUID programId) {
-		if (requireCoordinatorOrAdmin(actorId).getRole() == UserRole.ADMIN) {
+		if (requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("An admin views program settings; the program's coordinators change them.");
 		}
 		return requireEditableProgram(actorId, programId);
