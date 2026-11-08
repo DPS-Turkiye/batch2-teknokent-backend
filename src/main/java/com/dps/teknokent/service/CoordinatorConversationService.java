@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -78,13 +79,17 @@ public class CoordinatorConversationService {
 					.map(Program::getId).toList();
 			conversations = programIds.isEmpty() ? List.of() : conversationRepository.findByProgramIdIn(programIds);
 		} else {
-			conversations = switch (actor.getRole()) {
-				case MENTOR -> actor.has(UserRole.MENTOR)
-						? conversationRepository.findByMentorId(actor.getId()) : List.of();
-				case MENTEE -> actor.has(UserRole.MENTEE) && actor.getOrganization() != null
-						? conversationRepository.findByOrganizationId(actor.getOrganization().getId()) : List.of();
-				default -> List.of();
-			};
+			// Both sides for an account that mentors and is also on a team.
+			Map<UUID, CoordinatorConversation> own = new LinkedHashMap<>();
+			if (actor.has(UserRole.MENTOR)) {
+				conversationRepository.findByMentorId(actor.getId())
+						.forEach(conversation -> own.put(conversation.getId(), conversation));
+			}
+			if (actor.has(UserRole.MENTEE) && actor.getOrganization() != null) {
+				conversationRepository.findByOrganizationId(actor.getOrganization().getId())
+						.forEach(conversation -> own.putIfAbsent(conversation.getId(), conversation));
+			}
+			conversations = List.copyOf(own.values());
 		}
 
 		Side side = actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR)

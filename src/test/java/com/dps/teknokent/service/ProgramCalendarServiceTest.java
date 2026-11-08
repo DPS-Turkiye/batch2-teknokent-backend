@@ -19,6 +19,7 @@ import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramEvent;
@@ -87,6 +88,28 @@ class ProgramCalendarServiceTest {
 		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(program()));
 		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(List.of(PROGRAM_ID), FROM, TO))
 				.thenReturn(List.of(event()));
+
+		assertThat(service.eventsFor(ACTOR_ID, FROM, TO)).hasSize(1);
+	}
+
+	// A peer mentor (İŞKUR) is a mentee in one program and mentors in another: the calendar shows both.
+	@Test
+	void anAccountOnBothSidesSeesTheProgramsOfBoth() {
+		UUID mentoredIn = UUID.randomUUID();
+		AppUser student = user(UserRole.MENTEE, organization());
+		student.grant(UserRole.MENTOR, PermissionSource.BADGE, Instant.now());
+		when(domainLookupService.requireUser(ACTOR_ID)).thenReturn(student);
+		ProgramMentor mentoring = new ProgramMentor();
+		mentoring.setProgramId(mentoredIn);
+		when(programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(ACTOR_ID, ProgramMentorStatus.ACCEPTED))
+				.thenReturn(List.of(mentoring));
+		ProgramStartup team = new ProgramStartup();
+		team.setProgramId(PROGRAM_ID);
+		team.setOrganizationId(ORG_ID);
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID)).thenReturn(List.of(team));
+		when(programRepository.findAllById(List.of(mentoredIn, PROGRAM_ID))).thenReturn(List.of(program()));
+		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(
+				List.of(mentoredIn, PROGRAM_ID), FROM, TO)).thenReturn(List.of(event()));
 
 		assertThat(service.eventsFor(ACTOR_ID, FROM, TO)).hasSize(1);
 	}

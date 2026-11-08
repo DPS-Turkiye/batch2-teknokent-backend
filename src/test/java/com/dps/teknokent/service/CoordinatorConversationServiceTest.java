@@ -80,6 +80,19 @@ class CoordinatorConversationServiceTest {
 	private static final UUID CONVERSATION_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
 
 	@Test
+	void anAccountThatMentorsAndIsOnATeamSeesTheThreadsOfBoth() {
+		UUID organizationId = UUID.randomUUID();
+		AppUser student = user(COORDINATOR_ID, UserRole.MENTEE, organizationId);
+		student.grant(UserRole.MENTOR, com.dps.teknokent.domain.PermissionSource.BADGE, java.time.Instant.now());
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(student);
+
+		service.list(COORDINATOR_ID);
+
+		verify(conversationRepository).findByMentorId(COORDINATOR_ID);
+		verify(conversationRepository).findByOrganizationId(organizationId);
+	}
+
+	@Test
 	void aRevokedPrimaryAdminGrantCannotListStaffConversations() {
 		AppUser actor = user(COORDINATOR_ID, UserRole.ADMIN, null);
 		@SuppressWarnings("unchecked")
