@@ -63,6 +63,12 @@ class BadgeServiceTest {
 	private DomainLookupService domainLookupService;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private com.dps.teknokent.repository.TrainingModuleRepository trainingModules;
+	@Mock
+	private com.dps.teknokent.repository.TrainingProgressRepository trainingProgress;
+	@Mock
+	private com.dps.teknokent.repository.TrainingAttemptRepository trainingAttempts;
 
 	@InjectMocks
 	private BadgeService service;
@@ -283,6 +289,36 @@ class BadgeServiceTest {
 		var mentors = service.roster(coordinator.getId(), iskur.getId(), GateBadgeState.ACTIVE);
 		assertThat(mentors).extracting(row -> row.userId())
 				.containsExactlyInAnyOrder(student.getId(), mentorAccount.getId());
+	}
+
+	// 4T-3: Katılımcılar shows how far someone got in the training on its current version.
+	@Test
+	void theRosterShowsTrainingProgressOnTheCurrentVersion() {
+		com.dps.teknokent.entity.TrainingModule module = new com.dps.teknokent.entity.TrainingModule();
+		module.setId(UUID.randomUUID());
+		module.setCurrentVersion(2);
+		when(trainingModules.findByProgramId(iskur.getId())).thenReturn(Optional.of(module));
+		when(users.findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(iskur.getId(), UserRole.MENTEE,
+				UserAccountStatus.APPROVED)).thenReturn(List.of(student));
+		com.dps.teknokent.entity.TrainingProgress watched = new com.dps.teknokent.entity.TrainingProgress();
+		watched.setUserId(student.getId());
+		when(trainingProgress.findByModuleIdAndVersionAndUserIdIn(eq(module.getId()), eq(2), any()))
+				.thenReturn(List.of(watched));
+		List<com.dps.teknokent.entity.TrainingAttempt> tries = List.of(6, 7).stream().map(score -> {
+			com.dps.teknokent.entity.TrainingAttempt attempt = new com.dps.teknokent.entity.TrainingAttempt();
+			attempt.setUserId(student.getId());
+			attempt.setScore(score);
+			return attempt;
+		}).toList();
+		when(trainingAttempts.findByModuleIdAndVersionAndUserIdIn(eq(module.getId()), eq(2), any()))
+				.thenReturn(tries);
+
+		assertThat(service.roster(coordinator.getId(), iskur.getId(), null)).singleElement().satisfies(row -> {
+			assertThat(row.training().videoWatched()).isTrue();
+			assertThat(row.training().attempts()).isEqualTo(2);
+			assertThat(row.training().bestScore()).isEqualTo(7);
+			assertThat(row.training().started()).isTrue();
+		});
 	}
 
 	@Test
