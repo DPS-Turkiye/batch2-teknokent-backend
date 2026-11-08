@@ -31,6 +31,7 @@ import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -154,7 +155,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			UpdateProgramDetailsRequest request) {
-		Program program = requireEditableProgram(actorId, programId);
+		Program program = requireSettingsEditor(actorId, programId);
 		requireOrderedDates(request.startDate(), request.endDate(), "The program cannot end before it starts.");
 		program.setName(request.name().trim());
 		program.setDescription(blankToNull(request.description()));
@@ -201,7 +202,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			ReplaceProgramPhasesRequest request) {
-		Program program = requireEditableProgram(actorId, programId);
+		Program program = requireSettingsEditor(actorId, programId);
 		writePhases(programId, request.phases());
 		attachSyllabus(program, actorId, request.syllabusDocumentId());
 		return detailOf(program);
@@ -246,6 +247,28 @@ public class CoordinatorProgramService {
 				.orElseThrow(() -> new ResourceNotFoundException("Syllabus not found: " + documentId));
 		program.setSyllabusDocumentId(documentId);
 		programRepository.save(program);
+	}
+
+	/** Taslak → Aktif. Only an admin launches, and only a program with an approved coordinator to run it. */
+	@Transactional
+	public CoordinatorProgramResponse.Detail launch(UUID actorId, UUID programId) {
+		if (requireCoordinatorOrAdmin(actorId).getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin launches a program.");
+		}
+		Program program = requireManagedProgram(actorId, programId);
+		if (program.getStatus() != ProgramStatus.DRAFT) {
+			throw new InvalidRequestException("This program has already been launched.");
+		}
+		boolean staffed = ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository)
+				.stream()
+				.anyMatch(user -> user.getRole() == UserRole.COORDINATOR
+						&& user.getStatus() == UserAccountStatus.APPROVED);
+		if (!staffed) {
+			throw new InvalidRequestException("Assign a coordinator before launching the program.");
+		}
+		program.setStatus(ProgramStatus.ACTIVE);
+		programRepository.save(program);
+		return detailOf(program);
 	}
 
 	/**
@@ -625,13 +648,13 @@ public class CoordinatorProgramService {
 				.orElse(null);
 	}
 
-	/** The creator first, then the coordinators added to the program. */
+	/** The creator first when it is a coordinator (an admin who created the program is not), then the added ones. */
 	public List<CoordinatorProgramResponse.CoordinatorRef> coordinatorsOf(Program program) {
 		List<UUID> ids = ProgramCoordination.coordinatorIds(program, programCoordinatorRepository);
 		Map<UUID, AppUser> users = appUserRepository.findAllById(ids).stream()
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		return ids.stream()
-				.filter(users::containsKey)
+				.filter(id -> users.containsKey(id) && users.get(id).getRole() == UserRole.COORDINATOR)
 				.map(id -> new CoordinatorProgramResponse.CoordinatorRef(
 						id, users.get(id).getFullName(), id.equals(program.getCreatedBy())))
 				.toList();
@@ -655,7 +678,7 @@ public class CoordinatorProgramService {
 				.max(Integer::compare)
 				.orElse(null);
 		ProgramPhase current = ProgramCalendar.currentPhase(phases, snapshot.today());
-		AppUser coordinator = snapshot.coordinators().get(program.getCreatedBy());
+		AppUser coordinator = snapshot.coordinators().get(program.getId());
 		return new CoordinatorProgramResponse(
 				program.getId(),
 				program.getName(),
@@ -665,7 +688,7 @@ public class CoordinatorProgramService {
 				program.getDescription(),
 				program.getStartDate(),
 				program.getEndDate(),
-				program.getCreatedBy(),
+				coordinator == null ? program.getCreatedBy() : coordinator.getId(),
 				coordinator == null ? null : coordinator.getFullName(),
 				startups.size(),
 				(int) mentors.stream().filter(m -> m.getStatus() == ProgramMentorStatus.ACCEPTED).count(),
@@ -783,10 +806,13 @@ public class CoordinatorProgramService {
 					Map.of(), Map.of(), Set.of());
 		}
 		List<UUID> programIds = programs.stream().map(Program::getId).toList();
-		Map<UUID, AppUser> coordinators = appUserRepository
-				.findAllById(programs.stream().map(Program::getCreatedBy).collect(Collectors.toSet()))
-				.stream()
-				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		Map<UUID, AppUser> coordinators = new HashMap<>();
+		ProgramCoordination.runners(programs, programCoordinatorRepository, appUserRepository)
+				.forEach((programId, runners) -> {
+					if (!runners.isEmpty()) {
+						coordinators.put(programId, runners.get(0));
+					}
+				});
 		Map<UUID, List<ProgramPhase>> phases = programPhaseRepository.findByProgramIdInOrderByPositionAsc(programIds)
 				.stream()
 				.collect(Collectors.groupingBy(ProgramPhase::getProgramId));
@@ -859,6 +885,14 @@ public class CoordinatorProgramService {
 		return actor;
 	}
 
+	/** Program Ayarları belong to the program's coordinators; an admin only views them. */
+	public Program requireSettingsEditor(UUID actorId, UUID programId) {
+		if (requireCoordinatorOrAdmin(actorId).getRole() == UserRole.ADMIN) {
+			throw new InvalidRequestException("An admin views program settings; the program's coordinators change them.");
+		}
+		return requireEditableProgram(actorId, programId);
+	}
+
 	private Program requireEditableProgram(UUID actorId, UUID programId) {
 		Program program = requireManagedProgram(actorId, programId);
 		if (program.getStatus() == ProgramStatus.COMPLETED) {
@@ -927,6 +961,7 @@ public class CoordinatorProgramService {
 	}
 
 	/** Everything the summaries need, fetched once per call for a set of programs. */
+	/** {@code coordinators}: the coordinator each program names, by program id. */
 	public record Snapshot(
 			LocalDate today,
 			Instant now,

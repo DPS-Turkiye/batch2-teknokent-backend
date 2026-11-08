@@ -52,6 +52,7 @@ public class ProgramCoordinatorService {
 
 	@Transactional
 	public List<CoordinatorProgramResponse.CoordinatorRef> add(UUID actorId, UUID programId, UUID userId) {
+		requireAdmin(actorId);
 		Program program = programService.requireManagedProgram(actorId, programId);
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
@@ -79,14 +80,25 @@ public class ProgramCoordinatorService {
 	/** The creator cannot be removed: the program is theirs, and removing them could leave it with nobody. */
 	@Transactional
 	public List<CoordinatorProgramResponse.CoordinatorRef> remove(UUID actorId, UUID programId, UUID userId) {
+		requireAdmin(actorId);
 		Program program = programService.requireManagedProgram(actorId, programId);
 		if (program.getCreatedBy().equals(userId)) {
 			throw new InvalidRequestException("The coordinator who created the program cannot be removed.");
 		}
 		ProgramCoordinator row = programCoordinatorRepository.findByProgramIdAndUserId(programId, userId)
 				.orElseThrow(() -> new InvalidRequestException("This coordinator does not run the program."));
+		if (programService.coordinatorsOf(program).size() <= 1) {
+			throw new InvalidRequestException("A program keeps at least one coordinator.");
+		}
 		programCoordinatorRepository.delete(row);
 		return refs(program);
+	}
+
+	/** The admin assigns and changes a program's coordinators; coordinators only see them. */
+	private void requireAdmin(UUID actorId) {
+		if (programService.requireCoordinatorOrAdmin(actorId).getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin changes a program's coordinators.");
+		}
 	}
 
 	private List<CoordinatorProgramResponse.CoordinatorRef> refs(Program program) {

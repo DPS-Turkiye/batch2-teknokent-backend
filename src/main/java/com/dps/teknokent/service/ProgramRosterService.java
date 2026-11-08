@@ -45,7 +45,7 @@ public class ProgramRosterService {
 	@Transactional
 	public List<ProgramEligibleEmailResponse> add(UUID actorId, UUID programId,
 			AddProgramEligibleEmailsRequest request) {
-		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		Program program = coordinatorProgramService.requireSettingsEditor(actorId, programId);
 		Set<String> emails = request.emails().stream()
 				.map(EmailDomains::normalizeEmail)
 				.filter(email -> !email.isEmpty())
@@ -74,7 +74,7 @@ public class ProgramRosterService {
 
 	@Transactional
 	public List<ProgramEligibleEmailResponse> remove(UUID actorId, UUID programId, UUID entryId) {
-		coordinatorProgramService.requireManagedProgram(actorId, programId);
+		coordinatorProgramService.requireSettingsEditor(actorId, programId);
 		ProgramEligibleEmail row = eligibleEmailRepository.findByIdAndProgramId(entryId, programId)
 				.orElseThrow(() -> new ResourceNotFoundException("List entry not found: " + entryId));
 		eligibleEmailRepository.delete(row);

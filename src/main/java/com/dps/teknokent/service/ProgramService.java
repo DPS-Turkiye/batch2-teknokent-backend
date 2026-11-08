@@ -8,7 +8,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +42,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.ProgramCoordination;
+import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
@@ -66,8 +66,8 @@ public class ProgramService {
 	@Transactional
 	public ProgramResponse create(UUID actorId, String name) {
 		AppUser actor = requireActor(actorId);
-		if (actor.getRole() != UserRole.COORDINATOR && actor.getRole() != UserRole.ADMIN) {
-			throw new InvalidRequestException("Only a coordinator can manage programs.");
+		if (actor.getRole() != UserRole.ADMIN) {
+			throw new InvalidRequestException("Only an admin creates programs.");
 		}
 		String trimmed = TextUtils.trim(name);
 		if (trimmed == null || trimmed.isBlank()) {
@@ -78,6 +78,7 @@ public class ProgramService {
 		program.setName(trimmed);
 		program.setCreatedBy(actor.getId());
 		program.setCreatedAt(Instant.now());
+		program.setStatus(ProgramStatus.DRAFT);
 		return toResponse(programRepository.save(program));
 	}
 
@@ -185,6 +186,7 @@ public class ProgramService {
 	@Transactional
 	public ProgramResponse addStartup(UUID actorId, UUID programId, UUID organizationId) {
 		Program program = requireOwnedProgram(actorId, programId);
+		ProgramDrafts.requireLaunched(program);
 		domainLookupService.requireOrganization(organizationId);
 		if (programStartupRepository.findByProgramIdAndOrganizationId(program.getId(), organizationId).isPresent()) {
 			throw new ConflictException("This startup is already in the program.");
@@ -212,6 +214,7 @@ public class ProgramService {
 	@Transactional
 	public ProgramResponse inviteMentor(UUID actorId, UUID programId, UUID mentorId) {
 		Program program = requireOwnedProgram(actorId, programId);
+		ProgramDrafts.requireLaunched(program);
 		AppUser mentor = requireApprovedMentor(mentorId);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.COORDINATOR);
 		notificationService.create(
@@ -226,16 +229,15 @@ public class ProgramService {
 	public ProgramResponse requestToJoin(UUID actorId, UUID programId) {
 		AppUser mentor = requireMentor(actorId);
 		Program program = requireProgram(programId);
-		if (program.getStatus() == ProgramStatus.DRAFT) {
-			throw new InvalidRequestException("This program has not been launched yet.");
-		}
+		ProgramDrafts.requireLaunched(program);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.MENTOR);
-		AppUser creator = domainLookupService.requireUser(program.getCreatedBy());
-		notificationService.create(
-				creator,
-				Texts.get(creator, "notification.joinRequest.title"),
-				Texts.get(creator, "notification.joinRequest.body", mentor.getFullName(), program.getName()),
-				"/programs");
+		for (AppUser runner : runnersOf(program)) {
+			notificationService.create(
+					runner,
+					Texts.get(runner, "notification.joinRequest.title"),
+					Texts.get(runner, "notification.joinRequest.body", mentor.getFullName(), program.getName()),
+					"/programs");
+		}
 		return toResponse(program);
 	}
 
@@ -250,13 +252,14 @@ public class ProgramService {
 			throw new InvalidRequestException("This invitation cannot be decided.");
 		}
 		applyDecision(membership, accepted);
-		AppUser creator = domainLookupService.requireUser(requireProgram(programId).getCreatedBy());
-		notificationService.create(
-				creator,
-				Texts.get(creator, "notification.inviteAnswered.title"),
-				Texts.get(creator, accepted ? "notification.inviteAccepted.body" : "notification.inviteDeclined.body",
-						mentor.getFullName()),
-				"/programs");
+		for (AppUser runner : runnersOf(requireProgram(programId))) {
+			notificationService.create(
+					runner,
+					Texts.get(runner, "notification.inviteAnswered.title"),
+					Texts.get(runner, accepted ? "notification.inviteAccepted.body" : "notification.inviteDeclined.body",
+							mentor.getFullName()),
+					"/programs");
+		}
 		return toInvitation(membership);
 	}
 
@@ -416,10 +419,8 @@ public class ProgramService {
 				? Map.of()
 				: appUserRepository.findByOrganizationIdInOrderByFullNameAsc(organizationIds).stream()
 						.collect(Collectors.groupingBy(user -> user.getOrganization().getId()));
-		Map<UUID, AppUser> users = usersById(Stream.concat(
-				Stream.of(program.getCreatedBy()),
-				accepted.stream().map(ProgramMentor::getMentorId)).toList());
-		AppUser coordinator = require(users, program.getCreatedBy(), "User");
+		Map<UUID, AppUser> users = usersById(accepted.stream().map(ProgramMentor::getMentorId).toList());
+		AppUser coordinator = leadOf(program);
 		List<ProgramStartupRosterResponse> startups = rows.stream()
 				.map(row -> {
 					Organization organization = require(organizations, row.getOrganizationId(), "Organization");
@@ -454,7 +455,7 @@ public class ProgramService {
 	}
 
 	private OrganizationProgramResponse toOrganizationProgram(Program program) {
-		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
+		AppUser coordinator = leadOf(program);
 		return new OrganizationProgramResponse(program.getId(), program.getName(), coordinator.getFullName(),
 				program.isIndividualMentees());
 	}
@@ -479,12 +480,13 @@ public class ProgramService {
 				.flatMap(List::stream)
 				.map(ProgramStartup::getOrganizationId)
 				.toList());
-		Map<UUID, AppUser> users = usersById(Stream.concat(
-				programs.stream().map(Program::getCreatedBy),
-				mentorRows.values().stream().flatMap(List::stream).map(ProgramMentor::getMentorId)).toList());
+		Map<UUID, AppUser> users = usersById(
+				mentorRows.values().stream().flatMap(List::stream).map(ProgramMentor::getMentorId).toList());
+		Map<UUID, List<AppUser>> runners = ProgramCoordination.runners(
+				programs, programCoordinatorRepository, appUserRepository);
 		return programs.stream()
 				.map(program -> {
-					AppUser coordinator = require(users, program.getCreatedBy(), "User");
+					AppUser coordinator = leadOf(program, runners);
 					List<OrganizationResponse> startups = startupRows.getOrDefault(program.getId(), List.of()).stream()
 							.map(row -> OrganizationResponse.fromEntity(
 									require(organizations, row.getOrganizationId(), "Organization")))
@@ -504,6 +506,20 @@ public class ProgramService {
 							mentors);
 				})
 				.toList();
+	}
+
+	private List<AppUser> runnersOf(Program program) {
+		return ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository);
+	}
+
+	/** The coordinator a program names; the creator only while nobody else runs it. */
+	private AppUser leadOf(Program program) {
+		return leadOf(program, Map.of(program.getId(), runnersOf(program)));
+	}
+
+	private AppUser leadOf(Program program, Map<UUID, List<AppUser>> runners) {
+		List<AppUser> running = runners.getOrDefault(program.getId(), List.of());
+		return running.isEmpty() ? domainLookupService.requireUser(program.getCreatedBy()) : running.get(0);
 	}
 
 	private Map<UUID, AppUser> usersById(Collection<UUID> ids) {
@@ -538,7 +554,7 @@ public class ProgramService {
 
 	private ProgramInvitationResponse toInvitation(ProgramMentor membership) {
 		Program program = requireProgram(membership.getProgramId());
-		AppUser coordinator = domainLookupService.requireUser(program.getCreatedBy());
+		AppUser coordinator = leadOf(program);
 		return new ProgramInvitationResponse(
 				program.getId(),
 				program.getName(),

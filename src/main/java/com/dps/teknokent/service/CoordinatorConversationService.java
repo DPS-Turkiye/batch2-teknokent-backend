@@ -160,8 +160,7 @@ public class CoordinatorConversationService {
 	private void notifyOtherSide(CoordinatorConversation conversation, Side senderSide, AppUser sender) {
 		if (senderSide == Side.COUNTERPART) {
 			programRepository.findById(conversation.getProgramId())
-					.map(program -> appUserRepository.findAllById(
-							ProgramCoordination.coordinatorIds(program, programCoordinatorRepository)))
+					.map(program -> ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository))
 					.orElse(List.of())
 					.forEach(coordinator -> notificationService.create(
 							coordinator,
@@ -257,8 +256,9 @@ public class CoordinatorConversationService {
 				.findAllById(conversations.stream().map(CoordinatorConversation::getProgramId).collect(Collectors.toSet()))
 				.stream()
 				.collect(Collectors.toMap(Program::getId, Function.identity()));
+		Map<UUID, List<AppUser>> runners = ProgramCoordination.runners(
+				programs.values(), programCoordinatorRepository, appUserRepository);
 		Set<UUID> userIds = new HashSet<>();
-		programs.values().forEach(program -> userIds.add(program.getCreatedBy()));
 		conversations.stream().map(CoordinatorConversation::getMentorId).filter(id -> id != null).forEach(userIds::add);
 		Map<UUID, AppUser> users = appUserRepository.findAllById(userIds).stream()
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
@@ -275,7 +275,8 @@ public class CoordinatorConversationService {
 						.reversed())
 				.map(conversation -> {
 					Program program = programs.get(conversation.getProgramId());
-					AppUser coordinator = program == null ? null : users.get(program.getCreatedBy());
+					List<AppUser> running = program == null ? List.of() : runners.getOrDefault(program.getId(), List.of());
+					AppUser coordinator = running.isEmpty() ? null : running.get(0);
 					boolean team = conversation.getOrganizationId() != null;
 					UUID counterpartId = team ? conversation.getOrganizationId() : conversation.getMentorId();
 					String counterpartName = team
@@ -288,7 +289,7 @@ public class CoordinatorConversationService {
 							team ? CoordinatorConversationCounterpart.TEAM : CoordinatorConversationCounterpart.MENTOR,
 							counterpartId,
 							counterpartName,
-							program == null ? null : program.getCreatedBy(),
+							coordinator == null ? (program == null ? null : program.getCreatedBy()) : coordinator.getId(),
 							coordinator == null ? null : coordinator.getFullName(),
 							conversation.getLastMessagePreview(),
 							conversation.getLastMessageAt(),
