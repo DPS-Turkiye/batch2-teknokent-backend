@@ -55,7 +55,7 @@ class OfficeHoursSlotServiceTest {
                 settingsRepository, Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(settingsRepository.findById(ACADEMIC)).thenReturn(Optional.of(settings(0)));
         lenient().when(exceptionRepository.findByInstructorIdOrderByStartsOnAsc(ACADEMIC)).thenReturn(List.of());
-        lenient().when(meetingRepository.findByInstructorIdAndScheduledAtAfter(any(), any())).thenReturn(List.of());
+        lenient().when(meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(any(), any())).thenReturn(List.of());
     }
 
     private static OfficeHoursSettings settings(int bufferMinutes) {
@@ -113,7 +113,7 @@ class OfficeHoursSlotServiceTest {
         away.setStartsOn(LocalDate.of(2026, 11, 10));
         away.setEndsOn(LocalDate.of(2026, 11, 10));
         when(exceptionRepository.findByInstructorIdOrderByStartsOnAsc(ACADEMIC)).thenReturn(List.of(away));
-        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(eq(ACADEMIC), any()))
+        when(meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(eq(ACADEMIC), any()))
                 .thenReturn(List.of(meeting("2026-11-17T11:00:00Z", 60)));
 
         List<OfficeHoursSlotService.Slot> slots = service.openSlots(ACADEMIC);
@@ -136,7 +136,7 @@ class OfficeHoursSlotServiceTest {
     void leavesOutEverySlotAMeetingOverlapsNotOnlyTheOneItStartsIn() {
         rules(rule(DayOfWeek.TUESDAY, 14, 16, 30));
         // A one-hour meeting at 14:00 (11:00Z) covers the 14:00 and 14:30 slots.
-        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(eq(ACADEMIC), any()))
+        when(meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(eq(ACADEMIC), any()))
                 .thenReturn(List.of(meeting("2026-11-10T11:00:00Z", 60)));
 
         List<Instant> tuesday = service.openSlots(ACADEMIC).stream().map(OfficeHoursSlotService.Slot::startsAt)
@@ -149,7 +149,7 @@ class OfficeHoursSlotServiceTest {
     void keepsTheBufferAroundAMeetingFree() {
         rules(rule(DayOfWeek.TUESDAY, 14, 17, 30));
         when(settingsRepository.findById(ACADEMIC)).thenReturn(Optional.of(settings(30)));
-        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(eq(ACADEMIC), any()))
+        when(meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(eq(ACADEMIC), any()))
                 .thenReturn(List.of(meeting("2026-11-10T12:00:00Z", 30)));
 
         List<Instant> tuesday = service.openSlots(ACADEMIC).stream().map(OfficeHoursSlotService.Slot::startsAt)
@@ -162,7 +162,7 @@ class OfficeHoursSlotServiceTest {
 
     @Test
     void saysWhetherATypedTimeClashesWithTheCalendar() {
-        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(eq(ACADEMIC), any()))
+        when(meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(eq(ACADEMIC), any()))
                 .thenReturn(List.of(meeting("2026-11-10T11:00:00Z", 60)));
 
         assertThat(service.clashesWithCalendar(ACADEMIC, Instant.parse("2026-11-10T11:30:00Z"), 45)).isTrue();

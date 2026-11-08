@@ -46,7 +46,9 @@ public class OfficeHoursMailService {
 		COUNTER_PROPOSED("counterProposed", false, Times.PROPOSED),
 		REPLIED("replied", true, Times.NONE),
 		SLOT_CHOSEN("slotChosen", true, Times.MEETING),
-		WITHDRAWN("withdrawn", true, Times.NONE);
+		WITHDRAWN("withdrawn", true, Times.NONE),
+		CANCELLED_BY_STUDENT("meetingCancelled", true, Times.MEETING),
+		CANCELLED_BY_INSTRUCTOR("meetingCancelled", false, Times.MEETING);
 
 		private final String key;
 		private final boolean toInstructor;

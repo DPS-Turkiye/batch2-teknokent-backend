@@ -21,7 +21,12 @@ public record OfficeHoursRequestResponse(
 		String rejectionReason,
 		List<Message> messages,
 		OfficeHoursSlotResponse meeting,
+		Cancellation cancellation,
 		Instant createdAt) {
+
+	/** Who called the accepted meeting off, when, and why if they said. */
+	public record Cancellation(UUID cancelledById, String reason, Instant cancelledAt) {
+	}
 
 	public record Message(UUID id, UUID authorId, OfficeHoursMessageType type, String body, Instant createdAt) {
 	}

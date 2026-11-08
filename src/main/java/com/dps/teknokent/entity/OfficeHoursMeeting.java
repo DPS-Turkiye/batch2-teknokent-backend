@@ -45,4 +45,13 @@ public class OfficeHoursMeeting {
 
 	@Column(name = "reminder_sent_at")
 	private Instant reminderSentAt;
+
+	@Column(name = "cancelled_at")
+	private Instant cancelledAt;
+
+	@Column(name = "cancelled_by")
+	private UUID cancelledBy;
+
+	@Column(name = "cancellation_reason")
+	private String cancellationReason;
 }

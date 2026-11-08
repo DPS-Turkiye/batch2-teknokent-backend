@@ -15,13 +15,16 @@ import com.dps.teknokent.entity.OfficeHoursMeeting;
 
 public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursMeeting, UUID> {
 
-	List<OfficeHoursMeeting> findByInstructorIdAndScheduledAtAfter(UUID instructorId, Instant after);
+	/** Meetings that still hold the academic's time. */
+	List<OfficeHoursMeeting> findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(UUID instructorId,
+			Instant after);
 
 	List<OfficeHoursMeeting> findByRequestIdIn(Collection<UUID> requestIds);
 
 	Optional<OfficeHoursMeeting> findByRequestId(UUID requestId);
 
-	List<OfficeHoursMeeting> findByReminderSentAtIsNullAndScheduledAtBetween(Instant from, Instant until);
+	List<OfficeHoursMeeting> findByReminderSentAtIsNullAndCancelledAtIsNullAndScheduledAtBetween(Instant from,
+			Instant until);
 
 	/** Marks the reminder sent unless another run already did; 1 means this run sends it. */
 	@Modifying

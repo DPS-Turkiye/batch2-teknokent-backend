@@ -23,7 +23,8 @@ public class OfficeHoursReminderService {
 	@Transactional
 	public void remindUpcomingMeetings(Instant now) {
 		meetingRepository
-				.findByReminderSentAtIsNullAndScheduledAtBetween(now, now.plus(NotificationReminderService.MEETING_LEAD))
+				.findByReminderSentAtIsNullAndCancelledAtIsNullAndScheduledAtBetween(now,
+						now.plus(NotificationReminderService.MEETING_LEAD))
 				.stream()
 				.filter(meeting -> meetingRepository.markReminded(meeting.getId(), now) == 1)
 				.forEach(mailService::meetingSoon);

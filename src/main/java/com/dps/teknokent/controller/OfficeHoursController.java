@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.AcceptOfficeHoursSlotRequest;
+import com.dps.teknokent.dto.requests.CancelOfficeHoursMeetingRequest;
 import com.dps.teknokent.dto.requests.CreateOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.DecideOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.ReplyOfficeHoursRequest;
@@ -108,6 +109,12 @@ public class OfficeHoursController {
 	public OfficeHoursRequestResponse withdraw(@PathVariable UUID userId, @PathVariable UUID courseId,
 			@PathVariable UUID requestId) {
 		return bookingService.withdraw(userId, courseId, requestId);
+	}
+
+	@PostMapping(COURSE + "/requests/{requestId}/cancel")
+	public OfficeHoursRequestResponse cancel(@PathVariable UUID userId, @PathVariable UUID courseId,
+			@PathVariable UUID requestId, @Valid @RequestBody CancelOfficeHoursMeetingRequest cancellation) {
+		return bookingService.cancel(userId, courseId, requestId, cancellation);
 	}
 
 	@GetMapping(COURSE + "/meetings")

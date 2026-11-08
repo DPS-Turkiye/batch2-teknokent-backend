@@ -24,6 +24,7 @@ import com.dps.teknokent.domain.OfficeHoursMessageType;
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 import com.dps.teknokent.domain.OfficeHoursRole;
 import com.dps.teknokent.dto.requests.AcceptOfficeHoursSlotRequest;
+import com.dps.teknokent.dto.requests.CancelOfficeHoursMeetingRequest;
 import com.dps.teknokent.dto.requests.CreateOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.DecideOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.ReplyOfficeHoursRequest;
@@ -133,7 +134,7 @@ public class OfficeHoursBookingService {
 		Map<UUID, OfficeHoursRequest> byId = mine.stream()
 				.collect(Collectors.toMap(OfficeHoursRequest::getId, Function.identity()));
 		List<OfficeHoursMeeting> meetings = meetingRepository.findByRequestIdIn(byId.keySet()).stream()
-				.filter(meeting -> meeting.getScheduledAt().isAfter(now))
+				.filter(meeting -> meeting.getCancelledAt() == null && meeting.getScheduledAt().isAfter(now))
 				.sorted((left, right) -> left.getScheduledAt().compareTo(right.getScheduledAt()))
 				.toList();
 		Map<UUID, OfficeHoursUser> people = people(meetings.stream()
@@ -266,6 +267,35 @@ public class OfficeHoursBookingService {
 	}
 
 	/**
+	 * Either side calls an accepted meeting off before it starts; the time is free again and the other side is told.
+	 */
+	@Transactional
+	public OfficeHoursRequestResponse cancel(UUID userId, UUID courseId, UUID requestId,
+			CancelOfficeHoursMeetingRequest cancellation) {
+		OfficeHoursRequest request = requireRequest(requestId, courseId);
+		boolean student = request.getStudentId().equals(userId);
+		if (!student && !request.getInstructorId().equals(userId)) {
+			throw forbidden("Only the student and the academic of the meeting can cancel it.");
+		}
+		if (request.getStatus() != OfficeHoursRequestStatus.ACCEPTED) {
+			throw new InvalidRequestException("Only an accepted meeting can be cancelled");
+		}
+		OfficeHoursMeeting meeting = meetingRepository.findByRequestId(requestId)
+				.orElseThrow(() -> new InvalidRequestException("Only an accepted meeting can be cancelled"));
+		Instant now = clock.instant();
+		if (!meeting.getScheduledAt().isAfter(now)) {
+			throw new InvalidRequestException("A meeting that has started can no longer be cancelled");
+		}
+		String reason = TextUtils.normalizeOptional(cancellation.reason());
+		meeting.setCancelledAt(now);
+		meeting.setCancelledBy(userId);
+		meeting.setCancellationReason(reason);
+		meetingRepository.save(meeting);
+		request.setStatus(OfficeHoursRequestStatus.CANCELLED);
+		return saveAndTell(request, student ? Event.CANCELLED_BY_STUDENT : Event.CANCELLED_BY_INSTRUCTOR, reason);
+	}
+
+	/**
 	 * The academic's student limit, read the way a mentor's mentee capacity is: how many students they work with at
 	 * once. Students with an open request or an upcoming meeting count; someone already among them can always ask
 	 * again. No limit when none is set.
@@ -279,7 +309,7 @@ public class OfficeHoursBookingService {
 		Set<UUID> students = new HashSet<>();
 		requestRepository.findByInstructorIdAndStatusIn(instructorId, OPEN)
 				.forEach(open -> students.add(open.getStudentId()));
-		meetingRepository.findByInstructorIdAndScheduledAtAfter(instructorId, now)
+		meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(instructorId, now)
 				.forEach(meeting -> students.add(meeting.getStudentId()));
 		if (!students.contains(studentId) && students.size() >= capacity) {
 			throw new ConflictException("This academic has no room for another student right now.");
@@ -411,6 +441,9 @@ public class OfficeHoursBookingService {
 					messages.getOrDefault(request.getId(), List.of()),
 					meeting == null ? null : new OfficeHoursSlotResponse(meeting.getScheduledAt(),
 							meeting.getDurationMinutes()),
+					meeting == null || meeting.getCancelledAt() == null ? null
+							: new OfficeHoursRequestResponse.Cancellation(meeting.getCancelledBy(),
+									meeting.getCancellationReason(), meeting.getCancelledAt()),
 					request.getCreatedAt());
 		}).toList();
 	}

@@ -39,7 +39,7 @@ class OfficeHoursReminderServiceTest {
     void remindsMeetingsStartingWithinTheMentorLeadOnceEvenWithTwoServers() {
         OfficeHoursMeeting mine = meeting();
         OfficeHoursMeeting takenByTheOtherServer = meeting();
-        when(meetingRepository.findByReminderSentAtIsNullAndScheduledAtBetween(NOW,
+        when(meetingRepository.findByReminderSentAtIsNullAndCancelledAtIsNullAndScheduledAtBetween(NOW,
                 NOW.plus(NotificationReminderService.MEETING_LEAD))).thenReturn(List.of(mine, takenByTheOtherServer));
         when(meetingRepository.markReminded(mine.getId(), NOW)).thenReturn(1);
         when(meetingRepository.markReminded(takenByTheOtherServer.getId(), NOW)).thenReturn(0);

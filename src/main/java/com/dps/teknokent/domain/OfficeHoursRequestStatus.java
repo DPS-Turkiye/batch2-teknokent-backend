@@ -7,5 +7,7 @@ public enum OfficeHoursRequestStatus {
 	DECLINED,
 	MORE_INFO_REQUESTED,
 	COUNTER_PROPOSED,
-	WITHDRAWN
+	WITHDRAWN,
+	/** Accepted, then either side called the meeting off. */
+	CANCELLED
 }

@@ -31,6 +31,7 @@ import com.dps.teknokent.domain.OfficeHoursMessageType;
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 import com.dps.teknokent.domain.OfficeHoursRole;
 import com.dps.teknokent.dto.requests.AcceptOfficeHoursSlotRequest;
+import com.dps.teknokent.dto.requests.CancelOfficeHoursMeetingRequest;
 import com.dps.teknokent.dto.requests.CreateOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.DecideOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.ReplyOfficeHoursRequest;
@@ -144,7 +145,7 @@ class OfficeHoursBookingServiceTest {
         OfficeHoursRequest someoneElse = new OfficeHoursRequest();
         someoneElse.setStudentId(UUID.randomUUID());
         when(requestRepository.findByInstructorIdAndStatusIn(eq(ACADEMIC), any())).thenReturn(List.of(someoneElse));
-        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(ACADEMIC, NOW)).thenReturn(List.of());
+        when(meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(ACADEMIC, NOW)).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.create(STUDENT, COURSE,
                 new CreateOfficeHoursRequest(ACADEMIC, "Soru", null, List.of(TUESDAY_2PM))))
@@ -161,7 +162,7 @@ class OfficeHoursBookingServiceTest {
         when(requestRepository.findByInstructorIdAndStatusIn(eq(ACADEMIC), any())).thenReturn(List.of());
         OfficeHoursMeeting own = new OfficeHoursMeeting();
         own.setStudentId(STUDENT);
-        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(ACADEMIC, NOW)).thenReturn(List.of(own));
+        when(meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(ACADEMIC, NOW)).thenReturn(List.of(own));
 
         OfficeHoursRequestResponse response = service.create(STUDENT, COURSE,
                 new CreateOfficeHoursRequest(ACADEMIC, "Soru", null, List.of(TUESDAY_2PM)));
@@ -336,6 +337,49 @@ class OfficeHoursBookingServiceTest {
                 .isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> service.reply(ACADEMIC, COURSE, REQUEST, new ReplyOfficeHoursRequest("x")))
                 .isInstanceOf(ResponseStatusException.class);
+    }
+
+    private OfficeHoursMeeting acceptedMeetingAt(Instant at) {
+        existing(OfficeHoursRequestStatus.ACCEPTED);
+        OfficeHoursMeeting meeting = new OfficeHoursMeeting();
+        meeting.setRequestId(REQUEST);
+        meeting.setScheduledAt(at);
+        meeting.setDurationMinutes(20);
+        lenient().when(meetingRepository.findByRequestId(REQUEST)).thenReturn(Optional.of(meeting));
+        lenient().when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of(meeting));
+        return meeting;
+    }
+
+    @Test
+    void eitherSideCancelsAnUpcomingMeetingAndTheOtherSideIsTold() {
+        OfficeHoursMeeting meeting = acceptedMeetingAt(NOW.plusSeconds(3600));
+
+        OfficeHoursRequestResponse response = service.cancel(STUDENT, COURSE, REQUEST,
+                new CancelOfficeHoursMeetingRequest("  Hastayım "));
+
+        assertThat(response.status()).isEqualTo(OfficeHoursRequestStatus.CANCELLED);
+        assertThat(meeting.getCancelledAt()).isEqualTo(NOW);
+        assertThat(meeting.getCancelledBy()).isEqualTo(STUDENT);
+        assertThat(response.cancellation().reason()).isEqualTo("Hastayım");
+        verify(mailService).requestChanged(any(), eq(Event.CANCELLED_BY_STUDENT), eq("Hastayım"));
+
+        acceptedMeetingAt(NOW.plusSeconds(3600));
+        service.cancel(ACADEMIC, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null));
+        verify(mailService).requestChanged(any(), eq(Event.CANCELLED_BY_INSTRUCTOR), isNull());
+    }
+
+    @Test
+    void aMeetingThatStartedOrWasNeverAcceptedCannotBeCancelledNorBySomeoneElse() {
+        acceptedMeetingAt(NOW.minusSeconds(60));
+        assertThatThrownBy(() -> service.cancel(STUDENT, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null)))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> service.cancel(UUID.randomUUID(), COURSE, REQUEST,
+                new CancelOfficeHoursMeetingRequest(null))).isInstanceOf(ResponseStatusException.class);
+
+        existing(OfficeHoursRequestStatus.PENDING);
+        assertThatThrownBy(() -> service.cancel(STUDENT, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null)))
+                .isInstanceOf(InvalidRequestException.class);
+        verifyNoInteractions(mailService);
     }
 
     @Test
