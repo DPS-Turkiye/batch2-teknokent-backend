@@ -112,7 +112,7 @@ class FirebaseBearerFilterTest {
         user.setFirebaseUid("uid-old");
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-new", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-new", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-new")).thenReturn(Optional.empty());
         when(appUserRepository.findByEmailIgnoreCase("ayse@startup.com")).thenReturn(Optional.of(user));
 
@@ -128,7 +128,7 @@ class FirebaseBearerFilterTest {
         user.setFirebaseUid(null);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
         when(appUserRepository.findByEmailIgnoreCase("ayse@startup.com")).thenReturn(Optional.of(user));
 
@@ -146,6 +146,46 @@ class FirebaseBearerFilterTest {
         assertThat(((AppUserPrincipal) principal).id()).isEqualTo(USER_ID);
     }
 
+    // Firebase lets anyone create an unverified login for an address that has none yet (E1).
+    @Test
+    void neverHandsARowToAnUnverifiedLoginThatOnlyMatchesByEmail() throws Exception {
+        AppUser user = user(UserAccountStatus.APPROVED);
+        user.setFirebaseUid(null);
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good"))
+                .thenReturn(Optional.of(new FirebaseIdentity("uid-stranger", "ayse@startup.com", false)));
+        when(appUserRepository.findByFirebaseUid("uid-stranger")).thenReturn(Optional.empty());
+        when(appUserRepository.findByEmailIgnoreCase("ayse@startup.com")).thenReturn(Optional.of(user));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request("/api/auth/me", "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chain.getRequest()).isNull();
+        assertThat(user.getFirebaseUid()).isNull();
+        verify(appUserRepository, never()).findByEmailIgnoreCase(any());
+        verify(appUserRepository, never()).save(any());
+    }
+
+    // Seeded coordinators are created unverified and bound by uid; the check only guards the email fallback.
+    @Test
+    void anUnverifiedLoginAlreadyBoundByUidStillSignsIn() throws Exception {
+        AppUser user = user(UserAccountStatus.APPROVED);
+        user.setFirebaseUid("uid-1");
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good"))
+                .thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", false)));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
+
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request("/api/auth/me", "Bearer good"), new MockHttpServletResponse(), chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                .isInstanceOf(AppUserPrincipal.class);
+    }
+
     @Test
     void neverHandsAnAdminOrCoordinatorRowToALoginThatOnlyMatchesByEmail() throws Exception {
         for (UserRole role : new UserRole[] { UserRole.ADMIN, UserRole.COORDINATOR }) {
@@ -154,7 +194,7 @@ class FirebaseBearerFilterTest {
             privileged.setFirebaseUid(null);
             when(firebaseTokenVerifier.enabled()).thenReturn(true);
             when(firebaseTokenVerifier.verify("good"))
-                    .thenReturn(Optional.of(new FirebaseIdentity("uid-stranger", "ayse@startup.com")));
+                    .thenReturn(Optional.of(new FirebaseIdentity("uid-stranger", "ayse@startup.com", true)));
             when(appUserRepository.findByFirebaseUid("uid-stranger")).thenReturn(Optional.empty());
             when(appUserRepository.findByEmailIgnoreCase("ayse@startup.com")).thenReturn(Optional.of(privileged));
 
@@ -175,7 +215,7 @@ class FirebaseBearerFilterTest {
         AppUser admin = user(UserAccountStatus.APPROVED);
         admin.setRole(UserRole.ADMIN);
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "it@menton.test")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "it@menton.test", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(admin));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -238,7 +278,7 @@ class FirebaseBearerFilterTest {
 
     private void signsInAs(AppUser user) {
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", user.getEmail())));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", user.getEmail(), true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
     }
 
@@ -247,7 +287,7 @@ class FirebaseBearerFilterTest {
         AppUser user = user(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -264,7 +304,7 @@ class FirebaseBearerFilterTest {
         AppUser user = user(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -291,7 +331,7 @@ class FirebaseBearerFilterTest {
     @Test
     void rejectsUnknownAccountOutsideRegistration() throws Exception {
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
         when(appUserRepository.findByEmailIgnoreCase("yeni@startup.com")).thenReturn(Optional.empty());
 
@@ -307,7 +347,7 @@ class FirebaseBearerFilterTest {
     @Test
     void allowsOnboardingDraftWithoutExistingAccount() throws Exception {
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com", true)));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
@@ -316,14 +356,14 @@ class FirebaseBearerFilterTest {
 
         assertThat(chain.getRequest()).isNotNull();
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        assertThat(principal).isEqualTo(new FirebaseIdentity("uid-1", "yeni@startup.com"));
+        assertThat(principal).isEqualTo(new FirebaseIdentity("uid-1", "yeni@startup.com", true));
         verify(appUserRepository, never()).findByFirebaseUid(any());
     }
 
     @Test
     void allowsRegistrationWithoutExistingAccount() throws Exception {
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "yeni@startup.com", true)));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
@@ -332,7 +372,7 @@ class FirebaseBearerFilterTest {
 
         assertThat(chain.getRequest()).isNotNull();
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        assertThat(principal).isEqualTo(new FirebaseIdentity("uid-1", "yeni@startup.com"));
+        assertThat(principal).isEqualTo(new FirebaseIdentity("uid-1", "yeni@startup.com", true));
         verify(appUserRepository, never()).findByFirebaseUid(any());
     }
 
@@ -341,7 +381,7 @@ class FirebaseBearerFilterTest {
         AppUser user = user(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -359,7 +399,7 @@ class FirebaseBearerFilterTest {
         AppUser user = mentor(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -380,7 +420,7 @@ class FirebaseBearerFilterTest {
         AppUser user = mentor(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -397,7 +437,7 @@ class FirebaseBearerFilterTest {
         AppUser user = user(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -415,7 +455,7 @@ class FirebaseBearerFilterTest {
         AppUser mentor = mentor(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -431,7 +471,7 @@ class FirebaseBearerFilterTest {
         AppUser mentor = mentor(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -448,7 +488,7 @@ class FirebaseBearerFilterTest {
         AppUser mentor = mentor(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -465,7 +505,7 @@ class FirebaseBearerFilterTest {
         AppUser mentee = user(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentee));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -482,7 +522,7 @@ class FirebaseBearerFilterTest {
         AppUser mentor = mentor(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
 
         MockFilterChain own = new MockFilterChain();
@@ -503,7 +543,7 @@ class FirebaseBearerFilterTest {
         AppUser mentee = user(UserAccountStatus.PENDING);
 
         when(firebaseTokenVerifier.enabled()).thenReturn(true);
-        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com")));
+        when(firebaseTokenVerifier.verify("good")).thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentee));
 
         MockFilterChain own = new MockFilterChain();

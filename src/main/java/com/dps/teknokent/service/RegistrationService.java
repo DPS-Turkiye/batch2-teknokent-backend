@@ -423,6 +423,10 @@ public class RegistrationService {
 		if (!email.equalsIgnoreCase(identity.email())) {
 			throw new InvalidRequestException("Email does not match the signed-in account.");
 		}
+		// Team claims, program invites and startup codes trust the address as proof of who is joining.
+		if (!identity.emailVerified()) {
+			throw new InvalidRequestException("Verify your email address before registering.");
+		}
 		if (appUserRepository.findByFirebaseUid(identity.uid()).isPresent()) {
 			throw new InvalidRequestException("This account is already registered.");
 		}

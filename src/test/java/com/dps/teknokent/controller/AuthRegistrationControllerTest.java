@@ -63,7 +63,7 @@ class AuthRegistrationControllerTest {
 
     private static UsernamePasswordAuthenticationToken registering(String email) {
         return new UsernamePasswordAuthenticationToken(
-                new FirebaseIdentity("uid-1", email), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+                new FirebaseIdentity("uid-1", email, true), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
     }
 
     @Test
@@ -79,6 +79,20 @@ class AuthRegistrationControllerTest {
                 .andExpect(jsonPath("$.eligible").value(false))
                 .andExpect(jsonPath("$.message").value("not on the list"));
         verify(programEligibilityService).check(ISKUR_ID, "e1@metu.edu.tr");
+    }
+
+    // Firebase puts the address in the token before it is verified; the list must not answer for it.
+    @Test
+    void refusesProgramEligibilityForAnUnverifiedAddressWithoutAskingTheList() throws Exception {
+        mockMvc.perform(get("/api/auth/register/program-eligibility")
+                        .param("programId", ISKUR_ID.toString())
+                        .with(authentication(new UsernamePasswordAuthenticationToken(
+                                new FirebaseIdentity("uid-1", "e1@metu.edu.tr", false), null,
+                                List.of(new SimpleGrantedAuthority("ROLE_REGISTERING"))))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligible").value(false))
+                .andExpect(jsonPath("$.message").isNotEmpty());
+        verifyNoInteractions(programEligibilityService);
     }
 
     @Test

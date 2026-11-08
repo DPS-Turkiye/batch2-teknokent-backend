@@ -79,6 +79,6 @@ class AuthEmailControllerTest {
 
     private static UsernamePasswordAuthenticationToken firebaseLogin(String email) {
         return new UsernamePasswordAuthenticationToken(
-                new FirebaseIdentity("uid-1", email), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+                new FirebaseIdentity("uid-1", email, true), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
     }
 }
