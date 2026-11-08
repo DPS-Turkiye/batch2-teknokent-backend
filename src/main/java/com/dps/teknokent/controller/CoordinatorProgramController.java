@@ -182,11 +182,19 @@ public class CoordinatorProgramController {
 		return programCoordinatorService.remove(CurrentActor.resolve(actorId), id, userId);
 	}
 
-	/** The "Yeni program" wizard: basic info, rules and teams with their leads, in one request. */
+	/** The admin's "Yeni Program Oluştur": type, basic info and coordinators; the program starts as a draft. */
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public CoordinatorProgramResponse.Detail create(@Valid @RequestBody CreateCoordinatorProgramRequest request) {
 		return programLaunchService.create(CurrentActor.resolve(request.actorId()), request);
+	}
+
+	/** Taslak → Aktif, admin only. */
+	@PostMapping("/{id}/launch")
+	public CoordinatorProgramResponse.Detail launch(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return coordinatorProgramService.launch(CurrentActor.resolve(actorId), id);
 	}
 
 	@GetMapping("/{id}/teams")

@@ -15,6 +15,9 @@ public final class ProgramCalendar {
 	}
 
 	public static ProgramLifecycle lifecycle(ProgramStatus status, LocalDate startDate, LocalDate today) {
+		if (status == ProgramStatus.DRAFT) {
+			return ProgramLifecycle.DRAFT;
+		}
 		if (status == ProgramStatus.COMPLETED) {
 			return ProgramLifecycle.COMPLETED;
 		}

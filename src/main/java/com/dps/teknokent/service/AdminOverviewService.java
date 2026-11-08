@@ -239,6 +239,7 @@ public class AdminOverviewService {
 				program.getId(),
 				program.getName(),
 				program.getStatus().name(),
+				program.getProgramType().name(),
 				program.getCreatedAt(),
 				coordinators.isEmpty() ? null : coordinators.get(0).getId(),
 				coordinators.isEmpty()
