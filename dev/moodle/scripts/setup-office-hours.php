@@ -1,10 +1,8 @@
 <?php
 // Local Moodle only: registers Menton office hours as a site-wide LTI 1.3 tool, and makes a test course with a
 // teacher and a student who can open it. Safe to run again; it reuses what is already there.
-//   docker compose -f dev/moodle/compose.yml cp dev/moodle/setup-office-hours.php moodle:/tmp/
-//   docker compose -f dev/moodle/compose.yml exec -u daemon -e HTTP_HOST=localhost:8081 moodle \
-//       php /tmp/setup-office-hours.php
-// Run it as daemon (the web server's user): as root it leaves cache files the site then cannot lock.
+// `docker compose --profile moodle up` runs it once Moodle is installed (the moodle-setup service). It seeds
+// Moodle's own database through Moodle's API, so it cannot be a Flyway migration of this backend.
 // It prints the LTI_* values for the backend's .env.
 
 define('CLI_SCRIPT', true);
@@ -18,8 +16,8 @@ require_once($CFG->dirroot . '/enrol/manual/lib.php');
 \core\session\manager::set_user(get_admin());
 
 $frontend = getenv('MENTON_FRONTEND_URL') ?: 'http://localhost:3000';
-// Moodle's server fetches the tool's key set from the backend; inside Docker the host is host.docker.internal.
-$backendfromdocker = getenv('MENTON_BACKEND_URL_FROM_MOODLE') ?: 'http://host.docker.internal:8080';
+// Moodle's server fetches the tool's key set from the backend, which is the app service on the compose network.
+$backendfromdocker = getenv('MENTON_BACKEND_URL_FROM_MOODLE') ?: 'http://app:8080';
 $toolname = 'Menton ofis saatleri';
 
 $type = $DB->get_record('lti_types', ['name' => $toolname]);
@@ -95,6 +93,6 @@ echo "LTI_PLATFORM_ISSUER={$CFG->wwwroot}\n";
 echo "LTI_CLIENT_ID={$type->clientid}\n";
 echo "LTI_DEPLOYMENT_IDS={$type->id}\n";
 echo "LTI_PLATFORM_AUTH_URL={$CFG->wwwroot}/mod/lti/auth.php\n";
-echo "LTI_PLATFORM_JWKS_URL=http://host.docker.internal:8081/mod/lti/certs.php\n";
+echo "LTI_PLATFORM_JWKS_URL=http://moodle:8080/mod/lti/certs.php\n";
 echo "LTI_TOOL_LAUNCH_URL={$frontend}/lti/launch\n";
 echo "Course: {$CFG->wwwroot}/course/view.php?id={$course->id}\n";

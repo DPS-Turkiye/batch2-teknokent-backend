@@ -22,6 +22,8 @@ CREATE TABLE office_hours_rule (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_office_hours_rule_day CHECK (day_of_week BETWEEN 1 AND 7),
     CONSTRAINT chk_office_hours_rule_range CHECK (end_time > start_time),
+    -- Same bounds the API takes (15-480 minutes); a zero length would never end the slot loop.
+    CONSTRAINT chk_office_hours_rule_slot_minutes CHECK (slot_minutes BETWEEN 15 AND 480),
     CONSTRAINT uq_office_hours_rule_start UNIQUE (instructor_id, day_of_week, start_time)
 );
 

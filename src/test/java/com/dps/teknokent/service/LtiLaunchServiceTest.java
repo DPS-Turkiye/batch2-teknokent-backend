@@ -99,39 +99,43 @@ class LtiLaunchServiceTest {
     @Test
     void refusesALoginFromAnotherMoodleOrClient() {
         assertThatThrownBy(() -> service.startLogin(
-                new LtiLoginRequest("https://other.example", "hint", "x", null, null, null)))
+                new LtiLoginRequest("https://other.example", "hint", "http://localhost:3000/lti/launch", null, null,
+                        null)))
                 .isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> service.startLogin(
-                new LtiLoginRequest(ISSUER, "hint", "x", null, "client-2", null)))
+                new LtiLoginRequest(ISSUER, "hint", "http://localhost:3000/lti/launch", null, "client-2", null)))
                 .isInstanceOf(ResponseStatusException.class);
         verify(stateStore, never()).save(anyString(), anyString());
     }
 
     @Test
-    void recordsAFirstLaunchAsAStudentOfTheCourse() {
+    void recordsALaunchByInsertingIfAbsentSoTwoFirstLaunchesBothSucceed() {
         when(stateStore.consume("state-1")).thenReturn(Optional.of("nonce-1"));
         when(verifier.verify("token", "nonce-1")).thenReturn(claims(LtiLaunchService.LEARNER_ROLE));
-        when(userRepository.findByIssuerAndSubject(ISSUER, "42")).thenReturn(Optional.empty());
-        when(courseRepository.findByIssuerAndContextId(ISSUER, "7")).thenReturn(Optional.empty());
-        when(enrollmentRepository.findByUserIdAndCourseId(any(), any())).thenReturn(Optional.empty());
+        OfficeHoursUser inserted = new OfficeHoursUser();
+        inserted.setId(UUID.randomUUID());
+        OfficeHoursCourse insertedCourse = new OfficeHoursCourse();
+        insertedCourse.setId(UUID.randomUUID());
+        OfficeHoursEnrollment insertedEnrollment = new OfficeHoursEnrollment();
+        when(userRepository.findByIssuerAndSubject(ISSUER, "42")).thenReturn(Optional.of(inserted));
+        when(courseRepository.findByIssuerAndContextId(ISSUER, "7")).thenReturn(Optional.of(insertedCourse));
+        when(enrollmentRepository.findByUserIdAndCourseId(inserted.getId(), insertedCourse.getId()))
+                .thenReturn(Optional.of(insertedEnrollment));
 
         LtiLaunchResponse response = service.completeLaunch(new LtiLaunchRequest("token", "state-1"));
 
-        ArgumentCaptor<OfficeHoursUser> user = ArgumentCaptor.forClass(OfficeHoursUser.class);
-        verify(userRepository).save(user.capture());
-        assertThat(user.getValue().getEmail()).isEqualTo("ayse@metu.edu.tr");
-        assertThat(user.getValue().getCreatedAt()).isEqualTo(NOW);
-        ArgumentCaptor<OfficeHoursCourse> course = ArgumentCaptor.forClass(OfficeHoursCourse.class);
-        verify(courseRepository).save(course.capture());
-        assertThat(course.getValue().getTitle()).isEqualTo("Introduction to Computing");
-        assertThat(course.getValue().getShortName()).isEqualTo("CENG 101");
-        ArgumentCaptor<OfficeHoursEnrollment> enrollment = ArgumentCaptor.forClass(OfficeHoursEnrollment.class);
-        verify(enrollmentRepository).save(enrollment.capture());
-        assertThat(enrollment.getValue().getRole()).isEqualTo(OfficeHoursRole.STUDENT);
+        verify(userRepository).insertIfAbsent(any(), eq(ISSUER), eq("42"), eq("Ayşe Yılmaz"), eq(NOW));
+        verify(courseRepository).insertIfAbsent(any(), eq(ISSUER), eq("7"), eq("Introduction to Computing"), eq(NOW));
+        verify(enrollmentRepository).insertIfAbsent(any(), eq(inserted.getId()), eq(insertedCourse.getId()),
+                eq("STUDENT"), eq(NOW));
+        assertThat(inserted.getEmail()).isEqualTo("ayse@metu.edu.tr");
+        assertThat(inserted.getLastLaunchAt()).isEqualTo(NOW);
+        assertThat(insertedCourse.getShortName()).isEqualTo("CENG 101");
+        assertThat(insertedEnrollment.getRole()).isEqualTo(OfficeHoursRole.STUDENT);
 
         assertThat(response.role()).isEqualTo(OfficeHoursRole.STUDENT);
-        assertThat(response.userId()).isEqualTo(user.getValue().getId());
-        assertThat(response.courseId()).isEqualTo(course.getValue().getId());
+        assertThat(response.userId()).isEqualTo(inserted.getId());
+        assertThat(response.courseId()).isEqualTo(insertedCourse.getId());
         assertThat(response.fullName()).isEqualTo("Ayşe Yılmaz");
     }
 
@@ -180,6 +184,29 @@ class LtiLaunchServiceTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
         verify(userRepository, never()).save(any());
+        verify(userRepository, never()).insertIfAbsent(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void refusesALoginForAnotherDeploymentOrAnotherTool() {
+        assertThatThrownBy(() -> service.startLogin(new LtiLoginRequest(ISSUER, "hint",
+                "http://localhost:3000/lti/launch", null, "client-1", "9")))
+                .isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> service.startLogin(new LtiLoginRequest(ISSUER, "hint",
+                "https://evil.example/lti/launch", null, "client-1", "1")))
+                .isInstanceOf(ResponseStatusException.class);
+        verify(stateStore, never()).save(anyString(), anyString());
+    }
+
+    @Test
+    void acceptsAnyPathOnTheToolsOwnOrigin() {
+        assertThat(LtiLaunchService.sameOrigin("http://localhost:3000/office-hours", "http://localhost:3000/lti/launch"))
+                .isTrue();
+        assertThat(LtiLaunchService.sameOrigin("https://menton.example/x", "https://menton.example/lti/launch"))
+                .isTrue();
+        assertThat(LtiLaunchService.sameOrigin("http://localhost:3001/lti/launch", "http://localhost:3000/lti/launch"))
+                .isFalse();
+        assertThat(LtiLaunchService.sameOrigin("not a uri", "http://localhost:3000/lti/launch")).isFalse();
     }
 
     @Test
