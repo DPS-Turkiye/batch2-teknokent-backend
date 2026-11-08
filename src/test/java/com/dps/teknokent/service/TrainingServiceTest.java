@@ -37,8 +37,22 @@ import com.dps.teknokent.entity.TrainingModule;
 import com.dps.teknokent.entity.TrainingQuestion;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.TrainingAttemptRepository;
 import com.dps.teknokent.repository.TrainingModuleRepository;
+import com.dps.teknokent.repository.TrainingProgressRepository;
 import com.dps.teknokent.repository.TrainingQuestionRepository;
+import com.dps.teknokent.repository.UserBadgeRepository;
+import com.dps.teknokent.domain.BadgeCode;
+import com.dps.teknokent.domain.BadgeSource;
+import com.dps.teknokent.domain.BadgeStatus;
+import com.dps.teknokent.domain.TrainingState;
+import com.dps.teknokent.entity.TrainingAttempt;
+import com.dps.teknokent.entity.UserBadge;
+import com.dps.teknokent.exception.ConflictException;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 
 @ExtendWith(MockitoExtension.class)
 class TrainingServiceTest {
@@ -47,6 +61,14 @@ class TrainingServiceTest {
 	private TrainingModuleRepository modules;
 	@Mock
 	private TrainingQuestionRepository questions;
+	@Mock
+	private TrainingProgressRepository progress;
+	@Mock
+	private TrainingAttemptRepository attempts;
+	@Mock
+	private UserBadgeRepository awards;
+	@Mock
+	private ProgramRepository programs;
 	@Mock
 	private AppUserRepository users;
 	@Mock
@@ -158,6 +180,178 @@ class TrainingServiceTest {
 
 		assertThatThrownBy(() -> service.forEditor(stranger, iskur.getId()))
 				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	// ---- 4T-2: the student's side ----
+
+	private TrainingModule live() {
+		TrainingModule module = published(1, "M7lc1UVf-VE");
+		lenient().when(modules.findByProgramId(iskur.getId())).thenReturn(Optional.of(module));
+		lenient().when(programs.findById(iskur.getId())).thenReturn(Optional.of(iskur));
+		request("https://youtu.be/M7lc1UVf-VE", "Soru").questions()
+				.forEach(question -> stored.add(questionOf(module, stored.size(), question, 1)));
+		return module;
+	}
+
+	private AppUser signedIn(boolean watched) {
+		AppUser student = student();
+		student.setStatus(UserAccountStatus.APPROVED);
+		lenient().when(domainLookupService.requireUser(student.getId())).thenReturn(student);
+		lenient().when(progress.existsByModuleIdAndUserIdAndVersion(any(), eq(student.getId()), eq(1)))
+				.thenReturn(watched);
+		return student;
+	}
+
+	private Map<UUID, Integer> answers(int right) {
+		Map<UUID, Integer> answers = new HashMap<>();
+		for (int index = 0; index < stored.size(); index++) {
+			TrainingQuestion question = stored.get(index);
+			answers.put(question.getId(),
+					index < right ? (int) question.getCorrectOption() : (question.getCorrectOption() + 1) % 4);
+		}
+		return answers;
+	}
+
+	private static UserBadge gate(AppUser holder, Program program, BadgeStatus status) {
+		UserBadge award = new UserBadge();
+		award.setUserId(holder.getId());
+		award.setBadgeCode(BadgeCode.PEER_MENTOR);
+		award.setProgramId(program.getId());
+		award.setStatus(status);
+		return award;
+	}
+
+	@Test
+	void aStudentGoesFromTheVideoToTheQuizOnceThePlayerSaysItWasWatched() {
+		live();
+		AppUser student = signedIn(false);
+
+		assertThat(service.forStudent(student.getId()).state()).isEqualTo(TrainingState.VIDEO);
+		assertThatThrownBy(() -> service.quiz(student.getId())).isInstanceOf(InvalidRequestException.class);
+
+		when(progress.existsByModuleIdAndUserIdAndVersion(any(), eq(student.getId()), eq(1)))
+				.thenReturn(false, false, true);
+		var after = service.videoWatched(student.getId());
+		verify(progress).save(any());
+		assertThat(after.state()).isEqualTo(TrainingState.QUIZ);
+		assertThat(after.attemptsLeft()).isEqualTo(3);
+		assertThat(after.videoId()).isEqualTo("M7lc1UVf-VE");
+	}
+
+	@Test
+	void theQuizHasEveryQuestionWithItsOptionsButNeverSaysWhichIsRight() {
+		live();
+		AppUser student = signedIn(true);
+
+		var quiz = service.quiz(student.getId());
+
+		assertThat(quiz.version()).isEqualTo(1);
+		assertThat(quiz.questions()).hasSize(10).allSatisfy(question -> assertThat(question.options())
+				.extracting(option -> option.index()).containsExactlyInAnyOrder(0, 1, 2, 3));
+		assertThat(TrainingQuizResponseHasNoAnswer.check()).isTrue();
+	}
+
+	@Test
+	void eightRightOfTenAwardsTheBadgeThroughThePhaseFourPath() {
+		live();
+		AppUser student = signedIn(true);
+
+		var result = service.submit(student.getId(), 1, answers(8));
+
+		assertThat(result.passed()).isTrue();
+		assertThat(result.score()).isEqualTo(8);
+		verify(badgeService).award(student, BadgeCode.PEER_MENTOR, iskur, BadgeSource.RULE, null);
+		ArgumentCaptor<TrainingAttempt> attempt = ArgumentCaptor.forClass(TrainingAttempt.class);
+		verify(attempts).save(attempt.capture());
+		assertThat(attempt.getValue().isPassed()).isTrue();
+		verify(notificationService, never()).create(any(), any(), anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void sevenRightIsAFailWithANoteAndNoBadge() {
+		live();
+		AppUser student = signedIn(true);
+
+		var result = service.submit(student.getId(), 1, answers(7));
+
+		assertThat(result.passed()).isFalse();
+		verify(badgeService, never()).award(any(), any(), any(), any(), any());
+		verify(notificationService).create(eq(student), eq(NotificationCategory.BADGE), eq("Sınavı geçemedin"),
+				anyString(), eq("/student/peer-mentoring/training"));
+	}
+
+	// D2d: three tries in 24 hours, then the next one opens when the oldest leaves the window.
+	@Test
+	void aFourthTryWithin24HoursIsRefused() {
+		TrainingModule module = live();
+		AppUser student = signedIn(true);
+		List<TrainingAttempt> recent = IntStream.range(0, 3).mapToObj(index -> {
+			TrainingAttempt attempt = new TrainingAttempt();
+			attempt.setSubmittedAt(Instant.now().minusSeconds(3600L * (3 - index)));
+			return attempt;
+		}).toList();
+		when(attempts.findByModuleIdAndUserIdAndSubmittedAtAfterOrderBySubmittedAtAsc(eq(module.getId()),
+				eq(student.getId()), any())).thenReturn(recent);
+
+		assertThat(service.forStudent(student.getId()).attemptsLeft()).isZero();
+		assertThat(service.forStudent(student.getId()).nextAttemptAt())
+				.isEqualTo(recent.getFirst().getSubmittedAt().plus(java.time.Duration.ofHours(24)));
+		assertThatThrownBy(() -> service.submit(student.getId(), 1, answers(10)))
+				.isInstanceOf(ConflictException.class);
+		assertThatThrownBy(() -> service.quiz(student.getId())).isInstanceOf(ConflictException.class);
+	}
+
+	@Test
+	void aSubmissionForAnOldVersionOrWithAnUnansweredQuestionIsRefused() {
+		live();
+		AppUser student = signedIn(true);
+
+		assertThatThrownBy(() -> service.submit(student.getId(), 2, answers(10)))
+				.isInstanceOf(ConflictException.class);
+		Map<UUID, Integer> partial = answers(10);
+		partial.remove(stored.getFirst().getId());
+		assertThatThrownBy(() -> service.submit(student.getId(), 1, partial))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(attempts, never()).save(any());
+	}
+
+	// Rule R: after a revoke only a coordinator or admin can award the badge again.
+	@Test
+	void aHolderHasNothingToDoAndARevokedStudentCannotRetakeIt() {
+		live();
+		AppUser holder = signedIn(true);
+		when(awards.findByUserIdOrderByAwardedAtDesc(holder.getId()))
+				.thenReturn(List.of(gate(holder, iskur, BadgeStatus.ACTIVE)));
+		assertThat(service.forStudent(holder.getId()).state()).isEqualTo(TrainingState.BADGE_ACTIVE);
+
+		AppUser revoked = signedIn(true);
+		when(awards.findByUserIdOrderByAwardedAtDesc(revoked.getId()))
+				.thenReturn(List.of(gate(revoked, iskur, BadgeStatus.REVOKED)));
+		assertThat(service.forStudent(revoked.getId()).state()).isEqualTo(TrainingState.BLOCKED);
+		assertThatThrownBy(() -> service.submit(revoked.getId(), 1, answers(10)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(badgeService, never()).award(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void outsideAPeerProgramOrBeforePublishingThereIsNoTraining() {
+		AppUser student = signedIn(false);
+		when(programs.findById(iskur.getId())).thenReturn(Optional.of(iskur));
+		when(modules.findByProgramId(iskur.getId())).thenReturn(Optional.empty());
+		assertThat(service.forStudent(student.getId()).state()).isEqualTo(TrainingState.NOT_AVAILABLE);
+
+		student.setProgramId(null);
+		assertThat(service.forStudent(student.getId()).state()).isEqualTo(TrainingState.NOT_AVAILABLE);
+	}
+
+	/** The quiz's types carry no correct option at all, so it cannot leak by mistake. */
+	private static final class TrainingQuizResponseHasNoAnswer {
+		static boolean check() {
+			return java.util.Arrays.stream(com.dps.teknokent.dto.responses.TrainingQuizResponse.Option.class
+					.getRecordComponents()).noneMatch(component -> component.getName().contains("correct"))
+					&& java.util.Arrays.stream(com.dps.teknokent.dto.responses.TrainingQuizResponse.Question.class
+							.getRecordComponents()).noneMatch(component -> component.getName().contains("correct"));
+		}
 	}
 
 	private static SaveTrainingRequest request(String link, String prefix) {
