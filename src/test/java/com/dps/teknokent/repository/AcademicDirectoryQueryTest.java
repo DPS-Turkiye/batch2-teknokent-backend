@@ -36,13 +36,16 @@ class AcademicDirectoryQueryTest {
 	private EntityManager entityManager;
 
 	@Test
-	void listsOnlyAcademiciansByNameAndCountsAdviseesPerAdvisor() {
+	void listsOnlyAcademiciansByNameAndCountsTheAdviseesTheInstitutionHasARecordFor() {
 		person("A-2", "Zeynep Kara", false, true);
 		person("A-1", "Ali Demir", false, true);
 		person("S-1", "Ayşe Yılmaz", true, false);
+		person("S-2", "Mehmet Kaya", true, false);
+		person("S-3", "Zeynep Demir", true, false);
 		advising.save(new InstitutionAdvising("odtu", "S-1", "A-1", NOW));
 		advising.save(new InstitutionAdvising("odtu", "S-2", "A-1", NOW));
 		advising.save(new InstitutionAdvising("odtu", "S-3", "A-2", NOW));
+		advising.save(new InstitutionAdvising("odtu", "S-9", "A-2", NOW));
 		entityManager.flush();
 		entityManager.clear();
 
