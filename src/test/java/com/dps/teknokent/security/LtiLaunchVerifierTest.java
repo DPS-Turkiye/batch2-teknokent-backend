@@ -188,6 +188,23 @@ class LtiLaunchVerifierTest {
     }
 
     @Test
+    void acceptsACourseIdLabelAndTitleSentAsNumbers() throws Exception {
+        LtiLaunchClaims claims = verifier().verify(token(builder -> builder.claim(CLAIM + "context",
+                Map.of("id", 7, "label", 101, "title", 2026))), NONCE);
+
+        assertThat(claims.contextId()).isEqualTo("7");
+        assertThat(claims.contextLabel()).isEqualTo("101");
+        assertThat(claims.contextTitle()).isEqualTo("2026");
+    }
+
+    @Test
+    void refusesACourseIdThatIsNeitherTextNorANumber() throws Exception {
+        String token = token(builder -> builder.claim(CLAIM + "context", Map.of("id", List.of("7"))));
+
+        assertUnauthorized(() -> verifier().verify(token, NONCE));
+    }
+
+    @Test
     void refusesGarbage() {
         assertUnauthorized(() -> verifier().verify("not-a-jwt", NONCE));
     }
