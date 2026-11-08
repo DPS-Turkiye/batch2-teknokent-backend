@@ -12,8 +12,6 @@ import com.dps.teknokent.entity.OfficeHoursMeeting;
 
 public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursMeeting, UUID> {
 
-	boolean existsByInstructorIdAndScheduledAt(UUID instructorId, Instant scheduledAt);
-
 	List<OfficeHoursMeeting> findByInstructorIdAndScheduledAtAfter(UUID instructorId, Instant after);
 
 	List<OfficeHoursMeeting> findByRequestIdIn(Collection<UUID> requestIds);

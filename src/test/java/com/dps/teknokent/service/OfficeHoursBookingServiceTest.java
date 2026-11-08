@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,6 +37,7 @@ import com.dps.teknokent.entity.OfficeHoursEnrollment;
 import com.dps.teknokent.entity.OfficeHoursMeeting;
 import com.dps.teknokent.entity.OfficeHoursRequest;
 import com.dps.teknokent.entity.OfficeHoursRequestMessage;
+import com.dps.teknokent.entity.OfficeHoursSettings;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.OfficeHoursEnrollmentRepository;
@@ -94,6 +96,12 @@ class OfficeHoursBookingServiceTest {
                 .thenReturn(Optional.of(enrollment));
     }
 
+    private static OfficeHoursSettings capacity(int students) {
+        OfficeHoursSettings settings = new OfficeHoursSettings();
+        settings.setStudentCapacity(students);
+        return settings;
+    }
+
     private OfficeHoursRequest existing(OfficeHoursRequestStatus status) {
         OfficeHoursRequest request = new OfficeHoursRequest();
         request.setId(REQUEST);
@@ -120,6 +128,38 @@ class OfficeHoursBookingServiceTest {
         assertThat(response.topic()).isEqualTo("Ödev 2 hakkında");
         assertThat(response.expectedOutcome()).isNull();
         assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);
+    }
+
+    @Test
+    void anAcademicAtTheirStudentLimitTakesNoNewStudent() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        enrolled(ACADEMIC, OfficeHoursRole.INSTRUCTOR);
+        when(settingsRepository.findById(ACADEMIC)).thenReturn(Optional.of(capacity(1)));
+        OfficeHoursRequest someoneElse = new OfficeHoursRequest();
+        someoneElse.setStudentId(UUID.randomUUID());
+        when(requestRepository.findByInstructorIdAndStatusIn(eq(ACADEMIC), any())).thenReturn(List.of(someoneElse));
+        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(ACADEMIC, NOW)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.create(STUDENT, COURSE,
+                new CreateOfficeHoursRequest(ACADEMIC, "Soru", null, List.of(TUESDAY_2PM))))
+                .isInstanceOf(ConflictException.class);
+        verify(requestRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void aStudentAlreadyWorkingWithTheAcademicCanStillAsk() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        enrolled(ACADEMIC, OfficeHoursRole.INSTRUCTOR);
+        when(settingsRepository.findById(ACADEMIC)).thenReturn(Optional.of(capacity(1)));
+        when(requestRepository.findByInstructorIdAndStatusIn(eq(ACADEMIC), any())).thenReturn(List.of());
+        OfficeHoursMeeting own = new OfficeHoursMeeting();
+        own.setStudentId(STUDENT);
+        when(meetingRepository.findByInstructorIdAndScheduledAtAfter(ACADEMIC, NOW)).thenReturn(List.of(own));
+
+        OfficeHoursRequestResponse response = service.create(STUDENT, COURSE,
+                new CreateOfficeHoursRequest(ACADEMIC, "Soru", null, List.of(TUESDAY_2PM)));
+
+        assertThat(response.status()).isEqualTo(OfficeHoursRequestStatus.PENDING);
     }
 
     @Test
@@ -164,10 +204,9 @@ class OfficeHoursBookingServiceTest {
     @Test
     void acceptingWithoutATimeTakesTheFirstFreeOneAndATypedTimeGetsTheDefaultLength() {
         existing(OfficeHoursRequestStatus.PENDING);
-        when(meetingRepository.existsByInstructorIdAndScheduledAt(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z")))
-                .thenReturn(true);
         when(slotService.openSlotAt(any(), any())).thenReturn(Optional.empty());
-        when(settingsRepository.findById(ACADEMIC)).thenReturn(Optional.empty());
+        when(slotService.defaultMeetingMinutes(ACADEMIC)).thenReturn(45);
+        when(slotService.clashesWithCalendar(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z"), 45)).thenReturn(true);
 
         service.decide(ACADEMIC, COURSE, REQUEST,
                 new DecideOfficeHoursRequest(OfficeHoursRequestStatus.ACCEPTED, null, null, null));
@@ -188,10 +227,11 @@ class OfficeHoursBookingServiceTest {
     }
 
     @Test
-    void refusesADoubleBooking() {
+    void refusesATimeThatOverlapsAMeetingAlreadyOnTheCalendar() {
         existing(OfficeHoursRequestStatus.PENDING);
-        when(meetingRepository.existsByInstructorIdAndScheduledAt(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z")))
-                .thenReturn(true);
+        when(slotService.openSlotAt(any(), any())).thenReturn(Optional.empty());
+        when(slotService.defaultMeetingMinutes(ACADEMIC)).thenReturn(45);
+        when(slotService.clashesWithCalendar(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z"), 45)).thenReturn(true);
 
         assertThatThrownBy(() -> service.decide(ACADEMIC, COURSE, REQUEST,
                 new DecideOfficeHoursRequest(OfficeHoursRequestStatus.ACCEPTED, null, TUESDAY_2PM, null)))
@@ -240,7 +280,7 @@ class OfficeHoursBookingServiceTest {
     void theStudentTakesOneOfTheProposedTimes() {
         OfficeHoursRequest request = existing(OfficeHoursRequestStatus.PENDING);
         when(slotService.openSlotAt(any(), any())).thenReturn(Optional.empty());
-        when(settingsRepository.findById(ACADEMIC)).thenReturn(Optional.empty());
+        when(slotService.defaultMeetingMinutes(ACADEMIC)).thenReturn(45);
 
         service.decide(ACADEMIC, COURSE, REQUEST, new DecideOfficeHoursRequest(
                 OfficeHoursRequestStatus.COUNTER_PROPOSED, "Şunlar uygun", null, List.of("2026-11-12T10:00")));

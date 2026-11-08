@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -147,6 +148,7 @@ public class OfficeHoursBookingService {
 		List<String> slots = submission.preferredSlots().stream().distinct().toList();
 		requireBookable(slots);
 		Instant now = clock.instant();
+		requireRoomFor(studentId, submission.instructorId(), now);
 
 		OfficeHoursRequest request = new OfficeHoursRequest();
 		request.setId(UUID.randomUUID());
@@ -251,16 +253,33 @@ public class OfficeHoursBookingService {
 		return save(request);
 	}
 
+	/**
+	 * The academic's student limit, read the way a mentor's mentee capacity is: how many students they work with at
+	 * once. Students with an open request or an upcoming meeting count; someone already among them can always ask
+	 * again. No limit when none is set.
+	 */
+	private void requireRoomFor(UUID studentId, UUID instructorId, Instant now) {
+		Integer capacity = settingsRepository.findById(instructorId).map(OfficeHoursSettings::getStudentCapacity)
+				.orElse(null);
+		if (capacity == null) {
+			return;
+		}
+		Set<UUID> students = new HashSet<>();
+		requestRepository.findByInstructorIdAndStatusIn(instructorId, OPEN)
+				.forEach(open -> students.add(open.getStudentId()));
+		meetingRepository.findByInstructorIdAndScheduledAtAfter(instructorId, now)
+				.forEach(meeting -> students.add(meeting.getStudentId()));
+		if (!students.contains(studentId) && students.size() >= capacity) {
+			throw new ConflictException("This academic has no room for another student right now.");
+		}
+	}
+
 	private void book(OfficeHoursRequest request, String slot) {
 		Instant startsAt = MeetingSlotTimes.parseMachineSlot(slot);
-		if (meetingRepository.existsByInstructorIdAndScheduledAt(request.getInstructorId(), startsAt)) {
-			throw new ConflictException("This slot has just been booked. Please choose another time");
+		int duration = meetingMinutes(request.getInstructorId(), startsAt);
+		if (slotService.clashesWithCalendar(request.getInstructorId(), startsAt, duration)) {
+			throw new ConflictException("This time overlaps a meeting already on the calendar. Please choose another time");
 		}
-		int duration = slotService.openSlotAt(request.getInstructorId(), startsAt)
-				.map(OfficeHoursSlotService.Slot::durationMinutes)
-				.orElseGet(() -> settingsRepository.findById(request.getInstructorId())
-						.map(OfficeHoursSettings::getDefaultMeetingDurationMinutes)
-						.orElse(new OfficeHoursSettings().getDefaultMeetingDurationMinutes()));
 		OfficeHoursMeeting meeting = new OfficeHoursMeeting();
 		meeting.setId(UUID.randomUUID());
 		meeting.setRequestId(request.getId());
@@ -277,11 +296,21 @@ public class OfficeHoursBookingService {
 		}
 	}
 
+	/** An open slot's own length; a time typed by hand gets the academic's default meeting length. */
+	private int meetingMinutes(UUID instructorId, Instant startsAt) {
+		return slotService.openSlotAt(instructorId, startsAt)
+				.map(OfficeHoursSlotService.Slot::durationMinutes)
+				.orElseGet(() -> slotService.defaultMeetingMinutes(instructorId));
+	}
+
 	/** As for mentors, accepting without naming a time takes the student's first time that is still free. */
 	private String firstFreePreferred(OfficeHoursRequest request) {
 		return slots(request.getPreferredSlots()).stream()
-				.filter(slot -> !meetingRepository.existsByInstructorIdAndScheduledAt(request.getInstructorId(),
-						MeetingSlotTimes.parseMachineSlot(slot)))
+				.filter(slot -> {
+					Instant startsAt = MeetingSlotTimes.parseMachineSlot(slot);
+					return !slotService.clashesWithCalendar(request.getInstructorId(), startsAt,
+							meetingMinutes(request.getInstructorId(), startsAt));
+				})
 				.findFirst()
 				.orElse(null);
 	}
