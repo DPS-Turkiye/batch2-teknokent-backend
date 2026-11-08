@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
@@ -22,18 +23,23 @@ import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
+import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
+import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.InstitutionPerson;
+import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
+import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.util.Texts;
 
@@ -60,6 +66,9 @@ public class PeerMentoringService {
 	private final MentorshipRequestService mentorshipRequestService;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final PersonalTeamService personalTeamService;
+	private final MentorProfileRepository mentorProfileRepository;
+	private final AppUserRepository appUserRepository;
+	private final BadgeService badgeService;
 
 	/** The peer mentors of the student's program, the student left out; empty for a student in no program. */
 	@Transactional(readOnly = true)
@@ -127,6 +136,65 @@ public class PeerMentoringService {
 				.orElseThrow(() -> new ResourceNotFoundException("Mentorship request not found: " + created.id())));
 	}
 
+	/** The peer mentor's own profile; 404 until they publish one with the wizard. */
+	@Transactional(readOnly = true)
+	public PeerMentorProfileResponse profile(UUID actorId) {
+		AppUser mentor = requirePeerMentor(actorId);
+		MentorProfile profile = mentorProfileRepository.findById(mentor.getId())
+				.orElseThrow(() -> new ResourceNotFoundException("No peer-mentor profile yet: " + mentor.getId()));
+		return toProfileResponse(mentor, profile);
+	}
+
+	/**
+	 * Publishes or updates the wizard's answers. No approval step (board: "ek onay adımı yok"): the badge already made
+	 * the student one of their program's mentors, so the profile shows in the program's directory at once.
+	 */
+	@Transactional
+	public PeerMentorProfileResponse saveProfile(UUID actorId, SavePeerMentorProfileRequest request) {
+		AppUser mentor = requirePeerMentor(actorId);
+		MentorProfile profile = mentorProfileRepository.findById(mentor.getId())
+				.orElseGet(() -> MentorProfile.blankFor(mentor, mentorProfileRepository.findMaxSortOrder() + 1));
+		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(
+				mentor.getId());
+		profile.setSpecialties(new ArrayList<>(request.categories().stream().distinct().map(Enum::name).toList()));
+		profile.setOfferings(new ArrayList<>(cleaned(request.subTopics())));
+		profile.setStrongCourses(new ArrayList<>(cleaned(request.strongCourses())));
+		profile.setProjects(new ArrayList<>(cleaned(request.projects())));
+		profile.setErasmus(blankToNull(request.erasmus()));
+		profile.setAbout(request.helpWith().trim());
+		person.map(InstitutionPerson::getDepartmentName).ifPresent(profile::setDepartment);
+		person.map(InstitutionPerson::getClassYear).map(String::valueOf).ifPresent(profile::setStudyYear);
+		mentor.setLinkedinUrl(blankToNull(request.linkedinUrl()));
+		appUserRepository.save(mentor);
+		return toProfileResponse(mentor, mentorProfileRepository.save(profile));
+	}
+
+	private PeerMentorProfileResponse toProfileResponse(AppUser mentor, MentorProfile profile) {
+		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(
+				mentor.getId());
+		return new PeerMentorProfileResponse(
+				profile.getSpecialties().stream().map(PeerTopicCategory::fromText).filter(Objects::nonNull).distinct()
+						.toList(),
+				List.copyOf(profile.getOfferings()),
+				List.copyOf(profile.getStrongCourses()),
+				List.copyOf(profile.getProjects()),
+				profile.getErasmus(),
+				profile.getAbout(),
+				mentor.getLinkedinUrl(),
+				person.map(InstitutionPerson::getDepartmentName).orElse(profile.getDepartment()),
+				person.map(InstitutionPerson::getClassYear).orElseGet(() -> parseYear(profile.getStudyYear())),
+				profile.getMenteeCapacity());
+	}
+
+	private static List<String> cleaned(List<String> values) {
+		return values == null ? List.of() : values.stream().map(String::trim).filter(value -> !value.isEmpty())
+				.distinct().toList();
+	}
+
+	private static String blankToNull(String value) {
+		return value == null || value.isBlank() ? null : value.trim();
+	}
+
 	private List<MentorProfileResponse> peerMentorsFor(AppUser student) {
 		Optional<UUID> program = menteeProgramService.programOf(student);
 		if (program.isEmpty()) {
@@ -146,6 +214,12 @@ public class PeerMentoringService {
 		return user;
 	}
 
+	/**
+	 * The mentor side (received requests, profile) is open to a student who holds MENTOR now. D4 seam: a revoked
+	 * Akran Mentoru badge takes MENTOR away (BadgeService), so a student whose badge was revoked can no longer act on
+	 * requests or mentorships they already have; what should happen to those is the parked decision D4, and this is
+	 * the one check to change when it is made.
+	 */
 	private AppUser requirePeerMentor(UUID actorId) {
 		AppUser user = domainLookupService.requireUser(actorId);
 		if (!isPeerMentor(user)) {
@@ -182,7 +256,7 @@ public class PeerMentoringService {
 				: List.of();
 		boolean full = profile.menteeCapacity() != null && profile.activeMenteeCount() >= profile.menteeCapacity();
 		return new PeerMentorCardResponse(profile.id(), profile.fullName(), department, classYear, categories, helpWith,
-				reasons, full);
+				reasons, full, badgeService.publicOf(profile.id()));
 	}
 
 	private PeerMentoringRequestResponse toResponse(MentorshipRequest request) {

@@ -14,5 +14,7 @@ public record PeerMentorCardResponse(
 		List<PeerTopicCategory> categories,
 		String helpWith,
 		List<String> recommendationReasons,
-		boolean capacityFull) {
+		boolean capacityFull,
+		/** Active badges, as anyone may see them; a card shows the achievements. */
+		List<PublicBadgeResponse> badges) {
 }

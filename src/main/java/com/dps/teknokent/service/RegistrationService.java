@@ -317,7 +317,7 @@ public class RegistrationService {
 				UserAccountStatus.PENDING, null);
 		applyFirebaseIdentity(mentor, email);
 		appUserRepository.saveAndFlush(mentor);
-		mentorProfileRepository.save(newMentorProfile(mentor));
+		mentorProfileRepository.save(MentorProfile.blankFor(mentor, mentorProfileRepository.findMaxSortOrder() + 1));
 		programInvite.ifPresent(invite -> joinProgramPool(invite, mentor));
 		return UserResponse.fromEntity(mentor);
 	}
@@ -354,30 +354,6 @@ public class RegistrationService {
 		invite.setMentorId(mentor.getId());
 		invite.setJoinedAt(Instant.now());
 		programMentorInviteRepository.save(invite);
-	}
-
-	/**
-	 * Onboarding updates a profile rather than creating one, so the row has to exist
-	 * from registration. The presentation labels it does not collect start empty and
-	 * are filled in later from the mentor profile screen.
-	 */
-	private MentorProfile newMentorProfile(AppUser mentor) {
-		MentorProfile profile = new MentorProfile();
-		profile.setUser(mentor);
-		profile.setInitials(TextUtils.initials(mentor.getFullName()));
-		profile.setProfessionalTitle(TextUtils.nullToEmpty(mentor.getJobTitle()));
-		profile.setCompany("");
-		profile.setAvailabilityLabel("");
-		profile.setResponseTimeLabel("");
-		profile.setMeetingMode("");
-		profile.setCommunicationPreference("");
-		profile.setMentoringStyle("");
-		profile.setFitLabel("");
-		profile.setExperienceLevel("");
-		profile.setSectorExperience("");
-		profile.setStartupStages("");
-		profile.setSortOrder(mentorProfileRepository.findMaxSortOrder() + 1);
-		return profile;
 	}
 
 	@Transactional
