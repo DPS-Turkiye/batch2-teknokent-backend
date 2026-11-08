@@ -85,6 +85,10 @@ public class MentorshipRequestService {
 	private final MailService mailService;
 	private final DocumentRequestService documentRequestService;
 
+	/**
+	 * The proxy calls this on the service login with the caller's own scope. A missing scope is refused rather than
+	 * read as "everyone": a blank organization from a session without a startup arrives here as null.
+	 */
 	@Transactional(readOnly = true)
 	public List<MentorshipRequestResponse> findAll(UUID requesterId, UUID mentorId, UUID organizationId) {
 		List<MentorshipRequest> requests;
@@ -95,7 +99,7 @@ public class MentorshipRequestService {
 		} else if (requesterId != null) {
 			requests = mentorshipRequestRepository.findByRequesterIdOrderByCreatedAtDesc(requesterId);
 		} else {
-			requests = mentorshipRequestRepository.findAllByOrderByCreatedAtDesc();
+			throw new InvalidRequestException("mentorId, organizationId or requesterId is required");
 		}
 		return toResponses(requests);
 	}

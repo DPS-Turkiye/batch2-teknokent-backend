@@ -22,7 +22,6 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 	List<Meeting> findByMentorIdOrderByScheduledAtDesc(UUID mentorId);
 	List<Meeting> findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(UUID mentorId, UUID organizationId);
 
-	long countByStatusAndScheduledAtAfter(MeetingStatus status, Instant threshold);
 	long countByOrganizationIdAndStatusAndScheduledAtAfter(UUID organizationId, MeetingStatus status, Instant threshold);
 
 	Optional<Meeting> findByMentorshipRequestId(UUID mentorshipRequestId);

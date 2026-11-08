@@ -47,11 +47,11 @@ class MeetingControllerTest {
         }
 
         @Test
-        void returnsMeetingsWithoutOrganizationFilter() throws Exception {
+        void returnsMeetingsForTheOrganization() throws Exception {
                 UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
                 UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-                when(meetingService.findAll(null, null)).thenReturn(List.of(new MeetingResponse(
+                when(meetingService.findAll(organizationId, null)).thenReturn(List.of(new MeetingResponse(
                                 UUID.fromString("00000000-0000-0000-0000-000000000011"),
                                 null,
                                 organizationId,
@@ -69,7 +69,7 @@ class MeetingControllerTest {
                                 null,
                                 null)));
 
-                mockMvc.perform(get("/api/meetings").with(user("test-user")))
+                mockMvc.perform(get("/api/meetings").param("organizationId", organizationId.toString()).with(user("test-user")))
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$[0].organizationId").value(organizationId.toString()))
                                 .andExpect(jsonPath("$[0].mentorName").value("Dr. Kemal Arslan"))
