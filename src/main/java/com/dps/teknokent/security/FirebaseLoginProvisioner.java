@@ -165,7 +165,8 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	@Override
 	public void revokeSignIns(String email) {
 		try {
-			firebaseAuth.revokeRefreshTokens(firebaseAuth.getUserByEmail(email).getUid());
+			String uid = firebaseAuth.getUserByEmail(email).getUid();
+			firebaseAuth.revokeRefreshTokens(uid);
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
 				log.warn("No Firebase login for {}; only app sessions are ended", email);
