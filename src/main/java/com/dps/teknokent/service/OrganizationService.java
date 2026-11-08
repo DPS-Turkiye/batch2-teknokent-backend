@@ -22,6 +22,7 @@ import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.InviteCodeGenerator;
@@ -40,13 +41,19 @@ public class OrganizationService {
 	@Transactional(readOnly = true)
 	public List<OrganizationResponse> findAll() {
 		return organizationRepository.findAll(Sort.by(Sort.Direction.ASC, "name")).stream()
+				.filter(organization -> !organization.isPersonal())
 				.map(OrganizationResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional(readOnly = true)
+	/** A student's personal team is no startup page anyone can open, its owner included. */
 	public OrganizationResponse findById(UUID id) {
-		return OrganizationResponse.fromEntity(domainLookupService.requireOrganization(id));
+		Organization organization = domainLookupService.requireOrganization(id);
+		if (organization.isPersonal()) {
+			throw new ResourceNotFoundException("Organization not found: " + id);
+		}
+		return OrganizationResponse.fromEntity(organization);
 	}
 
 	@Transactional

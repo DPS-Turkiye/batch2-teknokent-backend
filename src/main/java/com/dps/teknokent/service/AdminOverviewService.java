@@ -182,7 +182,7 @@ public class AdminOverviewService {
 				user.getRole(),
 				user.getStatus() == null ? UserAccountStatus.APPROVED : user.getStatus(),
 				user.getOrganization() == null ? null : user.getOrganization().getId(),
-				user.getOrganization() == null ? null : user.getOrganization().getName(),
+				Organization.visibleName(user.getOrganization()),
 				user.getJobTitle(),
 				user.getCreatedAt(),
 				user.getExpertise() == null ? List.of() : List.copyOf(user.getExpertise()),
@@ -278,7 +278,7 @@ public class AdminOverviewService {
 		return new RequestRow(
 				request.getId(),
 				request.getOrganization().getId(),
-				request.getOrganization().getName(),
+				Organization.visibleName(request.getOrganization()),
 				request.getMentor().getId(),
 				request.getMentor().getFullName(),
 				request.getSupportArea(),
@@ -293,7 +293,7 @@ public class AdminOverviewService {
 				bottleneck.getSeverity().name(),
 				bottleneck.getStatus().name(),
 				bottleneck.getOrganization().getId(),
-				bottleneck.getOrganization().getName(),
+				Organization.visibleName(bottleneck.getOrganization()),
 				bottleneck.getCreatedAt());
 	}
 
