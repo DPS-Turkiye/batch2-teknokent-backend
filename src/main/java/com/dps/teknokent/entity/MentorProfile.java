@@ -137,6 +137,12 @@ public class MentorProfile {
 	private List<MentorExperience> experiences = new ArrayList<>();
 
 	@ElementCollection
+	@CollectionTable(name = "mentor_education", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@BatchSize(size = 50)
+	private List<MentorEducation> educations = new ArrayList<>();
+
+	@ElementCollection
 	@CollectionTable(name = "mentor_offering", joinColumns = @JoinColumn(name = "mentor_id"))
 	@OrderColumn(name = "display_order")
 	@Column(name = "offering", nullable = false)
