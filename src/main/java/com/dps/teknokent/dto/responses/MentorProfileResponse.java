@@ -40,7 +40,27 @@ public record MentorProfileResponse(
 		List<MentorProgramResponse> programs,
 		List<MentorExperienceResponse> experiences,
 		List<String> offerings,
-		StudentProfileResponse studentProfile) {
+		StudentProfileResponse studentProfile,
+		List<MentorEducationResponse> educations) {
+
+	/** Without schools, for callers that build a response from parts. */
+	public MentorProfileResponse(UUID id, String fullName, String email, String initials, String professionalTitle,
+			String company, String availabilityLabel, String responseTimeLabel, String meetingMode,
+			String communicationPreference, String mentoringStyle, String fitLabel, String experienceLevel,
+			String sectorExperience, String startupStages, List<String> specialties,
+			List<String> recommendationReasons, List<MentorEvidenceResponse> recommendationEvidence,
+			Integer menteeCapacity, String about, int defaultMeetingDurationMinutes, int meetingBufferMinutes,
+			MeetingFrequency meetingFrequency, PrepFileRequirement prepFileRequirement, List<MentorLanguage> languages,
+			long activeMenteeCount, long completedMentorshipCount, List<String> programNames,
+			List<MentorProgramResponse> programs, List<MentorExperienceResponse> experiences, List<String> offerings,
+			StudentProfileResponse studentProfile) {
+		this(id, fullName, email, initials, professionalTitle, company, availabilityLabel, responseTimeLabel,
+				meetingMode, communicationPreference, mentoringStyle, fitLabel, experienceLevel, sectorExperience,
+				startupStages, specialties, recommendationReasons, recommendationEvidence, menteeCapacity, about,
+				defaultMeetingDurationMinutes, meetingBufferMinutes, meetingFrequency, prepFileRequirement, languages,
+				activeMenteeCount, completedMentorshipCount, programNames, programs, experiences, offerings,
+				studentProfile, List.of());
+	}
 
 	/** Without a student profile, for callers that build a response from parts. */
 	public MentorProfileResponse(UUID id, String fullName, String email, String initials, String professionalTitle,
@@ -56,7 +76,8 @@ public record MentorProfileResponse(
 				meetingMode, communicationPreference, mentoringStyle, fitLabel, experienceLevel, sectorExperience,
 				startupStages, specialties, recommendationReasons, recommendationEvidence, menteeCapacity, about,
 				defaultMeetingDurationMinutes, meetingBufferMinutes, meetingFrequency, prepFileRequirement, languages,
-				activeMenteeCount, completedMentorshipCount, programNames, programs, experiences, offerings, null);
+				activeMenteeCount, completedMentorshipCount, programNames, programs, experiences, offerings, null,
+				List.of());
 	}
 
 	// Recommendation ranking and its tests build profiles from the matching fields alone.
@@ -84,7 +105,8 @@ public record MentorProfileResponse(
 				profile.getMeetingBufferMinutes(), profile.getMeetingFrequency(), profile.getPrepFileRequirement(),
 				List.copyOf(profile.getLanguages()), 0, 0, List.of(), List.of(),
 				profile.getExperiences().stream().map(MentorExperienceResponse::fromEntity).toList(),
-				List.copyOf(profile.getOfferings()), StudentProfileResponse.fromEntity(profile));
+				List.copyOf(profile.getOfferings()), StudentProfileResponse.fromEntity(profile),
+				profile.getEducations().stream().map(MentorEducationResponse::fromEntity).toList());
 	}
 
 	public MentorProfileResponse withActivity(long activeMentees, long completedMentorships,
@@ -95,7 +117,7 @@ public record MentorProfileResponse(
 				recommendationEvidence, menteeCapacity, about, defaultMeetingDurationMinutes, meetingBufferMinutes,
 				meetingFrequency, prepFileRequirement, languages, activeMentees, completedMentorships,
 				joinedPrograms.stream().map(MentorProgramResponse::name).toList(), List.copyOf(joinedPrograms),
-				experiences, offerings, studentProfile);
+				experiences, offerings, studentProfile, educations);
 	}
 
 	public MentorProfileResponse withRecommendation(List<String> reasons, List<MentorEvidenceResponse> evidence) {
@@ -104,6 +126,6 @@ public record MentorProfileResponse(
 				experienceLevel, sectorExperience, startupStages, specialties, reasons, evidence, menteeCapacity,
 				about, defaultMeetingDurationMinutes, meetingBufferMinutes, meetingFrequency, prepFileRequirement,
 				languages, activeMenteeCount, completedMentorshipCount, programNames, programs, experiences,
-				offerings, studentProfile);
+				offerings, studentProfile, educations);
 	}
 }

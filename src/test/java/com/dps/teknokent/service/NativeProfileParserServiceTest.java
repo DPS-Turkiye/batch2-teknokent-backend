@@ -102,6 +102,34 @@ class NativeProfileParserServiceTest {
     }
 
     @Test
+    void parse_asksAMentorsCvForTheStudiesAStudentMentorFillsIn() {
+        byte[] pdfBytes = "sample-pdf".getBytes();
+        ExtractionResult extraction = new ExtractionResult("Student CV", 1, List.of(), false);
+        RedactionResult redaction = new RedactionResult("Student CV", Map.of(), 0);
+        when(textExtractor.extract(pdfBytes, "auto")).thenReturn(extraction);
+        JsonNode empty = jsonUtils.readTree("{}");
+        when(piiRedactionService.redact(extraction.text())).thenReturn(redaction);
+        when(aiProviderClient.structuredProfile(eq("mentor"), eq(redaction.text()), any(JsonNode.class)))
+                .thenReturn(empty);
+
+        service.parse(pdfBytes, "mentor", "auto");
+
+        ArgumentCaptor<JsonNode> schemaCaptor = ArgumentCaptor.forClass(JsonNode.class);
+        verify(aiProviderClient).structuredProfile(eq("mentor"), eq(redaction.text()), schemaCaptor.capture());
+        JsonNode schema = schemaCaptor.getValue();
+        assertThat(schema.get("required").toString()).contains("department", "study_year", "strong_courses",
+                "student_projects", "exchange_experience");
+        JsonNode studyYear = schema.get("properties").get("study_year");
+        assertThat(studyYear.get("type").toString()).contains("null");
+        assertThat(studyYear.get("description").asText()).contains("Hazırlık", "4. sınıf", "Doktora");
+        assertThat(schema.get("properties").get("strong_courses").get("type").asText()).isEqualTo("array");
+        JsonNode school = schema.get("properties").get("education").get("items");
+        assertThat(school.get("required").toString()).contains("school", "degree", "period");
+        assertThat(schema.get("properties").get("work_history").get("description").asText())
+                .contains("internships", "part-time", "club", "volunteer");
+    }
+
+    @Test
     void parse_rejectsUnsupportedProfileType() {
         byte[] pdfBytes = "sample-pdf".getBytes();
         ExtractionResult extraction = new ExtractionResult("Some text", 1, List.of(), false);
