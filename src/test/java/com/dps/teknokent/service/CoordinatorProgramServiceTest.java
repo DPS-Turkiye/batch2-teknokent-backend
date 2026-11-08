@@ -35,6 +35,7 @@ import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -293,6 +294,36 @@ class CoordinatorProgramServiceTest {
 		assertThatThrownBy(() -> service.deleteEvent(COORDINATOR_ID, PROGRAM_ID, UUID.randomUUID()))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void aDraftIsNeitherArchivedNorRestoredByTheCoordinator() {
+		Program program = program(COORDINATOR_ID);
+		program.setStatus(ProgramStatus.DRAFT);
+		stubManagedProgram(program);
+
+		assertThatThrownBy(() -> service.setArchived(COORDINATOR_ID, PROGRAM_ID, false))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.DRAFT);
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void aPeerMentoringProgramAlwaysTakesIndividualStudents() {
+		Program program = program(COORDINATOR_ID);
+		program.setProgramType(ProgramType.PEER_MENTORING);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(), List.of(), List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+
+		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "Akran", null, null, null, null, null, null, null, null, null, null, null, null, false));
+
+		assertThat(program.isIndividualMentees()).isTrue();
+		assertThat(detail.rules().individualMentees()).isTrue();
+		assertThat(detail.program().type()).isEqualTo(ProgramType.PEER_MENTORING);
 	}
 
 	@Test

@@ -46,6 +46,7 @@ import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
@@ -294,7 +295,10 @@ public class RegistrationService {
 		if (programId == null) {
 			throw new InvalidRequestException("A program is required.");
 		}
-		if (!programRepository.existsById(programId)) {
+		boolean open = programRepository.findById(programId)
+				.filter(program -> program.getStatus() != ProgramStatus.DRAFT)
+				.isPresent();
+		if (!open) {
 			throw new InvalidRequestException("The selected program does not exist.");
 		}
 	}

@@ -30,6 +30,7 @@ import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -186,7 +187,9 @@ public class CoordinatorProgramService {
 		if (request.rosterOnly() != null) {
 			program.setRosterOnly(request.rosterOnly());
 		}
-		if (request.individualMentees() != null) {
+		if (program.getProgramType() == ProgramType.PEER_MENTORING) {
+			program.setIndividualMentees(true);
+		} else if (request.individualMentees() != null) {
 			program.setIndividualMentees(request.individualMentees());
 		}
 		programRepository.save(program);
@@ -252,6 +255,9 @@ public class CoordinatorProgramService {
 	@Transactional
 	public CoordinatorProgramResponse.Detail setArchived(UUID actorId, UUID programId, boolean archived) {
 		Program program = requireManagedProgram(actorId, programId);
+		if (program.getStatus() == ProgramStatus.DRAFT) {
+			throw new InvalidRequestException("A draft program is launched by an admin, not archived.");
+		}
 		program.setStatus(archived ? ProgramStatus.COMPLETED : ProgramStatus.ACTIVE);
 		programRepository.save(program);
 		return detailOf(program);
@@ -655,6 +661,7 @@ public class CoordinatorProgramService {
 				program.getName(),
 				program.getStatus(),
 				ProgramCalendar.lifecycle(program.getStatus(), program.getStartDate(), snapshot.today()),
+				program.getProgramType(),
 				program.getDescription(),
 				program.getStartDate(),
 				program.getEndDate(),

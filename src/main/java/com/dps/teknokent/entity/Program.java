@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -38,6 +39,10 @@ public class Program {
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 32)
 	private ProgramStatus status = ProgramStatus.ACTIVE;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "program_type", nullable = false, length = 32)
+	private ProgramType programType = ProgramType.STARTUP_MENTORING;
 
 	@Column(columnDefinition = "TEXT")
 	private String description;

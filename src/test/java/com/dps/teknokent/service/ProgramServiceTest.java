@@ -26,6 +26,7 @@ import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
@@ -448,6 +449,57 @@ class ProgramServiceTest {
 		assertThatThrownBy(() -> programService.decideMentorRequest(otherCoordinatorId, PROGRAM_ID, MENTOR_ID, true))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("Only the program coordinator");
+	}
+
+	@Test
+	void listHidesDraftProgramsFromAMentor() {
+		Program draft = program();
+		draft.setId(OTHER_PROGRAM_ID);
+		draft.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(draft, program()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		var result = programService.list(MENTOR_ID);
+
+		assertThat(result).extracting(ProgramResponse::id).containsExactly(PROGRAM_ID);
+	}
+
+	@Test
+	void setStatusCannotLaunchADraft() {
+		Program draft = program();
+		draft.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(draft));
+
+		assertThatThrownBy(() -> programService.setStatus(COORDINATOR_ID, PROGRAM_ID, ProgramStatus.ACTIVE))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+		assertThat(draft.getStatus()).isEqualTo(ProgramStatus.DRAFT);
+	}
+
+	@Test
+	void setStatusCannotTurnAProgramBackIntoADraft() {
+		Program program = program();
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+
+		assertThatThrownBy(() -> programService.setStatus(COORDINATOR_ID, PROGRAM_ID, ProgramStatus.DRAFT))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.ACTIVE);
+	}
+
+	@Test
+	void requestToJoinRefusesADraftProgram() {
+		Program draft = program();
+		draft.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(draft));
+
+		assertThatThrownBy(() -> programService.requestToJoin(MENTOR_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not been launched");
+		verify(programMentorRepository, never()).save(any());
 	}
 
 	private static AppUser mentee(UUID activeProgramId) {
