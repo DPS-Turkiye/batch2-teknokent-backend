@@ -109,6 +109,55 @@ class AppUserPermissionsTest {
 		assertThat(user.activePermissions()).isEmpty();
 	}
 
+	// A research assistant is a student and an academician at once: granting adds, it never replaces.
+	@Test
+	void grantingAddsAPermissionNextToTheOthers() {
+		AppUser user = new AppUser();
+		user.setPrimaryRole(UserRole.ACADEMICIAN);
+		Instant now = Instant.now();
+
+		user.grant(UserRole.ACADEMICIAN, PermissionSource.INSTITUTION, now);
+		user.grant(UserRole.MENTEE, PermissionSource.INSTITUTION, now);
+		user.grant(UserRole.MENTEE, PermissionSource.INSTITUTION, now);
+
+		assertThat(user.activePermissions()).containsExactlyInAnyOrder(UserRole.ACADEMICIAN, UserRole.MENTEE);
+		assertThat(grants(user)).hasSize(2);
+		assertThat(user.getRole()).isEqualTo(UserRole.ACADEMICIAN);
+	}
+
+	// A student who graduates loses what the institution gave, but keeps what sign-up or a badge gave.
+	@Test
+	void withdrawingASourceKeepsWhatOtherSourcesGave() {
+		AppUser user = new AppUser();
+		user.setRole(UserRole.MENTEE);
+		Instant now = Instant.now();
+		user.grant(UserRole.MENTEE, PermissionSource.INSTITUTION, now);
+		user.grant(UserRole.ACADEMICIAN, PermissionSource.INSTITUTION, now);
+		user.grant(UserRole.MENTOR, PermissionSource.BADGE, now);
+
+		user.withdraw(PermissionSource.INSTITUTION, java.util.Set.of(), now);
+
+		assertThat(user.activePermissions()).containsExactlyInAnyOrder(UserRole.MENTEE, UserRole.MENTOR);
+		assertThat(grants(user)).filteredOn(grant -> grant.getPermission() == UserRole.ACADEMICIAN)
+				.singleElement()
+				.satisfies(grant -> assertThat(grant.getStatus()).isEqualTo(PermissionStatus.REVOKED));
+	}
+
+	@Test
+	void grantingBringsBackALapsedPermissionUnderTheNewSource() {
+		AppUser user = new AppUser();
+		user.setPrimaryRole(UserRole.MENTEE);
+		Instant now = Instant.now();
+		user.grant(UserRole.MENTEE, PermissionSource.INSTITUTION, now);
+		user.withdraw(PermissionSource.INSTITUTION, java.util.Set.of(), now);
+		assertThat(user.has(UserRole.MENTEE)).isFalse();
+
+		user.grant(UserRole.MENTEE, PermissionSource.INSTITUTION, now);
+
+		assertThat(user.has(UserRole.MENTEE)).isTrue();
+		assertThat(grants(user)).hasSize(1);
+	}
+
 	@SuppressWarnings("unchecked")
 	private static List<AppUserPermission> grants(AppUser user) {
 		return (List<AppUserPermission>) ReflectionTestUtils.getField(user, "permissions");

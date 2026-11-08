@@ -33,4 +33,11 @@ public interface LoginProvisioner {
 	 * Looked up by email, not by a stored uid, which goes stale when a login is deleted and created again.
 	 */
 	void revokeSignIns(String email);
+
+	/**
+	 * A Firebase custom token for {@code uid}, so a person who signed in through their institution gets an ordinary
+	 * Firebase session; a 503 when none can be made. Creates the Firebase user under that uid with {@code email}
+	 * first if it does not exist, because the bearer filter refuses a token without an e-mail.
+	 */
+	String customToken(String uid, String email, String displayName);
 }

@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.Texts;
 import com.google.firebase.auth.ActionCodeSettings;
@@ -160,6 +161,47 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 			}
 		}
 		return answers;
+	}
+
+	/** Signed locally with the service account's private key, so no extra Google permission is needed. */
+	@Override
+	public String customToken(String uid, String email, String displayName) {
+		ensureLogin(uid, email, displayName);
+		try {
+			return firebaseAuth.createCustomToken(uid);
+		} catch (FirebaseAuthException exception) {
+			throw sessionUnavailable(exception);
+		}
+	}
+
+	private void ensureLogin(String uid, String email, String displayName) {
+		try {
+			firebaseAuth.getUser(uid);
+			return;
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() != AuthErrorCode.USER_NOT_FOUND) {
+				throw sessionUnavailable(exception);
+			}
+		}
+		try {
+			firebaseAuth.createUser(new UserRecord.CreateRequest()
+					.setUid(uid)
+					.setEmail(email)
+					.setDisplayName(displayName)
+					.setEmailVerified(false));
+		} catch (FirebaseAuthException exception) {
+			// Another Firebase login already holds the address while no Menton account does.
+			if (exception.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {
+				throw new ConflictException(Texts.forRequest("error.institutionEmailTaken"));
+			}
+			throw sessionUnavailable(exception);
+		}
+	}
+
+	private static ResponseStatusException sessionUnavailable(FirebaseAuthException exception) {
+		log.error("Could not prepare a Firebase login: {} {}", exception.getErrorCode(), exception.getMessage());
+		return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase could not start the session.",
+				exception);
 	}
 
 	@Override

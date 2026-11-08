@@ -1,0 +1,124 @@
+{
+  "people": [
+    {
+      "id": "dev-ogrenci-1",
+      "label": "Genel öğrenci",
+      "fullName": "Ayşe Yılmaz",
+      "email": "ayse.yilmaz@odtu-dev.invalid",
+      "kinds": ["STUDENT"],
+      "faculty": "Mühendislik Fakültesi",
+      "departmentCode": "CENG",
+      "departmentName": "Bilgisayar Mühendisliği",
+      "classYear": 3,
+      "programLevel": "LISANS",
+      "iskurParticipant": false,
+      "advisorIds": ["dev-akademisyen-1"]
+    },
+    {
+      "id": "dev-iskur-1",
+      "label": "İŞKUR öğrencisi, rozetsiz",
+      "fullName": "Mehmet Kaya",
+      "email": "mehmet.kaya@odtu-dev.invalid",
+      "kinds": ["STUDENT"],
+      "faculty": "Mühendislik Fakültesi",
+      "departmentCode": "EE",
+      "departmentName": "Elektrik-Elektronik Mühendisliği",
+      "classYear": 2,
+      "programLevel": "LISANS",
+      "iskurParticipant": true,
+      "advisorIds": ["dev-akademisyen-3"]
+    },
+    {
+      "id": "dev-iskur-2",
+      "label": "İŞKUR öğrencisi, rozetli (Mentorluk Ver)",
+      "fullName": "Zeynep Demir",
+      "email": "zeynep.demir@odtu-dev.invalid",
+      "kinds": ["STUDENT"],
+      "faculty": "Mühendislik Fakültesi",
+      "departmentCode": "IE",
+      "departmentName": "Endüstri Mühendisliği",
+      "classYear": 4,
+      "programLevel": "LISANS",
+      "iskurParticipant": true,
+      "advisorIds": ["dev-akademisyen-2"],
+      "extraGrants": ["MENTOR"]
+    },
+    {
+      "id": "dev-akademisyen-1",
+      "label": "Akademisyen (danışman)",
+      "fullName": "Ahmet Öztürk",
+      "email": "ahmet.ozturk@odtu-dev.invalid",
+      "kinds": ["ACADEMIC"],
+      "faculty": "Mühendislik Fakültesi",
+      "departmentCode": "CENG",
+      "departmentName": "Bilgisayar Mühendisliği",
+      "academicTitle": "Prof. Dr."
+    },
+    {
+      "id": "dev-arasgor-1",
+      "label": "Araştırma görevlisi (öğrenci + akademisyen)",
+      "fullName": "Elif Şahin",
+      "email": "elif.sahin@odtu-dev.invalid",
+      "kinds": ["STUDENT", "ACADEMIC"],
+      "faculty": "Mühendislik Fakültesi",
+      "departmentCode": "CENG",
+      "departmentName": "Bilgisayar Mühendisliği",
+      "programLevel": "DOKTORA",
+      "academicTitle": "Arş. Gör.",
+      "iskurParticipant": false,
+      "advisorIds": ["dev-akademisyen-1"]
+    },
+    {
+      "id": "dev-personel-1",
+      "label": "Personel (erişim yok)",
+      "fullName": "Ali Çelik",
+      "email": "ali.celik@odtu-dev.invalid",
+      "kinds": ["STAFF"],
+      "faculty": "Rektörlük"
+    },
+    {
+      "id": "dev-akademisyen-2",
+      "label": "Akademisyen 2",
+      "fullName": "Selin Arslan",
+      "email": "selin.arslan@odtu-dev.invalid",
+      "kinds": ["ACADEMIC"],
+      "faculty": "Mühendislik Fakültesi",
+      "departmentCode": "IE",
+      "departmentName": "Endüstri Mühendisliği",
+      "academicTitle": "Doç. Dr."
+    },
+    {
+      "id": "dev-akademisyen-3",
+      "label": "Akademisyen 3",
+      "fullName": "Can Aydın",
+      "email": "can.aydin@odtu-dev.invalid",
+      "kinds": ["ACADEMIC"],
+      "faculty": "Mühendislik Fakültesi",
+      "departmentCode": "EE",
+      "departmentName": "Elektrik-Elektronik Mühendisliği",
+      "academicTitle": "Dr. Öğr. Üyesi"
+    },
+    {
+      "id": "dev-akademisyen-4",
+      "label": "Akademisyen 4",
+      "fullName": "Deniz Koç",
+      "email": "deniz.koc@odtu-dev.invalid",
+      "kinds": ["ACADEMIC"],
+      "faculty": "Fen-Edebiyat Fakültesi",
+      "departmentCode": "MATH",
+      "departmentName": "Matematik",
+      "academicTitle": "Prof. Dr."
+    },
+    {
+      "id": "dev-akademisyen-5",
+      "label": "Akademisyen 5",
+      "fullName": "Burak Polat",
+      "email": "burak.polat@odtu-dev.invalid",
+      "kinds": ["ACADEMIC"],
+      "faculty": "Mimarlık Fakültesi",
+      "departmentCode": "ARCH",
+      "departmentName": "Mimarlık",
+      "academicTitle": "Dr. Öğr. Üyesi"
+    }
+  ]
+}

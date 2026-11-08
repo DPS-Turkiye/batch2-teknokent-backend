@@ -48,6 +48,44 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-1");
 	}
 
+	// A custom-token user has no e-mail of its own, and the bearer filter refuses a token without one.
+	@Test
+	void createsTheInstitutionLoginWithItsEmailBeforeMintingItsToken() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(notFound);
+		when(firebaseAuth.createCustomToken("odtu_e100001")).thenReturn("custom-token");
+
+		assertThat(provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz Öğrenci"))
+				.isEqualTo("custom-token");
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+			Map<String, Object> properties =
+					org.springframework.test.util.ReflectionTestUtils.invokeMethod(request, "getProperties");
+			return "odtu_e100001".equals(properties.get("localId"))
+					&& "e100001@metu.edu.tr".equals(properties.get("email"));
+		}));
+	}
+
+	@Test
+	void reusesAnExistingLoginForTheToken() throws Exception {
+		when(firebaseAuth.getUser("uid-1")).thenReturn(mock(UserRecord.class));
+		when(firebaseAuth.createCustomToken("uid-1")).thenReturn("custom-token");
+
+		assertThat(provisioner.customToken("uid-1", "ayse@metu.edu.tr", "Ayşe")).isEqualTo("custom-token");
+		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
+	}
+
+	@Test
+	void refusesTheTokenWhenAnotherLoginHoldsTheAddress() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		FirebaseAuthException taken = failure(ErrorCode.ALREADY_EXISTS, AuthErrorCode.EMAIL_ALREADY_EXISTS);
+		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(notFound);
+		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(taken);
+
+		assertThatThrownBy(() -> provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz"))
+				.isInstanceOf(com.dps.teknokent.exception.ConflictException.class);
+		verify(firebaseAuth, never()).createCustomToken(anyString());
+	}
+
 	@Test
 	void tellsTheAdminWhyFirebaseRefusedInsteadOfAGenericServerError() throws Exception {
 		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);

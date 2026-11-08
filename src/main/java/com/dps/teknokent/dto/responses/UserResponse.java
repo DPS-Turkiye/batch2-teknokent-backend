@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -24,13 +25,27 @@ public record UserResponse(
 		String jobTitle,
 		Instant signInsRevokedAt,
 		boolean individualMentee,
-		List<UserRole> permissions) {
+		List<UserRole> permissions,
+		List<IdentityKind> institutionKinds) {
 
 	public UserResponse(UUID id, String email, String fullName, UserRole role, UserAccountStatus status,
 			UUID organizationId, String organizationName, String jobTitle, Instant signInsRevokedAt,
 			boolean individualMentee) {
 		this(id, email, fullName, role, status, organizationId, organizationName, jobTitle, signInsRevokedAt,
 				individualMentee, role == null ? List.of() : List.of(role));
+	}
+
+	public UserResponse(UUID id, String email, String fullName, UserRole role, UserAccountStatus status,
+			UUID organizationId, String organizationName, String jobTitle, Instant signInsRevokedAt,
+			boolean individualMentee, List<UserRole> permissions) {
+		this(id, email, fullName, role, status, organizationId, organizationName, jobTitle, signInsRevokedAt,
+				individualMentee, permissions, List.of());
+	}
+
+	/** {@code institutionKinds}: what an institution (ODTÜ) says this person is; empty for everyone else. Filled by /me. */
+	public UserResponse withInstitutionKinds(List<IdentityKind> kinds) {
+		return new UserResponse(id, email, fullName, role, status, organizationId, organizationName, jobTitle,
+				signInsRevokedAt, individualMentee, permissions, List.copyOf(kinds));
 	}
 
 	public static UserResponse fromEntity(AppUser user) {
