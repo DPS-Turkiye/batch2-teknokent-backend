@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.BadgeCode;
+import com.dps.teknokent.domain.BadgeKind;
 import com.dps.teknokent.domain.BadgeSource;
 import com.dps.teknokent.domain.BadgeStatus;
 import com.dps.teknokent.domain.GateBadgeState;
@@ -240,6 +241,12 @@ public class BadgeService {
 	 * gives, the program membership that makes a peer mentor discoverable there, and the notification.
 	 */
 	UserBadge award(AppUser holder, BadgeCode code, Program program, BadgeSource source, UUID awardedBy) {
+		return award(holder, code, program, source, awardedBy, true);
+	}
+
+	/** As above; {@code announce = false} awards without a notification (the achievement back-fill). */
+	UserBadge award(AppUser holder, BadgeCode code, Program program, BadgeSource source, UUID awardedBy,
+			boolean announce) {
 		Instant now = Instant.now();
 		UserBadge award = new UserBadge();
 		award.setId(UUID.randomUUID());
@@ -258,7 +265,14 @@ public class BadgeService {
 		if (code == GATE && program != null) {
 			acceptMembership(program, holder.getId(), now);
 		}
-		notify(holder, "notification.badgeAwarded", code, program, null);
+		if (announce && code.kind() == BadgeKind.ACHIEVEMENT) {
+			String badge = Texts.get(holder, "badge.name." + code.name());
+			notificationService.create(holder, NotificationCategory.BADGE,
+					Texts.get(holder, "notification.achievementEarned.title", badge),
+					Texts.get(holder, "notification.achievementEarned.body", badge), badgesPageOf(holder));
+		} else if (announce) {
+			notify(holder, "notification.badgeAwarded", code, program, null);
+		}
 		return award;
 	}
 
@@ -327,6 +341,11 @@ public class BadgeService {
 		String programName = program == null ? "" : program.getName();
 		notificationService.create(holder, NotificationCategory.BADGE, Texts.get(holder, key + ".title"),
 				Texts.get(holder, key + ".body", badge, programName, reason), homeOf(holder));
+	}
+
+	/** Where a person sees their badges: a student's Profilim (Rozetlerim); a mentor account's own dashboard. */
+	private static String badgesPageOf(AppUser holder) {
+		return holder.getRole() == UserRole.MENTOR ? "/mentor-dashboard" : "/student/profile";
 	}
 
 	/** A student's peer mentoring page; a mentor account's own dashboard. */

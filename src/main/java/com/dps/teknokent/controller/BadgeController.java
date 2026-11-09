@@ -13,11 +13,13 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.domain.GateBadgeState;
 import com.dps.teknokent.dto.requests.AwardBadgeRequest;
 import com.dps.teknokent.dto.requests.RevokeBadgeRequest;
+import com.dps.teknokent.dto.responses.AchievementProgressResponse;
 import com.dps.teknokent.dto.responses.BadgeAwardResponse;
 import com.dps.teknokent.dto.responses.BadgeCatalogueResponse;
 import com.dps.teknokent.dto.responses.GateBadgeRowResponse;
 import com.dps.teknokent.dto.responses.PublicBadgeResponse;
 import com.dps.teknokent.security.CurrentActor;
+import com.dps.teknokent.service.AchievementService;
 import com.dps.teknokent.service.BadgeService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 public class BadgeController {
 
 	private final BadgeService badgeService;
+	private final AchievementService achievementService;
 
 	@GetMapping("/api/badges/catalogue")
 	public List<BadgeCatalogueResponse> catalogue() {
@@ -40,6 +43,11 @@ public class BadgeController {
 	@GetMapping("/api/badges/mine")
 	public List<BadgeAwardResponse> mine(@RequestParam(required = false) UUID actorId) {
 		return badgeService.mine(CurrentActor.resolve(actorId));
+	}
+
+	@GetMapping("/api/badges/mine/achievements")
+	public List<AchievementProgressResponse> myAchievements(@RequestParam(required = false) UUID actorId) {
+		return achievementService.mine(CurrentActor.resolve(actorId));
 	}
 
 	@GetMapping("/api/users/{userId}/badges")
