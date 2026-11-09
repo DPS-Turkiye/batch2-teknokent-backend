@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.dto.requests.SubmitPlatformFeedbackRequest;
 import com.dps.teknokent.dto.responses.PlatformFeedbackInboxResponse;
 import com.dps.teknokent.dto.responses.PlatformFeedbackResponse;
@@ -39,8 +40,9 @@ public class PlatformFeedbackController {
 	public PlatformFeedbackInboxResponse inbox(
 			@RequestParam(required = false) UUID actorId,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "false") boolean unreadOnly) {
-		return feedbackService.inbox(CurrentActor.resolve(actorId), page, unreadOnly);
+			@RequestParam(defaultValue = "false") boolean unreadOnly,
+			@RequestParam(required = false) ProgramType programType) {
+		return feedbackService.inbox(CurrentActor.resolve(actorId), page, unreadOnly, programType);
 	}
 
 	@PatchMapping("/api/admin/platform-feedback/{id}/read")
