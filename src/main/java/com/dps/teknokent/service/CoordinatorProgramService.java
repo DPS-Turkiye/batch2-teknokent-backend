@@ -28,9 +28,11 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.TeamChangeStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
@@ -71,6 +73,7 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
@@ -116,6 +119,7 @@ public class CoordinatorProgramService {
 	private final MentorProfileRepository mentorProfileRepository;
 	private final MeetingNoteRepository meetingNoteRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
+	private final TeamChangeRequestRepository teamChangeRequestRepository;
 
 	public enum HealthBucket {
 		HEALTHY,
@@ -635,7 +639,22 @@ public class CoordinatorProgramService {
 										.getOrDefault(startup.getOrganizationId(), List.of()).stream())
 								.toList(),
 						snapshot.now()).size(),
-				syllabusOf(program));
+				syllabusOf(program),
+				pendingApprovalCount(program.getId()));
+	}
+
+	/**
+	 * Everything the Onaylar tab lists as waiting for the coordinator: students who signed up, mentors who asked to
+	 * join, startups awaiting approval and team change requests. Counted, not loaded; see ProgramApprovalService.
+	 */
+	int pendingApprovalCount(UUID programId) {
+		long people = appUserRepository.countByProgramIdAndPermissionAndStatus(programId, UserRole.MENTEE,
+				UserAccountStatus.PENDING);
+		long mentors = programMentorRepository.countByProgramIdAndStatusAndInvitedBy(programId,
+				ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		long startups = organizationRepository.countInProgramByApprovalStatus(programId, UserAccountStatus.PENDING);
+		long teamChanges = teamChangeRequestRepository.countByProgramIdAndStatus(programId, TeamChangeStatus.PENDING);
+		return Math.toIntExact(people + mentors + startups + teamChanges);
 	}
 
 	private CoordinatorProgramResponse.Syllabus syllabusOf(Program program) {

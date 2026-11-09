@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.entity.Organization;
@@ -18,4 +20,10 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 	boolean existsByInviteCode(String inviteCode);
 
 	List<Organization> findByIdInAndApprovalStatusOrderByCreatedAtAsc(Collection<UUID> ids, UserAccountStatus status);
+
+	@Query("""
+			select count(distinct o.id) from Organization o, ProgramStartup ps
+			where ps.organizationId = o.id and ps.programId = :programId and o.approvalStatus = :status
+			""")
+	long countInProgramByApprovalStatus(@Param("programId") UUID programId, @Param("status") UserAccountStatus status);
 }

@@ -33,9 +33,11 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.TeamChangeStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
@@ -74,6 +76,7 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.service.CoordinatorProgramService.HealthBucket;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
@@ -112,6 +115,8 @@ class CoordinatorProgramServiceTest {
 	private MeetingNoteRepository meetingNoteRepository;
 	@Mock
 	private MentorshipRequestRepository mentorshipRequestRepository;
+	@Mock
+	private TeamChangeRequestRepository teamChangeRequestRepository;
 	@InjectMocks
 	private CoordinatorProgramService service;
 
@@ -235,6 +240,14 @@ class CoordinatorProgramServiceTest {
 		profile.setId(MENTOR_ID);
 		profile.setMenteeCapacity(2);
 		when(mentorProfileRepository.findAllById(any())).thenReturn(List.of(profile));
+		when(appUserRepository.countByProgramIdAndPermissionAndStatus(PROGRAM_ID, UserRole.MENTEE,
+				UserAccountStatus.PENDING)).thenReturn(1L);
+		when(programMentorRepository.countByProgramIdAndStatusAndInvitedBy(PROGRAM_ID, ProgramMentorStatus.PENDING,
+				ProgramMentorInvitedBy.MENTOR)).thenReturn(2L);
+		when(organizationRepository.countInProgramByApprovalStatus(PROGRAM_ID, UserAccountStatus.PENDING))
+				.thenReturn(3L);
+		when(teamChangeRequestRepository.countByProgramIdAndStatus(PROGRAM_ID, TeamChangeStatus.PENDING))
+				.thenReturn(4L);
 
 		var detail = service.detail(COORDINATOR_ID, PROGRAM_ID);
 
@@ -253,6 +266,7 @@ class CoordinatorProgramServiceTest {
 		assertThat(detail.mentors().full()).isEqualTo(1);
 		assertThat(detail.program().riskyMentorshipCount()).isEqualTo(1);
 		assertThat(detail.rules().meetingFrequencyDays()).isEqualTo(14);
+		assertThat(detail.pendingApprovalCount()).isEqualTo(10);
 	}
 
 	@Test

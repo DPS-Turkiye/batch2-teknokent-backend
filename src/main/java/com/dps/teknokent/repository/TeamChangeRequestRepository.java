@@ -12,6 +12,8 @@ public interface TeamChangeRequestRepository extends JpaRepository<TeamChangeReq
 
 	List<TeamChangeRequest> findByProgramIdAndStatusOrderByCreatedAtAsc(UUID programId, TeamChangeStatus status);
 
+	long countByProgramIdAndStatus(UUID programId, TeamChangeStatus status);
+
 	List<TeamChangeRequest> findByOrganizationIdAndStatusOrderByCreatedAtAsc(
 			UUID organizationId, TeamChangeStatus status);
 

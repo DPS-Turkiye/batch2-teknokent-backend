@@ -16,6 +16,11 @@ import com.dps.teknokent.entity.ProgramMentor;
 public interface ProgramMentorRepository extends JpaRepository<ProgramMentor, UUID> {
 	List<ProgramMentor> findByProgramIdOrderByCreatedAtAsc(UUID programId);
 
+	long countByProgramIdAndStatusAndInvitedBy(
+			UUID programId,
+			ProgramMentorStatus status,
+			ProgramMentorInvitedBy invitedBy);
+
 	Optional<ProgramMentor> findByProgramIdAndMentorId(UUID programId, UUID mentorId);
 
 	List<ProgramMentor> findByMentorIdAndStatusAndInvitedByOrderByCreatedAtDesc(
