@@ -36,4 +36,15 @@ public interface MeetingFeedbackRepository extends JpaRepository<MeetingFeedback
 	List<MeetingFeedback> findByMeetingIdInAndAuthorId(Collection<UUID> meetingIds, UUID authorId);
 
 	List<MeetingFeedback> findByMeetingIdInAndAuthorRole(Collection<UUID> meetingIds, UserRole role);
+
+	/** Mentee feedback on a mentor's meetings, for the {@code WELL_RATED} badge (same answers as "Memnuniyet"). */
+	List<MeetingFeedback> findByMeetingMentorIdAndAuthorRole(UUID mentorId, UserRole role);
+
+	List<MeetingFeedback> findByAuthorId(UUID authorId);
+
+	@Query("select distinct f.author.id from MeetingFeedback f")
+	List<UUID> findAuthorIds();
+
+	@Query("select distinct f.meeting.mentor.id from MeetingFeedback f where f.meeting.mentor is not null")
+	List<UUID> findRatedMentorIds();
 }

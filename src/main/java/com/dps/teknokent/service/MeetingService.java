@@ -2,10 +2,13 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +53,7 @@ public class MeetingService {
 	private final NotificationService notificationService;
 	private final DocumentRequestService documentRequestService;
 	private final TranscriptBotCapacityService transcriptBotCapacity;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public MeetingService(
 			MeetingRepository meetingRepository,
@@ -59,7 +63,8 @@ public class MeetingService {
 			AppUserRepository appUserRepository,
 			NotificationService notificationService,
 			DocumentRequestService documentRequestService,
-			TranscriptBotCapacityService transcriptBotCapacity) {
+			TranscriptBotCapacityService transcriptBotCapacity,
+			ApplicationEventPublisher eventPublisher) {
 		this.meetingRepository = meetingRepository;
 		this.mentorshipRequestRepository = mentorshipRequestRepository;
 		this.domainLookupService = domainLookupService;
@@ -68,6 +73,7 @@ public class MeetingService {
 		this.notificationService = notificationService;
 		this.documentRequestService = documentRequestService;
 		this.transcriptBotCapacity = transcriptBotCapacity;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Transactional(readOnly = true)
@@ -399,7 +405,13 @@ public class MeetingService {
 		feedback.getRatings().addAll(request.ratings());
 		feedback.getBenefits().addAll(request.benefits());
 
-		return MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
+		MeetingFeedbackResponse saved = MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
+		Set<UUID> affected = new HashSet<>(Set.of(authorId));
+		if (meeting.getMentor() != null) {
+			affected.add(meeting.getMentor().getId());
+		}
+		eventPublisher.publishEvent(new AchievementsMayChangeEvent(affected));
+		return saved;
 	}
 
 	/**
@@ -432,6 +444,13 @@ public class MeetingService {
 			}
 		}
 		meetingRepository.saveAll(room);
+		if (held) {
+			// The mentees who already left feedback can reach "Aktif Mentee" once the session counts as held.
+			Set<UUID> affected = new HashSet<>(Set.of(mentorId));
+			meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(room.stream().map(Meeting::getId).toList(),
+					UserRole.MENTEE).forEach(item -> affected.add(item.getAuthor().getId()));
+			eventPublisher.publishEvent(new AchievementsMayChangeEvent(affected));
+		}
 		return MeetingResponse.fromEntity(meeting);
 	}
 

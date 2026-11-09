@@ -25,4 +25,7 @@ public interface UserBadgeRepository extends JpaRepository<UserBadge, UUID> {
 	List<UserBadge> findByBadgeCodeAndUserIdInOrderByAwardedAtDesc(BadgeCode badgeCode, Collection<UUID> userIds);
 
 	List<UserBadge> findByBadgeCodeOrderByAwardedAtDesc(BadgeCode badgeCode);
+
+	/** Any award of the badge, active or not: a rule never awards one again after a revoke. */
+	boolean existsByUserIdAndBadgeCode(UUID userId, BadgeCode badgeCode);
 }
