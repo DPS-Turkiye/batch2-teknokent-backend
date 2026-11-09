@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.responses.AdminOverviewResponse;
+import com.dps.teknokent.dto.responses.PageResponse;
+import com.dps.teknokent.dto.responses.ProgramMeetingFeedbackResponse;
 import com.dps.teknokent.dto.responses.ProgramMeetingRatingsResponse;
 import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
 import com.dps.teknokent.security.CurrentActor;
@@ -45,6 +47,17 @@ public class ProgramReportController {
 			@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
 			@RequestParam(required = false) UUID actorId) {
 		return programReportService.meetingRatings(CurrentActor.resolve(actorId), id, from);
+	}
+
+	/** Who rated whom on the meetings {@code /meeting-ratings} counts, newest first; at most 50 a page. */
+	@GetMapping("/meeting-feedback")
+	public PageResponse<ProgramMeetingFeedbackResponse> meetingFeedback(
+			@PathVariable UUID id,
+			@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size,
+			@RequestParam(required = false) UUID actorId) {
+		return programReportService.meetingFeedback(CurrentActor.resolve(actorId), id, from, page, size);
 	}
 
 	/** {@code from} and {@code to} are inclusive days in the app's time zone; the current month without them. */

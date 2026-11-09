@@ -5,14 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -83,7 +88,7 @@ class ProgramReportServiceTest {
 	}
 
 	@Test
-	void countsOnlyTheProgramsHeldMeetingsInTheWindowAndAsksForMenteeFeedback() {
+	void countsTheProgramsHeldMeetingsInTheWindowAndAsksForMenteeFeedback() {
 		UUID actorId = UUID.randomUUID();
 		Program program = new Program();
 		program.setId(UUID.randomUUID());
@@ -92,15 +97,13 @@ class ProgramReportServiceTest {
 		startup.setOrganizationId(UUID.randomUUID());
 		LocalDate from = LocalDate.now(MeetingSlotTimes.APP_ZONE).minusDays(10);
 		Meeting held = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(2)));
-		Meeting cancelled = meeting(MeetingStatus.CANCELLED, Instant.now().minus(Duration.ofDays(2)));
-		Meeting upcoming = meeting(MeetingStatus.SCHEDULED, Instant.now().plus(Duration.ofDays(2)));
-		Meeting beforeWindow = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(40)));
 		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of(startup));
-		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(any()))
-				.thenReturn(List.of(upcoming, held, cancelled, beforeWindow));
-		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(
-				argThat((Collection<UUID> ids) -> ids.size() == 1 && ids.contains(held.getId())), eq(UserRole.MENTEE)))
+		when(meetingRepository.findHeldMeetingIdsOfProgram(
+				eq(program.getId()), eq(Set.of(startup.getOrganizationId())),
+				eq(from.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant()), any(Instant.class)))
+				.thenReturn(List.of(held.getId()));
+		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(List.of(held.getId()), UserRole.MENTEE))
 				.thenReturn(List.of(feedback(held, 4, 4, 4, 4)));
 
 		var ratings = service.meetingRatings(actorId, program.getId(), from);
@@ -120,6 +123,46 @@ class ProgramReportServiceTest {
 		assertThatThrownBy(() -> service.meetingRatings(actorId, programId, null))
 				.isInstanceOf(InvalidRequestException.class);
 		verifyNoInteractions(meetingFeedbackRepository);
+	}
+
+	@Test
+	void whoRatedWhomRefusesAnyoneTheReportRefusesWithA403() {
+		UUID actorId = UUID.randomUUID();
+		UUID programId = UUID.randomUUID();
+		when(programService.requireManagedProgram(actorId, programId))
+				.thenThrow(new InvalidRequestException("Only the program coordinator can change this program."));
+
+		assertThatThrownBy(() -> service.meetingFeedback(actorId, programId, null, 0, 20))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+		verifyNoInteractions(meetingFeedbackRepository, meetingRepository);
+	}
+
+	@Test
+	void whoRatedWhomCapsThePageSizeAndAsksNewestMeetingFirst() {
+		UUID actorId = UUID.randomUUID();
+		Program program = new Program();
+		program.setId(UUID.randomUUID());
+		ProgramStartup startup = new ProgramStartup();
+		startup.setProgramId(program.getId());
+		startup.setOrganizationId(UUID.randomUUID());
+		Meeting held = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(1)));
+		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of(startup));
+		when(meetingRepository.findHeldMeetingIdsOfProgram(
+				eq(program.getId()), any(), eq(Instant.EPOCH), any(Instant.class)))
+				.thenReturn(List.of(held.getId()));
+		when(meetingFeedbackRepository.findByMeetingIdIn(any(), any())).thenReturn(Page.empty());
+
+		service.meetingFeedback(actorId, program.getId(), null, -3, 500);
+		service.meetingFeedback(actorId, program.getId(), null, Integer.MAX_VALUE, 20);
+
+		verify(meetingFeedbackRepository).findByMeetingIdIn(eq(List.of(held.getId())), argThat((Pageable pageable) ->
+				pageable.getPageNumber() == 0
+						&& pageable.getPageSize() == ProgramReportService.MAX_FEEDBACK_PAGE_SIZE
+						&& pageable.getSort().getOrderFor("meeting.scheduledAt").isDescending()));
+		verify(meetingFeedbackRepository).findByMeetingIdIn(any(), argThat((Pageable pageable) ->
+				pageable.getPageNumber() == ProgramReportService.MAX_FEEDBACK_PAGE));
 	}
 
 	@Test
