@@ -184,6 +184,18 @@ class CoordinatorProgramServiceTest {
 	}
 
 	@Test
+	void secondaryAdminPermissionBypassesTheCoordinatorAssignmentRestriction() {
+		AppUser actor = user(ADMIN_ID, UserRole.ADMIN);
+		org.springframework.test.util.ReflectionTestUtils.setField(actor, "role", UserRole.COORDINATOR);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(actor);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(COORDINATOR_ID)));
+
+		assertThat(service.requireManagedProgram(ADMIN_ID, PROGRAM_ID).getId()).isEqualTo(PROGRAM_ID);
+		assertThat(service.list(ADMIN_ID)).isEmpty();
+		verify(programRepository).findAllByOrderByCreatedAtDesc();
+	}
+
+	@Test
 	void aMenteeCannotListPrograms() {
 		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(user(MENTEE_ID, UserRole.MENTEE));
 

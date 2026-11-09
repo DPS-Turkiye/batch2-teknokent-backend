@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -35,23 +36,15 @@ class DashboardControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // A session without a startup sends a blank id; that must not read as "the whole platform".
     @Test
-    void returnsDashboardSummaryWithoutOrganizationFilter() throws Exception {
-        when(dashboardService.getSummary(null)).thenReturn(new DashboardSummaryResponse(
-                12,
-                4,
-                2,
-                8,
-                5
-        ));
-
+    void refusesADashboardSummaryWithoutAnOrganization() throws Exception {
         mockMvc.perform(get("/api/dashboard/summary").with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.activeMentorships").value(12))
-                .andExpect(jsonPath("$.openBottlenecks").value(4))
-                .andExpect(jsonPath("$.highSeverityBottlenecks").value(2))
-                .andExpect(jsonPath("$.overdueActions").value(8))
-                .andExpect(jsonPath("$.upcomingMeetings").value(5));
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/dashboard/summary").param("organizationId", "").with(user("test-user")))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(dashboardService);
     }
 
     @Test
@@ -79,7 +72,8 @@ class DashboardControllerTest {
 
     @Test
     void returnsCompleteSummaryPayload() throws Exception {
-        when(dashboardService.getSummary(null)).thenReturn(new DashboardSummaryResponse(
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        when(dashboardService.getSummary(organizationId)).thenReturn(new DashboardSummaryResponse(
                 9,
                 5,
                 3,
@@ -87,7 +81,9 @@ class DashboardControllerTest {
                 2
         ));
 
-        mockMvc.perform(get("/api/dashboard/summary").with(user("test-user")))
+        mockMvc.perform(get("/api/dashboard/summary")
+                        .param("organizationId", organizationId.toString())
+                        .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.activeMentorships").value(9))
                 .andExpect(jsonPath("$.openBottlenecks").value(5))

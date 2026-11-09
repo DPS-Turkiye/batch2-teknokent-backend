@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,21 +70,29 @@ public class CoordinatorConversationService {
 	@Transactional(readOnly = true)
 	public List<CoordinatorConversationResponse> list(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		List<CoordinatorConversation> conversations = switch (actor.getRole()) {
-			case ADMIN -> conversationRepository.findAll();
-			case COORDINATOR -> {
-				List<UUID> programIds = ProgramCoordination.programsOf(
-						actor.getId(), programRepository, programCoordinatorRepository).stream()
-						.map(Program::getId)
-						.toList();
-				yield programIds.isEmpty() ? List.of() : conversationRepository.findByProgramIdIn(programIds);
+		List<CoordinatorConversation> conversations;
+		if (actor.has(UserRole.ADMIN)) {
+			conversations = conversationRepository.findAll();
+		} else if (actor.has(UserRole.COORDINATOR)) {
+			List<UUID> programIds = ProgramCoordination.programsOf(
+					actor.getId(), programRepository, programCoordinatorRepository).stream()
+					.map(Program::getId).toList();
+			conversations = programIds.isEmpty() ? List.of() : conversationRepository.findByProgramIdIn(programIds);
+		} else {
+			// Both sides for an account that mentors and is also on a team.
+			Map<UUID, CoordinatorConversation> own = new LinkedHashMap<>();
+			if (actor.has(UserRole.MENTOR)) {
+				conversationRepository.findByMentorId(actor.getId())
+						.forEach(conversation -> own.put(conversation.getId(), conversation));
 			}
-			case MENTOR -> conversationRepository.findByMentorId(actor.getId());
-			case MENTEE -> actor.getOrganization() == null
-					? List.of()
-					: conversationRepository.findByOrganizationId(actor.getOrganization().getId());
-		};
-		Side side = actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR
+			if (actor.has(UserRole.MENTEE) && actor.getOrganization() != null) {
+				conversationRepository.findByOrganizationId(actor.getOrganization().getId())
+						.forEach(conversation -> own.putIfAbsent(conversation.getId(), conversation));
+			}
+			conversations = List.copyOf(own.values());
+		}
+
+		Side side = actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR)
 				? Side.COORDINATOR
 				: Side.COUNTERPART;
 		return toResponses(conversations, side);
@@ -218,8 +227,8 @@ public class CoordinatorConversationService {
 	}
 
 	private boolean coordinates(AppUser actor, Program program) {
-		return actor.getRole() == UserRole.ADMIN
-				|| (actor.getRole() == UserRole.COORDINATOR
+		return actor.has(UserRole.ADMIN)
+				|| (actor.has(UserRole.COORDINATOR)
 						&& ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository));
 	}
 

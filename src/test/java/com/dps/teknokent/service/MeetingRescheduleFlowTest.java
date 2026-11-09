@@ -111,8 +111,8 @@ class MeetingRescheduleFlowTest {
 		MeetingProposalResponse proposed = proposals.proposeReschedule(mentor.getId(), meeting.getId(),
 				new RescheduleMeetingRequest(null, NEW_TIME, 60));
 
-		assertThat(hrefsFor(lead)).isNotEmpty(); // the lead is asked
-		assertThat(hrefsFor(member)).isEmpty(); // a member is not
+		assertThat(hrefsFor(lead)).isNotEmpty();
+		assertThat(hrefsFor(member)).isEmpty();
 		assertThatThrownBy(() -> proposals.accept(member.getId(), proposed.id()))
 				.isInstanceOf(InvalidRequestException.class);
 		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(PLANNED);

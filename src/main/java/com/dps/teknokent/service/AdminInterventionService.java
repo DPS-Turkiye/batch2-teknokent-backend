@@ -175,7 +175,7 @@ public class AdminInterventionService {
 
 	private AppUser requireAdmin(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can follow up a mentorship.");
 		}
 		return actor;

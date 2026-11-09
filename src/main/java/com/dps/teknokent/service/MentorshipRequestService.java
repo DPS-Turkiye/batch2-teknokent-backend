@@ -85,6 +85,10 @@ public class MentorshipRequestService {
 	private final MailService mailService;
 	private final DocumentRequestService documentRequestService;
 
+	/**
+	 * The proxy calls this on the service login with the caller's own scope. A missing scope is refused rather than
+	 * read as "everyone": a blank organization from a session without a startup arrives here as null.
+	 */
 	@Transactional(readOnly = true)
 	public List<MentorshipRequestResponse> findAll(UUID requesterId, UUID mentorId, UUID organizationId) {
 		List<MentorshipRequest> requests;
@@ -95,7 +99,7 @@ public class MentorshipRequestService {
 		} else if (requesterId != null) {
 			requests = mentorshipRequestRepository.findByRequesterIdOrderByCreatedAtDesc(requesterId);
 		} else {
-			requests = mentorshipRequestRepository.findAllByOrderByCreatedAtDesc();
+			throw new InvalidRequestException("mentorId, organizationId or requesterId is required");
 		}
 		return toResponses(requests);
 	}
@@ -129,13 +133,16 @@ public class MentorshipRequestService {
 
 	@Transactional
 	public MentorshipRequestResponse create(CreateMentorshipRequestSubmission request) {
+		if (request.requesterId().equals(request.mentorId())) {
+			throw new InvalidRequestException(Texts.forRequest("error.selfMentorshipRequest"));
+		}
 		AppUser requester = domainLookupService.requireUser(request.requesterId());
-		if (requester.getRole() != UserRole.MENTEE) {
+		if (!requester.has(UserRole.MENTEE)) {
 			throw new InvalidRequestException("Requester must have the MENTEE role");
 		}
 
 		AppUser mentor = domainLookupService.requireUser(request.mentorId());
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 		if (!MeetingSlotTimes.allBookable(ProposedSlots.preferred(request.requesterMessage()))) {
@@ -171,7 +178,7 @@ public class MentorshipRequestService {
 	public MentorshipRequestResponse decide(UUID id, DecideMentorshipRequest decision) {
 		MentorshipRequest request = requireRequest(id);
 		AppUser mentor = domainLookupService.requireUser(decision.mentorId());
-		if (!request.getMentor().getId().equals(mentor.getId()) || mentor.getRole() != UserRole.MENTOR) {
+		if (!request.getMentor().getId().equals(mentor.getId()) || !mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Only the assigned mentor can decide this request");
 		}
 		if (request.getStatus() != MentorshipRequestStatus.PENDING

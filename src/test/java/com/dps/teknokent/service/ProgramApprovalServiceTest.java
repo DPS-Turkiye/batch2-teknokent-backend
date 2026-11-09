@@ -116,7 +116,7 @@ class ProgramApprovalServiceTest {
 	void approvals_listsThePendingPeopleAndStartupsOfTheProgram() {
 		AppUser person = mentee(PROGRAM_ID);
 		Organization startup = startup(UserAccountStatus.PENDING);
-		when(appUserRepository.findByProgramIdAndRoleAndStatusOrderByCreatedAtAsc(PROGRAM_ID, UserRole.MENTEE,
+		when(appUserRepository.findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(PROGRAM_ID, UserRole.MENTEE,
 				UserAccountStatus.PENDING)).thenReturn(List.of(person));
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID))
 				.thenReturn(List.of(membership()));

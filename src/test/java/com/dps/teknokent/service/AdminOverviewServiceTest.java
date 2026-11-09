@@ -84,6 +84,16 @@ class AdminOverviewServiceTest {
 	}
 
 	@Test
+	void anActiveAdminGrantWorksWhenAdminIsNotThePrimaryRole() {
+		AppUser admin = person("Dual permission", UserRole.ADMIN);
+		org.springframework.test.util.ReflectionTestUtils.setField(admin, "role", UserRole.MENTEE);
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(appUserRepository.findAll()).thenReturn(List.of(admin));
+
+		assertThat(service.overview(admin.getId()).users()).hasSize(1);
+	}
+
+	@Test
 	void listsAProgramsAssignedCoordinatorsAndNotTheAdminWhoCreatedIt() {
 		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
 		AppUser elif = person("Elif Demir", UserRole.COORDINATOR);

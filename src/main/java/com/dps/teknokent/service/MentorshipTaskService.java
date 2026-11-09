@@ -55,7 +55,7 @@ public class MentorshipTaskService {
 	private MentorshipRequest requireAcceptedMentor(UUID actorId, UUID requestId) {
 		AppUser actor = lookup.requireUser(actorId);
 		MentorshipRequest request = lookup.requireMentorshipRequest(requestId);
-		if (actor.getRole() != UserRole.MENTOR || actor.getStatus() != UserAccountStatus.APPROVED
+		if (!actor.has(UserRole.MENTOR) || actor.getStatus() != UserAccountStatus.APPROVED
 				|| !request.getMentor().getId().equals(actorId)) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the assigned mentor can assign tasks");
 		}
@@ -66,6 +66,6 @@ public class MentorshipTaskService {
 	}
 
 	private static boolean canReceiveTask(AppUser user) {
-		return user.getRole() == UserRole.MENTEE && user.getStatus() == UserAccountStatus.APPROVED;
+		return user.has(UserRole.MENTEE) && user.getStatus() == UserAccountStatus.APPROVED;
 	}
 }

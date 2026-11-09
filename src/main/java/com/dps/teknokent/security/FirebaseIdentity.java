@@ -1,4 +1,5 @@
 package com.dps.teknokent.security;
 
-public record FirebaseIdentity(String uid, String email) {
+/** {@code emailVerified} is Firebase's {@code email_verified} claim: whether the address was proven to belong to the login. */
+public record FirebaseIdentity(String uid, String email, boolean emailVerified) {
 }
