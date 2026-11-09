@@ -1,15 +1,19 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.DayOfWeek;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,10 +31,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.OfficeHoursRole;
 import com.dps.teknokent.dto.responses.LtiLaunchResponse;
+import com.dps.teknokent.dto.responses.OfficeHoursAvailabilityResponse;
 import com.dps.teknokent.dto.responses.LtiLoginResponse;
 import com.dps.teknokent.dto.responses.OfficeHoursCourseResponse;
 import com.dps.teknokent.security.LtiToolKeys;
 import com.dps.teknokent.service.LtiLaunchService;
+import com.dps.teknokent.service.OfficeHoursAvailabilityService;
 import com.dps.teknokent.service.OfficeHoursCourseService;
 
 @WebMvcTest({ LtiController.class, OfficeHoursController.class })
@@ -49,6 +55,8 @@ class LtiControllerTest {
     private LtiToolKeys toolKeys;
     @MockitoBean
     private OfficeHoursCourseService courseService;
+    @MockitoBean
+    private OfficeHoursAvailabilityService availabilityService;
 
     /** The frontend's server: Spring's Basic user, given ROLE_SERVICE by spring.security.user.roles. */
     private static org.springframework.test.web.servlet.request.RequestPostProcessor frontendServer() {
@@ -141,5 +149,41 @@ class LtiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Introduction to Computing"))
                 .andExpect(jsonPath("$.role").value("INSTRUCTOR"));
+    }
+
+    @Test
+    void readsAndSavesAnAcademicsOfficeHours() throws Exception {
+        OfficeHoursAvailabilityResponse saved = new OfficeHoursAvailabilityResponse(List.of(
+                new OfficeHoursAvailabilityResponse.Rule(UUID.randomUUID(), DayOfWeek.TUESDAY, LocalTime.of(14, 0),
+                        LocalTime.of(16, 0), 30)), List.of(), null, 45, 15);
+        when(availabilityService.find(USER_ID)).thenReturn(saved);
+        when(availabilityService.update(eq(USER_ID), any())).thenReturn(saved);
+
+        mockMvc.perform(get("/api/office-hours/users/{userId}/availability", USER_ID)
+                        .with(frontendServer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rules[0].dayOfWeek").value("TUESDAY"))
+                .andExpect(jsonPath("$.rules[0].slotMinutes").value(30));
+        mockMvc.perform(put("/api/office-hours/users/{userId}/availability", USER_ID)
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rules":[{"dayOfWeek":"TUESDAY","startTime":"14:00","endTime":"16:00","slotMinutes":30}],
+                                 "exceptions":[],"defaultMeetingDurationMinutes":45,"meetingBufferMinutes":15}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.defaultMeetingDurationMinutes").value(45));
+    }
+
+    @Test
+    void refusesOfficeHoursOutsideTheLimits() throws Exception {
+        mockMvc.perform(put("/api/office-hours/users/{userId}/availability", USER_ID)
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rules":[],"exceptions":[],"defaultMeetingDurationMinutes":5,"meetingBufferMinutes":15}
+                                """))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(availabilityService);
     }
 }

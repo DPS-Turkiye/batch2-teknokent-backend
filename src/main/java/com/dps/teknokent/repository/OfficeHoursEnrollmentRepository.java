@@ -9,11 +9,14 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.dps.teknokent.domain.OfficeHoursRole;
 import com.dps.teknokent.entity.OfficeHoursEnrollment;
 
 public interface OfficeHoursEnrollmentRepository extends JpaRepository<OfficeHoursEnrollment, UUID> {
 
 	Optional<OfficeHoursEnrollment> findByUserIdAndCourseId(UUID userId, UUID courseId);
+
+	boolean existsByUserIdAndRole(UUID userId, OfficeHoursRole role);
 
 	/** Adds the enrolment unless it is already there; see {@link OfficeHoursUserRepository#insertIfAbsent}. */
 	@Modifying
