@@ -288,7 +288,8 @@ public class BadgeService {
 		return holder.getRole() == UserRole.MENTOR ? "/mentor-dashboard" : "/student/peer-mentoring";
 	}
 
-	private Program requirePeerProgram(UUID actorId, UUID programId) {
+	/** The program, when it is a peer program the actor coordinates (or the actor is an admin). */
+	Program requirePeerProgram(UUID actorId, UUID programId) {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
 		if (program.getProgramType() != ProgramType.PEER_MENTORING) {
 			throw new InvalidRequestException(Texts.forRequest("error.badgeNotPeerProgram"));
