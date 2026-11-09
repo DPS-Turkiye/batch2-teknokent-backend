@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -25,6 +26,8 @@ import com.dps.teknokent.domain.BadgeKind;
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.PeerTopicCategory;
+import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
@@ -41,6 +44,8 @@ import com.dps.teknokent.entity.InstitutionPerson;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -48,6 +53,8 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 
 class PeerMentoringServiceTest {
 
@@ -64,6 +71,9 @@ class PeerMentoringServiceTest {
 	private final MentorProfileRepository profileRepository = mock(MentorProfileRepository.class);
 	private final AppUserRepository users = mock(AppUserRepository.class);
 	private final BadgeService badges = mock(BadgeService.class);
+	private final ProgramPeerCategoryService peerCategories = mock(ProgramPeerCategoryService.class);
+	private final ProgramMentorRepository programMentors = mock(ProgramMentorRepository.class);
+	private final ProgramRepository programRepository = mock(ProgramRepository.class);
 	private PeerMentoringService service;
 
 	private AppUser student;
@@ -73,7 +83,7 @@ class PeerMentoringServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new PeerMentoringService(lookup, directory, people, programs, profiles, requestService, requests,
-				personalTeams, profileRepository, users, badges);
+				personalTeams, profileRepository, users, badges, peerCategories, programMentors, programRepository);
 		student = user("Ayşe Yılmaz", Set.of(IdentityKind.STUDENT), UserRole.MENTEE);
 		student.setProgramId(PROGRAM_ID);
 		peerMentor = user("Zeynep Demir", Set.of(IdentityKind.STUDENT), UserRole.MENTEE, UserRole.MENTOR);
@@ -89,6 +99,17 @@ class PeerMentoringServiceTest {
 		when(people.findFirstByUserIdOrderBySyncedAtDesc(student.getId()))
 				.thenReturn(Optional.of(person("Bilgisayar Mühendisliği", 3)));
 		when(people.findFirstByUserIdOrderBySyncedAtDesc(teknokentMentor.getId())).thenReturn(Optional.empty());
+		activate(EnumSet.allOf(PeerTopicCategory.class));
+		ProgramMentor membership = new ProgramMentor();
+		membership.setProgramId(PROGRAM_ID);
+		membership.setMentorId(peerMentor.getId());
+		membership.setStatus(ProgramMentorStatus.ACCEPTED);
+		when(programMentors.findByMentorIdAndStatusOrderByCreatedAtDesc(peerMentor.getId(), ProgramMentorStatus.ACCEPTED))
+				.thenReturn(List.of(membership));
+		Program running = new Program();
+		running.setId(PROGRAM_ID);
+		running.setStatus(ProgramStatus.ACTIVE);
+		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(running));
 		when(badges.publicOf(peerMentor.getId())).thenReturn(List.of(
 				new PublicBadgeResponse(BadgeCode.SESSIONS_10, BadgeKind.ACHIEVEMENT, PROGRAM_ID, Instant.now())));
 	}
@@ -166,6 +187,91 @@ class PeerMentoringServiceTest {
 		assertThat(service.mentors(student.getId(), PeerTopicCategory.CAREER_INTERNSHIP, null)).hasSize(1);
 		assertThat(service.mentors(student.getId(), null, "zeynep")).hasSize(1);
 		assertThat(service.mentors(student.getId(), null, "erasmus")).isEmpty();
+	}
+
+	@Test
+	void onlyTheProgramsActiveCategoriesShowAndAMentorWithNoneOfThemIsLeftOut() {
+		activate(EnumSet.of(PeerTopicCategory.TECHNICAL_DIGITAL));
+
+		assertThat(service.mentors(student.getId(), null, null)).singleElement()
+				.satisfies(card -> assertThat(card.categories()).containsExactly(PeerTopicCategory.TECHNICAL_DIGITAL));
+		assertThat(service.mentors(student.getId(), PeerTopicCategory.CAREER_INTERNSHIP, null)).isEmpty();
+		assertThat(service.categories(student.getId(), UserRole.MENTEE))
+				.containsExactly(PeerTopicCategory.TECHNICAL_DIGITAL);
+
+		activate(EnumSet.of(PeerTopicCategory.INTERNATIONAL));
+		assertThat(service.mentors(student.getId(), null, null)).isEmpty();
+	}
+
+	@Test
+	void noCategoryIsActiveUntilTheCoordinatorTurnsOneOn() {
+		activate(EnumSet.noneOf(PeerTopicCategory.class));
+
+		assertThat(service.categories(student.getId(), UserRole.MENTEE)).isEmpty();
+		assertThat(service.mentors(student.getId(), null, null)).isEmpty();
+	}
+
+	@Test
+	void aPeerMentorUsesTheCategoriesOfTheProgramsTheyMentorIn() {
+		when(peerCategories.activeIn(List.of(PROGRAM_ID)))
+				.thenReturn(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.ACADEMIC_DEVELOPMENT));
+
+		assertThat(service.categories(peerMentor.getId(), UserRole.MENTOR))
+				.containsExactly(PeerTopicCategory.ACADEMIC_DEVELOPMENT, PeerTopicCategory.CAREER_INTERNSHIP);
+	}
+
+	@Test
+	void aRequestInACategoryTheProgramDoesNotUseIsRefusedBeforeAnyTeamIsMade() {
+		activate(EnumSet.of(PeerTopicCategory.TECHNICAL_DIGITAL));
+
+		assertThatThrownBy(() -> service.create(student.getId(), new CreatePeerMentoringRequest(null,
+				peerMentor.getId(), PeerTopicCategory.CAREER_INTERNSHIP, "Staj başvurusu için CV'me bakar mısın?")))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(personalTeams, never()).ensureFor(any());
+		verify(requestService, never()).create(any());
+	}
+
+	@Test
+	void theWizardCannotPublishACategoryTheMentorsProgramsDoNotUse() {
+		when(peerCategories.activeIn(List.of(PROGRAM_ID))).thenReturn(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP));
+
+		assertThatThrownBy(() -> service.saveProfile(peerMentor.getId(), new SavePeerMentorProfileRequest(null,
+				List.of(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.INTERNATIONAL), List.of(), List.of(),
+				List.of(), null, "Staj başvurusunda yardımcı olabilirim.", null)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(profileRepository, never()).save(any());
+	}
+
+	@Test
+	void aRequestInACategoryTheMentorDoesNotOfferIsRefused() {
+		activate(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.INTERNATIONAL));
+
+		assertThatThrownBy(() -> service.create(student.getId(), new CreatePeerMentoringRequest(null,
+				peerMentor.getId(), PeerTopicCategory.INTERNATIONAL, "Erasmus başvurusu için yardım isterim, lütfen.")))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(personalTeams, never()).ensureFor(any());
+		verify(requestService, never()).create(any());
+	}
+
+	@Test
+	void aCategoryTurnedOffDropsOutOfTheMentorsOwnProfileSoTheWizardCanSaveAgain() {
+		MentorProfile stored = MentorProfile.blankFor(peerMentor, 1);
+		stored.setSpecialties(new java.util.ArrayList<>(List.of("CAREER_INTERNSHIP", "INTERNATIONAL")));
+		when(profileRepository.findById(peerMentor.getId())).thenReturn(Optional.of(stored));
+		when(peerCategories.activeIn(List.of(PROGRAM_ID))).thenReturn(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP));
+
+		assertThat(service.profile(peerMentor.getId()).categories()).containsExactly(PeerTopicCategory.CAREER_INTERNSHIP);
+	}
+
+	@Test
+	void anArchivedProgramsCategoriesNoLongerCountForItsMentors() {
+		Program archived = new Program();
+		archived.setId(PROGRAM_ID);
+		archived.setStatus(ProgramStatus.COMPLETED);
+		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(archived));
+		when(peerCategories.activeIn(List.of())).thenReturn(EnumSet.noneOf(PeerTopicCategory.class));
+
+		assertThat(service.categories(peerMentor.getId(), UserRole.MENTOR)).isEmpty();
 	}
 
 	@Test
@@ -274,6 +380,11 @@ class PeerMentoringServiceTest {
 		request.setSummary("mesaj");
 		request.setStatus(MentorshipRequestStatus.PENDING);
 		return request;
+	}
+
+	private void activate(Set<PeerTopicCategory> active) {
+		when(peerCategories.activeIn(PROGRAM_ID)).thenReturn(active);
+		when(peerCategories.activeIn(List.of(PROGRAM_ID))).thenReturn(active);
 	}
 
 	private static MentorProfileResponse profile(AppUser mentor, List<String> specialties, String about,

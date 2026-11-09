@@ -47,6 +47,15 @@ public class PeerMentoringController {
 		return peerMentoringService.mentors(CurrentActor.resolve(actorId), category, q);
 	}
 
+	/** {@code as=MENTOR}: the categories of the programs the caller mentors in; the student's program's otherwise. */
+	@GetMapping("/categories")
+	public List<PeerTopicCategory> categories(
+			@RequestParam(required = false) UUID actorId,
+			@RequestParam(name = "as", required = false) UserRole side) {
+		return peerMentoringService.categories(CurrentActor.resolve(actorId),
+				side == UserRole.MENTOR ? UserRole.MENTOR : UserRole.MENTEE);
+	}
+
 	/** {@code as=MENTOR} for the requests a peer mentor received; the student's own requests otherwise. */
 	@GetMapping("/requests")
 	public List<PeerMentoringRequestResponse> requests(
