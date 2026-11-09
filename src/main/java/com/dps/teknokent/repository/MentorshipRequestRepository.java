@@ -12,8 +12,6 @@ import com.dps.teknokent.entity.MentorshipRequest;
 
 public interface MentorshipRequestRepository extends JpaRepository<MentorshipRequest, UUID> {
 
-	List<MentorshipRequest> findAllByOrderByCreatedAtDesc();
-
 	List<MentorshipRequest> findByStatusInOrderByCreatedAtDesc(Collection<MentorshipRequestStatus> statuses);
 
 	List<MentorshipRequest> findByRequesterIdOrderByCreatedAtDesc(UUID requesterId);

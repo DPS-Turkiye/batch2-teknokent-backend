@@ -168,6 +168,10 @@ public class AppUserService {
 	public OrganizationMemberResponse addOrganizationMember(
 			UUID organizationId, CreateOrganizationMemberRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
+		// The new row is APPROVED and waits for whoever signs up with that address, so only the founder decides.
+		if (!isFounder(organization, request.actorId())) {
+			throw new InvalidRequestException("Only the organization founder can add team members");
+		}
 		String email = TextUtils.trim(request.email());
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
 			throw new InvalidRequestException("A user with this email already exists.");

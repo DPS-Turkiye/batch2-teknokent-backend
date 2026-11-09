@@ -34,6 +34,7 @@ public class SecurityConfig {
 
 	private static final String[] PUBLIC_PATHS = {
 			"/api/health",
+			"/api/lti/jwks",
 			"/ws/**",
 			"/api/docs",
 			"/api/docs/**",
@@ -64,7 +65,25 @@ public class SecurityConfig {
 			"/api/profile-analyses/preview/documents/*",
 	};
 
+	/** spring.security.user.roles gives the frontend's Basic credential this role. */
+	static final String SERVICE_ROLE = "SERVICE";
+
+	private static final String[] SERVICE_ONLY_PATHS = {
+			"/api/lti/**",
+			"/api/office-hours/**"
+	};
+
 	private static final String NOTIFICATION_PATH = "/api/notifications/**";
+
+	/**
+	 * Sign-up and onboarding bind the new account to the caller's Firebase login. On the shared service
+	 * credentials there is no login to bind, so a row made there could later be claimed by anyone who signs up
+	 * with its address. FirebaseBearerFilter grants REGISTERING here to any valid Firebase token.
+	 */
+	private static final String[] PRE_ACCOUNT_PATHS = {
+			"/api/auth/register/**",
+			"/api/onboarding/**"
+	};
 
 	/**
 	 * The only password Spring checks is the shared Basic credential the frontend proxy sends on
@@ -133,6 +152,10 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(PUBLIC_PATHS).permitAll()
+						// Office hours trust only the frontend's server: the Basic service credential carries
+						// ROLE_SERVICE, which no Firebase-signed Menton account ever gets.
+						.requestMatchers(SERVICE_ONLY_PATHS).hasRole(SERVICE_ROLE)
+						.requestMatchers(PRE_ACCOUNT_PATHS).hasRole("REGISTERING")
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults())
 				.cors(Customizer.withDefaults());
