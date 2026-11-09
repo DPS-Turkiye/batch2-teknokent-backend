@@ -23,6 +23,6 @@ public class RealtimeTokenController {
 
 	@PostMapping("/token")
 	public RealtimeTokenResponse issue(@Valid @RequestBody IssueRealtimeTokenRequest request) {
-		return realtimeTokenService.issue(request.userId(), request.organizationId());
+		return realtimeTokenService.issue(request.userId(), request.organizationId(), request.signedInAt());
 	}
 }

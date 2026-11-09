@@ -160,10 +160,17 @@ public class ProgramReportService {
 		return rows;
 	}
 
+	/**
+	 * The program's startups, and the personal teams of its students: a peer-mentoring student files sessions under a
+	 * hidden team of one that never joins the program as a startup, but their sessions count with their own program.
+	 */
 	private Set<UUID> teamsOf(Program program) {
 		Set<UUID> teams = new HashSet<>();
 		for (ProgramStartup startup : programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())) {
 			teams.add(startup.getOrganizationId());
+		}
+		for (AppUser student : appUserRepository.findPersonalTeamStudentsOfProgram(program.getId())) {
+			teams.add(student.getOrganization().getId());
 		}
 		return teams;
 	}

@@ -114,7 +114,8 @@ public class OrganizationController {
 	public OrganizationMemberResponse addMember(
 			@PathVariable UUID id,
 			@Valid @RequestBody CreateOrganizationMemberRequest request) {
-		return appUserService.addOrganizationMember(id, request);
+		return appUserService.addOrganizationMember(id, new CreateOrganizationMemberRequest(
+				CurrentActor.resolve(request.actorId()), request.fullName(), request.email(), request.jobTitle()));
 	}
 
 	@PatchMapping("/{id}/members/{memberId}")

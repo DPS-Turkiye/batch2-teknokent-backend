@@ -38,6 +38,11 @@ public class MenteeProgramService {
 
 	/** The startup's chosen program, else the last program it joined. */
 	public Optional<UUID> programOf(Organization organization) {
+		// A student's personal team never joins a program as a startup; it belongs to the student's own program.
+		if (organization.isPersonal()) {
+			AppUser student = organization.getFounder();
+			return Optional.ofNullable(student == null ? null : student.getProgramId());
+		}
 		if (organization.getActiveProgramId() != null) {
 			return Optional.of(organization.getActiveProgramId());
 		}
