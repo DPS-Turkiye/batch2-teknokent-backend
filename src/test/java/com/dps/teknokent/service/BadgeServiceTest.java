@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -182,6 +183,28 @@ class BadgeServiceTest {
 
 		assertThatThrownBy(() -> service.awardGate(coordinator.getId(), iskur.getId(), student.getId()))
 				.isInstanceOf(ConflictException.class);
+	}
+
+	@Test
+	void anAchievementGivesNoPermissionOrMembershipAndSaysWhereToSeeIt() {
+		service.award(student, BadgeCode.FIRST_SESSION, null, BadgeSource.RULE, null, true);
+
+		ArgumentCaptor<UserBadge> saved = ArgumentCaptor.forClass(UserBadge.class);
+		verify(awards).save(saved.capture());
+		assertThat(saved.getValue().getProgramId()).isNull();
+		assertThat(saved.getValue().getSource()).isEqualTo(BadgeSource.RULE);
+		assertThat(student.has(UserRole.MENTOR)).isFalse();
+		verify(programMentors, never()).save(any());
+		verify(notificationService).create(eq(student), eq(NotificationCategory.BADGE), eq("Yeni rozet: İlk Görüşme"),
+				anyString(), eq("/student/profile"));
+	}
+
+	@Test
+	void aSilentAwardSendsNoNotification() {
+		service.award(student, BadgeCode.ACTIVE_MENTEE, null, BadgeSource.RULE, null, false);
+
+		verify(awards).save(any());
+		verifyNoInteractions(notificationService);
 	}
 
 	@Test
