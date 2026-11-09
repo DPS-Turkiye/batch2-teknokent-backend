@@ -107,6 +107,20 @@ class AdminProgramMembershipServiceTest {
 	}
 
 	@Test
+	void aStudentsPersonalTeamCannotBeAssignedAsAStartup() {
+		givenAdminAndProgram(ProgramStatus.ACTIVE);
+		Organization personal = new Organization();
+		personal.setId(UUID.randomUUID());
+		personal.setName("Ayşe Yılmaz");
+		personal.setPersonal(true);
+		when(domainLookupService.requireOrganization(personal.getId())).thenReturn(personal);
+
+		assertThatThrownBy(() -> service.assignStartup(ADMIN_ID, PROGRAM_ID, personal.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programStartupRepository, never()).save(any());
+	}
+
+	@Test
 	void assigningAStartupJoinsItApprovesItAndMakesItTheActiveProgramWhenItHadNone() {
 		givenAdminAndProgram(ProgramStatus.ACTIVE);
 		AppUser founder = user(UUID.randomUUID(), UserRole.MENTEE, UserAccountStatus.APPROVED);

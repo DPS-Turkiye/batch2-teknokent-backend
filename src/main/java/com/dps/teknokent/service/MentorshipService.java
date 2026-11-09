@@ -185,7 +185,7 @@ public class MentorshipService {
 					MentorshipWeekCheck check = checks.get(mentorship.getId());
 					return new MentorshipWeekCheckResponse(
 							mentorship.getId(),
-							mentorship.getOrganization().getName(),
+							Organization.visibleName(mentorship.getOrganization()),
 							mentorship.getDaysPerWeek(),
 							mentorship.getStartDate(),
 							mentorship.getEndDate(),
@@ -213,7 +213,7 @@ public class MentorshipService {
 		MentorshipWeekCheck saved = mentorshipWeekCheckRepository.save(check);
 		return new MentorshipWeekCheckResponse(
 				mentorship.getId(),
-				mentorship.getOrganization().getName(),
+				Organization.visibleName(mentorship.getOrganization()),
 				mentorship.getDaysPerWeek(),
 				mentorship.getStartDate(),
 				mentorship.getEndDate(),
