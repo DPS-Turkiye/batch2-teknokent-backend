@@ -419,7 +419,6 @@ class AssistantIntegrationTest {
           .andExpect(status().isCreated());
     }
 
-    // 101st request should be rate limited
     mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")
@@ -458,7 +457,6 @@ class AssistantIntegrationTest {
     when(meetingProviderClient.sendBot(eq("google_meet"), eq("abc-defg-hij"), anyString()))
         .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
 
-    // IP 1 - single request should succeed
     mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}")

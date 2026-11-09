@@ -203,6 +203,20 @@ class ProgramServiceTest {
 	}
 
 	@Test
+	void anAdminWithCoordinatorPermissionGetsTheFullProgramList() {
+		AppUser actor = new AppUser();
+		actor.setId(COORDINATOR_ID);
+		actor.setRole(UserRole.ADMIN);
+		org.springframework.test.util.ReflectionTestUtils.setField(actor, "role", UserRole.COORDINATOR);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(actor);
+		when(programRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+		assertThat(programService.list(COORDINATOR_ID)).isEmpty();
+		verify(programRepository).findAllByOrderByCreatedAtDesc();
+		verify(programRepository, never()).findByCreatedByOrderByCreatedAtDesc(any());
+	}
+
+	@Test
 	void listGivesEachProgramItsOwnStartupsAndMentorsFromOneBatch() {
 		Program other = program();
 		other.setId(OTHER_PROGRAM_ID);

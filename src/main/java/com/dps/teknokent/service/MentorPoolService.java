@@ -86,7 +86,7 @@ public class MentorPoolService {
 		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(email);
 		if (existing.isPresent()) {
 			AppUser user = existing.get();
-			if (user.getRole() != UserRole.MENTOR) {
+			if (!user.has(UserRole.MENTOR)) {
 				throw new InvalidRequestException("Bu e-posta mentor olmayan bir hesaba ait.");
 			}
 			programService.inviteMentor(actorId, programId, user.getId());
@@ -255,7 +255,7 @@ public class MentorPoolService {
 
 	private AppUser requireMentorByFirebaseUid(String firebaseUid) {
 		return appUserRepository.findByFirebaseUid(firebaseUid)
-				.filter(user -> user.getRole() == UserRole.MENTOR)
+				.filter(user -> user.has(UserRole.MENTOR))
 				.orElseThrow(() -> new InvalidRequestException("Only a mentor can choose programs."));
 	}
 

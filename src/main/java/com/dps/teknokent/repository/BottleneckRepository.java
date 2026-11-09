@@ -14,12 +14,7 @@ public interface BottleneckRepository extends JpaRepository<Bottleneck, UUID> {
 
 	List<Bottleneck> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
-	long countByStatusIn(Collection<BottleneckStatus> statuses);
 	long countByOrganizationIdAndStatusIn(UUID organizationId, Collection<BottleneckStatus> statuses);
-
-	long countBySeverityInAndStatusIn(
-			Collection<BottleneckSeverity> severities,
-			Collection<BottleneckStatus> statuses);
 
 	long countByOrganizationIdAndSeverityInAndStatusIn(
 			UUID organizationId,

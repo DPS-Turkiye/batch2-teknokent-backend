@@ -80,7 +80,7 @@ public class PlatformFeedbackService {
 	}
 
 	private void requireAdmin(UUID actorId) {
-		if (requireApprovedUser(actorId).getRole() != UserRole.ADMIN) {
+		if (!requireApprovedUser(actorId).has(UserRole.ADMIN)) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("feedback.adminOnly"));
 		}
 	}

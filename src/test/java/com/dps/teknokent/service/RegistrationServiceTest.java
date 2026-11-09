@@ -258,7 +258,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerFounder_discardsTheOnboardingDraftForTheSignedInFirebaseUser() {
-        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com"));
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", true));
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
         when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
@@ -286,6 +286,26 @@ class RegistrationServiceTest {
                 null, null, null, null, null, null, null, null, null, null, null, null, null, false));
 
         verify(onboardingDraftRepository).deleteById("uid-1");
+    }
+
+    // Team claims, invites and startup codes treat the address as proof, so it must be verified (E1).
+    @Test
+    void registerFounder_refusesALoginWhoseEmailIsNotVerified() {
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", false));
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir",
+                "ayse@startup.com",
+                "GreenLoop",
+                "Climate tech",
+                "Kurucu",
+                "+905551112233",
+                PROGRAM_ID, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, false)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Verify your email address before registering.");
+        verify(appUserRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -808,7 +828,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerMentor_linksSignedInFirebaseAccount() {
-        signIn(new FirebaseIdentity("uid-1", "kemal@mentor.com"));
+        signIn(new FirebaseIdentity("uid-1", "kemal@mentor.com", true));
 
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
@@ -847,7 +867,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerMentor_rejectsEmailThatDoesNotMatchTheToken() {
-        signIn(new FirebaseIdentity("uid-1", "baskasi@mentor.com"));
+        signIn(new FirebaseIdentity("uid-1", "baskasi@mentor.com", true));
 
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
 

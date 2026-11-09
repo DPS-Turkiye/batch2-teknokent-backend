@@ -41,6 +41,7 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingProposal;
 import com.dps.teknokent.entity.Mentorship;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.exception.ConflictException;
@@ -254,6 +255,27 @@ class MeetingProposalServiceTest {
 			assertThat(item.canRespond()).isTrue();
 			assertThat(item.organizationName()).isEqualTo("Lumen");
 		});
+	}
+
+	// A student who mentors and is mentored answers proposals on both sides, soonest first.
+	@Test
+	void listsOpenProposalsFromBothSidesForAnAccountThatMentorsAndIsMentored() {
+		lead.setOrganization(lumen);
+		lead.grant(UserRole.MENTOR, PermissionSource.BADGE, Instant.now());
+		MeetingProposal asMentor = pending(null);
+		asMentor.setMentor(lead);
+		asMentor.setOrganization(organization());
+		asMentor.setScheduledAt(nextWeek.plusSeconds(3600));
+		MeetingProposal asTeam = pending(null);
+		when(proposalRepository.findByStatusAndMentorIdOrderByScheduledAtAsc(
+				MeetingProposalStatus.PENDING, lead.getId())).thenReturn(List.of(asMentor));
+		when(proposalRepository.findByStatusAndOrganizationIdOrderByScheduledAtAsc(
+				MeetingProposalStatus.PENDING, lumen.getId())).thenReturn(List.of(asTeam));
+		when(programRepository.findAllById(List.of(program.getId()))).thenReturn(List.of(program));
+
+		List<MeetingProposalResponse> mine = service.mine(lead.getId());
+
+		assertThat(mine).extracting(MeetingProposalResponse::id).containsExactly(asTeam.getId(), asMentor.getId());
 	}
 
 	@Test

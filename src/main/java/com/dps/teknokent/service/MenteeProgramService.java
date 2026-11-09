@@ -56,7 +56,7 @@ public class MenteeProgramService {
 
 	/** Whether the mentee's program takes students as teams of one (İŞKUR-style). */
 	public boolean inIndividualProgram(AppUser user) {
-		if (user.getRole() != UserRole.MENTEE) {
+		if (!user.has(UserRole.MENTEE)) {
 			return false;
 		}
 		return programOf(user).flatMap(programRepository::findById).map(Program::isIndividualMentees).orElse(false);
@@ -72,7 +72,7 @@ public class MenteeProgramService {
 			return Optional.empty();
 		}
 		return appUserRepository.findById(actorId)
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.flatMap(this::programOf)
 				.map(this::acceptedMentorIds);
 	}

@@ -29,6 +29,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.InstitutionDirectoryService;
 
 @WebMvcTest(AuthMeController.class)
 @Import(SecurityConfig.class)
@@ -41,6 +42,9 @@ class AuthMeControllerTest {
 
     @MockitoBean
     private AppUserService appUserService;
+
+    @MockitoBean
+    private InstitutionDirectoryService institutionDirectoryService;
 
     @Test
     void requiresAuthentication() throws Exception {
@@ -79,7 +83,8 @@ class AuthMeControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(USER_ID.toString()))
                 .andExpect(jsonPath("$.email").value("ayse@startup.com"))
-                .andExpect(jsonPath("$.organizationId").value(organizationId.toString()));
+                .andExpect(jsonPath("$.organizationId").value(organizationId.toString()))
+                .andExpect(jsonPath("$.permissions[0]").value("MENTEE"));
     }
 
     @Test

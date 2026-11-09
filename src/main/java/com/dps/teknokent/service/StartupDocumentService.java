@@ -126,7 +126,7 @@ public class StartupDocumentService {
 	public OrganizationDocumentResponse review(UUID documentId, UUID actorId) {
 		StoredDocument document = requireDocument(documentId);
 		AppUser actor = domainLookupService.requireUser(actorId);
-		boolean reviewerRole = isStaff(actor) || actor.getRole() == UserRole.MENTOR;
+		boolean reviewerRole = isStaff(actor) || actor.has(UserRole.MENTOR);
 		boolean ownUpload = actor.getId().equals(document.getUserId());
 		if (!reviewerRole || ownUpload || !canRead(document, actor)) {
 			throw new InvalidRequestException("Only a mentor with access or a coordinator can review this document");
@@ -192,7 +192,7 @@ public class StartupDocumentService {
 			return true;
 		}
 		// A CV stays with the person and their startup; mentors see what was read from it, not the file.
-		if (actor.getRole() != UserRole.MENTOR || isCv(document)) {
+		if (!actor.has(UserRole.MENTOR) || isCv(document)) {
 			return false;
 		}
 		if (isMentorForOrganization(actor, document.getOrganizationId())) {
@@ -216,14 +216,14 @@ public class StartupDocumentService {
 	}
 
 	private boolean isMentorOf(AppUser mentor, UUID organizationId) {
-		return mentor.getRole() == UserRole.MENTOR && organizationId != null && mentorshipRequestRepository
+		return mentor.has(UserRole.MENTOR) && organizationId != null && mentorshipRequestRepository
 				.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
 						mentor.getId(), organizationId, MentorshipRequestStatus.ACCEPTED)
 				.isPresent();
 	}
 
 	private boolean isMentorForOrganization(AppUser mentor, UUID organizationId) {
-		if (mentor.getRole() != UserRole.MENTOR || organizationId == null) {
+		if (!mentor.has(UserRole.MENTOR) || organizationId == null) {
 			return false;
 		}
 		if (mentorshipRequestRepository.existsByMentorIdAndOrganizationId(mentor.getId(), organizationId)) {
@@ -254,7 +254,7 @@ public class StartupDocumentService {
 	}
 
 	private static boolean isStaff(AppUser actor) {
-		return actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR;
+		return actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR);
 	}
 
 	private StoredDocument requireDocument(UUID documentId) {
