@@ -15,6 +15,8 @@ public interface InstitutionPersonRepository extends JpaRepository<InstitutionPe
 
 	Optional<InstitutionPerson> findFirstByUserIdOrderBySyncedAtDesc(UUID userId);
 
+	List<InstitutionPerson> findByAcademicTrueOrderByFullNameAsc();
+
 	List<InstitutionPerson> findByInstitutionAndPersistentIdInOrderByFullNameAsc(String institution,
 			Collection<String> persistentIds);
 }

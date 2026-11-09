@@ -1,5 +1,7 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -12,4 +14,6 @@ public interface AppUserIdentityRepository extends JpaRepository<AppUserIdentity
 	Optional<AppUserIdentity> findByProviderAndPersistentId(String provider, String persistentId);
 
 	boolean existsByUserIdAndProvider(UUID userId, String provider);
+
+	List<AppUserIdentity> findByUserIdIn(Collection<UUID> userIds);
 }
