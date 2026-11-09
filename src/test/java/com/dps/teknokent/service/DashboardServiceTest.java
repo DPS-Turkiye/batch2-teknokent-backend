@@ -21,6 +21,9 @@ import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
+import com.dps.teknokent.exception.InvalidRequestException;
 
 @ExtendWith(MockitoExtension.class)
 class DashboardServiceTest {
@@ -64,20 +67,10 @@ class DashboardServiceTest {
     }
 
     @Test
-    void getSummary_forAllOrganizations_returnsGlobalCounts() {
-        when(mentorshipRepository.countByStatus(MentorshipStatus.ACTIVE)).thenReturn(9L);
-        when(bottleneckRepository.countByStatusIn(any())).thenReturn(7L);
-        when(bottleneckRepository.countBySeverityInAndStatusIn(any(), any())).thenReturn(3L);
-        when(actionItemRepository.countByStatusNotInAndDueDateBefore(any(), any(LocalDate.class))).thenReturn(11L);
-        when(meetingRepository.countByStatusAndScheduledAtAfter(eq(MeetingStatus.SCHEDULED), any(Instant.class)))
-                .thenReturn(13L);
+    void getSummary_withoutAnOrganization_refusesInsteadOfCountingThePlatform() {
+        assertThatThrownBy(() -> dashboardService.getSummary(null))
+                .isInstanceOf(InvalidRequestException.class);
 
-        var result = dashboardService.getSummary(null);
-
-        assertThat(result.activeMentorships()).isEqualTo(9L);
-        assertThat(result.openBottlenecks()).isEqualTo(7L);
-        assertThat(result.highSeverityBottlenecks()).isEqualTo(3L);
-        assertThat(result.overdueActions()).isEqualTo(11L);
-        assertThat(result.upcomingMeetings()).isEqualTo(13L);
+        verifyNoInteractions(mentorshipRepository, bottleneckRepository, actionItemRepository, meetingRepository);
     }
 }

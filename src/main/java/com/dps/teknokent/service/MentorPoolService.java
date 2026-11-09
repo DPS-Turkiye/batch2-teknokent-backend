@@ -71,6 +71,7 @@ public class MentorPoolService {
 	private final MentorshipRepository mentorshipRepository;
 	private final MailService mailService;
 	private final ProgramEligibilityService programEligibilityService;
+	private final BadgeService badgeService;
 
 
 	@Transactional(readOnly = true)
@@ -194,6 +195,9 @@ public class MentorPoolService {
 			appUserRepository.save(mentor);
 		}
 		programService.settleMentorRequest(program, mentorId, accepted);
+		if (accepted) {
+			badgeService.awardAfterMentorApproval(actorId, program, mentor);
+		}
 		return rows(program);
 	}
 

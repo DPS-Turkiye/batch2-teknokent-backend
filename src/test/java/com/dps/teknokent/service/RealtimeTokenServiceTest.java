@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,7 @@ class RealtimeTokenServiceTest {
 	void acceptsATokenItIssuedItself() {
 		RealtimeTokenService service = service(60);
 
-		RealtimeTokenResponse issued = service.issue(userId, organizationId);
+		RealtimeTokenResponse issued = service.issue(userId, organizationId, null);
 		RealtimeIdentity identity = service.verify(issued.token());
 
 		assertThat(identity).isNotNull();
@@ -35,9 +36,20 @@ class RealtimeTokenServiceTest {
 	}
 
 	@Test
+	void carriesTheSignInTheTokenWasIssuedFor() {
+		RealtimeTokenService service = service(60);
+		Instant signedInAt = Instant.parse("2026-11-08T08:15:30.123Z");
+
+		RealtimeIdentity identity = service.verify(service.issue(userId, organizationId, signedInAt).token());
+
+		assertThat(identity.signedInAt()).isEqualTo(signedInAt);
+		assertThat(service.verify(service.issue(userId, organizationId, null).token()).signedInAt()).isNull();
+	}
+
+	@Test
 	void rejectsTokensWithATamperedPayloadOrSignature() {
 		RealtimeTokenService service = service(60);
-		String token = service.issue(userId, organizationId).token();
+		String token = service.issue(userId, organizationId, null).token();
 
 		assertThat(service.verify(token.substring(0, token.lastIndexOf('.')) + ".forged")).isNull();
 		assertThat(service.verify("not-a-token")).isNull();
@@ -49,13 +61,13 @@ class RealtimeTokenServiceTest {
 		RealtimeTokenService other = service(60);
 		ReflectionTestUtils.setField(other, "tokenSecret", "another-secret");
 
-		assertThat(service(60).verify(other.issue(userId, organizationId).token())).isNull();
+		assertThat(service(60).verify(other.issue(userId, organizationId, null).token())).isNull();
 	}
 
 	@Test
 	void rejectsExpiredTokens() {
 		RealtimeTokenService service = service(-1);
 
-		assertThat(service.verify(service.issue(userId, organizationId).token())).isNull();
+		assertThat(service.verify(service.issue(userId, organizationId, null).token())).isNull();
 	}
 }

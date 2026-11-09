@@ -78,7 +78,8 @@ public class MeetingService {
 		} else if (organizationId != null) {
 			meetings = meetingRepository.findByOrganizationIdOrderByScheduledAtDesc(organizationId);
 		} else {
-			meetings = meetingRepository.findAllByOrderByScheduledAtDesc();
+			// A session without a startup sends a blank organization, which arrives as null: not "every meeting".
+			throw new InvalidRequestException("mentorId or organizationId is required");
 		}
 		return meetings.stream()
 				.map(MeetingResponse::fromEntity)

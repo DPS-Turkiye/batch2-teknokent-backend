@@ -99,8 +99,27 @@ class AuthRegistrationControllerTest {
     void programEligibilityNeedsAFirebaseSignIn() throws Exception {
         mockMvc.perform(get("/api/auth/register/program-eligibility").param("programId", ISKUR_ID.toString())
                         .with(user("proxy").roles("ADMIN")))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden());
         verifyNoInteractions(programEligibilityService);
+    }
+
+    // On the service credentials there is no Firebase login to bind, so the row could be claimed by its address later.
+    @Test
+    void refusesRegistrationOnTheServiceCredentials() throws Exception {
+        mockMvc.perform(post("/api/auth/register/founder")
+                        .with(user("proxy").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ayşe Demir",
+                                  "email": "ayse@startup.com",
+                                  "organizationName": "GreenLoop",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa",
+                                  "jobTitle": "Kurucu"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(registrationService);
     }
 
     @Test
@@ -136,7 +155,7 @@ class AuthRegistrationControllerTest {
         ));
 
         mockMvc.perform(post("/api/auth/register/founder")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -173,7 +192,7 @@ class AuthRegistrationControllerTest {
         ));
 
         mockMvc.perform(post("/api/auth/register/mentor")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -206,7 +225,7 @@ class AuthRegistrationControllerTest {
         ));
 
         mockMvc.perform(post("/api/auth/register/member")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -224,7 +243,7 @@ class AuthRegistrationControllerTest {
     @Test
     void rejectsFounderRegisterWhenEmailIsBlank() throws Exception {
         mockMvc.perform(post("/api/auth/register/founder")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -239,7 +258,7 @@ class AuthRegistrationControllerTest {
     @Test
     void rejectsFounderRegisterWhenPhoneContainsLetters() throws Exception {
         mockMvc.perform(post("/api/auth/register/founder")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

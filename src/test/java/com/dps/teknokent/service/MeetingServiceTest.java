@@ -43,6 +43,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingServiceTest {
@@ -408,22 +409,13 @@ class MeetingServiceTest {
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 
+	// A session without a startup sends a blank organization, which arrives here as null.
 	@Test
-	void findAllWithoutOrganizationIdReturnsAllMeetingsOrderedBySchedule() {
-		UUID demoOrganizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-		UUID demoMentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
-		Meeting meeting = namedMeeting(
-				UUID.fromString("00000000-0000-0000-0000-000000000301"), demoOrganizationId, demoMentorId,
-				"Roadmap review", MeetingStatus.SCHEDULED, 60);
+	void findAllWithoutAScopeRefusesInsteadOfListingEveryMeeting() {
+		assertThatThrownBy(() -> meetingService.findAll(null, null))
+				.isInstanceOf(InvalidRequestException.class);
 
-		when(meetingRepository.findAllByOrderByScheduledAtDesc()).thenReturn(List.of(meeting));
-
-		List<MeetingResponse> result = meetingService.findAll(null, null);
-
-		assertThat(result).hasSize(1);
-		assertThat(result.get(0).id()).isEqualTo(meeting.getId());
-		assertThat(result.get(0).status()).isEqualTo(MeetingStatus.SCHEDULED);
-		assertThat(result.get(0).agenda()).isEqualTo("Roadmap review");
+		verifyNoInteractions(meetingRepository);
 	}
 
 	@Test
