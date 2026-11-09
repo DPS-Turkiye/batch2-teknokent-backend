@@ -20,6 +20,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dps.teknokent.domain.BadgeCode;
+import com.dps.teknokent.domain.BadgeKind;
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.PeerTopicCategory;
@@ -27,17 +29,24 @@ import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
+import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
+import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
+import com.dps.teknokent.dto.responses.PublicBadgeResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.InstitutionPerson;
+import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
+import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 
 class PeerMentoringServiceTest {
@@ -52,6 +61,9 @@ class PeerMentoringServiceTest {
 	private final MentorshipRequestService requestService = mock(MentorshipRequestService.class);
 	private final MentorshipRequestRepository requests = mock(MentorshipRequestRepository.class);
 	private final PersonalTeamService personalTeams = mock(PersonalTeamService.class);
+	private final MentorProfileRepository profileRepository = mock(MentorProfileRepository.class);
+	private final AppUserRepository users = mock(AppUserRepository.class);
+	private final BadgeService badges = mock(BadgeService.class);
 	private PeerMentoringService service;
 
 	private AppUser student;
@@ -61,7 +73,7 @@ class PeerMentoringServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new PeerMentoringService(lookup, directory, people, programs, profiles, requestService, requests,
-				personalTeams);
+				personalTeams, profileRepository, users, badges);
 		student = user("Ayşe Yılmaz", Set.of(IdentityKind.STUDENT), UserRole.MENTEE);
 		student.setProgramId(PROGRAM_ID);
 		peerMentor = user("Zeynep Demir", Set.of(IdentityKind.STUDENT), UserRole.MENTEE, UserRole.MENTOR);
@@ -77,6 +89,57 @@ class PeerMentoringServiceTest {
 		when(people.findFirstByUserIdOrderBySyncedAtDesc(student.getId()))
 				.thenReturn(Optional.of(person("Bilgisayar Mühendisliği", 3)));
 		when(people.findFirstByUserIdOrderBySyncedAtDesc(teknokentMentor.getId())).thenReturn(Optional.empty());
+		when(badges.publicOf(peerMentor.getId())).thenReturn(List.of(
+				new PublicBadgeResponse(BadgeCode.SESSIONS_10, BadgeKind.ACHIEVEMENT, PROGRAM_ID, Instant.now())));
+	}
+
+	@Test
+	void theWizardPublishesAProfileFromABlankRowWithTheStudentsOdtuDetails() {
+		when(profileRepository.findById(peerMentor.getId())).thenReturn(Optional.empty());
+		when(profileRepository.findMaxSortOrder()).thenReturn(4);
+		when(profileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		PeerMentorProfileResponse saved = service.saveProfile(peerMentor.getId(), new SavePeerMentorProfileRequest(
+				null,
+				List.of(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.CAREER_INTERNSHIP,
+						PeerTopicCategory.INTERNATIONAL),
+				List.of(" CV hazırlama ", ""),
+				List.of("IE 251"),
+				List.of("Tedarik zinciri simülasyonu"),
+				"  ",
+				"  Staj başvurusu ve Erasmus planlamasında yardımcı olabilirim.  ",
+				"https://linkedin.com/in/zeynep"));
+
+		ArgumentCaptor<MentorProfile> profile = ArgumentCaptor.forClass(MentorProfile.class);
+		verify(profileRepository).save(profile.capture());
+		assertThat(profile.getValue().getUser()).isSameAs(peerMentor);
+		assertThat(profile.getValue().getSortOrder()).isEqualTo(5);
+		assertThat(profile.getValue().getSpecialties()).containsExactly("CAREER_INTERNSHIP", "INTERNATIONAL");
+		assertThat(profile.getValue().getOfferings()).containsExactly("CV hazırlama");
+		assertThat(profile.getValue().getErasmus()).isNull();
+		assertThat(profile.getValue().getDepartment()).isEqualTo("Bilgisayar Mühendisliği");
+		assertThat(profile.getValue().getStudyYear()).isEqualTo("4");
+		assertThat(peerMentor.getLinkedinUrl()).isEqualTo("https://linkedin.com/in/zeynep");
+		assertThat(saved.categories())
+				.containsExactly(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.INTERNATIONAL);
+		assertThat(saved.helpWith()).isEqualTo("Staj başvurusu ve Erasmus planlamasında yardımcı olabilirim.");
+		assertThat(saved.classYear()).isEqualTo(4);
+	}
+
+	@Test
+	void aPeerMentorWithoutAProfileYetGetsNotFound() {
+		when(profileRepository.findById(peerMentor.getId())).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.profile(peerMentor.getId())).isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	// D4 seam: a revoked badge takes MENTOR away, and with it the mentor side.
+	@Test
+	void aStudentWithoutMentorCannotUseTheMentorSide() {
+		assertThatThrownBy(() -> service.requests(student.getId(), UserRole.MENTOR))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+		assertThatThrownBy(() -> service.profile(student.getId())).isInstanceOf(ResponseStatusException.class);
 	}
 
 	@Test
@@ -93,6 +156,7 @@ class PeerMentoringServiceTest {
 			assertThat(card.helpWith()).isEqualTo("CV ve staj");
 			assertThat(card.recommendationReasons()).hasSize(1);
 			assertThat(card.capacityFull()).isFalse();
+			assertThat(card.badges()).extracting(PublicBadgeResponse::code).containsExactly(BadgeCode.SESSIONS_10);
 		});
 	}
 

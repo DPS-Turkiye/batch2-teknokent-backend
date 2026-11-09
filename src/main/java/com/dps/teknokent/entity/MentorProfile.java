@@ -9,6 +9,7 @@ import org.hibernate.annotations.BatchSize;
 import com.dps.teknokent.domain.MeetingFrequency;
 import com.dps.teknokent.domain.MentorLanguage;
 import com.dps.teknokent.domain.PrepFileRequirement;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -172,4 +173,27 @@ public class MentorProfile {
 	@Column(name = "project", nullable = false, length = 500)
 	@BatchSize(size = 50)
 	private List<String> projects = new ArrayList<>();
+
+	/**
+	 * A profile row for a new mentor: onboarding and the peer-mentor wizard update a profile rather than create one, so
+	 * the presentation labels they do not collect start empty.
+	 */
+	public static MentorProfile blankFor(AppUser mentor, int sortOrder) {
+		MentorProfile profile = new MentorProfile();
+		profile.setUser(mentor);
+		profile.setInitials(TextUtils.initials(mentor.getFullName()));
+		profile.setProfessionalTitle(TextUtils.nullToEmpty(mentor.getJobTitle()));
+		profile.setCompany("");
+		profile.setAvailabilityLabel("");
+		profile.setResponseTimeLabel("");
+		profile.setMeetingMode("");
+		profile.setCommunicationPreference("");
+		profile.setMentoringStyle("");
+		profile.setFitLabel("");
+		profile.setExperienceLevel("");
+		profile.setSectorExperience("");
+		profile.setStartupStages("");
+		profile.setSortOrder(sortOrder);
+		return profile;
+	}
 }

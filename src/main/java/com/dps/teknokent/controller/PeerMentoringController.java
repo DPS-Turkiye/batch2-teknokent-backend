@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -15,7 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
+import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
+import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.PeerMentoringService;
@@ -48,6 +51,17 @@ public class PeerMentoringController {
 			@RequestParam(name = "as", required = false) UserRole side) {
 		return peerMentoringService.requests(CurrentActor.resolve(actorId),
 				side == UserRole.MENTOR ? UserRole.MENTOR : UserRole.MENTEE);
+	}
+
+	/** The signed-in peer mentor's own profile; 404 until the wizard publishes one. */
+	@GetMapping("/profile")
+	public PeerMentorProfileResponse profile(@RequestParam(required = false) UUID actorId) {
+		return peerMentoringService.profile(CurrentActor.resolve(actorId));
+	}
+
+	@PutMapping("/profile")
+	public PeerMentorProfileResponse saveProfile(@Valid @RequestBody SavePeerMentorProfileRequest request) {
+		return peerMentoringService.saveProfile(CurrentActor.resolve(request.actorId()), request);
 	}
 
 	@PostMapping("/requests")
