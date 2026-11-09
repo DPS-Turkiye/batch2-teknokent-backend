@@ -10,11 +10,13 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.AdminAcademicResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.AppUserIdentity;
 import com.dps.teknokent.entity.InstitutionPerson;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserIdentityRepository;
 import com.dps.teknokent.repository.InstitutionAdvisingRepository;
@@ -32,9 +34,26 @@ public class AdminAcademicService {
 	private final InstitutionPersonRepository people;
 	private final InstitutionAdvisingRepository advising;
 	private final AppUserIdentityRepository identities;
+	private final CoordinatorProgramService coordinatorProgramService;
 
 	public List<AdminAcademicResponse> list(UUID actorId) {
 		requireAdmin(actorId);
+		return directory(true);
+	}
+
+	/**
+	 * An Office Hours program's Katılımcılar › Akademisyenler: every academician the institution lists as active
+	 * takes part, without invites (board). For the program's coordinators and the admin; no e-mail or sign-in time.
+	 */
+	public List<AdminAcademicResponse> forProgram(UUID actorId, UUID programId) {
+		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		if (program.getProgramType() != ProgramType.OFFICE_HOURS) {
+			throw new InvalidRequestException("Academicians are listed for Office Hours programs only.");
+		}
+		return directory(false).stream().filter(AdminAcademicResponse::active).toList();
+	}
+
+	private List<AdminAcademicResponse> directory(boolean contactDetails) {
 		List<InstitutionPerson> academics = people.findByAcademicTrueOrderByFullNameAsc();
 		Map<String, Long> advisees = advising.countAdviseesByAdvisor().stream()
 				.collect(Collectors.toMap(load -> key(load.getInstitution(), load.getAdvisorPersistentId()),
@@ -44,7 +63,7 @@ public class AdminAcademicService {
 				.filter(Objects::nonNull)
 				.map(AppUser::getId)
 				.toList();
-		Map<UUID, Instant> lastLogins = userIds.isEmpty()
+		Map<UUID, Instant> lastLogins = !contactDetails || userIds.isEmpty()
 				? Map.of()
 				: identities.findByUserIdIn(userIds).stream()
 						.collect(Collectors.toMap(identity -> identity.getUser().getId(),
@@ -56,14 +75,14 @@ public class AdminAcademicService {
 							person.getId(),
 							userId,
 							person.getFullName(),
-							person.getEmail(),
+							contactDetails ? person.getEmail() : null,
 							person.getAcademicTitle(),
 							person.getFaculty(),
 							person.getDepartmentCode(),
 							person.getDepartmentName(),
 							person.isActive(),
 							userId != null,
-							userId == null ? null : lastLogins.get(userId),
+							contactDetails && userId != null ? lastLogins.get(userId) : null,
 							advisees.getOrDefault(key(person.getInstitution(), person.getPersistentId()), 0L));
 				})
 				.toList();

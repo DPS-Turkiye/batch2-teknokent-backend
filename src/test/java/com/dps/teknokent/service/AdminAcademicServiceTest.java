@@ -18,11 +18,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.InstitutionDataSource;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.AdminAcademicResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.AppUserIdentity;
 import com.dps.teknokent.entity.InstitutionPerson;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserIdentityRepository;
 import com.dps.teknokent.repository.InstitutionAdvisingRepository;
@@ -43,6 +45,8 @@ class AdminAcademicServiceTest {
 	private InstitutionAdvisingRepository advising;
 	@Mock
 	private AppUserIdentityRepository identities;
+	@Mock
+	private CoordinatorProgramService coordinatorProgramService;
 	@InjectMocks
 	private AdminAcademicService service;
 
@@ -93,6 +97,58 @@ class AdminAcademicServiceTest {
 		when(domainLookupService.requireUser(coordinator)).thenReturn(user(coordinator, UserRole.COORDINATOR));
 
 		assertThatThrownBy(() -> service.list(coordinator)).isInstanceOf(InvalidRequestException.class);
+		verify(people, never()).findByAcademicTrueOrderByFullNameAsc();
+	}
+
+	@Test
+	void anOfficeHoursProgramListsEveryActiveAcademicianWithoutContactDetails() {
+		UUID coordinator = UUID.randomUUID();
+		UUID programId = UUID.randomUUID();
+		Program officeHours = new Program();
+		officeHours.setId(programId);
+		officeHours.setProgramType(ProgramType.OFFICE_HOURS);
+		when(coordinatorProgramService.requireManagedProgram(coordinator, programId)).thenReturn(officeHours);
+		InstitutionPerson signedIn = academic("A-1", "Ali Demir", user(ALI, UserRole.MENTOR));
+		InstitutionPerson left = academic("A-2", "Zeynep Kara", null);
+		left.setActive(false);
+		when(people.findByAcademicTrueOrderByFullNameAsc()).thenReturn(List.of(signedIn, left));
+		when(advising.countAdviseesByAdvisor()).thenReturn(List.of(load("A-1", 2)));
+
+		List<AdminAcademicResponse> rows = service.forProgram(coordinator, programId);
+
+		assertThat(rows).singleElement().satisfies(row -> {
+			assertThat(row.fullName()).isEqualTo("Ali Demir");
+			assertThat(row.email()).isNull();
+			assertThat(row.lastLoginAt()).isNull();
+			assertThat(row.signedIn()).isTrue();
+			assertThat(row.adviseeCount()).isEqualTo(2);
+		});
+		verify(identities, never()).findByUserIdIn(any());
+	}
+
+	@Test
+	void onlyOfficeHoursProgramsListAcademicians() {
+		UUID coordinator = UUID.randomUUID();
+		UUID programId = UUID.randomUUID();
+		Program peer = new Program();
+		peer.setId(programId);
+		peer.setProgramType(ProgramType.PEER_MENTORING);
+		when(coordinatorProgramService.requireManagedProgram(coordinator, programId)).thenReturn(peer);
+
+		assertThatThrownBy(() -> service.forProgram(coordinator, programId))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(people, never()).findByAcademicTrueOrderByFullNameAsc();
+	}
+
+	@Test
+	void someoneWhoDoesNotRunTheProgramIsRefusedByTheProgramGuard() {
+		UUID stranger = UUID.randomUUID();
+		UUID programId = UUID.randomUUID();
+		when(coordinatorProgramService.requireManagedProgram(stranger, programId))
+				.thenThrow(new InvalidRequestException("Only the program coordinator can change this program."));
+
+		assertThatThrownBy(() -> service.forProgram(stranger, programId))
+				.isInstanceOf(InvalidRequestException.class);
 		verify(people, never()).findByAcademicTrueOrderByFullNameAsc();
 	}
 
