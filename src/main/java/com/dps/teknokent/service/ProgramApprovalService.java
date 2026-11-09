@@ -115,6 +115,7 @@ public class ProgramApprovalService {
 		return approvalsOf(programId);
 	}
 
+	/** Lists what CoordinatorProgramService#pendingApprovalCount counts; change the two together. */
 	private ProgramApprovalsResponse approvalsOf(UUID programId) {
 		List<ProgramApprovalsResponse.Person> people = appUserRepository
 				.findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(programId, UserRole.MENTEE,

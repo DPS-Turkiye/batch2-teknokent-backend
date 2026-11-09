@@ -51,6 +51,11 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	List<AppUser> findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(@Param("programId") UUID programId,
 			@Param("role") UserRole role, @Param("status") UserAccountStatus status);
 
+	@Query("select count(u) from AppUser u where " + HAS_PERMISSION
+			+ " and u.programId = :programId and u.status = :status")
+	long countByProgramIdAndPermissionAndStatus(@Param("programId") UUID programId,
+			@Param("role") UserRole role, @Param("status") UserAccountStatus status);
+
 	@Query("select u from AppUser u where " + HAS_PERMISSION
 			+ " and u.programId = :programId and u.status = :status and u.organization is null order by u.fullName asc")
 	List<AppUser> findByProgramIdAndPermissionAndStatusAndOrganizationIsNullOrderByFullNameAsc(
