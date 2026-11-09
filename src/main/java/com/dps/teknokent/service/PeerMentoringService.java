@@ -206,7 +206,8 @@ public class PeerMentoringService {
 				.toList();
 	}
 
-	private AppUser requireStudent(UUID actorId) {
+	/** Package-private for the student workspace's other services, so they share one notion of an ODTÜ student. */
+	AppUser requireStudent(UUID actorId) {
 		AppUser user = domainLookupService.requireUser(actorId);
 		if (!user.has(UserRole.MENTEE) || !isStudent(user)) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.peerMentoringStudentsOnly"));
@@ -274,7 +275,7 @@ public class PeerMentoringService {
 				request.getCreatedAt());
 	}
 
-	private String departmentOf(UUID userId, String fallback) {
+	String departmentOf(UUID userId, String fallback) {
 		return institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(userId)
 				.map(InstitutionPerson::getDepartmentName)
 				.orElse(fallback);
