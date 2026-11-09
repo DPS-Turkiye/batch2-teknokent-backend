@@ -77,4 +77,37 @@ class ProgramCalendarTest {
 		phase.setEndDate(end);
 		return phase;
 	}
+
+	@Test
+	void aProgramWeekRunsSevenDaysFromTheStartAndStopsAtTheEnd() {
+		LocalDate start = LocalDate.of(2026, 10, 7);
+		assertThat(ProgramCalendar.weekStart(start, 1)).isEqualTo(start);
+		assertThat(ProgramCalendar.weekStart(start, 3)).isEqualTo(LocalDate.of(2026, 10, 21));
+		assertThat(ProgramCalendar.weekEnd(start, null, 3)).isEqualTo(LocalDate.of(2026, 10, 27));
+		assertThat(ProgramCalendar.weekEnd(start, LocalDate.of(2026, 10, 24), 3)).isEqualTo(LocalDate.of(2026, 10, 24));
+	}
+
+	@Test
+	void phasesBetweenKeepsEveryDatedPhaseThatTouchesTheRangeInOrder() {
+		ProgramPhase before = datedPhase("Önce", "2026-10-01", "2026-10-11");
+		ProgramPhase straddling = datedPhase("Taşan", "2026-10-10", "2026-10-14");
+		ProgramPhase inside = datedPhase("İçeride", "2026-10-15", "2026-10-16");
+		ProgramPhase open = datedPhase("Sonu açık", "2026-10-17", null);
+		ProgramPhase after = datedPhase("Sonra", "2026-10-19", "2026-10-30");
+		ProgramPhase undated = datedPhase("Tarihsiz", null, null);
+		List<ProgramPhase> all = List.of(before, straddling, inside, open, after, undated);
+
+		assertThat(ProgramCalendar.phasesBetween(all, LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 18)))
+				.containsExactly(straddling, inside, open);
+		assertThat(ProgramCalendar.phasesBetween(all, LocalDate.of(2026, 10, 11), LocalDate.of(2026, 10, 11)))
+				.containsExactly(before, straddling);
+	}
+
+	private static ProgramPhase datedPhase(String name, String start, String end) {
+		ProgramPhase phase = new ProgramPhase();
+		phase.setName(name);
+		phase.setStartDate(start == null ? null : LocalDate.parse(start));
+		phase.setEndDate(end == null ? null : LocalDate.parse(end));
+		return phase;
+	}
 }
