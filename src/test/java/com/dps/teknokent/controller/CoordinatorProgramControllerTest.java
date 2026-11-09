@@ -128,7 +128,7 @@ class CoordinatorProgramControllerTest {
 		UUID documentId = UUID.randomUUID();
 		when(syllabusPhaseService.extract(eq(SIGNED_IN_ID), any(ExtractSyllabusPhasesRequest.class)))
 				.thenReturn(new SyllabusPhasesResponse(List.of(new SyllabusPhasesResponse.Phase(
-						"Keşif", "Rapor", LocalDate.of(2026, 11, 3), null)), 18));
+						"Keşif", "Rapor", LocalDate.of(2026, 11, 3), null)), List.of(), 18));
 
 		mockMvc.perform(post("/api/coordinator/programs/syllabus/phases")
 						.with(authentication(signedIn()))

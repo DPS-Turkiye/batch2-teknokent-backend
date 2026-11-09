@@ -28,7 +28,9 @@ import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.dto.responses.MemberProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
+import com.dps.teknokent.dto.responses.ProgramWeekResponse;
 import com.dps.teknokent.service.ProgramCalendarService;
+import com.dps.teknokent.service.ProgramWeekService;
 import com.dps.teknokent.service.ProgramService;
 
 @WebMvcTest(ProgramController.class)
@@ -43,6 +45,9 @@ class ProgramControllerTest {
 
 	@MockitoBean
 	private ProgramCalendarService programCalendarService;
+
+	@MockitoBean
+	private ProgramWeekService programWeekService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID PROGRAM_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
@@ -62,6 +67,25 @@ class ProgramControllerTest {
 						.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].name").value("Seed 2026"));
+	}
+
+	@Test
+	void givesTheCallerTheirProgramsWeek() throws Exception {
+		when(programWeekService.thisWeek(ACTOR_ID, null)).thenReturn(new ProgramWeekResponse(PROGRAM_ID, "Seed 2026",
+				null, null, 3, 12, null, null, false, false, true, null, List.of()));
+
+		mockMvc.perform(get("/api/programs/mine/this-week")
+						.param("actorId", ACTOR_ID.toString())
+						.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.week").value(3))
+				.andExpect(jsonPath("$.hasSyllabus").value(true));
+	}
+
+	@Test
+	void theWeekNeedsSomeoneToAskFor() throws Exception {
+		mockMvc.perform(get("/api/programs/mine/this-week").with(user("test-user")))
+				.andExpect(status().isBadRequest());
 	}
 
 	@Test
