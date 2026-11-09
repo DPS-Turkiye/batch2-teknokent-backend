@@ -1,6 +1,7 @@
 package com.dps.teknokent.repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,6 +18,8 @@ public interface OfficeHoursEnrollmentRepository extends JpaRepository<OfficeHou
 	Optional<OfficeHoursEnrollment> findByUserIdAndCourseId(UUID userId, UUID courseId);
 
 	boolean existsByUserIdAndRole(UUID userId, OfficeHoursRole role);
+
+	List<OfficeHoursEnrollment> findByCourseIdAndRole(UUID courseId, OfficeHoursRole role);
 
 	/** Adds the enrolment unless it is already there; see {@link OfficeHoursUserRepository#insertIfAbsent}. */
 	@Modifying
