@@ -67,6 +67,16 @@ public class SecurityConfig {
 	private static final String NOTIFICATION_PATH = "/api/notifications/**";
 
 	/**
+	 * Sign-up and onboarding bind the new account to the caller's Firebase login. On the shared service
+	 * credentials there is no login to bind, so a row made there could later be claimed by anyone who signs up
+	 * with its address. FirebaseBearerFilter grants REGISTERING here to any valid Firebase token.
+	 */
+	private static final String[] PRE_ACCOUNT_PATHS = {
+			"/api/auth/register/**",
+			"/api/onboarding/**"
+	};
+
+	/**
 	 * The only password Spring checks is the shared Basic credential the frontend proxy sends on
 	 * every call, and it already sits in plain text in the environment. With the default encoder,
 	 * Spring upgrades it to bcrypt after the first login and then runs a bcrypt verify per request,
@@ -133,6 +143,7 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(PUBLIC_PATHS).permitAll()
+						.requestMatchers(PRE_ACCOUNT_PATHS).hasRole("REGISTERING")
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults())
 				.cors(Customizer.withDefaults());
