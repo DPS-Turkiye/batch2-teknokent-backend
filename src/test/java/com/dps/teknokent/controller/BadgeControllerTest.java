@@ -27,8 +27,10 @@ import com.dps.teknokent.domain.BadgeCode;
 import com.dps.teknokent.domain.BadgeKind;
 import com.dps.teknokent.domain.BadgeSource;
 import com.dps.teknokent.domain.GateBadgeState;
+import com.dps.teknokent.dto.responses.AchievementProgressResponse;
 import com.dps.teknokent.dto.responses.GateBadgeRowResponse;
 import com.dps.teknokent.dto.responses.PublicBadgeResponse;
+import com.dps.teknokent.service.AchievementService;
 import com.dps.teknokent.service.BadgeService;
 
 @WebMvcTest(BadgeController.class)
@@ -46,6 +48,9 @@ class BadgeControllerTest {
 	@MockitoBean
 	private BadgeService badgeService;
 
+	@MockitoBean
+	private AchievementService achievementService;
+
 	@Test
 	void needsTheServiceCredential() throws Exception {
 		mockMvc.perform(get("/api/users/" + STUDENT + "/badges")).andExpect(status().isUnauthorized());
@@ -62,6 +67,18 @@ class BadgeControllerTest {
 				.andExpect(jsonPath("$[0].code").value("PEER_MENTOR"))
 				.andExpect(jsonPath("$[0].kind").value("GATE"))
 				.andExpect(jsonPath("$[0].reason").doesNotExist());
+	}
+
+	@Test
+	void showsTheActorsAchievementProgress() throws Exception {
+		when(achievementService.mine(ACTOR)).thenReturn(List.of(new AchievementProgressResponse(BadgeCode.SESSIONS_10,
+				false, null, 4, 10, null, null)));
+
+		mockMvc.perform(get("/api/badges/mine/achievements").param("actorId", ACTOR.toString()).with(user("proxy")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].code").value("SESSIONS_10"))
+				.andExpect(jsonPath("$[0].current").value(4))
+				.andExpect(jsonPath("$[0].target").value(10));
 	}
 
 	@Test
