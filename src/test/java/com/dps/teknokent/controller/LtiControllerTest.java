@@ -2,6 +2,7 @@ package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -37,6 +38,7 @@ import com.dps.teknokent.dto.responses.OfficeHoursCourseResponse;
 import com.dps.teknokent.security.LtiToolKeys;
 import com.dps.teknokent.service.LtiLaunchService;
 import com.dps.teknokent.service.OfficeHoursAvailabilityService;
+import com.dps.teknokent.service.OfficeHoursBookingService;
 import com.dps.teknokent.service.OfficeHoursCourseService;
 
 @WebMvcTest({ LtiController.class, OfficeHoursController.class })
@@ -57,6 +59,8 @@ class LtiControllerTest {
     private OfficeHoursCourseService courseService;
     @MockitoBean
     private OfficeHoursAvailabilityService availabilityService;
+    @MockitoBean
+    private OfficeHoursBookingService bookingService;
 
     /** The frontend's server: Spring's Basic user, given ROLE_SERVICE by spring.security.user.roles. */
     private static org.springframework.test.web.servlet.request.RequestPostProcessor frontendServer() {
@@ -185,5 +189,50 @@ class LtiControllerTest {
                                 """))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(availabilityService);
+    }
+
+    @Test
+    void sendsAStudentsRequestToTheBookingService() throws Exception {
+        mockMvc.perform(post("/api/office-hours/users/{userId}/courses/{courseId}/requests", USER_ID, COURSE_ID)
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"instructorId":"%s","topic":"Ödev 2","preferredSlots":["2026-11-24T14:00"]}
+                                """.formatted(USER_ID)))
+                .andExpect(status().isCreated());
+        verify(bookingService).create(eq(USER_ID), eq(COURSE_ID), any());
+    }
+
+    @Test
+    void refusesMoreThanThreeTimesOrABadTime() throws Exception {
+        mockMvc.perform(post("/api/office-hours/users/{userId}/courses/{courseId}/requests", USER_ID, COURSE_ID)
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"instructorId":"%s","topic":"Ödev","preferredSlots":
+                                 ["2026-11-24T14:00","2026-11-24T15:00","2026-11-24T16:00","2026-11-24T17:00"]}
+                                """.formatted(USER_ID)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/office-hours/users/{userId}/courses/{courseId}/requests", USER_ID, COURSE_ID)
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"instructorId":"%s","topic":"Ödev","preferredSlots":["yarın 14:00"]}
+                                """.formatted(USER_ID)))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(bookingService);
+    }
+
+    @Test
+    void passesTheAcademicsDecisionOn() throws Exception {
+        UUID requestId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/office-hours/users/{userId}/courses/{courseId}/requests/{requestId}/decision",
+                        USER_ID, COURSE_ID, requestId)
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"ACCEPTED\",\"slot\":\"2026-11-24T14:00\"}"))
+                .andExpect(status().isOk());
+        verify(bookingService).decide(eq(USER_ID), eq(COURSE_ID), eq(requestId), any());
     }
 }
