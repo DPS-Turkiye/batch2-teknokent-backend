@@ -7,6 +7,7 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.PlatformFeedbackKind;
+import com.dps.teknokent.domain.ProgramType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -58,4 +59,13 @@ public class PlatformFeedback {
 
 	@Column(name = "read_at")
 	private Instant readAt;
+
+	/** The author's program when they sent it; null for older feedback and authors outside any program. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "program_id")
+	private Program program;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "program_type", length = 32)
+	private ProgramType programType;
 }
