@@ -451,7 +451,7 @@ public class MentorProfileService {
 
 	private AppUser requireMentor(UUID mentorId) {
 		AppUser mentor = domainLookupService.requireUser(mentorId);
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("User is not a mentor: " + mentorId);
 		}
 		return mentor;

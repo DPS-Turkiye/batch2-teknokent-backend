@@ -75,7 +75,7 @@ public class ProgramLaunchService {
 	@Transactional
 	public CoordinatorProgramResponse.Detail create(UUID actorId, CreateCoordinatorProgramRequest request) {
 		AppUser actor = programService.requireCoordinatorOrAdmin(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin creates programs.");
 		}
 		if (request.startDate() != null && request.endDate() != null && request.endDate().isBefore(request.startDate())) {
@@ -111,7 +111,7 @@ public class ProgramLaunchService {
 
 		for (UUID coordinatorId : new LinkedHashSet<>(request.coordinatorIds())) {
 			AppUser coordinator = appUserRepository.findById(coordinatorId)
-					.filter(user -> user.getRole() == UserRole.COORDINATOR
+					.filter(user -> user.has(UserRole.COORDINATOR)
 							&& user.getStatus() == UserAccountStatus.APPROVED)
 					.orElseThrow(() -> new InvalidRequestException("Only approved coordinators can run a program."));
 			ProgramCoordinator row = new ProgramCoordinator();

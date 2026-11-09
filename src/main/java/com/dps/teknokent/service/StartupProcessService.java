@@ -231,10 +231,10 @@ public class StartupProcessService {
 	// Founders and mentors see the stage on Süreç but do not set it.
 	private void requireStageEditor(Organization organization, UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() == UserRole.ADMIN) {
+		if (actor.has(UserRole.ADMIN)) {
 			return;
 		}
-		boolean coordinatesIt = actor.getRole() == UserRole.COORDINATOR
+		boolean coordinatesIt = actor.has(UserRole.COORDINATOR)
 				&& programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(organization.getId()).stream()
 						.map(ProgramStartup::getProgramId)
 						.map(programRepository::findById)
@@ -267,13 +267,13 @@ public class StartupProcessService {
 	}
 
 	private boolean isEditor(Organization organization, AppUser actor) {
-		if (actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR) {
+		if (actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR)) {
 			return true;
 		}
 		if (organization.getFounder() != null && organization.getFounder().getId().equals(actor.getId())) {
 			return true;
 		}
-		return actor.getRole() == UserRole.MENTOR && mentorshipRequestRepository
+		return actor.has(UserRole.MENTOR) && mentorshipRequestRepository
 				.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
 						actor.getId(), organization.getId(), MentorshipRequestStatus.ACCEPTED)
 				.isPresent();

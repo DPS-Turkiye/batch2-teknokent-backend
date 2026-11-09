@@ -45,7 +45,7 @@ class AuthEmailControllerTest {
     @Test
     void sendsNoVerificationMailWithoutAFirebaseSignIn() throws Exception {
         mockMvc.perform(post("/api/auth/register/verification-email").with(user("proxy")))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden());
 
         verifyNoInteractions(authEmailService);
     }
@@ -79,6 +79,6 @@ class AuthEmailControllerTest {
 
     private static UsernamePasswordAuthenticationToken firebaseLogin(String email) {
         return new UsernamePasswordAuthenticationToken(
-                new FirebaseIdentity("uid-1", email), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+                new FirebaseIdentity("uid-1", email, true), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
     }
 }

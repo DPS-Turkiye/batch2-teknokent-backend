@@ -86,7 +86,7 @@ public class ProgramAnnouncementService {
 		AppUser actor = appUserRepository.findById(actorId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorId));
 		List<UUID> programIds = new ArrayList<>();
-		if (actor.getRole() == UserRole.MENTOR) {
+		if (actor.has(UserRole.MENTOR)) {
 			programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(actorId, ProgramMentorStatus.ACCEPTED)
 					.forEach(row -> programIds.add(row.getProgramId()));
 		}
@@ -122,7 +122,7 @@ public class ProgramAnnouncementService {
 				.collect(Collectors.toSet());
 		List<AppUser> members = organizationIds.stream()
 				.flatMap(id -> appUserRepository.findByOrganizationIdOrderByFullNameAsc(id).stream())
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.toList();
 		List<UUID> mentorIds = programMentorRepository.findByProgramIdOrderByCreatedAtAsc(programId).stream()
 				.filter(row -> row.getStatus() == ProgramMentorStatus.ACCEPTED)

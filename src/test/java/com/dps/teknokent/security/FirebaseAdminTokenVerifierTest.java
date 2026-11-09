@@ -37,8 +37,17 @@ class FirebaseAdminTokenVerifierTest {
 		FirebaseToken valid = token("uid-1", "qa@teknokent-dev.test");
 		when(firebaseAuth.verifyIdToken("token", true)).thenReturn(valid);
 
-		assertThat(verifier.verify("token")).contains(new FirebaseIdentity("uid-1", "qa@teknokent-dev.test"));
+		assertThat(verifier.verify("token")).contains(new FirebaseIdentity("uid-1", "qa@teknokent-dev.test", true));
 		verify(firebaseAuth, never()).verifyIdToken(anyString());
+	}
+
+	@Test
+	void carriesWhetherFirebaseVerifiedTheEmail() throws Exception {
+		FirebaseToken unverified = token("uid-1", "qa@teknokent-dev.test");
+		when(unverified.isEmailVerified()).thenReturn(false);
+		when(firebaseAuth.verifyIdToken("token", true)).thenReturn(unverified);
+
+		assertThat(verifier.verify("token")).contains(new FirebaseIdentity("uid-1", "qa@teknokent-dev.test", false));
 	}
 
 	@Test
@@ -121,6 +130,7 @@ class FirebaseAdminTokenVerifierTest {
 		FirebaseToken token = mock(FirebaseToken.class);
 		when(token.getUid()).thenReturn(uid);
 		when(token.getEmail()).thenReturn(email);
+		when(token.isEmailVerified()).thenReturn(true);
 		return token;
 	}
 

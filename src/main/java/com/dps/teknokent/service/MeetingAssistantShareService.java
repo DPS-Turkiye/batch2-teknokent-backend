@@ -400,7 +400,7 @@ public class MeetingAssistantShareService {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.MENTOR) {
+		if (!actor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Only a mentor can do this.");
 		}
 		if (actor.getStatus() != UserAccountStatus.APPROVED) {

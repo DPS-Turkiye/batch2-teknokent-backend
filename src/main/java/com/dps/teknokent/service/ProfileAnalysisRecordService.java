@@ -60,7 +60,7 @@ public class ProfileAnalysisRecordService {
 
     private AppUser requireMember(UUID actorId) {
         AppUser actor = lookup.requireUser(actorId);
-        if (actor.getRole() != UserRole.MENTEE || actor.getStatus() != UserAccountStatus.APPROVED
+        if (!actor.has(UserRole.MENTEE) || actor.getStatus() != UserAccountStatus.APPROVED
                 || actor.getOrganization() == null) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "An approved startup member is required");
         }
