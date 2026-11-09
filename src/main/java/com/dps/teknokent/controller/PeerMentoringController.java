@@ -17,10 +17,12 @@ import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
 import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
+import com.dps.teknokent.dto.responses.AppointmentResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
 import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
 import com.dps.teknokent.security.CurrentActor;
+import com.dps.teknokent.service.PeerAppointmentService;
 import com.dps.teknokent.service.PeerMentoringService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,6 +37,7 @@ import lombok.RequiredArgsConstructor;
 public class PeerMentoringController {
 
 	private final PeerMentoringService peerMentoringService;
+	private final PeerAppointmentService peerAppointmentService;
 
 	@GetMapping("/mentors")
 	public List<PeerMentorCardResponse> mentors(
@@ -51,6 +54,12 @@ public class PeerMentoringController {
 			@RequestParam(name = "as", required = false) UserRole side) {
 		return peerMentoringService.requests(CurrentActor.resolve(actorId),
 				side == UserRole.MENTOR ? UserRole.MENTOR : UserRole.MENTEE);
+	}
+
+	/** The meetings booked on the student's peer requests, as mentee and as mentor, soonest first. */
+	@GetMapping("/appointments")
+	public List<AppointmentResponse> appointments(@RequestParam(required = false) UUID actorId) {
+		return peerAppointmentService.appointments(CurrentActor.resolve(actorId));
 	}
 
 	/** The signed-in peer mentor's own profile; 404 until the wizard publishes one. */
