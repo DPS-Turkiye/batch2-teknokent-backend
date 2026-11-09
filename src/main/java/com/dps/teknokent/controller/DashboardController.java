@@ -21,7 +21,7 @@ public class DashboardController {
 	private final DashboardService dashboardService;
 
 	@GetMapping("/summary")
-	public DashboardSummaryResponse getSummary(@RequestParam(required = false) UUID organizationId) {
+	public DashboardSummaryResponse getSummary(@RequestParam UUID organizationId) {
 		return dashboardService.getSummary(organizationId);
 	}
 }
