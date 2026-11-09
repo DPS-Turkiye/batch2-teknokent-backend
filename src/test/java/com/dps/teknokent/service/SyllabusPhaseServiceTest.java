@@ -26,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.ExtractSyllabusPhasesRequest;
+import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
@@ -85,7 +86,11 @@ class SyllabusPhaseServiceTest {
 		stubText("Hafta 1-4: Keşif. Sorumlu: ali@example.com", "Hafta 1-4: Keşif. Sorumlu: [EMAIL]", 18);
 		when(aiProviderClient.syllabusPhases(anyString(), any(), any(), any())).thenReturn(json("""
 				{"phases": [{"name": "Keşif", "expected_output": "Problem doğrulama raporu",
-				  "start_date": "2026-11-03", "end_date": "2026-11-30"}], "warnings": []}
+				  "start_date": "2026-11-03", "end_date": "2026-11-30"}],
+				 "weeks": [{"week": 2, "start_date": null, "title": "Kullanıcı görüşmeleri",
+				  "topics": ["Problem tanımı"], "activities": ["5 görüşme yap"], "deliverables": ["Görüşme notları"],
+				  "inferred": true}],
+				 "warnings": []}
 				"""));
 
 		SyllabusPhasesResponse response = service.extract(COORDINATOR_ID, request());
@@ -93,7 +98,52 @@ class SyllabusPhaseServiceTest {
 		assertThat(response.pageCount()).isEqualTo(18);
 		assertThat(response.phases()).containsExactly(new SyllabusPhasesResponse.Phase(
 				"Keşif", "Problem doğrulama raporu", START, LocalDate.of(2026, 11, 30)));
+		assertThat(response.weeks()).containsExactly(new ProgramWeekPlanResponse.Week(2, START.plusDays(7),
+				START.plusDays(13), "Kullanıcı görüşmeleri", List.of("Problem tanımı"), List.of("5 görüşme yap"),
+				List.of("Görüşme notları"), true));
 		verify(aiProviderClient).syllabusPhases(eq("Hafta 1-4: Keşif. Sorumlu: [EMAIL]"), eq(START), eq(END), any());
+	}
+
+	@Test
+	void theAiWeeksArePlacedOnTheProgramCalendarAndCleaned() {
+		JsonNode answer = json("""
+				{"weeks": [
+				  {"week": null, "start_date": "%s", "title": "  Prototip  ", "topics": ["  MVP ", "MVP", ""],
+				   "activities": [], "deliverables": ["Demo"], "inferred": false},
+				  {"week": 1, "start_date": null, "title": "Tanışma", "topics": [], "activities": [],
+				   "deliverables": [], "inferred": false},
+				  {"week": 1, "start_date": null, "title": "İkinci kez 1. hafta", "topics": [], "activities": [],
+				   "deliverables": [], "inferred": false},
+				  {"week": 3, "start_date": null, "title": "  ", "topics": [], "activities": [],
+				   "deliverables": [], "inferred": false},
+				  {"week": 999, "start_date": null, "title": "Program dışı", "topics": [], "activities": [],
+				   "deliverables": [], "inferred": false}
+				]}
+				""".formatted(START.plusDays(15)));
+
+		List<ProgramWeekPlanResponse.Week> weeks = SyllabusPhaseService.weeksOf(answer, START, END);
+
+		assertThat(weeks).extracting(ProgramWeekPlanResponse.Week::week).containsExactly(1, 3);
+		assertThat(weeks.get(0).title()).isEqualTo("Tanışma");
+		assertThat(weeks.get(0).startDate()).isEqualTo(START);
+		assertThat(weeks.get(1).title()).isEqualTo("Prototip");
+		assertThat(weeks.get(1).topics()).containsExactly("MVP");
+		assertThat(weeks.get(1).deliverables()).containsExactly("Demo");
+	}
+
+	@Test
+	void withoutProgramDatesTheWeeksKeepTheirNumbersButHaveNoDates() {
+		JsonNode answer = json("""
+				{"weeks": [{"week": 4, "start_date": "2026-11-20", "title": "Sunum", "topics": [], "activities": [],
+				   "deliverables": [], "inferred": true},
+				  {"week": null, "start_date": "2026-11-20", "title": "Tarihten bulunamaz", "topics": [],
+				   "activities": [], "deliverables": [], "inferred": false}]}
+				""");
+
+		List<ProgramWeekPlanResponse.Week> weeks = SyllabusPhaseService.weeksOf(answer, null, null);
+
+		assertThat(weeks).containsExactly(new ProgramWeekPlanResponse.Week(4, null, null, "Sunum", List.of(),
+				List.of(), List.of(), true));
 	}
 
 	@Test
