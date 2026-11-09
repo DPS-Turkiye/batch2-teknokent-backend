@@ -174,15 +174,23 @@ public class AppUser {
 	 * active grant keeps its original source, so withdrawing one source never takes away what another gave.
 	 */
 	public void grant(UserRole permission, PermissionSource source, Instant now) {
+		grant(permission, source, null, now);
+	}
+
+	/** As {@link #grant(UserRole, PermissionSource, Instant)}, naming what gave it (e.g. the badge award). */
+	public void grant(UserRole permission, PermissionSource source, UUID sourceRef, Instant now) {
 		for (AppUserPermission grant : permissions) {
 			if (grant.getPermission() == permission) {
 				if (!grant.activeAt(now)) {
 					grant.reactivate(source, now);
+					grant.setSourceRef(sourceRef);
 				}
 				return;
 			}
 		}
-		permissions.add(new AppUserPermission(this, permission, source, now));
+		AppUserPermission added = new AppUserPermission(this, permission, source, now);
+		added.setSourceRef(sourceRef);
+		permissions.add(added);
 	}
 
 	/** Revokes the active grants {@code source} gave that it no longer backs; grants from other sources stay. */
