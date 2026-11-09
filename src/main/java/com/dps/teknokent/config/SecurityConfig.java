@@ -34,6 +34,7 @@ public class SecurityConfig {
 
 	private static final String[] PUBLIC_PATHS = {
 			"/api/health",
+			"/api/lti/jwks",
 			"/ws/**",
 			"/api/docs",
 			"/api/docs/**",
@@ -62,6 +63,14 @@ public class SecurityConfig {
 			"/api/profile-analyses",
 			"/api/profile-analyses/preview",
 			"/api/profile-analyses/preview/documents/*",
+	};
+
+	/** spring.security.user.roles gives the frontend's Basic credential this role. */
+	static final String SERVICE_ROLE = "SERVICE";
+
+	private static final String[] SERVICE_ONLY_PATHS = {
+			"/api/lti/**",
+			"/api/office-hours/**"
 	};
 
 	private static final String NOTIFICATION_PATH = "/api/notifications/**";
@@ -143,6 +152,9 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(PUBLIC_PATHS).permitAll()
+						// Office hours trust only the frontend's server: the Basic service credential carries
+						// ROLE_SERVICE, which no Firebase-signed Menton account ever gets.
+						.requestMatchers(SERVICE_ONLY_PATHS).hasRole(SERVICE_ROLE)
 						.requestMatchers(PRE_ACCOUNT_PATHS).hasRole("REGISTERING")
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults())
