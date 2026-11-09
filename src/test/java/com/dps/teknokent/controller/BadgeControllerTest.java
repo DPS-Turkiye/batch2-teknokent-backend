@@ -103,6 +103,6 @@ class BadgeControllerTest {
 	private static GateBadgeRowResponse row(GateBadgeState state) {
 		return new GateBadgeRowResponse(STUDENT, "Zeynep Öğrenci", "zeynep@odtu-dev.invalid", PROGRAM,
 				"İŞKUR 2026 Bahar", state, AWARD, BadgeSource.COORDINATOR, Instant.parse("2026-11-08T10:00:00Z"),
-				null, null);
+				null, null, GateBadgeRowResponse.Training.NONE);
 	}
 }

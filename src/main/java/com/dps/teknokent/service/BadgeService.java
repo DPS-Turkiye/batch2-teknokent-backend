@@ -35,6 +35,8 @@ import com.dps.teknokent.dto.responses.PublicBadgeResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.TrainingAttempt;
+import com.dps.teknokent.entity.TrainingProgress;
 import com.dps.teknokent.entity.UserBadge;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -42,6 +44,9 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.TrainingAttemptRepository;
+import com.dps.teknokent.repository.TrainingModuleRepository;
+import com.dps.teknokent.repository.TrainingProgressRepository;
 import com.dps.teknokent.repository.UserBadgeRepository;
 import com.dps.teknokent.util.Texts;
 
@@ -73,6 +78,9 @@ public class BadgeService {
 	private final CoordinatorProgramService coordinatorProgramService;
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
+	private final TrainingModuleRepository trainingModules;
+	private final TrainingProgressRepository trainingProgress;
+	private final TrainingAttemptRepository trainingAttempts;
 
 	public List<BadgeCatalogueResponse> catalogue() {
 		return Arrays.stream(BadgeCode.values()).map(BadgeCatalogueResponse::of).toList();
@@ -111,8 +119,10 @@ public class BadgeService {
 				.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
 				.forEach(membership -> others.add(membership.getMentorId()));
 		users.findAllById(others).forEach(user -> people.putIfAbsent(user.getId(), user));
+		Map<UUID, GateBadgeRowResponse.Training> training = trainingOf(program, people.keySet());
 		return people.values().stream()
-				.map(person -> row(person, program, latest.get(person.getId())))
+				.map(person -> row(person, program, latest.get(person.getId()),
+						training.getOrDefault(person.getId(), GateBadgeRowResponse.Training.NONE)))
 				.filter(row -> state == null || row.state() == state)
 				.sorted((left, right) -> left.fullName().compareToIgnoreCase(right.fullName()))
 				.toList();
@@ -146,10 +156,46 @@ public class BadgeService {
 				rows.putIfAbsent(key, row(holder, program, award));
 			}
 		});
-		return rows.values().stream()
+		Map<UUID, List<GateBadgeRowResponse>> byProgram = rows.values().stream()
+				.collect(Collectors.groupingBy(GateBadgeRowResponse::programId));
+		return byProgram.entrySet().stream()
+				.flatMap(entry -> {
+					Map<UUID, GateBadgeRowResponse.Training> training = trainingOf(peerPrograms.get(entry.getKey()),
+							entry.getValue().stream().map(GateBadgeRowResponse::userId).toList());
+					return entry.getValue().stream().map(row -> withTraining(row,
+							training.getOrDefault(row.userId(), GateBadgeRowResponse.Training.NONE)));
+				})
 				.filter(row -> state == null || row.state() == state)
 				.sorted((left, right) -> left.fullName().compareToIgnoreCase(right.fullName()))
 				.toList();
+	}
+
+	/** Watched, tries and best score on the program's current training version, for those who started it. */
+	private Map<UUID, GateBadgeRowResponse.Training> trainingOf(Program program, Collection<UUID> userIds) {
+		if (userIds.isEmpty()) {
+			return Map.of();
+		}
+		return trainingModules.findByProgramId(program.getId()).map(module -> {
+			int version = module.getCurrentVersion();
+			Set<UUID> watched = trainingProgress.findByModuleIdAndVersionAndUserIdIn(module.getId(), version, userIds)
+					.stream().map(TrainingProgress::getUserId).collect(Collectors.toSet());
+			Map<UUID, List<TrainingAttempt>> tries = trainingAttempts
+					.findByModuleIdAndVersionAndUserIdIn(module.getId(), version, userIds).stream()
+					.collect(Collectors.groupingBy(TrainingAttempt::getUserId));
+			Map<UUID, GateBadgeRowResponse.Training> result = new LinkedHashMap<>();
+			for (UUID userId : userIds) {
+				List<TrainingAttempt> own = tries.getOrDefault(userId, List.of());
+				Integer best = own.stream().map(TrainingAttempt::getScore).max(Integer::compare).orElse(null);
+				result.put(userId, new GateBadgeRowResponse.Training(watched.contains(userId), own.size(), best));
+			}
+			return result;
+		}).orElse(Map.of());
+	}
+
+	private static GateBadgeRowResponse withTraining(GateBadgeRowResponse row, GateBadgeRowResponse.Training training) {
+		return new GateBadgeRowResponse(row.userId(), row.fullName(), row.email(), row.programId(),
+				row.programName(), row.state(), row.awardId(), row.source(), row.awardedAt(), row.revokedAt(),
+				row.reason(), training);
 	}
 
 	/**
@@ -335,10 +381,15 @@ public class BadgeService {
 	}
 
 	private static GateBadgeRowResponse row(AppUser person, Program program, UserBadge award) {
+		return row(person, program, award, GateBadgeRowResponse.Training.NONE);
+	}
+
+	private static GateBadgeRowResponse row(AppUser person, Program program, UserBadge award,
+			GateBadgeRowResponse.Training training) {
 		return new GateBadgeRowResponse(person.getId(), person.getFullName(), person.getEmail(), program.getId(),
 				program.getName(), GateBadgeState.of(award == null ? null : award.getStatus()),
 				award == null ? null : award.getId(), award == null ? null : award.getSource(),
 				award == null ? null : award.getAwardedAt(), award == null ? null : award.getRevokedAt(),
-				award == null ? null : award.getReason());
+				award == null ? null : award.getReason(), training);
 	}
 }
