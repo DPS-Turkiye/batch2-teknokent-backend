@@ -19,6 +19,7 @@ public record TeamHistoryResponse(UUID userId, String fullName, List<Stay> stays
 
 	public static TeamHistoryResponse of(AppUser person, List<TeamMembership> stays) {
 		return new TeamHistoryResponse(person.getId(), person.getFullName(), stays.stream()
+				.filter(stay -> !stay.getOrganization().isPersonal())
 				.map(stay -> {
 					Organization startup = stay.getOrganization();
 					return new Stay(startup.getId(), startup.getName(), stay.getJoinedAt(), stay.getLeftAt(),

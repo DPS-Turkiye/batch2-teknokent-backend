@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -63,6 +65,9 @@ class MeetingServiceTest {
 	@Mock
 	private DocumentRequestService documentRequestService;
 
+	@Mock
+	private ApplicationEventPublisher eventPublisher;
+
 	private MeetingService meetingService;
 
 	private final UUID mentorId = UUID.randomUUID();
@@ -80,7 +85,8 @@ class MeetingServiceTest {
 				appUserRepository,
 				notificationService,
 				documentRequestService,
-				new TranscriptBotCapacityService(meetingRepository, 2));
+				new TranscriptBotCapacityService(meetingRepository, 2),
+				eventPublisher);
 		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(any()))
 				.thenReturn(List.of());
 	}
@@ -136,6 +142,36 @@ class MeetingServiceTest {
 
 		assertThat(meeting.getHeldConfirmedAt()).isNotNull();
 		assertThat(lastWeek.getHeldConfirmedAt()).isNull();
+	}
+
+	@Test
+	void confirmingHeldChecksTheAchievementsOfTheMentorAndOfMenteesWhoAlreadyGaveFeedback() {
+		Instant at = Instant.now().minus(2, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		UUID menteeId = UUID.randomUUID();
+		MeetingFeedback earlier = new MeetingFeedback();
+		earlier.setAuthor(namedUser(menteeId, "Ece Öğrenci", UserRole.MENTEE));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting));
+		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(List.of(meeting.getId()), UserRole.MENTEE))
+				.thenReturn(List.of(earlier));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		verify(eventPublisher).publishEvent(new AchievementsMayChangeEvent(Set.of(mentorId, menteeId)));
+	}
+
+	@Test
+	void undoingHeldChecksNoAchievements() {
+		Instant at = Instant.now().minus(1, ChronoUnit.DAYS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		meeting.setHeldConfirmedAt(at);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, false);
+
+		verify(eventPublisher, never()).publishEvent(any(Object.class));
 	}
 
 	@Test
@@ -779,6 +815,7 @@ class MeetingServiceTest {
 
 		assertThat(response.ratings()).containsExactly(5, 4, 5);
 		assertThat(response.benefits()).containsExactly("Finansal modeli anlamak");
+		verify(eventPublisher).publishEvent(new AchievementsMayChangeEvent(Set.of(mentorId)));
 	}
 
 	@Test

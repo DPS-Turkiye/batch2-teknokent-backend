@@ -26,6 +26,8 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
 	Optional<Meeting> findByMentorshipRequestId(UUID mentorshipRequestId);
 
+	List<Meeting> findByMentorshipRequestIdIn(Collection<UUID> mentorshipRequestIds);
+
 	boolean existsByMentorIdAndScheduledAtAndStatus(UUID mentorId, Instant scheduledAt, MeetingStatus status);
 
 	boolean existsByIdAndOrganizationId(UUID id, UUID organizationId);
@@ -75,4 +77,10 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
 	List<Meeting> findByStatusAndReminderSentAtIsNullAndScheduledAtBetween(
 			MeetingStatus status, Instant from, Instant until);
+
+	/** A mentor's sessions confirmed as held, for their achievement badges. */
+	List<Meeting> findByMentorIdAndHeldConfirmedAtIsNotNull(UUID mentorId);
+
+	@Query("select distinct m.mentor.id from Meeting m where m.heldConfirmedAt is not null and m.mentor is not null")
+	List<UUID> findMentorIdsWithHeldMeetings();
 }

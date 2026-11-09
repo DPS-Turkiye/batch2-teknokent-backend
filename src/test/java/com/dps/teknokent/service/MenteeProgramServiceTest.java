@@ -77,6 +77,22 @@ class MenteeProgramServiceTest {
 	}
 
 	@Test
+	void programOf_aPersonalTeamBelongsToItsStudentsProgramNotToAnyStartupRow() {
+		UUID programId = UUID.randomUUID();
+		AppUser student = new AppUser();
+		student.setId(UUID.randomUUID());
+		student.setProgramId(programId);
+		Organization personal = new Organization();
+		personal.setId(UUID.randomUUID());
+		personal.setPersonal(true);
+		personal.setFounder(student);
+		student.setOrganization(personal);
+
+		assertThat(service.programOf(personal)).contains(programId);
+		assertThat(service.programOf(student)).contains(programId);
+	}
+
+	@Test
 	void reachableMentorIds_areTheAcceptedMentorsOfTheMenteesProgram() {
 		AppUser mentee = user(UserRole.MENTEE);
 		Organization startup = startup();

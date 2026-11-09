@@ -18,7 +18,7 @@ public record ProgramApprovalsResponse(
 
 		public static Person of(AppUser user) {
 			return new Person(user.getId(), user.getFullName(), user.getEmail(), user.getJobTitle(),
-					user.getOrganization() == null ? null : user.getOrganization().getName(), user.getCreatedAt());
+					Organization.visibleName(user.getOrganization()), user.getCreatedAt());
 		}
 	}
 

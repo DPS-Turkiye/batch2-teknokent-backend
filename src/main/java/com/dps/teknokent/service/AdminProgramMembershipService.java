@@ -80,6 +80,9 @@ public class AdminProgramMembershipService {
 		requireAdmin(actorId);
 		Program program = requireActiveProgram(programId);
 		Organization startup = domainLookupService.requireOrganization(organizationId);
+		if (startup.isPersonal()) {
+			throw new InvalidRequestException("A student's personal team cannot join a program as a startup.");
+		}
 		if (programStartupRepository.findByProgramIdAndOrganizationId(programId, organizationId).isPresent()) {
 			throw new ConflictException("This startup is already in the program.");
 		}

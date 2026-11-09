@@ -130,6 +130,10 @@ public class Organization {
 	@Column(name = "archived_at")
 	private Instant archivedAt;
 
+	/** The hidden team of one behind an ODTÜ student (see PersonalTeamService); never listed or shown as a startup. */
+	@Column(nullable = false)
+	private boolean personal;
+
 	@Column(name = "status_version", length = 32)
 	private String statusVersion;
 
@@ -160,4 +164,9 @@ public class Organization {
 	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
+
+	/** The name to print as a startup or team name: none for a personal team, which is never shown as one. */
+	public static String visibleName(Organization organization) {
+		return organization == null || organization.isPersonal() ? null : organization.getName();
+	}
 }

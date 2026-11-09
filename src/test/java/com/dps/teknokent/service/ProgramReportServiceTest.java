@@ -161,6 +161,37 @@ class ProgramReportServiceTest {
 	}
 
 	@Test
+	void sessionsCountAPeerMentoringStudentsPersonalTeamWithTheirOwnProgram() {
+		UUID actorId = UUID.randomUUID();
+		Program program = new Program();
+		program.setId(UUID.randomUUID());
+		Organization personal = organization("Mehmet Kaya");
+		personal.setPersonal(true);
+		AppUser student = user("Mehmet Kaya", "mehmet@odtu-dev.invalid", personal);
+		student.setProgramId(program.getId());
+		AppUser peerMentor = user("Zeynep Demir", "zeynep@odtu-dev.invalid", null);
+		LocalDate from = LocalDate.of(2026, 11, 1);
+		LocalDate to = LocalDate.of(2026, 11, 30);
+		Instant monday = LocalDate.of(2026, 11, 2).atTime(10, 0).atZone(MeetingSlotTimes.APP_ZONE).toInstant();
+		Meeting session = held(peerMentor, personal, monday, 45, MeetingStatus.SCHEDULED);
+		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of());
+		when(appUserRepository.findPersonalTeamStudentsOfProgram(program.getId())).thenReturn(List.of(student));
+		when(meetingRepository
+				.findByOrganizationIdInAndHeldConfirmedAtIsNotNullAndScheduledAtGreaterThanEqualAndScheduledAtLessThan(
+						eq(java.util.Set.of(personal.getId())), any(), any()))
+				.thenReturn(List.of(session));
+		when(appUserRepository.findByOrganizationIdInOrderByFullNameAsc(any())).thenReturn(List.of(student));
+
+		var report = service.sessions(actorId, program.getId(), from, to);
+
+		assertThat(report.mentors()).containsExactly(new ProgramSessionsResponse.Row(
+				peerMentor.getId(), "Zeynep Demir", "zeynep@odtu-dev.invalid", 1, 45, 1));
+		assertThat(report.students()).containsExactly(new ProgramSessionsResponse.Row(
+				personal.getId(), "Mehmet Kaya", "mehmet@odtu-dev.invalid", 1, 45, 1));
+	}
+
+	@Test
 	void sessionsRefuseARangeThatEndsBeforeItStarts() {
 		UUID actorId = UUID.randomUUID();
 		Program program = new Program();

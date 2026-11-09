@@ -29,6 +29,6 @@ public record OrganizationMemberResponse(
 				&& organization.getFounder().getId().equals(user.getId());
 		return new OrganizationMemberResponse(
 				user.getId(), user.getEmail(), user.getFullName(), user.getRole(), status,
-				organization.getId(), organization.getName(), user.getJobTitle(), founder, user.getCreatedAt());
+				organization.getId(), Organization.visibleName(organization), user.getJobTitle(), founder, user.getCreatedAt());
 	}
 }
