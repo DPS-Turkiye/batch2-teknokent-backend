@@ -37,7 +37,9 @@ public interface LoginProvisioner {
 	/**
 	 * A Firebase custom token for {@code uid}, so a person who signed in through their institution gets an ordinary
 	 * Firebase session; a 503 when none can be made. Creates the Firebase user under that uid with {@code email}
-	 * first if it does not exist, because the bearer filter refuses a token without an e-mail.
+	 * first if it does not exist, because the bearer filter refuses a token without an e-mail. {@code emailVerified}
+	 * marks a login created here as verified, for a provider that vouches for the address; an existing login keeps
+	 * whatever it has.
 	 */
-	String customToken(String uid, String email, String displayName);
+	String customToken(String uid, String email, String displayName, boolean emailVerified);
 }

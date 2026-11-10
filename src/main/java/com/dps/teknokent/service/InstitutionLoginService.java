@@ -16,7 +16,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.IdentityKind;
@@ -40,10 +42,15 @@ import com.dps.teknokent.security.institution.InstitutionLoginProvider;
 import com.dps.teknokent.security.institution.InstitutionRecords;
 import com.dps.teknokent.util.Texts;
 
+import tools.jackson.databind.json.JsonMapper;
+
 /**
  * Turns an institution's sign-in into an ordinary Firebase session: links or creates the account, gives it what the
  * institution's record backs (student → MENTEE, academic → ACADEMICIAN), then hands the browser a one-time code it
  * trades for a Firebase custom token. Everything after that (bearer filter, /me, the session cookie) is unchanged.
+ * A login that only proves who someone is ({@link InstitutionLoginProvider#grantsAccess()} false, e.g. OTG) finds
+ * the account but never creates one: a newcomer's code yields a Firebase login without an account, which the
+ * frontend sends to the ordinary sign-up.
  */
 @Service
 public class InstitutionLoginService {
@@ -52,6 +59,8 @@ public class InstitutionLoginService {
 	static final Duration CODE_TTL = Duration.ofSeconds(60);
 	static final String STATE_KEY = "institution-login:state:";
 	static final String CODE_KEY = "institution-login:code:";
+	/** A code for someone the login identified who has no Menton account yet; it leads to sign-up. */
+	static final String SIGNUP_CODE_KEY = "institution-login:signup:";
 	/** Firebase uids are at most 128 characters; the provider prefix takes the rest. */
 	private static final int MAX_PERSISTENT_ID = 100;
 	private static final SecureRandom RANDOM = new SecureRandom();
@@ -62,16 +71,20 @@ public class InstitutionLoginService {
 	private final AppUserIdentityRepository identities;
 	private final InstitutionPersonRepository people;
 	private final LoginProvisioner loginProvisioner;
+	private final TransactionTemplate transactions;
+	private final JsonMapper jsonMapper;
 
 	public InstitutionLoginService(ObjectProvider<InstitutionLoginProvider> providers, StringRedisTemplate redis,
 			AppUserRepository users, AppUserIdentityRepository identities, InstitutionPersonRepository people,
-			LoginProvisioner loginProvisioner) {
+			LoginProvisioner loginProvisioner, PlatformTransactionManager transactionManager, JsonMapper jsonMapper) {
 		this.providers = providers;
 		this.redis = redis;
 		this.users = users;
 		this.identities = identities;
 		this.people = people;
 		this.loginProvisioner = loginProvisioner;
+		this.transactions = new TransactionTemplate(transactionManager);
+		this.jsonMapper = jsonMapper;
 	}
 
 	public InstitutionLoginStartResponse start(String providerId) {
@@ -81,32 +94,49 @@ public class InstitutionLoginService {
 		return new InstitutionLoginStartResponse(provider.startLogin(state), state);
 	}
 
-	/** The state is single use and must have come from {@link #start} for this provider. */
-	@Transactional
+	/**
+	 * The state is single use and must have come from {@link #start} for this provider. The provider's own check may
+	 * call out to the institution, so it runs before the transaction instead of holding a database connection.
+	 */
 	public String complete(String providerId, String state, Map<String, String> callback) {
 		InstitutionLoginProvider provider = provider(providerId);
 		String expected = state == null || state.isBlank() ? null : redis.opsForValue().getAndDelete(STATE_KEY + state);
 		if (!provider.id().equals(expected)) {
 			throw new InvalidRequestException(Texts.forRequest("error.institutionLoginExpired"));
 		}
-		AppUser user = signIn(provider, provider.completeLogin(callback == null ? Map.of() : callback));
+		InstitutionIdentity identity = provider.completeLogin(state, callback == null ? Map.of() : callback);
+		Optional<AppUser> account = transactions.execute(status -> provider.grantsAccess()
+				? Optional.of(signIn(provider, identity))
+				: findAccount(provider, identity));
 		String code = randomToken();
-		redis.opsForValue().set(CODE_KEY + code, user.getId().toString(), CODE_TTL);
+		if (account != null && account.isPresent()) {
+			redis.opsForValue().set(CODE_KEY + code, account.get().getId().toString(), CODE_TTL);
+		} else {
+			NewLogin login = new NewLogin(firebaseUid(provider, requirePersistentId(identity)), requireEmail(identity),
+					blankToNull(identity.fullName()), identity.emailVerified());
+			redis.opsForValue().set(SIGNUP_CODE_KEY + code, jsonMapper.writeValueAsString(login), CODE_TTL);
+		}
 		return code;
 	}
 
 	@Transactional(readOnly = true)
 	public String exchange(String code) {
-		String userId = code == null || code.isBlank() ? null : redis.opsForValue().getAndDelete(CODE_KEY + code);
+		boolean usable = code != null && !code.isBlank();
+		String userId = usable ? redis.opsForValue().getAndDelete(CODE_KEY + code) : null;
 		if (userId == null) {
-			throw new InvalidRequestException(Texts.forRequest("error.institutionLoginExpired"));
+			String newLogin = usable ? redis.opsForValue().getAndDelete(SIGNUP_CODE_KEY + code) : null;
+			if (newLogin == null) {
+				throw new InvalidRequestException(Texts.forRequest("error.institutionLoginExpired"));
+			}
+			NewLogin login = jsonMapper.readValue(newLogin, NewLogin.class);
+			return loginProvisioner.customToken(login.uid(), login.email(), login.fullName(), login.emailVerified());
 		}
 		AppUser user = users.findById(UUID.fromString(userId))
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 		if (user.getStatus() == UserAccountStatus.REJECTED) {
 			throw noAccess();
 		}
-		return loginProvisioner.customToken(user.getFirebaseUid(), user.getEmail(), user.getFullName());
+		return loginProvisioner.customToken(user.getFirebaseUid(), user.getEmail(), user.getFullName(), false);
 	}
 
 	AppUser signIn(InstitutionLoginProvider provider, InstitutionIdentity identity) {
@@ -136,7 +166,7 @@ public class InstitutionLoginService {
 			user.grant(permission, PermissionSource.ADMIN, now);
 		}
 		if (user.getFirebaseUid() == null) {
-			user.setFirebaseUid(provider.id() + "_" + persistentId);
+			user.setFirebaseUid(firebaseUid(provider, persistentId));
 		}
 		user = users.save(user);
 		InstitutionPerson person = people.findByInstitutionAndPersistentId(provider.id(), persistentId)
@@ -146,6 +176,40 @@ public class InstitutionLoginService {
 		person.setUser(user);
 		people.save(person);
 		return user;
+	}
+
+	/**
+	 * For a login that only proves who someone is: the account already bound to them; else the one they signed up
+	 * with after an earlier login here (its Firebase uid comes from their id); else the one holding their verified
+	 * address. Empty when they have none yet. Grants nothing and writes no institution record: status, roles, teams
+	 * and approval stay Menton's.
+	 */
+	Optional<AppUser> findAccount(InstitutionLoginProvider provider, InstitutionIdentity identity) {
+		Instant now = Instant.now();
+		String persistentId = requirePersistentId(identity);
+		requireEmail(identity);
+		Optional<AppUserIdentity> known = identities.findByProviderAndPersistentId(provider.id(), persistentId);
+		AppUser user;
+		if (known.isPresent()) {
+			known.get().setLastLoginAt(now);
+			user = known.get().getUser();
+		} else {
+			Optional<AppUser> holder = users.findByFirebaseUid(firebaseUid(provider, persistentId))
+					.map(signedUp -> requireUnlinked(provider, signedUp))
+					.or(() -> linkByEmail(provider, identity));
+			if (holder.isEmpty()) {
+				return Optional.empty();
+			}
+			user = holder.get();
+			identities.save(new AppUserIdentity(user, provider.id(), persistentId, now));
+		}
+		if (user.getStatus() == UserAccountStatus.REJECTED) {
+			throw noAccess();
+		}
+		if (user.getFirebaseUid() == null) {
+			user.setFirebaseUid(firebaseUid(provider, persistentId));
+		}
+		return Optional.of(users.save(user));
 	}
 
 	/**
@@ -165,10 +229,14 @@ public class InstitutionLoginService {
 		if (existing.has(UserRole.ADMIN) || existing.has(UserRole.COORDINATOR)) {
 			throw new ConflictException(Texts.forRequest("error.institutionStaffAccount"));
 		}
-		if (identities.existsByUserIdAndProvider(existing.getId(), provider.id())) {
+		return Optional.of(requireUnlinked(provider, existing));
+	}
+
+	private AppUser requireUnlinked(InstitutionLoginProvider provider, AppUser user) {
+		if (identities.existsByUserIdAndProvider(user.getId(), provider.id())) {
 			throw new ConflictException(Texts.forRequest("error.institutionAlreadyLinked"));
 		}
-		return holder;
+		return user;
 	}
 
 	/** Institution accounts are never approved by hand (board 08): what the institution says is the approval. */
@@ -194,6 +262,10 @@ public class InstitutionLoginService {
 		return backed;
 	}
 
+	private static String firebaseUid(InstitutionLoginProvider provider, String persistentId) {
+		return provider.id() + "_" + persistentId;
+	}
+
 	private static String requirePersistentId(InstitutionIdentity identity) {
 		String persistentId = identity.persistentId() == null ? "" : identity.persistentId().trim();
 		if (persistentId.isEmpty() || persistentId.length() > MAX_PERSISTENT_ID) {
@@ -207,6 +279,10 @@ public class InstitutionLoginService {
 			throw new InvalidRequestException("The institution sent no e-mail address for this person.");
 		}
 		return identity.email().trim().toLowerCase(Locale.ROOT);
+	}
+
+	private static String blankToNull(String value) {
+		return value == null || value.isBlank() ? null : value.trim();
 	}
 
 	private InstitutionLoginProvider provider(String providerId) {
@@ -227,5 +303,9 @@ public class InstitutionLoginService {
 		byte[] bytes = new byte[32];
 		RANDOM.nextBytes(bytes);
 		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+	}
+
+	/** Who a sign-up code is for: the Firebase login to create, carried for the code's 60 seconds only. */
+	record NewLogin(String uid, String email, String fullName, boolean emailVerified) {
 	}
 }
