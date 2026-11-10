@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,7 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -22,10 +23,12 @@ import com.dps.teknokent.dto.provider.ProviderRunningBot;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.requests.AddBotRequest;
-import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.ConflictException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class AssistantServiceTest {
@@ -39,10 +42,14 @@ class AssistantServiceTest {
   @Mock
   private TranscriptBotCapacityService capacityService;
 
+  @Mock
+  private AssistantMeetingAccessService accessService;
+
   @InjectMocks
   private AssistantService assistantService;
 
   private static final String URL = "https://meet.google.com/abc-defg-hij";
+  private static final UUID CALLER = UUID.randomUUID();
 
   private void running(String... nativeIds) {
     when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(
@@ -56,7 +63,7 @@ class AssistantServiceTest {
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
         .thenReturn(new ProviderBotResponse("bot-1", "requested", "New meeting bot"));
 
-    assertThat(assistantService.addAdHocBot(new AddBotRequest(URL)).id()).isEqualTo("bot-1");
+    assertThat(assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)).id()).isEqualTo("bot-1");
   }
 
   @Test
@@ -64,7 +71,7 @@ class AssistantServiceTest {
     running("aaa-bbbb-ccc", "ddd-eeee-fff");
     when(capacityService.capacity()).thenReturn(2);
 
-    assertThatThrownBy(() -> assistantService.addAdHocBot(new AddBotRequest(URL)))
+    assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
         .isInstanceOf(ConflictException.class);
     verify(providerClient, never()).sendBot(any(), any(), any());
   }
@@ -75,7 +82,7 @@ class AssistantServiceTest {
     when(capacityService.capacity()).thenReturn(3);
     when(capacityService.reservedWithinHour(any())).thenReturn(2);
 
-    assertThatThrownBy(() -> assistantService.addAdHocBot(new AddBotRequest(URL)))
+    assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
         .isInstanceOf(ConflictException.class);
     verify(providerClient, never()).sendBot(any(), any(), any());
   }
@@ -86,7 +93,7 @@ class AssistantServiceTest {
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
         .thenReturn(new ProviderBotResponse("bot-1", "requested", "New meeting bot"));
 
-    assistantService.addAdHocBot(new AddBotRequest(URL));
+    assistantService.addAdHocBot(CALLER, new AddBotRequest(URL));
 
     verify(providerClient).sendBot("google_meet", "abc-defg-hij", URL);
   }
@@ -95,7 +102,7 @@ class AssistantServiceTest {
   void addAdHocBotRefusesWhenTheRunningBotsAreUnknown() {
     when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(null));
 
-    assertThatThrownBy(() -> assistantService.addAdHocBot(new AddBotRequest(URL)))
+    assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
         .isInstanceOf(IllegalStateException.class);
     verify(providerClient, never()).sendBot(any(), any(), any());
   }
@@ -182,35 +189,60 @@ class AssistantServiceTest {
   }
 
   @Test
-  void generateMeetingReportUsesProvidedSegmentsWithoutFetchingTheProviderTranscript() {
-    when(meetingReportService.generate(any(), eq(null)))
-        .thenReturn(report("Edited"));
-
-    var edited = new TranscriptSegmentResponse("s1", "Ayse Kaya", "Duzeltilmis metin", "00:10");
-    assistantService.generateMeetingReport(
-        "google_meet",
-        "abc-defg-hij",
-        new GenerateMeetingReportRequest(null, List.of(edited)));
-
-    verify(providerClient, never()).getTranscript(any(), any());
-    verify(meetingReportService).generate(List.of(edited), null);
-  }
-
-  @Test
-  void generateMeetingReportFallsBackToProviderTranscriptWhenSegmentsAreMissing() {
+  void generateMeetingReportForACallerUsesTheProviderTranscriptAndTheConfiguredModel() {
     when(providerClient.getTranscript("google_meet", "abc-defg-hij"))
         .thenReturn(new ProviderTranscriptResponse(List.of(
             new ProviderTranscriptSegment("s1", "Ayşe", "Merhaba", 65.0)
         )));
-    when(meetingReportService.generate(any(), eq(null)))
-        .thenReturn(report("Original"));
+    when(meetingReportService.generate(any())).thenReturn(report("Original"));
 
-    assistantService.generateMeetingReport(
-        "google_meet",
-        "abc-defg-hij",
-        new GenerateMeetingReportRequest(null, List.of()));
+    assistantService.generateMeetingReport(CALLER, "google_meet", "abc-defg-hij");
 
-    verify(providerClient).getTranscript("google_meet", "abc-defg-hij");
+    verify(accessService).requireAccess(CALLER, "google_meet", "abc-defg-hij");
+    verify(meetingReportService).generate(List.of(
+        new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "01:05")));
+  }
+
+  @Test
+  void generateMeetingReportForTheWatchdogUsesItsCleanedSegments() {
+    when(meetingReportService.generate(any())).thenReturn(report("Cleaned"));
+    var cleaned = new TranscriptSegmentResponse("s1", "Ayse Kaya", "Temiz metin", "00:10");
+
+    assistantService.generateMeetingReport(List.of(cleaned));
+
+    verify(providerClient, never()).getTranscript(any(), any());
+    verify(meetingReportService).generate(List.of(cleaned));
+  }
+
+  @Test
+  void aCallerWhoMayNotUseTheMeetingReachesNeitherTheProviderNorTheReport() {
+    var forbidden = new ResponseStatusException(HttpStatus.FORBIDDEN, "no");
+    doThrow(forbidden).when(accessService).requireAccess(CALLER, "google_meet", "abc-defg-hij");
+
+    assertThatThrownBy(() -> assistantService.getTranscript(CALLER, "google_meet", "abc-defg-hij"))
+        .isSameAs(forbidden);
+    assertThatThrownBy(() -> assistantService.stopBot(CALLER, "google_meet", "abc-defg-hij"))
+        .isSameAs(forbidden);
+    assertThatThrownBy(() -> assistantService.generateMeetingReport(CALLER, "google_meet", "abc-defg-hij"))
+        .isSameAs(forbidden);
+    assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
+        .isSameAs(forbidden);
+
+    verify(providerClient, never()).getTranscript(any(), any());
+    verify(providerClient, never()).stopBot(any(), any());
+    verify(providerClient, never()).sendBot(any(), any(), any());
+    verify(providerClient, never()).getRunningBots();
+    verify(meetingReportService, never()).generate(any());
+  }
+
+  @Test
+  void anUnknownMeetingIsNotSentToTheProvider() {
+    doThrow(new ResourceNotFoundException("Meeting not found."))
+        .when(accessService).requireAccess(CALLER, "google_meet", "zzz-zzzz-zzz");
+
+    assertThatThrownBy(() -> assistantService.getTranscript(CALLER, "google_meet", "zzz-zzzz-zzz"))
+        .isInstanceOf(ResourceNotFoundException.class);
+    verify(providerClient, never()).getTranscript(any(), any());
   }
 
   private static MeetingReportResponse report(String title) {

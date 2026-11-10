@@ -55,7 +55,7 @@ class MeetingTranscriptBotWatchdogTest {
 
 	@BeforeEach
 	void setUp() {
-		AssistantService assistantService = new AssistantService(providerClient, meetingReportService, null);
+		AssistantService assistantService = new AssistantService(providerClient, meetingReportService, null, null);
 		when(transcriptCleanupService.clean(any())).thenAnswer(call -> call.getArgument(0));
 		watchdog = new MeetingTranscriptBotWatchdog(
 				meetingRepository, meetingService, assistantService, shareService, transcriptCleanupService);
@@ -67,7 +67,7 @@ class MeetingTranscriptBotWatchdogTest {
 		runningBots();
 		providerTranscript();
 		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
-		when(meetingReportService.generate(any(), any())).thenReturn(report());
+		when(meetingReportService.generate(any())).thenReturn(report());
 
 		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
 
@@ -85,12 +85,12 @@ class MeetingTranscriptBotWatchdogTest {
 				List.of(new TranscriptSegmentResponse("s1", "Arya", "Düzeltilmiş metin", "00:00"));
 		when(transcriptCleanupService.clean(any())).thenReturn(cleaned);
 		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
-		when(meetingReportService.generate(any(), any())).thenReturn(report());
+		when(meetingReportService.generate(any())).thenReturn(report());
 
 		watchdog.closeFinishedMeetings(now);
 
 		verify(shareService).storeGeneratedTranscript(meetingId, cleaned);
-		verify(meetingReportService).generate(eq(cleaned), any());
+		verify(meetingReportService).generate(eq(cleaned));
 	}
 
 	@Test
@@ -114,7 +114,7 @@ class MeetingTranscriptBotWatchdogTest {
 				.thenReturn(details("active", List.of("Sudenaz Yılmaz")))
 				.thenReturn(details("active", List.of("Mentor Bot")));
 		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
-		when(meetingReportService.generate(any(), any())).thenReturn(report());
+		when(meetingReportService.generate(any())).thenReturn(report());
 
 		assertThat(watchdog.closeFinishedMeetings(now)).isZero();
 		assertThat(watchdog.closeFinishedMeetings(now.plus(30, ChronoUnit.SECONDS))).isZero();
@@ -140,7 +140,7 @@ class MeetingTranscriptBotWatchdogTest {
 		liveMeetings(meeting(now.minus(90, ChronoUnit.MINUTES), 60));
 		runningBots(new ProviderRunningBot("google_meet", "aaa-bbbb-ccc", "running"));
 		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
-		when(meetingReportService.generate(any(), any())).thenReturn(report());
+		when(meetingReportService.generate(any())).thenReturn(report());
 
 		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
 

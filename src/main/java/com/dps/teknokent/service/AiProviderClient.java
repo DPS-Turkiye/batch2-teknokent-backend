@@ -130,13 +130,8 @@ public class AiProviderClient {
 		}
 	}
 
-	public JsonNode generateMeetingReport(
-			String transcriptText,
-			JsonNode schema,
-			String modelOverride) {
-		String model = (modelOverride != null && !modelOverride.isBlank())
-				? modelOverride.trim()
-				: reportModel();
+	public JsonNode generateMeetingReport(String transcriptText, JsonNode schema) {
+		String model = reportModel();
 		String schemaJson = jsonUtils.writeValue(schema);
 		String instructions = """
 			You are a mentorship meeting assistant that writes structured meeting reports.
@@ -299,10 +294,7 @@ public class AiProviderClient {
 		return "";
 	}
 
-	public String resolveReportModel(String modelOverride) {
-		if (modelOverride != null && !modelOverride.isBlank()) {
-			return modelOverride.trim();
-		}
+	public String resolveReportModel() {
 		return reportModel();
 	}
 

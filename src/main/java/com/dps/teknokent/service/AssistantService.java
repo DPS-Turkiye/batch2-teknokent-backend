@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -16,7 +17,6 @@ import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.requests.AddBotRequest;
-import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
@@ -32,14 +32,16 @@ public class AssistantService {
   private final MeetingProviderClient providerClient;
   private final MeetingReportService meetingReportService;
   private final TranscriptBotCapacityService capacityService;
+  private final AssistantMeetingAccessService accessService;
 
   /**
    * A bot asked for from the assistant, outside a booked meeting. It counts the bots running right now plus the
    * booked meetings whose bots join within the hour, so booked recordings keep their slots; when the running count
-   * is unknown it refuses.
+   * is unknown it refuses. Only a participant of a Menton meeting on that link, or an admin, may send one.
    */
-  public AddBotResponse addAdHocBot(AddBotRequest request) {
+  public AddBotResponse addAdHocBot(UUID callerId, AddBotRequest request) {
     var parsed = MeetingUrlParser.parse(request.meetingUrl());
+    accessService.requireAccess(callerId, parsed.platform(), parsed.nativeMeetingId());
     Set<String> running = runningBotKeys()
         .orElseThrow(() -> new IllegalStateException("Running bots are unknown"));
     // ponytail: no lock, so two requests at the same moment can both pass, and a meeting booked later does not see
@@ -66,6 +68,11 @@ public class AssistantService {
         body.status() != null ? body.status() : "requested",
         body.title() != null ? body.title() : "New meeting bot"
     );
+  }
+
+  public TranscriptResponse getTranscript(UUID callerId, String platform, String nativeMeetingId) {
+    accessService.requireAccess(callerId, platform, nativeMeetingId);
+    return getTranscript(platform, nativeMeetingId);
   }
 
   public TranscriptResponse getTranscript(String platform, String nativeMeetingId) {
@@ -100,6 +107,11 @@ public class AssistantService {
         .orElse(0d);
   }
 
+  public void stopBot(UUID callerId, String platform, String nativeMeetingId) {
+    accessService.requireAccess(callerId, platform, nativeMeetingId);
+    stopBot(platform, nativeMeetingId);
+  }
+
   public void stopBot(String platform, String nativeMeetingId) {
     providerClient.stopBot(platform, nativeMeetingId);
   }
@@ -127,17 +139,18 @@ public class AssistantService {
     return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
   }
 
-  public MeetingReportResponse generateMeetingReport(
-      String platform,
-      String nativeMeetingId,
-      GenerateMeetingReportRequest request) {
-    String model = request != null ? request.model() : null;
-    List<TranscriptSegmentResponse> provided =
-        request != null && request.segments() != null ? request.segments() : List.of();
-    List<TranscriptSegmentResponse> segments = provided.isEmpty()
-        ? getTranscript(platform, nativeMeetingId).segments()
-        : provided;
-    return meetingReportService.generate(segments, model);
+  /**
+   * The report a participant asks for. The transcript is always the provider's own for that meeting and the model
+   * is the configured one, so nobody can push their own text or pick a model through our key.
+   */
+  public MeetingReportResponse generateMeetingReport(UUID callerId, String platform, String nativeMeetingId) {
+    accessService.requireAccess(callerId, platform, nativeMeetingId);
+    return generateMeetingReport(getTranscript(platform, nativeMeetingId).segments());
+  }
+
+  /** For the watchdog, which has already cleaned the provider's transcript. */
+  public MeetingReportResponse generateMeetingReport(List<TranscriptSegmentResponse> segments) {
+    return meetingReportService.generate(segments);
   }
 
 }

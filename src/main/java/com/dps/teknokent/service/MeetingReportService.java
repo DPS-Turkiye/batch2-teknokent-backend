@@ -26,9 +26,7 @@ public class MeetingReportService {
   private final JsonUtils jsonUtils;
   private final JsonSchemaUtils jsonSchemaUtils;
 
-  public MeetingReportResponse generate(
-      List<TranscriptSegmentResponse> segments,
-      String modelOverride) {
+  public MeetingReportResponse generate(List<TranscriptSegmentResponse> segments) {
     if (segments == null || segments.isEmpty()) {
       throw new InvalidRequestException("Transcript is empty; cannot generate a meeting report.");
     }
@@ -41,11 +39,8 @@ public class MeetingReportService {
 
     String redactedTranscript = piiRedactionService.redact(transcriptText).text();
 
-    String model = aiProviderClient.resolveReportModel(modelOverride);
-    JsonNode raw = aiProviderClient.generateMeetingReport(
-        redactedTranscript,
-        reportSchema(),
-        modelOverride);
+    String model = aiProviderClient.resolveReportModel();
+    JsonNode raw = aiProviderClient.generateMeetingReport(redactedTranscript, reportSchema());
 
     return new MeetingReportResponse(
         jsonUtils.textOrEmpty(raw, "title"),
