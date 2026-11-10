@@ -42,7 +42,7 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
-	public String customToken(String uid, String email, String displayName) {
+	public String customToken(String uid, String email, String displayName, boolean emailVerified) {
 		throw noFirebase();
 	}
 

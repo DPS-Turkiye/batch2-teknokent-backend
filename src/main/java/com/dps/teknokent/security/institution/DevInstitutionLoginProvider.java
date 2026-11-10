@@ -98,7 +98,7 @@ public class DevInstitutionLoginProvider implements InstitutionLoginProvider {
 	}
 
 	@Override
-	public InstitutionIdentity completeLogin(Map<String, String> callback) {
+	public InstitutionIdentity completeLogin(String state, Map<String, String> callback) {
 		DevPersona persona = Optional.ofNullable(callback.get(PERSONA_PARAM))
 				.map(personas::get)
 				.orElseThrow(() -> new InvalidRequestException("Unknown dev persona."));

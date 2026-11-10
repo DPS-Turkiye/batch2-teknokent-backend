@@ -165,8 +165,8 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	/** Signed locally with the service account's private key, so no extra Google permission is needed. */
 	@Override
-	public String customToken(String uid, String email, String displayName) {
-		ensureLogin(uid, email, displayName);
+	public String customToken(String uid, String email, String displayName, boolean emailVerified) {
+		ensureLogin(uid, email, displayName, emailVerified);
 		try {
 			return firebaseAuth.createCustomToken(uid);
 		} catch (FirebaseAuthException exception) {
@@ -174,7 +174,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		}
 	}
 
-	private void ensureLogin(String uid, String email, String displayName) {
+	private void ensureLogin(String uid, String email, String displayName, boolean emailVerified) {
 		try {
 			firebaseAuth.getUser(uid);
 			return;
@@ -183,12 +183,16 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 				throw sessionUnavailable(exception);
 			}
 		}
+		UserRecord.CreateRequest request = new UserRecord.CreateRequest()
+				.setUid(uid)
+				.setEmail(email)
+				.setEmailVerified(emailVerified);
+		// Firebase refuses a blank display name; OTG may send no name at all.
+		if (displayName != null && !displayName.isBlank()) {
+			request.setDisplayName(displayName);
+		}
 		try {
-			firebaseAuth.createUser(new UserRecord.CreateRequest()
-					.setUid(uid)
-					.setEmail(email)
-					.setDisplayName(displayName)
-					.setEmailVerified(false));
+			firebaseAuth.createUser(request);
 		} catch (FirebaseAuthException exception) {
 			// Another Firebase login already holds the address while no Menton account does.
 			if (exception.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {

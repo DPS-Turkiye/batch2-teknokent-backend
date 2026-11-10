@@ -102,7 +102,7 @@ class DevInstitutionLoginProviderTest {
 
 	@Test
 	void thePickedPersonaIsWhoSignsIn() {
-		InstitutionIdentity identity = stub.completeLogin(Map.of(DevInstitutionLoginProvider.PERSONA_PARAM,
+		InstitutionIdentity identity = stub.completeLogin("state", Map.of(DevInstitutionLoginProvider.PERSONA_PARAM,
 				"dev-ogrenci-1"));
 
 		assertThat(identity.persistentId()).isEqualTo("dev-ogrenci-1");
@@ -113,9 +113,9 @@ class DevInstitutionLoginProviderTest {
 
 	@Test
 	void anUnknownPersonaIsRefused() {
-		assertThatThrownBy(() -> stub.completeLogin(Map.of(DevInstitutionLoginProvider.PERSONA_PARAM, "nobody")))
+		assertThatThrownBy(() -> stub.completeLogin("state", Map.of(DevInstitutionLoginProvider.PERSONA_PARAM, "nobody")))
 				.isInstanceOf(InvalidRequestException.class);
-		assertThatThrownBy(() -> stub.completeLogin(Map.of())).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> stub.completeLogin("state", Map.of())).isInstanceOf(InvalidRequestException.class);
 	}
 
 	@Test
