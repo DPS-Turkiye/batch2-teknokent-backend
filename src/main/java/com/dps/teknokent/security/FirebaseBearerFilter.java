@@ -17,6 +17,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.security.institution.OtgLoginProvider;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -126,7 +127,9 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	 * or created by an admin already linked to their uid.
 	 */
 	private Optional<AppUser> findClaimableByEmail(FirebaseIdentity identity) {
-		if (!identity.emailVerified()) {
+		// An OTG login reaches a row only through InstitutionLoginService, which checks which OTG person the row is
+		// bound to; claiming by address here would skip that check.
+		if (!identity.emailVerified() || identity.uid().startsWith(OtgLoginProvider.ID + "_")) {
 			return Optional.empty();
 		}
 		return appUserRepository.findByEmailIgnoreCase(identity.email()).filter(FirebaseBearerFilter::claimableByEmail);

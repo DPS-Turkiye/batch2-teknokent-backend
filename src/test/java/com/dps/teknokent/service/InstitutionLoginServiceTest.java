@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -22,6 +23,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -323,7 +325,7 @@ class InstitutionLoginServiceTest {
 		signedUp.setFirebaseUid("otg_a72ab40d");
 		when(users.findByFirebaseUid("otg_a72ab40d")).thenReturn(Optional.of(signedUp));
 
-		AppUser found = service.findAccount(otg, otgPerson("a72ab40d", "yeni@ornek.com", false, null)).orElseThrow();
+		AppUser found = service.findAccount(otg, otgPerson("a72ab40d", "Mentee@metu.edu.tr", true, null)).orElseThrow();
 
 		assertThat(found).isSameAs(signedUp);
 		ArgumentCaptor<AppUserIdentity> link = ArgumentCaptor.forClass(AppUserIdentity.class);
@@ -339,7 +341,7 @@ class InstitutionLoginServiceTest {
 		assertThat(service.findAccount(otg, otgPerson("a1", "ogrenci@ornek.com", true, null))).contains(founder);
 
 		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a2", "ogrenci@ornek.com", false, null)))
-				.isInstanceOf(ConflictException.class);
+				.isInstanceOf(InvalidRequestException.class);
 
 		when(users.findByEmailIgnoreCase("koordinator@ornek.com")).thenReturn(Optional.of(account(UserRole.COORDINATOR)));
 		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a3", "koordinator@ornek.com", true, null)))
@@ -352,7 +354,7 @@ class InstitutionLoginServiceTest {
 		when(users.findByFirebaseUid("otg_a72ab40d")).thenReturn(Optional.of(signedUp));
 		when(identities.existsByUserIdAndProvider(signedUp.getId(), "otg")).thenReturn(true);
 
-		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a72ab40d", "ogrenci@ornek.com", true, null)))
+		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a72ab40d", "mentee@metu.edu.tr", true, null)))
 				.isInstanceOf(ConflictException.class);
 		verify(identities, never()).save(any());
 	}
@@ -367,6 +369,63 @@ class InstitutionLoginServiceTest {
 		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a72ab40d", "ogrenci@ornek.com", true, null)))
 				.isInstanceOfSatisfying(ResponseStatusException.class,
 						error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+	}
+
+	// An unverified address would let someone hold the Firebase login for another person's address and take over the
+	// account that person later signs up with.
+	@Test
+	void anUnverifiedAddressFromAnIdentityOnlyLoginGetsNoCodeAtAll() {
+		when(values.getAndDelete(InstitutionLoginService.STATE_KEY + "s1")).thenReturn("otg");
+		otg.next = otgPerson("a72ab40d", "kurban@ornek.com", false, null);
+
+		assertThatThrownBy(() -> service.complete("otg", "s1", Map.of("code", "c")))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(values, never()).set(anyString(), anyString(), any(Duration.class));
+		verify(users, never()).findByFirebaseUid(anyString());
+	}
+
+	// The uid match alone is not enough: the account must still be under the address OTG vouches for.
+	@Test
+	void theSignedUpAccountIsNotBoundWhenOtgNowNamesAnotherAddress() {
+		AppUser signedUp = account(UserRole.MENTEE);
+		signedUp.setFirebaseUid("otg_a72ab40d");
+		when(users.findByFirebaseUid("otg_a72ab40d")).thenReturn(Optional.of(signedUp));
+
+		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a72ab40d", "baska@ornek.com", true, null)))
+				.isInstanceOf(ConflictException.class);
+		verify(identities, never()).save(any());
+	}
+
+	@Test
+	void anAccountPromotedToStaffNoLongerSignsInThroughAnIdentityOnlyLogin() {
+		AppUser user = account(UserRole.MENTEE);
+		user.grant(UserRole.COORDINATOR, PermissionSource.ADMIN, Instant.now());
+		when(identities.findByProviderAndPersistentId("otg", "a72ab40d"))
+				.thenReturn(Optional.of(new AppUserIdentity(user, "otg", "a72ab40d", Instant.now())));
+
+		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a72ab40d", "mentee@metu.edu.tr", true, null)))
+				.isInstanceOf(ConflictException.class);
+	}
+
+	// The provider may call out to the institution; that must not hold a database connection.
+	@Test
+	void theProvidersCheckRunsBeforeTheTransactionOpens() {
+		PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+		@SuppressWarnings("unchecked")
+		ObjectProvider<InstitutionLoginProvider> providers = mock(ObjectProvider.class);
+		InstitutionLoginProvider remote = mock(InstitutionLoginProvider.class);
+		when(remote.id()).thenReturn("otg");
+		when(remote.completeLogin(eq("s1"), any())).thenReturn(otgPerson("a72ab40d", "yeni@ornek.com", true, null));
+		when(providers.orderedStream()).thenAnswer(invocation -> Stream.of(remote));
+		when(values.getAndDelete(InstitutionLoginService.STATE_KEY + "s1")).thenReturn("otg");
+		InstitutionLoginService ordered = new InstitutionLoginService(providers, redis, users, identities, people,
+				loginProvisioner, transactionManager, jsonMapper);
+
+		ordered.complete("otg", "s1", Map.of("code", "c"));
+
+		InOrder order = inOrder(remote, transactionManager);
+		order.verify(remote).completeLogin(eq("s1"), any());
+		order.verify(transactionManager).getTransaction(any());
 	}
 
 	@Test

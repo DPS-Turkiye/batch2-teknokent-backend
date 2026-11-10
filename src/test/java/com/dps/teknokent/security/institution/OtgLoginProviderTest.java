@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
@@ -16,6 +17,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 
@@ -154,6 +156,15 @@ class OtgLoginProviderTest {
 	}
 
 	@Test
+	void anyOtherErrorFromOtgIsRefusedWithoutCallingIt() {
+		when(values.getAndDelete(anyString())).thenReturn("verifier-1");
+
+		assertThatThrownBy(() -> provider.completeLogin("state-1", Map.of("error", "server_error")))
+				.isInstanceOf(InvalidRequestException.class);
+		otg.verify();
+	}
+
+	@Test
 	void aCallbackWithoutItsVerifierOrCodeIsRefused() {
 		when(values.getAndDelete(anyString())).thenReturn(null);
 		assertThatThrownBy(() -> provider.completeLogin("state-1", Map.of("code", "code-1")))
@@ -200,6 +211,6 @@ class OtgLoginProviderTest {
 				.isInstanceOf(IllegalStateException.class).hasMessageContaining("https");
 		assertThatThrownBy(() -> new OtgLoginProvider(redis, json, client, ISSUER, USERINFO, "client-1", "secret-1", ""))
 				.isInstanceOf(IllegalStateException.class).hasMessageContaining("OTG_REDIRECT_URI");
-		verify(values, org.mockito.Mockito.never()).set(anyString(), anyString(), any(java.time.Duration.class));
+		verify(values, never()).set(anyString(), anyString(), any(Duration.class));
 	}
 }

@@ -17,7 +17,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -119,7 +118,7 @@ public class InstitutionLoginService {
 		return code;
 	}
 
-	@Transactional(readOnly = true)
+	/** No transaction: the custom token may call Firebase, and the one read below needs none. */
 	public String exchange(String code) {
 		boolean usable = code != null && !code.isBlank();
 		String userId = usable ? redis.opsForValue().getAndDelete(CODE_KEY + code) : null;
@@ -187,7 +186,12 @@ public class InstitutionLoginService {
 	Optional<AppUser> findAccount(InstitutionLoginProvider provider, InstitutionIdentity identity) {
 		Instant now = Instant.now();
 		String persistentId = requirePersistentId(identity);
-		requireEmail(identity);
+		String email = requireEmail(identity);
+		// Without it, anyone could put someone else's address on their OTG account, hold the Firebase login for it,
+		// and later take over the account its real owner signs up with.
+		if (!identity.emailVerified()) {
+			throw new InvalidRequestException(Texts.forRequest("error.otgEmailUnverified"));
+		}
 		Optional<AppUserIdentity> known = identities.findByProviderAndPersistentId(provider.id(), persistentId);
 		AppUser user;
 		if (known.isPresent()) {
@@ -195,7 +199,7 @@ public class InstitutionLoginService {
 			user = known.get().getUser();
 		} else {
 			Optional<AppUser> holder = users.findByFirebaseUid(firebaseUid(provider, persistentId))
-					.map(signedUp -> requireUnlinked(provider, signedUp))
+					.map(signedUp -> requireSignedUpWith(provider, signedUp, email))
 					.or(() -> linkByEmail(provider, identity));
 			if (holder.isEmpty()) {
 				return Optional.empty();
@@ -206,10 +210,22 @@ public class InstitutionLoginService {
 		if (user.getStatus() == UserAccountStatus.REJECTED) {
 			throw noAccess();
 		}
+		// Checked on every login, not only the first: an account promoted later keeps its own sign-in.
+		if (user.has(UserRole.ADMIN) || user.has(UserRole.COORDINATOR)) {
+			throw new ConflictException(Texts.forRequest("error.institutionStaffAccount"));
+		}
 		if (user.getFirebaseUid() == null) {
 			user.setFirebaseUid(firebaseUid(provider, persistentId));
 		}
 		return Optional.of(users.save(user));
+	}
+
+	/** The account signed up after an earlier login here, and still under the address that login vouched for. */
+	private AppUser requireSignedUpWith(InstitutionLoginProvider provider, AppUser signedUp, String email) {
+		if (!email.equalsIgnoreCase(signedUp.getEmail())) {
+			throw new ConflictException(Texts.forRequest("error.institutionEmailTaken"));
+		}
+		return requireUnlinked(provider, signedUp);
 	}
 
 	/**
