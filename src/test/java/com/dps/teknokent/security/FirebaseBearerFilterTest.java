@@ -299,6 +299,10 @@ class FirebaseBearerFilterTest {
                 { "POST", "/api/profile-analyses/preview" },
                 { "GET", "/api/notifications" },
                 { "POST", "/api/notifications/read-all" },
+                { "POST", "/api/assistant/bots" },
+                { "GET", "/api/assistant/transcripts/google_meet/abc-defg-hij" },
+                { "DELETE", "/api/assistant/bots/google_meet/abc-defg-hij" },
+                { "POST", "/api/assistant/bots/google_meet/abc-defg-hij/report" },
                 { "GET", "/api/users/" + USER_ID + "/profile" },
                 { "PUT", "/api/users/" + USER_ID + "/profile" } }) {
             MockFilterChain chain = new MockFilterChain();

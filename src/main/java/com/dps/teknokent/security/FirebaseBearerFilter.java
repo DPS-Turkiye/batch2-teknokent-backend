@@ -38,6 +38,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final String PROFILE_PARSE_PATH = "/api/profile-analyses";
 	private static final String PROFILE_PARSE_PREVIEW_PATH = "/api/profile-analyses/preview";
 	private static final String NOTIFICATIONS_PATH = "/api/notifications";
+	/** Acts only for the token's own user on meetings they take part in (see AssistantMeetingAccessService). */
+	private static final String ASSISTANT_PATH_PREFIX = "/api/assistant/";
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
@@ -176,6 +178,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && PROFILE_PARSE_PATH.equals(uri))
 				|| NOTIFICATIONS_PATH.equals(uri)
 				|| uri.startsWith(NOTIFICATIONS_PATH + "/")
+				|| uri.startsWith(ASSISTANT_PATH_PREFIX)
 				|| isOwnMentorProfileUpdate(request, user)
 				|| isOwnUserProfileUpdate(request, user);
 	}

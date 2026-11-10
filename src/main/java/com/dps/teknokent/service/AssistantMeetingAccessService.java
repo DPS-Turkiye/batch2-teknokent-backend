@@ -34,20 +34,22 @@ public class AssistantMeetingAccessService {
 	/**
 	 * @param callerId the signed-in user from a verified bearer token; null when the request came on the shared
 	 *                 service credentials, which name nobody and so are refused
+	 * @return the platform and code as checked, for the provider call that follows
 	 */
 	@Transactional(readOnly = true)
-	public void requireAccess(UUID callerId, String platform, String nativeMeetingId) {
+	public MeetingUrlParser.Parsed requireAccess(UUID callerId, String platform, String nativeMeetingId) {
 		if (callerId == null) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "A signed-in user is required.");
 		}
-		List<Meeting> meetings = meetingsFor(platform, nativeMeetingId);
+		MeetingUrlParser.Parsed parsed = parse(platform, nativeMeetingId);
+		List<Meeting> meetings = parsed == null ? List.of() : meetingsOn(parsed.nativeMeetingId());
 		if (meetings.isEmpty()) {
 			throw new ResourceNotFoundException("Meeting not found.");
 		}
 		AppUser caller = appUserRepository.findById(callerId)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "A signed-in user is required."));
 		if (caller.has(UserRole.ADMIN)) {
-			return;
+			return parsed;
 		}
 		UUID callerOrganizationId = caller.getOrganization() == null ? null : caller.getOrganization().getId();
 		boolean participant = meetings.stream()
@@ -56,15 +58,19 @@ public class AssistantMeetingAccessService {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
 					"Only a participant of this meeting can use its assistant.");
 		}
+		return parsed;
 	}
 
-	private List<Meeting> meetingsFor(String platform, String nativeMeetingId) {
-		var parsed = MeetingUrlParser.tryParse(nativeMeetingId).orElse(null);
+	private static MeetingUrlParser.Parsed parse(String platform, String nativeMeetingId) {
+		MeetingUrlParser.Parsed parsed = MeetingUrlParser.tryParse(nativeMeetingId).orElse(null);
 		if (parsed == null || platform == null
 				|| !parsed.platform().equals(platform.trim().toLowerCase(Locale.ROOT))) {
-			return List.of();
+			return null;
 		}
-		String code = parsed.nativeMeetingId();
+		return parsed;
+	}
+
+	private List<Meeting> meetingsOn(String code) {
 		return meetingRepository.findByMeetLinkContainingIgnoreCase(code).stream()
 				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED)
 				.filter(meeting -> code.equalsIgnoreCase(MeetingRooms.nativeMeetingId(meeting)))

@@ -24,6 +24,14 @@ public final class MeetingUrlParser {
     }
   }
 
+  /**
+   * The link the provider's bot is sent to. Built from the parsed code, not the link as typed, so the bot joins the
+   * meeting the access check ran on even when the host only contains "meet.google.com".
+   */
+  public static String canonicalUrl(Parsed parsed) {
+    return "https://meet.google.com/" + parsed.nativeMeetingId();
+  }
+
   public static Parsed parse(String raw) {
     String input = raw.trim();
     String lower = input.toLowerCase(Locale.ROOT);

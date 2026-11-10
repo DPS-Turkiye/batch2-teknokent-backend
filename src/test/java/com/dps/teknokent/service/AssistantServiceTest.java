@@ -51,6 +51,11 @@ class AssistantServiceTest {
   private static final String URL = "https://meet.google.com/abc-defg-hij";
   private static final UUID CALLER = UUID.randomUUID();
 
+  private void allowed() {
+    when(accessService.requireAccess(CALLER, "google_meet", "abc-defg-hij"))
+        .thenReturn(new MeetingUrlParser.Parsed("google_meet", "abc-defg-hij"));
+  }
+
   private void running(String... nativeIds) {
     when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(
         java.util.Arrays.stream(nativeIds).map(id -> new ProviderRunningBot("google_meet", id, "running")).toList()));
@@ -58,6 +63,7 @@ class AssistantServiceTest {
 
   @Test
   void addAdHocBotSendsTheBotWhileASlotIsFree() {
+    allowed();
     running("aaa-bbbb-ccc");
     when(capacityService.capacity()).thenReturn(2);
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
@@ -68,6 +74,7 @@ class AssistantServiceTest {
 
   @Test
   void addAdHocBotRefusesWhenEverySlotIsTaken() {
+    allowed();
     running("aaa-bbbb-ccc", "ddd-eeee-fff");
     when(capacityService.capacity()).thenReturn(2);
 
@@ -78,6 +85,7 @@ class AssistantServiceTest {
 
   @Test
   void addAdHocBotLeavesTheSlotsOfBookedRecordingsDueWithinTheHour() {
+    allowed();
     running("aaa-bbbb-ccc");
     when(capacityService.capacity()).thenReturn(3);
     when(capacityService.reservedWithinHour(any())).thenReturn(2);
@@ -89,6 +97,7 @@ class AssistantServiceTest {
 
   @Test
   void addAdHocBotLetsTheSameMeetingThroughWhenItsBotIsAlreadyRunning() {
+    allowed();
     running("abc-defg-hij", "ddd-eeee-fff");
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
         .thenReturn(new ProviderBotResponse("bot-1", "requested", "New meeting bot"));
@@ -100,11 +109,23 @@ class AssistantServiceTest {
 
   @Test
   void addAdHocBotRefusesWhenTheRunningBotsAreUnknown() {
+    allowed();
     when(providerClient.getRunningBots()).thenReturn(new ProviderBotStatusResponse(null));
 
     assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
         .isInstanceOf(IllegalStateException.class);
     verify(providerClient, never()).sendBot(any(), any(), any());
+  }
+
+  @Test
+  void addBotSendsTheBotToTheCheckedCodeNotTheLinkAsTyped() {
+    String lookalike = "https://meet.google.com.example.test/abc-defg-hij?x=1";
+    when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
+        .thenReturn(new ProviderBotResponse("bot-1", "joining", "Mentor Bot"));
+
+    assistantService.addBot(new AddBotRequest(lookalike));
+
+    verify(providerClient).sendBot("google_meet", "abc-defg-hij", URL);
   }
 
   @Test
@@ -195,10 +216,11 @@ class AssistantServiceTest {
             new ProviderTranscriptSegment("s1", "Ayşe", "Merhaba", 65.0)
         )));
     when(meetingReportService.generate(any())).thenReturn(report("Original"));
+    when(accessService.requireAccess(CALLER, "Google_Meet", " ABC-DEFG-HIJ "))
+        .thenReturn(new MeetingUrlParser.Parsed("google_meet", "abc-defg-hij"));
 
-    assistantService.generateMeetingReport(CALLER, "google_meet", "abc-defg-hij");
+    assistantService.generateMeetingReport(CALLER, "Google_Meet", " ABC-DEFG-HIJ ");
 
-    verify(accessService).requireAccess(CALLER, "google_meet", "abc-defg-hij");
     verify(meetingReportService).generate(List.of(
         new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "01:05")));
   }

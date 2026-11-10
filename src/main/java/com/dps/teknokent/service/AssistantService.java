@@ -40,8 +40,8 @@ public class AssistantService {
    * is unknown it refuses. Only a participant of a Menton meeting on that link, or an admin, may send one.
    */
   public AddBotResponse addAdHocBot(UUID callerId, AddBotRequest request) {
-    var parsed = MeetingUrlParser.parse(request.meetingUrl());
-    accessService.requireAccess(callerId, parsed.platform(), parsed.nativeMeetingId());
+    var link = MeetingUrlParser.parse(request.meetingUrl());
+    var parsed = accessService.requireAccess(callerId, link.platform(), link.nativeMeetingId());
     Set<String> running = runningBotKeys()
         .orElseThrow(() -> new IllegalStateException("Running bots are unknown"));
     // ponytail: no lock, so two requests at the same moment can both pass, and a meeting booked later does not see
@@ -53,12 +53,13 @@ public class AssistantService {
     return addBot(request);
   }
 
-  public AddBotResponse addBot(AddBotRequest request) {
+  /** Unchecked: for the dispatcher's booked meetings. Callers acting for a user go through addAdHocBot. */
+  AddBotResponse addBot(AddBotRequest request) {
     var parsed = MeetingUrlParser.parse(request.meetingUrl());
     ProviderBotResponse body = providerClient.sendBot(
         parsed.platform(),
         parsed.nativeMeetingId(),
-        request.meetingUrl().trim()
+        MeetingUrlParser.canonicalUrl(parsed)
     );
 
     return new AddBotResponse(
@@ -71,11 +72,11 @@ public class AssistantService {
   }
 
   public TranscriptResponse getTranscript(UUID callerId, String platform, String nativeMeetingId) {
-    accessService.requireAccess(callerId, platform, nativeMeetingId);
-    return getTranscript(platform, nativeMeetingId);
+    var parsed = accessService.requireAccess(callerId, platform, nativeMeetingId);
+    return getTranscript(parsed.platform(), parsed.nativeMeetingId());
   }
 
-  public TranscriptResponse getTranscript(String platform, String nativeMeetingId) {
+  TranscriptResponse getTranscript(String platform, String nativeMeetingId) {
     ProviderTranscriptResponse body =
         providerClient.getTranscript(platform, nativeMeetingId);
 
@@ -108,11 +109,11 @@ public class AssistantService {
   }
 
   public void stopBot(UUID callerId, String platform, String nativeMeetingId) {
-    accessService.requireAccess(callerId, platform, nativeMeetingId);
-    stopBot(platform, nativeMeetingId);
+    var parsed = accessService.requireAccess(callerId, platform, nativeMeetingId);
+    stopBot(parsed.platform(), parsed.nativeMeetingId());
   }
 
-  public void stopBot(String platform, String nativeMeetingId) {
+  void stopBot(String platform, String nativeMeetingId) {
     providerClient.stopBot(platform, nativeMeetingId);
   }
 
@@ -144,12 +145,12 @@ public class AssistantService {
    * is the configured one, so nobody can push their own text or pick a model through our key.
    */
   public MeetingReportResponse generateMeetingReport(UUID callerId, String platform, String nativeMeetingId) {
-    accessService.requireAccess(callerId, platform, nativeMeetingId);
-    return generateMeetingReport(getTranscript(platform, nativeMeetingId).segments());
+    var parsed = accessService.requireAccess(callerId, platform, nativeMeetingId);
+    return generateMeetingReport(getTranscript(parsed.platform(), parsed.nativeMeetingId()).segments());
   }
 
   /** For the watchdog, which has already cleaned the provider's transcript. */
-  public MeetingReportResponse generateMeetingReport(List<TranscriptSegmentResponse> segments) {
+  MeetingReportResponse generateMeetingReport(List<TranscriptSegmentResponse> segments) {
     return meetingReportService.generate(segments);
   }
 

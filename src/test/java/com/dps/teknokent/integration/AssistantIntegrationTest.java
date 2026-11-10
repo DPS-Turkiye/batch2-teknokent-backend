@@ -42,6 +42,8 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.security.AppUserPrincipal;
+import com.dps.teknokent.security.FirebaseIdentity;
+import com.dps.teknokent.security.FirebaseTokenVerifier;
 import com.dps.teknokent.service.MeetingReportService;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -81,6 +83,9 @@ class AssistantIntegrationTest {
 
   @MockitoBean
   private StringRedisTemplate redisTemplate;
+
+  @MockitoBean
+  private FirebaseTokenVerifier firebaseTokenVerifier;
 
   @Autowired
   private AppUserRepository userRepository;
@@ -662,6 +667,29 @@ class AssistantIntegrationTest {
     meeting.setMeetLink(meetLink);
     meeting.setStatus(status);
     return meetingRepository.saveAndFlush(meeting);
+  }
+
+  @Test
+  void aRealFirebaseBearerReachesTheCheckThroughTheFilter() throws Exception {
+    member.setFirebaseUid("member-uid");
+    userRepository.saveAndFlush(member);
+    outsider.setFirebaseUid("outsider-uid");
+    userRepository.saveAndFlush(outsider);
+    when(firebaseTokenVerifier.enabled()).thenReturn(true);
+    when(firebaseTokenVerifier.verify("member-token"))
+        .thenReturn(java.util.Optional.of(new FirebaseIdentity("member-uid", member.getEmail(), true)));
+    when(firebaseTokenVerifier.verify("outsider-token"))
+        .thenReturn(java.util.Optional.of(new FirebaseIdentity("outsider-uid", outsider.getEmail(), true)));
+    when(meetingProviderClient.getTranscript("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderTranscriptResponse(List.of()));
+
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer member-token"))
+        .andExpect(status().isOk());
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer outsider-token"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Only a participant of this meeting can use its assistant."));
   }
 
   private static RequestPostProcessor sharedServiceCredentials() {
