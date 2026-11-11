@@ -210,6 +210,78 @@ class AdminCoordinatorServiceTest {
 		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
 	}
 
+	@Test
+	void aNewProgramInvitesANewEmailWithAMailNamingTheProgramAndTheLinkExpiry() {
+		when(appUserRepository.findByEmailIgnoreCase("yeni@teknokent.org")).thenReturn(Optional.empty());
+		when(loginProvisioner.loginFor("yeni@teknokent.org", "Yeni Kişi")).thenReturn("uid-yeni");
+		when(mailService.link("/login")).thenReturn(LOGIN);
+		when(loginProvisioner.passwordSetupLink("yeni@teknokent.org", LOGIN))
+				.thenReturn(Optional.of("https://auth.example/reset?oobCode=9"));
+
+		AppUser invited = service.coordinatorForNewProgram(" Yeni@Teknokent.ORG ", " Yeni Kişi ", "METU BİGG 2026");
+
+		verify(appUserRepository).save(invited);
+		assertThat(invited.getEmail()).isEqualTo("yeni@teknokent.org");
+		assertThat(invited.getFullName()).isEqualTo("Yeni Kişi");
+		assertThat(invited.getRole()).isEqualTo(UserRole.COORDINATOR);
+		assertThat(invited.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
+		assertThat(invited.getFirebaseUid()).isEqualTo("uid-yeni");
+		ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+		verify(mailService).sendAfterCommit(eq("yeni@teknokent.org"), subject.capture(), body.capture());
+		assertThat(subject.getValue()).contains("METU BİGG 2026");
+		assertThat(body.getValue())
+				.contains("Yeni Kişi", "\"METU BİGG 2026\"", "https://auth.example/reset?oobCode=9",
+						"yalnızca bir kez", "1 saat", "Şifremi unuttum", LOGIN)
+				.doesNotContain("''");
+		verify(notificationService, never()).create(any(), anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aNewProgramInviteStillPointsToTheSignInPageWhenFirebaseGivesNoLink() {
+		when(appUserRepository.findByEmailIgnoreCase("yeni@teknokent.org")).thenReturn(Optional.empty());
+		when(loginProvisioner.loginFor("yeni@teknokent.org", "Yeni Kişi")).thenReturn("uid-yeni");
+		when(mailService.link("/login")).thenReturn(LOGIN);
+		when(loginProvisioner.passwordSetupLink("yeni@teknokent.org", LOGIN)).thenReturn(Optional.empty());
+
+		service.coordinatorForNewProgram("yeni@teknokent.org", "Yeni Kişi", "METU BİGG 2026");
+
+		verify(mailService).sendAfterCommit(eq("yeni@teknokent.org"), anyString(), contains(LOGIN));
+	}
+
+	@Test
+	void aNewProgramTakesAnApprovedCoordinatorsEmailAsThatCoordinatorWithoutAMail() {
+		AppUser existing = user(MENTOR_ID, "ayse@teknokent.org", UserRole.COORDINATOR);
+		when(appUserRepository.findByEmailIgnoreCase("ayse@teknokent.org")).thenReturn(Optional.of(existing));
+
+		assertThat(service.coordinatorForNewProgram("AYSE@teknokent.org", "Başka Ad", "METU BİGG 2026"))
+				.isSameAs(existing);
+		assertThat(existing.getFullName()).isEqualTo("Ayşe Demir");
+		verify(appUserRepository, never()).save(any());
+		verify(loginProvisioner, never()).loginFor(anyString(), anyString());
+		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aNewProgramNeverPromotesOrReactivatesAnExistingAccount() {
+		AppUser mentor = user(MENTOR_ID, "mentor@x.org", UserRole.MENTOR);
+		AppUser mentee = user(UUID.randomUUID(), "mentee@x.org", UserRole.MENTEE);
+		AppUser admin = user(ADMIN_ID, "admin@x.org", UserRole.ADMIN);
+		AppUser deactivated = user(UUID.randomUUID(), "old@x.org", UserRole.COORDINATOR);
+		deactivated.setStatus(UserAccountStatus.REJECTED);
+		for (AppUser account : java.util.List.of(mentor, mentee, admin, deactivated)) {
+			when(appUserRepository.findByEmailIgnoreCase(account.getEmail())).thenReturn(Optional.of(account));
+			UserRole before = account.getRole();
+
+			assertThatThrownBy(() -> service.coordinatorForNewProgram(account.getEmail(), "Ad", "METU BİGG 2026"))
+					.isInstanceOf(InvalidRequestException.class)
+					.hasMessageContaining(account.getEmail());
+			assertThat(account.getRole()).isEqualTo(before);
+		}
+		verify(appUserRepository, never()).save(any());
+		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
+	}
+
 	private void stubAdmin() {
 		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, "arya@admin.tnt", UserRole.ADMIN));
 	}

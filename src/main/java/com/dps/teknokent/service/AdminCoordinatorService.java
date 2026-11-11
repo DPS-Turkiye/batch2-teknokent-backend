@@ -93,6 +93,33 @@ public class AdminCoordinatorService {
 		return toResponse(coordinator, outcome);
 	}
 
+	/**
+	 * A coordinator named by email in the admin's "Yeni Program Oluştur". An approved coordinator is simply returned.
+	 * A new email gets an approved coordinator account and a login now, and after the program commits a mail that
+	 * names the program and carries a password setup link. Any other account is refused: promoting a mentor or
+	 * mentee, or reactivating a coordinator, stays a deliberate step in Koordinatör ekle. The caller has checked
+	 * that the actor is an admin.
+	 */
+	@Transactional
+	public AppUser coordinatorForNewProgram(String email, String fullName, String programName) {
+		String normalized = normalize(email);
+		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(normalized);
+		CoordinatorCandidateStatus status = classify(existing);
+		if (status == CoordinatorCandidateStatus.ALREADY_COORDINATOR && existing.isPresent()) {
+			return existing.get();
+		}
+		if (status != CoordinatorCandidateStatus.NEW) {
+			throw new InvalidRequestException(newProgramRefusal(status, normalized));
+		}
+		AppUser coordinator = newCoordinator(normalized, fullName.trim());
+		coordinator.setFirebaseUid(loginProvisioner.loginFor(normalized, coordinator.getFullName()));
+		coordinator.setRole(UserRole.COORDINATOR);
+		coordinator.setStatus(UserAccountStatus.APPROVED);
+		appUserRepository.save(coordinator);
+		sendProgramInvite(coordinator, programName);
+		return coordinator;
+	}
+
 	/** "Şifre belirleme e-postasını tekrar gönder": a fresh link for a coordinator who lost or never got it. */
 	@Transactional(readOnly = true)
 	public CoordinatorAccountResponse resendPasswordSetup(UUID actorId, UUID coordinatorId) {
@@ -140,6 +167,20 @@ public class AdminCoordinatorService {
 				.orElse(false);
 	}
 
+	/**
+	 * Firebase's reset link works once and expires within about an hour, so the mail says how to get a new one. If
+	 * Firebase gives no link, the mail still goes out with the sign-in page, where "Şifremi unuttum" makes one.
+	 */
+	private void sendProgramInvite(AppUser coordinator, String programName) {
+		String login = mailService.link("/login");
+		String setup = loginProvisioner.passwordSetupLink(coordinator.getEmail(), login).orElse(login);
+		mailService.sendAfterCommit(
+				coordinator.getEmail(),
+				Texts.get(coordinator, "mail.programCoordinatorInvite.subject", programName),
+				Texts.get(coordinator, "mail.programCoordinatorInvite.body",
+						coordinator.getFullName(), programName, setup, login));
+	}
+
 	private CoordinatorCandidateStatus classify(Optional<AppUser> existing) {
 		if (existing.isEmpty()) {
 			return CoordinatorCandidateStatus.NEW;
@@ -167,6 +208,14 @@ public class AdminCoordinatorService {
 			case TEAM_MEMBER -> "A startup team member cannot become a coordinator.";
 			case MENTOR_IN_MENTORSHIP -> "This mentor still has a planned or active mentorship.";
 			default -> "This email cannot become a coordinator.";
+		};
+	}
+
+	private static String newProgramRefusal(CoordinatorCandidateStatus status, String email) {
+		return switch (status) {
+			case ADMIN -> Texts.forRequest("error.programCoordinatorIsAdmin", email);
+			case REACTIVATABLE -> Texts.forRequest("error.programCoordinatorDeactivated", email);
+			default -> Texts.forRequest("error.programCoordinatorHasAccount", email);
 		};
 	}
 

@@ -6,6 +6,7 @@ import com.dps.teknokent.service.ProgramRosterService;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -292,6 +293,29 @@ class CoordinatorProgramControllerTest {
 						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
 								+ "\"coordinatorIds\":[\"00000000-0000-0000-0000-0000000000c2\"]}"))
 				.andExpect(status().isCreated());
+	}
+
+	@Test
+	void aProgramCanStartWithInvitedCoordinatorsWhoseEmailsAreChecked() throws Exception {
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+								+ "\"newCoordinators\":[{\"fullName\":\"Yeni Kişi\",\"email\":\"yeni@teknokent.org\"}]}"))
+				.andExpect(status().isCreated());
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+								+ "\"newCoordinators\":[{\"fullName\":\"Yeni Kişi\",\"email\":\"not-an-email\"}]}"))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+								+ "\"newCoordinators\":[{\"fullName\":\" \",\"email\":\"yeni@teknokent.org\"}]}"))
+				.andExpect(status().isBadRequest());
+		verify(programLaunchService, times(1)).create(eq(SIGNED_IN_ID), any());
 	}
 
 	@Test

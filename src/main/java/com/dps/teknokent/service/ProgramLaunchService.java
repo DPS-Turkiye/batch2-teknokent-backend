@@ -2,8 +2,9 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -23,6 +24,7 @@ import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
+import com.dps.teknokent.dto.requests.NewCoordinatorInput;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamDetailResponse;
@@ -69,6 +71,7 @@ public class ProgramLaunchService {
 	private final PlatformTransactionManager transactionManager;
 	private final ProgramEligibilityService programEligibilityService;
 	private final NotificationService notificationService;
+	private final AdminCoordinatorService adminCoordinatorService;
 
 
 	/** An admin creates every program as a draft (Taslak) with its coordinators; launching is a separate step. */
@@ -109,11 +112,7 @@ public class ProgramLaunchService {
 		}
 		programRepository.save(program);
 
-		for (UUID coordinatorId : new LinkedHashSet<>(request.coordinatorIds())) {
-			AppUser coordinator = appUserRepository.findById(coordinatorId)
-					.filter(user -> user.has(UserRole.COORDINATOR)
-							&& user.getStatus() == UserAccountStatus.APPROVED)
-					.orElseThrow(() -> new InvalidRequestException("Only approved coordinators can run a program."));
+		for (AppUser coordinator : coordinatorsOf(request, program)) {
 			ProgramCoordinator row = new ProgramCoordinator();
 			row.setId(UUID.randomUUID());
 			row.setProgramId(program.getId());
@@ -135,6 +134,40 @@ public class ProgramLaunchService {
 			invite(program, request.teams(), actor.getId());
 		}
 		return programService.detail(actorId, program.getId());
+	}
+
+	/**
+	 * Existing coordinators by id, then the emails the admin typed: an email of an approved coordinator joins as that
+	 * coordinator, a new one is invited (account now, mail after commit). Each person counts once.
+	 */
+	private Collection<AppUser> coordinatorsOf(CreateCoordinatorProgramRequest request, Program program) {
+		List<UUID> ids = request.coordinatorIds() == null ? List.of() : request.coordinatorIds();
+		List<NewCoordinatorInput> invites = request.newCoordinators() == null ? List.of() : request.newCoordinators();
+		if (ids.size() + invites.size() == 0) {
+			throw new InvalidRequestException("A program needs at least one coordinator.");
+		}
+		if (ids.size() + invites.size() > CreateCoordinatorProgramRequest.MAX_COORDINATORS) {
+			throw new InvalidRequestException(
+					"A program starts with at most " + CreateCoordinatorProgramRequest.MAX_COORDINATORS + " coordinators.");
+		}
+		Map<UUID, AppUser> byId = new LinkedHashMap<>();
+		for (UUID coordinatorId : ids) {
+			AppUser coordinator = appUserRepository.findById(coordinatorId)
+					.filter(user -> user.has(UserRole.COORDINATOR)
+							&& user.getStatus() == UserAccountStatus.APPROVED)
+					.orElseThrow(() -> new InvalidRequestException("Only approved coordinators can run a program."));
+			byId.putIfAbsent(coordinator.getId(), coordinator);
+		}
+		Set<String> invitedEmails = new HashSet<>();
+		for (NewCoordinatorInput invite : invites) {
+			if (!invitedEmails.add(invite.email().trim().toLowerCase(Locale.ROOT))) {
+				continue;
+			}
+			AppUser coordinator = adminCoordinatorService.coordinatorForNewProgram(
+					invite.email(), invite.fullName(), program.getName());
+			byId.putIfAbsent(coordinator.getId(), coordinator);
+		}
+		return byId.values();
 	}
 
 	@Transactional(readOnly = true)
