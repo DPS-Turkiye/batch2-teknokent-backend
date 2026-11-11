@@ -53,6 +53,8 @@ class EditionPathFilterTest {
 				"/api/auth/register/mentor",
 				"/api/auth/register/member",
 				"/api/bottlenecks/" + ID,
+				"/api/meetings/" + ID + "/assistant-share",
+				"/api/meetings/" + ID + "/assistant-share/report-upload",
 				"/api/organizations/" + ID + "/bottlenecks",
 				"/api/organizations/" + ID + "/progress");
 	}
@@ -68,6 +70,7 @@ class EditionPathFilterTest {
 				"/api/mentorship-requests",
 				"/api/mentors",
 				"/api/meetings",
+				"/api/meetings/" + ID + "/note",
 				"/api/programs/mine",
 				"/api/organizations/" + ID + "/process",
 				"/api/organizations/" + ID + "/documents",

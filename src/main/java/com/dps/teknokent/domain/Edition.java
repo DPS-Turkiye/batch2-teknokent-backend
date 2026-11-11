@@ -20,6 +20,7 @@ public enum Edition {
 					"/api/auth/register/mentor/**",
 					"/api/auth/register/member/**",
 					"/api/bottlenecks/**",
+					"/api/meetings/*/assistant-share/**",
 					"/api/organizations/*/bottlenecks/**",
 					"/api/organizations/*/progress/**")),
 
