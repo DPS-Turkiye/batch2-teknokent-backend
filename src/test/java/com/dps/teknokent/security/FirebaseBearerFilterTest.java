@@ -168,6 +168,26 @@ class FirebaseBearerFilterTest {
         verify(appUserRepository, never()).save(any());
     }
 
+    // An OTG login is bound to a row only by InstitutionLoginService, which checks which OTG person holds it.
+    @Test
+    void neverHandsARowToAnOtgLoginThatOnlyMatchesByEmail() throws Exception {
+        AppUser user = user(UserAccountStatus.APPROVED);
+        user.setFirebaseUid("firebase-email-login");
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good"))
+                .thenReturn(Optional.of(new FirebaseIdentity("otg_a72ab40d", "ayse@startup.com", true)));
+        when(appUserRepository.findByFirebaseUid("otg_a72ab40d")).thenReturn(Optional.empty());
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request("/api/auth/me", "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chain.getRequest()).isNull();
+        assertThat(user.getFirebaseUid()).isEqualTo("firebase-email-login");
+        verify(appUserRepository, never()).findByEmailIgnoreCase(any());
+    }
+
     // Seeded coordinators are created unverified and bound by uid; the check only guards the email fallback.
     @Test
     void anUnverifiedLoginAlreadyBoundByUidStillSignsIn() throws Exception {

@@ -55,7 +55,7 @@ class FirebaseLoginProvisionerTest {
 		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(notFound);
 		when(firebaseAuth.createCustomToken("odtu_e100001")).thenReturn("custom-token");
 
-		assertThat(provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz Öğrenci"))
+		assertThat(provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz Öğrenci", false))
 				.isEqualTo("custom-token");
 		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
 			Map<String, Object> properties =
@@ -65,12 +65,28 @@ class FirebaseLoginProvisionerTest {
 		}));
 	}
 
+	// OTG vouches for the address and may send no name: the login is born verified, and Firebase is never given a
+	// blank display name, which it refuses.
+	@Test
+	void createsAVerifiedLoginWithoutANameWhenTheProviderVouchesForTheAddress() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUser("otg_a72ab40d")).thenThrow(notFound);
+		when(firebaseAuth.createCustomToken("otg_a72ab40d")).thenReturn("custom-token");
+
+		assertThat(provisioner.customToken("otg_a72ab40d", "ogrenci@ornek.com", null, true)).isEqualTo("custom-token");
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+			Map<String, Object> properties =
+					org.springframework.test.util.ReflectionTestUtils.invokeMethod(request, "getProperties");
+			return Boolean.TRUE.equals(properties.get("emailVerified")) && !properties.containsKey("displayName");
+		}));
+	}
+
 	@Test
 	void reusesAnExistingLoginForTheToken() throws Exception {
 		when(firebaseAuth.getUser("uid-1")).thenReturn(mock(UserRecord.class));
 		when(firebaseAuth.createCustomToken("uid-1")).thenReturn("custom-token");
 
-		assertThat(provisioner.customToken("uid-1", "ayse@metu.edu.tr", "Ayşe")).isEqualTo("custom-token");
+		assertThat(provisioner.customToken("uid-1", "ayse@metu.edu.tr", "Ayşe", true)).isEqualTo("custom-token");
 		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
 	}
 
@@ -81,7 +97,7 @@ class FirebaseLoginProvisionerTest {
 		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(notFound);
 		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(taken);
 
-		assertThatThrownBy(() -> provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz"))
+		assertThatThrownBy(() -> provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz", false))
 				.isInstanceOf(com.dps.teknokent.exception.ConflictException.class);
 		verify(firebaseAuth, never()).createCustomToken(anyString());
 	}

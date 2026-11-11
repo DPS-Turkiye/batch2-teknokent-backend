@@ -99,6 +99,15 @@ app:
   institution-login:
     # Local development only: a persona picker stands in for ODTÜ's login. Never on a shared or production server.
     dev-stub: ${INSTITUTION_LOGIN_DEV_STUB:false}
+  otg-login:
+    # "OTG ile giriş yap" (ODTÜ TEKNOKENT Girişimcilik, OAuth 2.0 + PKCE). Off unless OTG_LOGIN_ENABLED=true; the
+    # secret comes only from the environment.
+    enabled: ${OTG_LOGIN_ENABLED:false}
+    issuer: ${OTG_ISSUER:https://girisimcilik.odtuteknokent.com.tr/auth/v1}
+    userinfo-url: ${OTG_USERINFO_URL:https://girisimcilik.odtuteknokent.com.tr/api/oauth/userinfo}
+    client-id: ${OTG_CLIENT_ID:}
+    client-secret: ${OTG_CLIENT_SECRET:}
+    redirect-uri: ${OTG_REDIRECT_URI:}
   notifications:
     reminders:
       enabled: ${NOTIFICATION_REMINDERS_ENABLED:true}

@@ -76,7 +76,7 @@ class TeamMembershipServiceTest {
 		ProgramStartup link = new ProgramStartup();
 		link.setProgramId(PROGRAM_ID);
 		link.setOrganizationId(current.getId());
-		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(current.getId()))
+		when(programStartupRepository.findByOrganizationIdIn(Set.of(current.getId(), archived.getId())))
 				.thenReturn(List.of(link));
 		Program program = new Program();
 		program.setId(PROGRAM_ID);
