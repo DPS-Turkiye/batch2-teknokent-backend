@@ -32,10 +32,13 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.PersonSummaryResponse;
 import com.dps.teknokent.dto.responses.TeamHistoryResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.PersonSummaryService;
 import com.dps.teknokent.service.TeamMembershipService;
 
 @WebMvcTest(AppUserController.class)
@@ -50,6 +53,9 @@ class AppUserControllerTest {
 
     @MockitoBean
     private TeamMembershipService teamMembershipService;
+
+    @MockitoBean
+    private PersonSummaryService personSummaryService;
 
     @Test
     void requiresAuthenticationForUsersList() throws Exception {
@@ -275,5 +281,42 @@ class AppUserControllerTest {
                                 null, List.of()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
+    }
+
+    @Test
+    void summaryRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/users/{id}/summary", UUID.randomUUID()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void returnsTheSummaryForTheSignedInCallerNotTheRequestedActor() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000803");
+        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+        when(personSummaryService.summary(signedIn, userId)).thenReturn(new PersonSummaryResponse(userId,
+                "Deniz Yıldız", "deniz@example.test", UserRole.MENTOR, UserAccountStatus.APPROVED, "Danışman",
+                null, null, List.of(), null, null, null, List.of()));
+
+        mockMvc.perform(get("/api/users/{id}/summary", userId)
+                        .param("actorId", "00000000-0000-0000-0000-000000000999")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(
+                                new AppUserPrincipal(signedIn, "coordinator@tnt", UserRole.COORDINATOR,
+                                        UserAccountStatus.APPROVED, "uid"),
+                                null, List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
+    }
+
+    @Test
+    void summaryIsNotFoundWhenTheCallerMayNotSeeThePerson() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000804");
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+        when(personSummaryService.summary(actorId, userId))
+                .thenThrow(new ResourceNotFoundException("User not found: " + userId));
+
+        mockMvc.perform(get("/api/users/{id}/summary", userId)
+                        .param("actorId", actorId.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isNotFound());
     }
 }
