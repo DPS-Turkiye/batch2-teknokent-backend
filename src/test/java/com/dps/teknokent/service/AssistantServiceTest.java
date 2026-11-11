@@ -58,6 +58,7 @@ class AssistantServiceTest {
 
   private static final String URL = "https://meet.google.com/abc-defg-hij";
   private static final UUID CALLER = UUID.randomUUID();
+  private static final java.time.Instant REQUESTED_AT = java.time.Instant.parse("2026-11-11T20:03:06Z");
 
   private void allowed() {
     when(accessService.requireAccess(CALLER, "google_meet", "abc-defg-hij"))
@@ -108,7 +109,7 @@ class AssistantServiceTest {
     allowed();
     running("abc-defg-hij", "ddd-eeee-fff");
     when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
-        .thenReturn(new ProviderBotSummary(49L, "google_meet", "abc-defg-hij", "awaiting_admission", null));
+        .thenReturn(new ProviderBotSummary(49L, "google_meet", "abc-defg-hij", "awaiting_admission", null, null));
 
     AddBotResponse response = assistantService.addAdHocBot(CALLER, new AddBotRequest(URL));
 
@@ -135,7 +136,7 @@ class AssistantServiceTest {
     when(capacityService.capacity()).thenReturn(3);
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL)).thenThrow(conflict());
     when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
-        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "joining", null));
+        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "joining", null, null));
 
     assertThat(assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)).id()).isEqualTo("51");
   }
@@ -147,7 +148,7 @@ class AssistantServiceTest {
     when(capacityService.capacity()).thenReturn(3);
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL)).thenThrow(conflict());
     when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
-        .thenReturn(new ProviderBotSummary(50L, "google_meet", "abc-defg-hij", "failed", "stopped"));
+        .thenReturn(new ProviderBotSummary(50L, "google_meet", "abc-defg-hij", "failed", "stopped", null));
 
     assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
         .isInstanceOf(ConflictException.class)
@@ -182,19 +183,20 @@ class AssistantServiceTest {
   void botStateShowsABotWaitingInTheLobbyWithoutAnEndReason() {
     allowed();
     when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
-        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "awaiting_admission", "stale"));
+        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "awaiting_admission", "stale", REQUESTED_AT));
 
     BotStateResponse state = assistantService.botState(CALLER, "google_meet", "abc-defg-hij");
 
     assertThat(state.state()).isEqualTo(MeetingBotState.WAITING_FOR_ADMISSION);
     assertThat(state.endReason()).isNull();
+    assertThat(state.requestedAt()).isEqualTo(REQUESTED_AT);
   }
 
   @Test
   void botStateGivesTheReasonAFailedBotEnded() {
     allowed();
     when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
-        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "failed", "join_failure"));
+        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "failed", "join_failure", null));
 
     BotStateResponse state = assistantService.botState(CALLER, "google_meet", "abc-defg-hij");
 

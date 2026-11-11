@@ -73,7 +73,8 @@ class MeetingProviderClientTest {
             {"meetings":[
               {"id":52,"platform":"google_meet","native_meeting_id":"zzz-zzzz-zzz","status":"active"},
               {"id":51,"platform":"google_meet","native_meeting_id":"abc-defg-hij","status":"failed",
-               "completion_reason":"join_failure","failure_stage":"awaiting_admission"},
+               "completion_reason":"join_failure","failure_stage":"awaiting_admission",
+               "created_at":"2026-11-11T20:03:06.512Z"},
               {"id":49,"platform":"google_meet","native_meeting_id":"abc-defg-hij","status":"failed",
                "completion_reason":"stopped"}
             ],"has_more":false}
@@ -85,6 +86,7 @@ class MeetingProviderClientTest {
     assertThat(latest.id()).isEqualTo(51L);
     assertThat(latest.status()).isEqualTo("failed");
     assertThat(latest.completionReason()).isEqualTo("join_failure");
+    assertThat(latest.createdAt()).isEqualTo(java.time.Instant.parse("2026-11-11T20:03:06.512Z"));
     server.verify();
   }
 

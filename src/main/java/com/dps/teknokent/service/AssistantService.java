@@ -101,7 +101,7 @@ public class AssistantService {
     var parsed = accessService.requireAccess(callerId, platform, nativeMeetingId);
     ProviderBotSummary latest = providerClient.findLatestBot(parsed.platform(), parsed.nativeMeetingId());
     if (latest == null) {
-      return new BotStateResponse(parsed.platform(), parsed.nativeMeetingId(), MeetingBotState.NONE, null);
+      return new BotStateResponse(parsed.platform(), parsed.nativeMeetingId(), MeetingBotState.NONE, null, null);
     }
     MeetingBotState state = MeetingBotState.fromProvider(latest.status());
     boolean ended = state == MeetingBotState.COMPLETED || state == MeetingBotState.FAILED;
@@ -109,7 +109,8 @@ public class AssistantService {
         parsed.platform(),
         parsed.nativeMeetingId(),
         state,
-        ended ? MeetingBotEndReason.fromProvider(latest.completionReason()) : null
+        ended ? MeetingBotEndReason.fromProvider(latest.completionReason()) : null,
+        latest.createdAt()
     );
   }
 

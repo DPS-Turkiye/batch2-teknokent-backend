@@ -243,12 +243,13 @@ class AssistantControllerTest {
   void getBotStateReturnsTheStateAndEndReason() throws Exception {
     when(assistantService.botState(CALLER, "google_meet", "abc-defg-hij"))
         .thenReturn(new BotStateResponse("google_meet", "abc-defg-hij",
-            MeetingBotState.FAILED, MeetingBotEndReason.JOIN_FAILED));
+            MeetingBotState.FAILED, MeetingBotEndReason.JOIN_FAILED, java.time.Instant.parse("2026-11-11T20:03:06Z")));
 
     mockMvc.perform(get("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.state").value("FAILED"))
-        .andExpect(jsonPath("$.endReason").value("JOIN_FAILED"));
+        .andExpect(jsonPath("$.endReason").value("JOIN_FAILED"))
+        .andExpect(jsonPath("$.requestedAt").value("2026-11-11T20:03:06Z"));
   }
 
   @Test
