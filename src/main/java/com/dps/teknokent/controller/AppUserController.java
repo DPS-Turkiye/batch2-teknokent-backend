@@ -20,10 +20,12 @@ import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.requests.RevokeSignInsRequest;
 import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.PersonSummaryResponse;
 import com.dps.teknokent.dto.responses.TeamHistoryResponse;
 import com.dps.teknokent.dto.responses.UserProfileResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.PersonSummaryService;
 import com.dps.teknokent.service.TeamMembershipService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,6 +40,7 @@ public class AppUserController {
 
 	private final AppUserService appUserService;
 	private final TeamMembershipService teamMembershipService;
+	private final PersonSummaryService personSummaryService;
 
 	@GetMapping
 	public List<UserResponse> findAll(
@@ -55,6 +58,12 @@ public class AppUserController {
 	@GetMapping("/{id}/team-history")
 	public TeamHistoryResponse teamHistory(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
 		return teamMembershipService.history(CurrentActor.resolve(actorId), id);
+	}
+
+	/** The profile page summary; for admins and the person's coordinators only, "not found" for anyone else. */
+	@GetMapping("/{id}/summary")
+	public PersonSummaryResponse summary(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return personSummaryService.summary(CurrentActor.resolve(actorId), id);
 	}
 
 	@GetMapping("/{id}/profile")
