@@ -39,16 +39,19 @@ public class AppUserController {
 	private final AppUserService appUserService;
 	private final TeamMembershipService teamMembershipService;
 
+	/** Admins only. */
 	@GetMapping
 	public List<UserResponse> findAll(
 			@RequestParam(required = false) UserRole role,
-			@RequestParam(required = false) UserAccountStatus status) {
-		return appUserService.findAll(role, status);
+			@RequestParam(required = false) UserAccountStatus status,
+			@RequestParam(required = false) UUID actorId) {
+		return appUserService.findAll(CurrentActor.resolve(actorId), role, status);
 	}
 
+	/** The person themself, an admin, or someone related to them; "not found" for anyone else. */
 	@GetMapping("/{id}")
-	public UserResponse findById(@PathVariable UUID id) {
-		return appUserService.findById(id);
+	public UserResponse findById(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return appUserService.findById(CurrentActor.resolve(actorId), id);
 	}
 
 	/** Every startup the person was in; for admins and the person's coordinators only. */
@@ -57,9 +60,10 @@ public class AppUserController {
 		return teamMembershipService.history(CurrentActor.resolve(actorId), id);
 	}
 
+	/** Same audience as {@link #findById}. */
 	@GetMapping("/{id}/profile")
-	public UserProfileResponse profile(@PathVariable UUID id) {
-		return appUserService.findProfile(id);
+	public UserProfileResponse profile(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return appUserService.findProfile(CurrentActor.resolve(actorId), id);
 	}
 
 	@PutMapping("/{id}/profile")

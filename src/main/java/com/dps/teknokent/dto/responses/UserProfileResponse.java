@@ -25,4 +25,11 @@ public record UserProfileResponse(
 				user.getBio(), user.getLinkedinUrl(), List.copyOf(user.getExpertise()),
 				List.copyOf(user.getContactPreferences()));
 	}
+
+	/** Without the phone number and contact preferences, for someone other than the person or an admin. */
+	public static UserProfileResponse withoutContactDetails(AppUser user) {
+		return new UserProfileResponse(
+				user.getId(), user.getFullName(), user.getEmail(), user.getJobTitle(), null,
+				user.getBio(), user.getLinkedinUrl(), List.copyOf(user.getExpertise()), List.of());
+	}
 }

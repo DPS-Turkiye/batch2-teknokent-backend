@@ -51,10 +51,18 @@ public class AppUserService {
 	private final TeamMembershipService teamMembershipService;
 	private final ProgramEligibilityService programEligibilityService;
 	private final MenteeProgramService menteeProgramService;
+	private final PersonAccessService personAccessService;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
 		return findAll(role, null);
+	}
+
+	/** The admin's account list. */
+	@Transactional(readOnly = true)
+	public List<UserResponse> findAll(UUID actorId, UserRole role, UserAccountStatus status) {
+		personAccessService.requireAdmin(actorId);
+		return findAll(role, status);
 	}
 
 	@Transactional(readOnly = true)
@@ -68,9 +76,8 @@ public class AppUserService {
 	}
 
 	@Transactional(readOnly = true)
-	public UserResponse findById(UUID id) {
-		return appUserRepository.findById(id).map(UserResponse::fromEntity)
-				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
+	public UserResponse findById(UUID actorId, UUID id) {
+		return UserResponse.fromEntity(personAccessService.requireVisible(actorId, id));
 	}
 
 	/** The signed-in user for /api/auth/me, with whether their program takes individual students. */
@@ -82,8 +89,11 @@ public class AppUserService {
 	}
 
 	@Transactional(readOnly = true)
-	public UserProfileResponse findProfile(UUID id) {
-		return UserProfileResponse.fromEntity(domainLookupService.requireUser(id));
+	public UserProfileResponse findProfile(UUID actorId, UUID id) {
+		AppUser person = personAccessService.requireVisible(actorId, id);
+		return personAccessService.seesContactDetails(actorId, id)
+				? UserProfileResponse.fromEntity(person)
+				: UserProfileResponse.withoutContactDetails(person);
 	}
 
 	@Transactional

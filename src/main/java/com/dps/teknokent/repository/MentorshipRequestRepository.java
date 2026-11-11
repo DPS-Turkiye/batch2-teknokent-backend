@@ -32,6 +32,11 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 
 	boolean existsByMentorIdAndOrganizationId(UUID mentorId, UUID organizationId);
 
+	boolean existsByMentorIdAndOrganizationIdAndStatusIn(
+			UUID mentorId,
+			UUID organizationId,
+			Collection<MentorshipRequestStatus> statuses);
+
 	List<MentorshipRequest> findByOrganizationIdInAndStatus(
 			Collection<UUID> organizationIds,
 			MentorshipRequestStatus status);
