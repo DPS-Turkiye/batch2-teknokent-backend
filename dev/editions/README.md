@@ -8,9 +8,12 @@ laptop, each with its own database and Redis, so nothing crosses between them.
 |---|---|---|
 | Backend | http://localhost:8080 | http://localhost:8090 |
 | Postgres / Redis (host ports) | 5435 / 6381 | 5434 / 6380 |
-| Frontend | http://localhost:3000 | http://localhost:3100 |
+| Frontend | http://localhost:3000 | http://127.0.0.1:3100 |
 | Sign-in | your usual accounts | the persona picker at `/login/odtu/dev` |
 | Compose project | `menton-teknokent` | `menton-odtu` |
+
+Open the ODTU frontend on `127.0.0.1`, not `localhost`: cookies are kept per host, not per port, so on one host
+the two editions would overwrite each other's session cookie.
 
 Neither stack touches your usual `docker compose up` stack (project `teamtnt`, ports 8080/5433/6379): stop its
 `app` first if it holds :8080.
@@ -38,7 +41,7 @@ ln -s "$PWD/node_modules" ../odtu-frontend/node_modules
 cp .env ../odtu-frontend/.env
 ```
 
-In `../odtu-frontend/.env` set `APP_EDITION=ODTU`, `APP_URL=http://localhost:3100`,
+In `../odtu-frontend/.env` set `APP_EDITION=ODTU`, `APP_URL=http://127.0.0.1:3100`,
 `BACKEND_URL` and `NEXT_PUBLIC_BACKEND_URL` to `http://localhost:8090`,
 `NEXT_PUBLIC_REALTIME_URL=ws://localhost:8090/ws`, `NEXT_PUBLIC_ODTU_DEV_LOGIN=true`, and a new
 `SESSION_PASSWORD`. Then:
