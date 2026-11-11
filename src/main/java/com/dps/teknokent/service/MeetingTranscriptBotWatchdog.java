@@ -191,7 +191,11 @@ public class MeetingTranscriptBotWatchdog {
 		} catch (RuntimeException error) {
 			log.warn("Could not store the transcript for {}: {}", nativeMeetingId, error.getMessage());
 		}
-		if (segments.isEmpty() || !aiFeatures.isEnabled(AiFeature.MEETING_REPORT)) {
+		if (segments.isEmpty()) {
+			return;
+		}
+		if (!aiFeatures.isEnabled(AiFeature.MEETING_REPORT)) {
+			log.debug("Meeting reports are switched off; kept only the transcript for {}", nativeMeetingId);
 			return;
 		}
 		try {

@@ -15,6 +15,7 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.JsonUtils;
 import com.dps.teknokent.util.ProgramCalendar;
@@ -24,6 +25,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class AiProviderClient {
 
 	private final JsonUtils jsonUtils;
+	// Checked again here, at the only place that talks to the provider, so a caller that forgets its own check
+	// still sends nothing for a switched-off feature.
+	private final AiFeatures aiFeatures;
 	private final HttpClient httpClient;
 
 	@Value("${ai.provider:openai}")
@@ -49,12 +53,14 @@ public class AiProviderClient {
 	@Value("${ai.openrouter.app-name:TeamTNT Spring Backend}")
 	private String openRouterAppName;
 
-	public AiProviderClient(JsonUtils jsonUtils) {
+	public AiProviderClient(JsonUtils jsonUtils, AiFeatures aiFeatures) {
 		this.jsonUtils = jsonUtils;
+		this.aiFeatures = aiFeatures;
 		this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
 	}
 
 	public JsonNode structuredProfile(String profileType, String redactedDocumentText, JsonNode schema) {
+		aiFeatures.require(AiFeature.PROFILE_PARSING);
 		String instructions = """
 			Extract a structured profile from the supplied PDF text.
 			- Extract only information supported by the source; never invent facts.
@@ -75,6 +81,7 @@ public class AiProviderClient {
 	 */
 	public JsonNode syllabusPhases(String redactedDocumentText, LocalDate programStart, LocalDate programEnd,
 			JsonNode schema) {
+		aiFeatures.require(AiFeature.SYLLABUS);
 		Integer totalWeeks = ProgramCalendar.totalWeeks(programStart, programEnd);
 		String instructions = """
 			Extract the program phases (stages, modules, periods) from the supplied syllabus text, in order.
@@ -131,6 +138,7 @@ public class AiProviderClient {
 	}
 
 	public JsonNode generateMeetingReport(String transcriptText, JsonNode schema) {
+		aiFeatures.require(AiFeature.MEETING_REPORT);
 		String model = reportModel();
 		String schemaJson = jsonUtils.writeValue(schema);
 		String instructions = """
@@ -152,6 +160,7 @@ public class AiProviderClient {
 
 	/** Corrects speech-to-text lines ("id<TAB>text") in the language the meeting was held in. */
 	public JsonNode cleanTranscript(String transcriptLines, JsonNode schema) {
+		aiFeatures.require(AiFeature.MEETING_REPORT);
 		String instructions = """
 			You correct speech-to-text output from a mentorship meeting.
 			- Each input line is "<id><TAB><text>". Work out the language of the meeting from the whole transcript.
@@ -168,6 +177,7 @@ public class AiProviderClient {
 
 	/** Picks, for each open task of someone who left a team, the remaining member best placed to take it over. */
 	public JsonNode taskHandover(String teamAndTasks, JsonNode schema) {
+		aiFeatures.require(AiFeature.TASK_HANDOVER);
 		String instructions = """
 			You hand over the open tasks of someone who left a startup team to the members who stay.
 			- The input lists the remaining members (id, job title, how many open tasks they already have, and
@@ -306,6 +316,7 @@ public class AiProviderClient {
 	}
 
 	public List<List<Double>> embeddings(List<String> texts) {
+		aiFeatures.require(AiFeature.MATCHING);
 		if (texts.isEmpty()) return List.of();
 		JsonNode response = post(baseUrl() + "/embeddings", Map.of("model", embeddingModel(), "input", texts));
 		JsonNode data = response.path("data");
