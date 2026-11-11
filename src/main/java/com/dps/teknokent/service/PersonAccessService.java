@@ -38,11 +38,12 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Who may read a person's account and profile (e-mail, phone, bio). Anyone may read their own, even while
- * pending; otherwise the caller must be approved and an admin, or share something the app already shows them the
- * person through: the same startup, a mentorship request or mentorship between the person's startup and a mentor,
- * a program both take part in, or a program one of them coordinates. Coordinators are scoped like the admin
- * profile summary: startup-mentoring programs they run, never through their own pool invites, and never other
- * staff. Everyone else gets "not found", so the endpoints do not confirm who exists. Phone numbers and contact
+ * pending; otherwise the caller must be approved and an admin, a teammate (same startup), a mentor with a live
+ * request or a mentorship with the person's startup (either way round), the coordinator of a program the person is
+ * in, or a member of a program the person runs (the program page links its coordinator). Taking part in the same
+ * program is not enough: admins and coordinators open everyone else's profile from their own dashboards.
+ * Coordinators are scoped like the admin profile summary: startup-mentoring programs they run, never through their
+ * own pool invites, and never other staff. Everyone else gets "not found", so the endpoints do not confirm who exists. Phone numbers and contact
  * preferences stay with the person and admins: no screen shows them to anyone else.
  */
 @Service
@@ -101,12 +102,7 @@ public class PersonAccessService {
 				|| mentorOf(actor, person) || mentorOf(person, actor)) {
 			return true;
 		}
-		Set<UUID> actorPrograms = memberPrograms(actor);
-		Set<UUID> personPrograms = memberPrograms(person);
-		if (actorPrograms.stream().anyMatch(personPrograms::contains)) {
-			return true;
-		}
-		return coordinatesProgramOf(actor, person) || coordinatesAnyOf(person, actorPrograms);
+		return coordinatesProgramOf(actor, person) || coordinatesAnyOf(person, memberPrograms(actor));
 	}
 
 	private static boolean sameStartup(AppUser actor, AppUser person) {

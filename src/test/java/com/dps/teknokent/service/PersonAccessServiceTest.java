@@ -212,7 +212,7 @@ class PersonAccessServiceTest {
 	}
 
 	@Test
-	void aMenteeInTheSameProgramSeesThem() {
+	void membersOfDifferentStartupsInTheSameProgramCannotOpenEachOther() {
 		Program program = program(ProgramType.STARTUP_MENTORING, UUID.randomUUID());
 		linkStartup(program, startup);
 		AppUser other = user(UserRole.MENTEE, UserAccountStatus.APPROVED);
@@ -220,17 +220,18 @@ class PersonAccessServiceTest {
 		other.setOrganization(otherStartup);
 		linkStartup(program, otherStartup);
 
-		assertThat(service.requireVisible(other.getId(), person.getId())).isSameAs(person);
+		assertHidden(other, person);
+		assertHidden(person, other);
 	}
 
 	@Test
-	void anAcceptedPoolMentorOfTheirProgramSeesThem() {
+	void anAcceptedPoolMentorWithoutARequestOrMentorshipCannotOpenThem() {
 		Program program = program(ProgramType.STARTUP_MENTORING, UUID.randomUUID());
 		linkStartup(program, startup);
 		AppUser mentor = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
 		pool(program, mentor, ProgramMentorStatus.ACCEPTED, ProgramMentorInvitedBy.COORDINATOR);
 
-		assertThat(service.requireVisible(mentor.getId(), person.getId())).isSameAs(person);
+		assertHidden(mentor, person);
 	}
 
 	@Test
@@ -345,6 +346,16 @@ class PersonAccessServiceTest {
 	}
 
 	@Test
+	void aPoolMentorSeesTheCoordinatorOfTheirProgram() {
+		AppUser coordinator = user(UserRole.COORDINATOR, UserAccountStatus.APPROVED);
+		Program program = program(ProgramType.STARTUP_MENTORING, coordinator.getId());
+		AppUser mentor = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
+		pool(program, mentor, ProgramMentorStatus.ACCEPTED, ProgramMentorInvitedBy.COORDINATOR);
+
+		assertThat(service.requireVisible(mentor.getId(), coordinator.getId())).isSameAs(coordinator);
+	}
+
+	@Test
 	void aMemberCannotOpenTheCoordinatorOfAnotherProgram() {
 		AppUser coordinator = user(UserRole.COORDINATOR, UserAccountStatus.APPROVED);
 		program(ProgramType.STARTUP_MENTORING, coordinator.getId());
@@ -385,14 +396,14 @@ class PersonAccessServiceTest {
 	}
 
 	@Test
-	void sharingTheirOwnProgramCounts() {
+	void sharingAnIndividualProgramDoesNotCount() {
 		Program program = program(ProgramType.PEER_MENTORING, UUID.randomUUID());
 		person.setOrganization(null);
 		person.setProgramId(program.getId());
 		AppUser other = user(UserRole.MENTEE, UserAccountStatus.APPROVED);
 		other.setProgramId(program.getId());
 
-		assertThat(service.requireVisible(other.getId(), person.getId())).isSameAs(person);
+		assertHidden(other, person);
 	}
 
 	@Test
