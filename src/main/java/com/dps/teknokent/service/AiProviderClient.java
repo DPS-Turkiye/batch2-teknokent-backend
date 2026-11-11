@@ -87,9 +87,11 @@ public class AiProviderClient {
 			- title: the week's own name or theme as written (for example "Keşfetmeye Başla"); when the week has no
 			  name, its main session title. At most 100 characters.
 			- topics: what is taught: the session or training titles, then speakers as one line starting
-			  "Konuşmacı: ", then recommended reading or watching as lines starting "Kitap: " or "Film: ".
-			- activities: what participants attend or do together: workshops as lines starting "Workshop: ", visits
-			  and trips as lines starting "Ziyaret: ", with any date or place the source gives.
+			  "Konuşmacı: ", then every recommended book or film as its own line starting "Kitap: " or "Film: ".
+			- activities: what participants attend or do together: every workshop cell as a line starting
+			  "Workshop: " (even when it only names who runs it), visits and trips as lines starting "Ziyaret: ",
+			  with any date or place the source gives.
+			- Keep every non-empty cell of a week row in one of these lists; drop nothing the row says.
 			- deliverables: the tasks participants must complete or hand in that week, one per line.
 			- Lines are short (at most 150 characters), at most 6 per list, and an empty list when the source has
 			  nothing. Leave out empty placeholders such as "–".
