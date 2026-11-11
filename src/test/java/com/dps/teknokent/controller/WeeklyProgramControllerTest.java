@@ -122,9 +122,23 @@ class WeeklyProgramControllerTest {
 	}
 
 	@Test
-	void anUnconfirmedReplaceIsAConflict() throws Exception {
+	void aSaveWithoutWeeksIsRefusedSoItCannotWipeThePlan() throws Exception {
+		mockMvc.perform(put("/api/coordinator/programs/{id}/weekly-program", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"documentId": "%s", "weeks": [],
+								 "phases": [{"name": "A", "expectedOutput": null, "firstWeek": 1, "lastWeek": 3}],
+								 "seenPhaseCount": 0, "seenWeekCount": 0, "keepPast": true}
+								""".formatted(DOCUMENT_ID)))
+				.andExpect(status().isBadRequest());
+		verifyNoInteractions(weeklyProgramService);
+	}
+
+	@Test
+	void aPlanThatChangedSinceTheReadIsAConflict() throws Exception {
 		when(weeklyProgramService.save(eq(SIGNED_IN_ID), eq(PROGRAM_ID), any(SaveWeeklyProgramRequest.class)))
-				.thenThrow(new ConflictException("The program already has a plan; confirm replacing it."));
+				.thenThrow(new ConflictException("The program's plan changed since the file was read; read it again."));
 
 		mockMvc.perform(put("/api/coordinator/programs/{id}/weekly-program", PROGRAM_ID)
 						.with(authentication(signedIn()))
@@ -139,7 +153,7 @@ class WeeklyProgramControllerTest {
 				 "weeks": [{"week": 1, "title": "Yola Çık", "topics": [], "activities": [], "deliverables": [],
 				            "inferred": false}],
 				 "phases": [{"name": "%s", "expectedOutput": null, "firstWeek": %d, "lastWeek": %d}],
-				 "replaceExisting": false, "keepPast": true}
+				 "seenPhaseCount": 0, "seenWeekCount": 0, "keepPast": true}
 				""".formatted(DOCUMENT_ID, phaseName, firstWeek, lastWeek);
 	}
 

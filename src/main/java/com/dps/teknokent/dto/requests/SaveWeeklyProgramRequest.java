@@ -14,16 +14,17 @@ import jakarta.validation.constraints.Size;
 
 /**
  * The reviewed weekly program, saved in one step: the weeks, the phases as week ranges (their dates come from the
- * program calendar) and the file they were read from. {@code replaceExisting} must be true when the program already
- * has phases or weeks. With {@code keepPast}, a running program keeps its saved weeks before the current one and
- * its completed phases.
+ * program calendar) and the file they were read from. {@code seenPhaseCount} and {@code seenWeekCount} are the
+ * plan the coordinator was shown when the file was read; a plan that changed since is not overwritten. With
+ * {@code keepPast}, a running program keeps its saved weeks before the current one and its completed phases.
  */
 public record SaveWeeklyProgramRequest(
 		UUID actorId,
 		@NotNull UUID documentId,
-		@NotNull @Size(max = 104) List<@Valid @NotNull WeekInput> weeks,
+		@NotNull @Size(min = 1, max = 104) List<@Valid @NotNull WeekInput> weeks,
 		@NotNull @Size(max = 12) List<@Valid @NotNull PhaseInput> phases,
-		boolean replaceExisting,
+		@Min(0) int seenPhaseCount,
+		@Min(0) int seenWeekCount,
 		boolean keepPast) {
 
 	public record PhaseInput(

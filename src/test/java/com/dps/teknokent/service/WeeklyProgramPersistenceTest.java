@@ -92,14 +92,14 @@ class WeeklyProgramPersistenceTest {
 
 	@Test
 	void savingTwiceReplacesThePlanAndShowsTheFileOnTheProgram() {
-		save(List.of(week(1, "Eski"), week(2, "Eski 2")), List.of(new PhaseInput("Eski faz", null, 1, 2)), false);
+		save(List.of(week(1, "Eski"), week(2, "Eski 2")), List.of(new PhaseInput("Eski faz", null, 1, 2)), 0, 0);
 		entityManager.flush();
 
 		WeeklyProgramSavedResponse saved = save(
 				List.of(week(1, "Yola Çık"), week(2, "Problemi Anla"), week(3, "Saha Gezisi")),
 				List.of(new PhaseInput("Problemi Keşfet", "Problem tanımı", 1, 3),
 						new PhaseInput("Fikir ve Değer", null, 4, 10)),
-				true);
+				1, 2);
 		entityManager.flush();
 		entityManager.clear();
 
@@ -114,9 +114,10 @@ class WeeklyProgramPersistenceTest {
 		assertThat(saved.program().syllabus().kind()).isEqualTo(DocumentKind.WEEKLY_PROGRAM.value());
 	}
 
-	private WeeklyProgramSavedResponse save(List<WeekInput> weeks, List<PhaseInput> phases, boolean replace) {
+	private WeeklyProgramSavedResponse save(List<WeekInput> weeks, List<PhaseInput> phases, int seenPhases,
+			int seenWeeks) {
 		return weeklyProgramService.save(coordinator.getId(), program.getId(),
-				new SaveWeeklyProgramRequest(null, file.getId(), weeks, phases, replace, true));
+				new SaveWeeklyProgramRequest(null, file.getId(), weeks, phases, seenPhases, seenWeeks, true));
 	}
 
 	private static WeekInput week(int number, String title) {

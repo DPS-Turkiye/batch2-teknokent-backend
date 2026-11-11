@@ -1,6 +1,7 @@
 package com.dps.teknokent.filter;
 
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,6 +36,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 	private static final String CV_PARSE_PATH = "/api/profile-analyses";
 	private static final String CV_PREVIEW_PATH = CV_PARSE_PATH + "/preview";
 	private static final String SYLLABUS_PARSE_PATH = "/api/coordinator/programs/syllabus/phases";
+	private static final UrlPathHelper URL_PATH_HELPER = new UrlPathHelper();
 	private static final Pattern WEEKLY_PROGRAM_READ_PATH =
 			Pattern.compile("/api/coordinator/programs/[^/]+/weekly-program/read");
 
@@ -72,7 +74,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 	}
 
 	private static boolean isCvParse(HttpServletRequest request) {
-		String path = request.getRequestURI();
+		// Decoded, as the router sees it: "/weekly-program/%72ead" must not slip past the tight budget.
+		String path = URL_PATH_HELPER.getPathWithinApplication(request);
 		return "POST".equalsIgnoreCase(request.getMethod())
 				&& (CV_PARSE_PATH.equals(path)
 						|| CV_PREVIEW_PATH.equals(path)

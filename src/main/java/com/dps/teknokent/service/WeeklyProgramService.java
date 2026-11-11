@@ -97,8 +97,8 @@ public class WeeklyProgramService {
 		requireOrderedPhases(request.phases(), totalWeeks);
 		List<ProgramPhase> savedPhases = programPhaseRepository.findByProgramIdOrderByPositionAsc(programId);
 		List<ProgramWeek> savedWeeks = programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId);
-		if ((!savedPhases.isEmpty() || !savedWeeks.isEmpty()) && !request.replaceExisting()) {
-			throw new ConflictException("The program already has a plan; confirm replacing it.");
+		if (savedPhases.size() != request.seenPhaseCount() || savedWeeks.size() != request.seenWeekCount()) {
+			throw new ConflictException("The program's plan changed since the file was read; read it again.");
 		}
 		LocalDate today = today();
 		LocalDate start = program.getStartDate();
@@ -109,7 +109,10 @@ public class WeeklyProgramService {
 						ProgramCalendar.weekEnd(start, end, phase.lastWeek()), phase.expectedOutput()))
 				.toList();
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = request.weeks();
-		Integer currentWeek = ProgramCalendar.currentWeek(start, end, today);
+		// After the end every week is past, so the last one is kept as well.
+		Integer currentWeek = today.isAfter(end)
+				? Integer.valueOf(totalWeeks + 1)
+				: ProgramCalendar.currentWeek(start, end, today);
 		if (request.keepPast() && currentWeek != null) {
 			phases = keepCompletedPhases(savedPhases, phases, today);
 			weeks = keepPastWeeks(savedWeeks, weeks, currentWeek);
@@ -214,8 +217,8 @@ public class WeeklyProgramService {
 
 	/**
 	 * The AI's answer on the program calendar. Week numbers win over printed dates (a printed date only places a
-	 * week that has no number, and one that falls outside its week is flagged); weeks past the program, repeated
-	 * or without a title are dropped and flagged.
+	 * week that has no number, and one that falls outside its week is flagged); weeks past the program or without a
+	 * title are dropped and flagged, and a repeated week keeps its first entry.
 	 */
 	static WeeklyProgramProposalResponse proposalOf(JsonNode result, LocalDate start, LocalDate end, int totalWeeks,
 			List<WeeklyProgramProposalResponse.Warning> warnings, int pageCount) {
@@ -225,7 +228,7 @@ public class WeeklyProgramService {
 		Set<Integer> datesDiffer = new LinkedHashSet<>();
 		for (JsonNode node : result.path("weeks")) {
 			LocalDate printed = dateOf(node.path("source_date"));
-			boolean numbered = node.path("week").isIntegralNumber() && node.path("week").canConvertToInt();
+			boolean numbered = isWeekNumber(node.path("week"));
 			Integer number = numbered ? node.path("week").asInt() : null;
 			if (number == null && printed != null && !printed.isBefore(start)) {
 				number = (int) (ChronoUnit.DAYS.between(start, printed) / 7) + 1;
@@ -234,7 +237,10 @@ public class WeeklyProgramService {
 			if (number == null) {
 				continue;
 			}
-			if (number < 1 || number > totalWeeks || title == null || weeks.containsKey(number)) {
+			if (weeks.containsKey(number)) {
+				continue;
+			}
+			if (number < 1 || number > totalWeeks || title == null) {
 				dropped.add(number);
 				continue;
 			}
@@ -269,8 +275,7 @@ public class WeeklyProgramService {
 		List<WeeklyProgramPhases.Range> ranges = new ArrayList<>();
 		for (JsonNode node : result.path("phases")) {
 			String name = cut(node.path("name").asText(""), MAX_PHASE_NAME_LENGTH);
-			if (name == null || !node.path("first_week").isIntegralNumber()
-					|| !node.path("last_week").isIntegralNumber()) {
+			if (name == null || !isWeekNumber(node.path("first_week")) || !isWeekNumber(node.path("last_week"))) {
 				continue;
 			}
 			int first = node.path("first_week").asInt();
@@ -282,6 +287,10 @@ public class WeeklyProgramService {
 					MAX_LINE_LENGTH), first, last));
 		}
 		return ranges;
+	}
+
+	private static boolean isWeekNumber(JsonNode node) {
+		return node.isIntegralNumber() && node.canConvertToInt();
 	}
 
 	private static void addWarning(List<WeeklyProgramProposalResponse.Warning> warnings, WeeklyProgramWarning code,

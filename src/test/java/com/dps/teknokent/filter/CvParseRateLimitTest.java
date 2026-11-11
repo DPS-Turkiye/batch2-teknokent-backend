@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -112,6 +113,14 @@ class CvParseRateLimitTest {
 		mockMvc.perform(weeklyProgramRead().with(authentication(coordinator)))
 				.andExpect(status().isTooManyRequests())
 				.andExpect(header().exists("X-Rate-Limit-Retry-After-Seconds"));
+		// An encoded letter reaches the same endpoint, so it spends the same budget.
+		// A URI, not a template: a template would encode the "%" again.
+		mockMvc.perform(post(URI.create("/api/coordinator/programs/" + UUID.randomUUID() + "/weekly-program/%72ead"))
+						.contentType("application/json")
+						.content("{\"documentId\": \"" + UUID.randomUUID() + "\"}")
+						.header("X-Forwarded-For", OFFICE_IP)
+						.with(authentication(coordinator)))
+				.andExpect(status().isTooManyRequests());
 	}
 
 	private void spendCvBudget(Authentication caller) throws Exception {

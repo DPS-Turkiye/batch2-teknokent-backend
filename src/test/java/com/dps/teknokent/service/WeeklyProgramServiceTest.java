@@ -132,7 +132,7 @@ class WeeklyProgramServiceTest {
 	}
 
 	@Test
-	void weeksPastTheProgramOrRepeatedAreDroppedAndFlagged() {
+	void weeksPastTheProgramAreDroppedAndFlaggedAndARepeatedWeekKeepsItsFirstEntry() {
 		JsonNode answer = json("""
 				{"weeks": [
 				  %s,
@@ -151,7 +151,7 @@ class WeeklyProgramServiceTest {
 				.containsExactly("Tanışma", "Yalnızca tarihli");
 		assertThat(proposal.weeks().get(1).inferred()).as("placed by its date, not its number").isTrue();
 		assertThat(proposal.warnings()).containsExactly(
-				new WeeklyProgramProposalResponse.Warning(WeeklyProgramWarning.WEEKS_DROPPED, List.of(1, 12)),
+				new WeeklyProgramProposalResponse.Warning(WeeklyProgramWarning.WEEKS_DROPPED, List.of(12)),
 				new WeeklyProgramProposalResponse.Warning(WeeklyProgramWarning.PHASES_REBUILT, List.of()));
 		assertThat(proposal.phases()).extracting(WeeklyProgramProposalResponse.Phase::name).containsExactly("Problem");
 	}
@@ -245,7 +245,7 @@ class WeeklyProgramServiceTest {
 
 		service.save(COORDINATOR_ID, PROGRAM_ID, new SaveWeeklyProgramRequest(null, DOCUMENT_ID, weeks, List.of(
 				new SaveWeeklyProgramRequest.PhaseInput(" Problem ", "Problem tanımı", 1, 3),
-				new SaveWeeklyProgramRequest.PhaseInput("Fikir", null, 4, 11)), false, false));
+				new SaveWeeklyProgramRequest.PhaseInput("Fikir", null, 4, 11)), 0, 0, false));
 
 		verify(coordinatorProgramService).writePhases(PROGRAM_ID, List.of(
 				new ReplaceProgramPhasesRequest.PhaseInput("Problem", START, LocalDate.of(2026, 11, 16),
@@ -256,13 +256,13 @@ class WeeklyProgramServiceTest {
 	}
 
 	@Test
-	void anExistingPlanIsOnlyReplacedWhenTheCoordinatorConfirms() {
+	void aPlanThatChangedSinceTheReadIsNotOverwritten() {
 		editing();
 		when(programPhaseRepository.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of(new ProgramPhase()));
 		when(programWeekRepository.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of());
 
 		assertThatThrownBy(() -> service.save(COORDINATOR_ID, PROGRAM_ID, new SaveWeeklyProgramRequest(null,
-				DOCUMENT_ID, List.of(weekInput(1, "Tanışma")), List.of(), false, true)))
+				DOCUMENT_ID, List.of(weekInput(1, "Tanışma")), List.of(), 0, 0, true)))
 				.isInstanceOf(ConflictException.class);
 		verify(coordinatorProgramService, never()).writePhases(any(), any());
 		verify(programWeekPlanService, never()).writeWeeks(any(), any(), any());
@@ -273,9 +273,9 @@ class WeeklyProgramServiceTest {
 		editing();
 		SaveWeeklyProgramRequest overlapping = new SaveWeeklyProgramRequest(null, DOCUMENT_ID, List.of(), List.of(
 				new SaveWeeklyProgramRequest.PhaseInput("A", null, 1, 3),
-				new SaveWeeklyProgramRequest.PhaseInput("B", null, 3, 4)), true, true);
+				new SaveWeeklyProgramRequest.PhaseInput("B", null, 3, 4)), 0, 0, true);
 		SaveWeeklyProgramRequest pastTheEnd = new SaveWeeklyProgramRequest(null, DOCUMENT_ID, List.of(), List.of(
-				new SaveWeeklyProgramRequest.PhaseInput("A", null, 1, 12)), true, true);
+				new SaveWeeklyProgramRequest.PhaseInput("A", null, 1, 12)), 0, 0, true);
 
 		assertThatThrownBy(() -> service.save(COORDINATOR_ID, PROGRAM_ID, overlapping))
 				.isInstanceOf(InvalidRequestException.class);
@@ -299,7 +299,7 @@ class WeeklyProgramServiceTest {
 		service.save(COORDINATOR_ID, PROGRAM_ID, new SaveWeeklyProgramRequest(null, DOCUMENT_ID,
 				List.of(weekInput(1, "Yeni 1"), weekInput(3, "Yeni 3"), weekInput(4, "Yeni 4")), List.of(
 						new SaveWeeklyProgramRequest.PhaseInput("Problem", null, 1, 4),
-						new SaveWeeklyProgramRequest.PhaseInput("Pazar", null, 5, 6)), true, true));
+						new SaveWeeklyProgramRequest.PhaseInput("Pazar", null, 5, 6)), 1, 3, true));
 
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReplaceProgramPhasesRequest.PhaseInput>> phases = ArgumentCaptor.forClass(List.class);
@@ -312,6 +312,27 @@ class WeeklyProgramServiceTest {
 		verify(programWeekPlanService).writeWeeks(eq(program), eq(COORDINATOR_ID), weeks.capture());
 		assertThat(weeks.getValue()).extracting(ReplaceProgramWeeksRequest.WeekInput::title)
 				.containsExactly("Eski 1", "Eski 2", "Yeni 3", "Yeni 4");
+	}
+
+	@Test
+	void anEndedProgramKeepsEveryPastWeekIncludingTheLast() {
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		program.setStartDate(today.minusDays(70));
+		program.setEndDate(today.minusDays(8));
+		editing();
+		when(storedDocumentRepository.findById(DOCUMENT_ID)).thenReturn(Optional.of(weeklyProgram(COORDINATOR_ID)));
+		when(programPhaseRepository.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of());
+		when(programWeekRepository.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of(
+				savedWeek(1, "Eski 1"), savedWeek(9, "Eski 9")));
+
+		service.save(COORDINATOR_ID, PROGRAM_ID, new SaveWeeklyProgramRequest(null, DOCUMENT_ID,
+				List.of(weekInput(9, "Yeni 9")), List.of(), 0, 2, true));
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<ReplaceProgramWeeksRequest.WeekInput>> weeks = ArgumentCaptor.forClass(List.class);
+		verify(programWeekPlanService).writeWeeks(eq(program), eq(COORDINATOR_ID), weeks.capture());
+		assertThat(weeks.getValue()).extracting(ReplaceProgramWeeksRequest.WeekInput::title)
+				.containsExactly("Eski 1", "Eski 9");
 	}
 
 	@Test
