@@ -10,7 +10,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,25 +38,24 @@ class MeetingReportServiceTest {
 
   @Test
   void masksContactDetailsBeforeSendingTheTranscriptToTheAiProvider() {
-    when(aiProviderClient.resolveReportModel(null)).thenReturn("openai/gpt-4o-mini");
-    when(aiProviderClient.generateMeetingReport(any(), any(), eq(null)))
+    when(aiProviderClient.resolveReportModel()).thenReturn("openai/gpt-4o-mini");
+    when(aiProviderClient.generateMeetingReport(any(), any()))
         .thenReturn(jsonUtils.readTree("{\"title\":\"Sprint\",\"summary\":\"Ozet\"}"));
 
     service().generate(
-        List.of(new TranscriptSegmentResponse("s1", "Ayşe", "Bana ada@example.com adresinden yaz", "00:10")),
-        null);
+        List.of(new TranscriptSegmentResponse("s1", "Ayşe", "Bana ada@example.com adresinden yaz", "00:10")));
 
     ArgumentCaptor<String> transcript = ArgumentCaptor.forClass(String.class);
-    verify(aiProviderClient).generateMeetingReport(transcript.capture(), any(), eq(null));
+    verify(aiProviderClient).generateMeetingReport(transcript.capture(), any());
     assertThat(transcript.getValue()).doesNotContain("ada@example.com");
     assertThat(transcript.getValue()).contains("Ayşe", "adresinden yaz");
   }
 
   @Test
   void rejectsEmptyTranscriptWithoutCallingTheAiProvider() {
-    assertThatThrownBy(() -> service().generate(List.of(), null))
+    assertThatThrownBy(() -> service().generate(List.of()))
         .isInstanceOf(InvalidRequestException.class);
 
-    verify(aiProviderClient, never()).generateMeetingReport(any(), any(), any());
+    verify(aiProviderClient, never()).generateMeetingReport(any(), any());
   }
 }
