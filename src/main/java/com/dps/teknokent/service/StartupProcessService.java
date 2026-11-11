@@ -125,8 +125,11 @@ public class StartupProcessService {
 				: startupRoundRepository.findByIdAndOrganizationId(request.roundId(), organizationId)
 						.orElseThrow(() -> new ResourceNotFoundException("Round not found: " + request.roundId()));
 		StartupStage stage = request.stage() != null ? request.stage() : round == null ? null : round.getStage();
+		// An Ödev made inside a round belongs where the round does, whether the round names its phase or is
+		// placed by its start.
 		UUID phaseId = request.phaseId() != null ? requirePhaseOf(organization, request.phaseId())
-				: round == null ? null : round.getProgramPhaseId();
+				: round == null ? null
+						: linkedOrCovering(round.getProgramPhaseId(), round.getStartsOn(), phasesOf(organization));
 
 		ActionItem item = new ActionItem();
 		item.setOrganization(organization);
@@ -160,7 +163,7 @@ public class StartupProcessService {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		requireTeamOrEditor(organization, request.actorId());
 		ActionItem item = actionItemRepository.findByIdAndOrganizationId(assignmentId, organizationId)
-				.filter(ActionItem::isProcessAssignment)
+				.filter(StartupProcessService::isAssignment)
 				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
 		StoredDocument document = storedDocumentRepository.findById(request.documentId())
 				.orElseThrow(() -> new ResourceNotFoundException("Document not found: " + request.documentId()));
@@ -178,7 +181,7 @@ public class StartupProcessService {
 		List<StartupRound> rounds = startupRoundRepository.findByOrganizationIdOrderByStartsOnDesc(organization.getId());
 		List<ActionItem> assignments = actionItemRepository
 				.findByOrganizationIdOrderByCreatedAtDesc(organization.getId()).stream()
-				.filter(ActionItem::isProcessAssignment)
+				.filter(StartupProcessService::isAssignment)
 				.toList()
 				.reversed();
 		Map<UUID, String> filenames = submissionFilenames(assignments);
@@ -202,6 +205,14 @@ public class StartupProcessService {
 						.findFirst()
 						.orElse(null),
 				cards);
+	}
+
+	/**
+	 * A Süreç Ödev. The stage check covers rows an older backend wrote while V103 was being rolled out; it goes
+	 * with the stage column.
+	 */
+	static boolean isAssignment(ActionItem item) {
+		return item.isProcessAssignment() || item.getStage() != null;
 	}
 
 	/** The phases of the team's program, in order; none without a program. */

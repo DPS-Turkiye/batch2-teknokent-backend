@@ -2,6 +2,9 @@
 -- round may name the phase it belongs to; one that names none is placed by its date when Süreç is read, and lands
 -- under "Fazsız görevler" when no phase covers that date. `process_assignment` now marks a Süreç assignment
 -- (it used to be "stage is set"). The StartupStage columns stay for one more release and are dropped after that.
+-- Fail fast instead of queueing the app behind a long-held lock during the deploy; the migration can be retried.
+SET LOCAL lock_timeout = '5s';
+
 ALTER TABLE action_item ADD COLUMN process_assignment BOOLEAN NOT NULL DEFAULT FALSE;
 UPDATE action_item SET process_assignment = TRUE WHERE stage IS NOT NULL;
 
@@ -9,8 +12,9 @@ ALTER TABLE action_item ADD COLUMN program_phase_id UUID REFERENCES program_phas
 ALTER TABLE startup_round ADD COLUMN program_phase_id UUID REFERENCES program_phase (id) ON DELETE SET NULL;
 ALTER TABLE startup_round ALTER COLUMN stage DROP NOT NULL;
 
-CREATE INDEX idx_action_item_program_phase ON action_item (program_phase_id);
-CREATE INDEX idx_startup_round_program_phase ON startup_round (program_phase_id);
+-- For the ON DELETE SET NULL lookups when a phase is removed; most rows have no phase.
+CREATE INDEX idx_action_item_program_phase ON action_item (program_phase_id) WHERE program_phase_id IS NOT NULL;
+CREATE INDEX idx_startup_round_program_phase ON startup_round (program_phase_id) WHERE program_phase_id IS NOT NULL;
 
 -- Backfill: each existing assignment and round is linked to the phase of its startup's program that covers its
 -- date (an assignment's due date, else the day it was made; a round's start). The startup's program is resolved as
@@ -23,7 +27,7 @@ WITH organization_program AS (
                 ELSE COALESCE(o.active_program_id,
                               (SELECT ps.program_id FROM program_startup ps
                                WHERE ps.organization_id = o.id
-                               ORDER BY ps.created_at DESC
+                               ORDER BY ps.created_at DESC, ps.id DESC
                                LIMIT 1))
            END AS program_id
     FROM organization o
@@ -51,7 +55,7 @@ WITH organization_program AS (
                 ELSE COALESCE(o.active_program_id,
                               (SELECT ps.program_id FROM program_startup ps
                                WHERE ps.organization_id = o.id
-                               ORDER BY ps.created_at DESC
+                               ORDER BY ps.created_at DESC, ps.id DESC
                                LIMIT 1))
            END AS program_id
     FROM organization o

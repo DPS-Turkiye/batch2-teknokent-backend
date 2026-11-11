@@ -374,6 +374,34 @@ class StartupProcessServiceTest {
     }
 
     @Test
+    void createAssignment_inADatePlacedRoundTakesThePhaseTheRoundFallsIn() {
+        Organization organization = startup();
+        ProgramPhase august = phase("Çözüm", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31));
+        StartupRound round = round("MVP test turu", LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 31));
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(startupRoundRepository.findByIdAndOrganizationId(round.getId(), ORG_ID)).thenReturn(Optional.of(round));
+        when(menteeProgramService.programOf(organization)).thenReturn(Optional.of(PROGRAM_ID));
+        when(programPhaseRepository.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of(august));
+        ArgumentCaptor<ActionItem> saved = ArgumentCaptor.forClass(ActionItem.class);
+
+        startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
+                FOUNDER_ID, round.getId(), null, "Kullanıcı testi", null, null, null));
+
+        verify(actionItemRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getProgramPhaseId()).isEqualTo(august.getId());
+    }
+
+    @Test
+    void isAssignment_alsoCountsARowAnOlderBackendWroteWithOnlyAStage() {
+        ActionItem older = assignment("Eski sürümden", StartupStage.MVP);
+        older.setProcessAssignment(false);
+
+        assertThat(StartupProcessService.isAssignment(older)).isTrue();
+        assertThat(StartupProcessService.isAssignment(assignment("Sıradan görev", null))).isFalse();
+    }
+
+    @Test
     void phaseCards_followTheDates() {
         List<ProgramPhase> phases = List.of(
                 phase("Problem", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)),
