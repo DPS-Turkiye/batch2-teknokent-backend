@@ -93,6 +93,9 @@ ai:
     app-name: ${OPENROUTER_APP_NAME:TeamTNT Spring Backend}
 
 app:
+  # Which deployment this is: TEKNOKENT (startup mentoring, the default) or ODTU (office hours + İŞKUR). Each
+  # edition answers 404 for the other one's endpoints and accepts only its own program types.
+  edition: ${APP_EDITION:TEKNOKENT}
   firebase:
     project-id: ${FIREBASE_PROJECT_ID:}
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}

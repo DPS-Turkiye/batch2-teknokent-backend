@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,6 +31,8 @@ import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.entity.OrganizationPendingMember;
 import com.dps.teknokent.dto.requests.OnboardingTeamMemberRequest;
 import com.dps.teknokent.domain.ContactPreference;
+import com.dps.teknokent.domain.Edition;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.StartupMaturity;
 import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.StartupSector;
@@ -167,6 +171,9 @@ class RegistrationServiceTest {
     @Mock
     private ProgramEligibilityService programEligibilityService;
 
+    @Spy
+    private EditionService editionService = new EditionService("TEKNOKENT");
+
     @InjectMocks
     private RegistrationService registrationService;
 
@@ -241,6 +248,63 @@ class RegistrationServiceTest {
         assertThat(result.individualMentee()).isTrue();
         verify(programEligibilityService).requirePerson(PROGRAM_ID, "e1@metu.edu.tr");
         verifyNoInteractions(pendingMemberRepository);
+    }
+
+    @Test
+    void registerFounder_inTheOdtuEditionTakesAStudentIntoAPeerProgram() {
+        doReturn(Edition.ODTU).when(editionService).current();
+        Program peer = new Program();
+        peer.setId(PROGRAM_ID);
+        peer.setProgramType(ProgramType.PEER_MENTORING);
+        peer.setIndividualMentees(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(peer));
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+
+        var result = registrationService.registerFounder(new RegisterFounderRequest(
+                "Ali Veli", "e1@metu.edu.tr", null, null, null, null, PROGRAM_ID, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null));
+
+        assertThat(result.individualMentee()).isTrue();
+    }
+
+    @Test
+    void registerFounder_inTheTeknokentEditionTreatsAPeerProgramAsMissing() {
+        Program peer = new Program();
+        peer.setId(PROGRAM_ID);
+        peer.setProgramType(ProgramType.PEER_MENTORING);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(peer));
+
+        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+                "Ali Veli", "e1@metu.edu.tr", null, null, null, null, PROGRAM_ID, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("does not exist");
+        verify(appUserRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(programEligibilityService);
+    }
+
+    @Test
+    void registerFounder_inTheOdtuEditionTreatsAStartupProgramAsMissing() {
+        doReturn(Edition.ODTU).when(editionService).current();
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, PROGRAM_ID, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("does not exist");
+        verify(organizationRepository, never()).saveAndFlush(any());
     }
 
     @Test
