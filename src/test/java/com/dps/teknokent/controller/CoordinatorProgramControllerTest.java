@@ -6,6 +6,7 @@ import com.dps.teknokent.service.ProgramRosterService;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -43,6 +44,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ExtractSyllabusPhasesRequest;
+import com.dps.teknokent.dto.requests.NewCoordinatorInput;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
@@ -187,6 +189,28 @@ class CoordinatorProgramControllerTest {
 				.andExpect(status().isNoContent());
 
 		verify(coordinatorProgramService).deleteEvent(SIGNED_IN_ID, PROGRAM_ID, eventId);
+	}
+
+	@Test
+	void addsACoordinatorByIdOrInvitesOneByEmailButNeverBoth() throws Exception {
+		mockMvc.perform(post("/api/coordinator/programs/{id}/coordinators", PROGRAM_ID)
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"invite\":{\"fullName\":\"Yeni Kişi\",\"email\":\"yeni@x.org\"}}"))
+				.andExpect(status().isOk());
+		verify(programCoordinatorService).invite(SIGNED_IN_ID, PROGRAM_ID,
+				new NewCoordinatorInput("Yeni Kişi", "yeni@x.org"));
+
+		for (String body : List.of("{}",
+				"{\"userId\":\"" + UUID.randomUUID() + "\",\"invite\":{\"fullName\":\"Y\",\"email\":\"y@x.org\"}}",
+				"{\"invite\":{\"fullName\":\"Y\",\"email\":\"not-an-email\"}}")) {
+			mockMvc.perform(post("/api/coordinator/programs/{id}/coordinators", PROGRAM_ID)
+							.with(authentication(signedIn()))
+							.contentType(MediaType.APPLICATION_JSON)
+							.content(body))
+					.andExpect(status().isBadRequest());
+		}
+		verify(programCoordinatorService, never()).add(any(), any(), any());
 	}
 
 	@Test
