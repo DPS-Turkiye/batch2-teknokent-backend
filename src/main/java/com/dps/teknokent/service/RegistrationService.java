@@ -28,6 +28,7 @@ import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
@@ -38,6 +39,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.util.InviteCodeGenerator;
+import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -45,6 +47,7 @@ import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
@@ -70,19 +73,25 @@ public class RegistrationService {
 	private final TeamMembershipService teamMembershipService;
 	private final NotificationService notificationService;
 	private final EmailDomainPolicy emailDomainPolicy;
+	private final ProgramEligibilityService programEligibilityService;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
 		String email = requireUniqueEmail(request.email());
-		if (Boolean.TRUE.equals(request.startupLater())) {
+		programEligibilityService.requirePerson(request.programId(), email);
+		boolean individual = isIndividualProgram(request.programId());
+		if (!individual && Boolean.TRUE.equals(request.startupLater())) {
 			return registerWithoutStartup(request, email);
 		}
-		if (TextUtils.normalizeOptional(request.organizationName()) == null) {
+		// In an individual-mentee program (İŞKUR) each student is a team of one, named after them, so requests,
+		// matching and meetings work unchanged without the student creating a startup.
+		String organizationName = individual ? request.fullName() : request.organizationName();
+		if (TextUtils.normalizeOptional(organizationName) == null) {
 			throw new InvalidRequestException("The startup name is required.");
 		}
 
 		Organization organization = new Organization();
-		organization.setName(TextUtils.trim(request.organizationName()));
+		organization.setName(TextUtils.trim(organizationName));
 		organization.setDescription(TextUtils.normalizeOptional(request.description()));
 		applyStartupFields(organization, request);
 		organizationRepository.saveAndFlush(organization);
@@ -98,10 +107,17 @@ public class RegistrationService {
 		attachDeclaredProgram(organization, request.programId());
 		organizationRepository.saveAndFlush(organization);
 		teamMembershipService.joined(founder, organization);
-		savePendingMembers(organization, request.teamMembers());
+		if (!individual) {
+			savePendingMembers(organization, request.teamMembers());
+		}
 		discardOnboardingDraft();
 
-		return UserResponse.fromEntity(founder);
+		return UserResponse.fromEntity(founder, individual);
+	}
+
+	private boolean isIndividualProgram(UUID programId) {
+		return programId != null
+				&& programRepository.findById(programId).map(Program::isIndividualMentees).orElse(false);
 	}
 
 	/**
@@ -130,6 +146,7 @@ public class RegistrationService {
 				.findByProgramIdAndOrganizationId(person.getProgramId(), organization.getId()).isEmpty()) {
 			throw new InvalidRequestException(Texts.forRequest("error.startupCodeOtherProgram"));
 		}
+		programEligibilityService.requireTeamMember(organization.getId(), person.getEmail());
 		person.setOrganization(organization);
 		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), person.getEmail());
 		AppUser joined = appUserRepository.save(person);
@@ -165,7 +182,7 @@ public class RegistrationService {
 
 	private AppUser requireWithoutStartup(UUID actorId) {
 		AppUser person = domainLookupService.requireUser(actorId);
-		if (person.getRole() != UserRole.MENTEE || person.getStatus() != UserAccountStatus.APPROVED
+		if (!person.has(UserRole.MENTEE) || person.getStatus() != UserAccountStatus.APPROVED
 				|| person.getOrganization() != null) {
 			throw new InvalidRequestException(Texts.forRequest("error.withoutStartupOnly"));
 		}
@@ -182,6 +199,8 @@ public class RegistrationService {
 			throw new InvalidRequestException(
 					"This code is for the team's lead; members can use it once the lead has joined.");
 		}
+		requireLaunched(invite.getProgramId());
+		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		Organization organization = new Organization();
 		organization.setName(invite.getTeamName());
 		organization.setInviteCode(invite.getCode());
@@ -275,11 +294,18 @@ public class RegistrationService {
 		organization.setActiveProgramId(programId);
 	}
 
+	private void requireLaunched(UUID programId) {
+		programRepository.findById(programId).ifPresent(ProgramDrafts::requireLaunched);
+	}
+
 	private void requireProgram(UUID programId) {
 		if (programId == null) {
 			throw new InvalidRequestException("A program is required.");
 		}
-		if (!programRepository.existsById(programId)) {
+		boolean open = programRepository.findById(programId)
+				.filter(program -> program.getStatus() != ProgramStatus.DRAFT)
+				.isPresent();
+		if (!open) {
 			throw new InvalidRequestException("The selected program does not exist.");
 		}
 	}
@@ -292,7 +318,7 @@ public class RegistrationService {
 				UserAccountStatus.PENDING, null);
 		applyFirebaseIdentity(mentor, email);
 		appUserRepository.saveAndFlush(mentor);
-		mentorProfileRepository.save(newMentorProfile(mentor));
+		mentorProfileRepository.save(MentorProfile.blankFor(mentor, mentorProfileRepository.findMaxSortOrder() + 1));
 		programInvite.ifPresent(invite -> joinProgramPool(invite, mentor));
 		return UserResponse.fromEntity(mentor);
 	}
@@ -311,6 +337,8 @@ public class RegistrationService {
 		if (!invite.getEmail().equalsIgnoreCase(email)) {
 			throw new InvalidRequestException(Texts.forRequest("error.programInviteWrongEmail"));
 		}
+		requireLaunched(invite.getProgramId());
+		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		return Optional.of(invite);
 	}
 
@@ -329,30 +357,6 @@ public class RegistrationService {
 		programMentorInviteRepository.save(invite);
 	}
 
-	/**
-	 * Onboarding updates a profile rather than creating one, so the row has to exist
-	 * from registration. The presentation labels it does not collect start empty and
-	 * are filled in later from the mentor profile screen.
-	 */
-	private MentorProfile newMentorProfile(AppUser mentor) {
-		MentorProfile profile = new MentorProfile();
-		profile.setUser(mentor);
-		profile.setInitials(TextUtils.initials(mentor.getFullName()));
-		profile.setProfessionalTitle(TextUtils.nullToEmpty(mentor.getJobTitle()));
-		profile.setCompany("");
-		profile.setAvailabilityLabel("");
-		profile.setResponseTimeLabel("");
-		profile.setMeetingMode("");
-		profile.setCommunicationPreference("");
-		profile.setMentoringStyle("");
-		profile.setFitLabel("");
-		profile.setExperienceLevel("");
-		profile.setSectorExperience("");
-		profile.setStartupStages("");
-		profile.setSortOrder(mentorProfileRepository.findMaxSortOrder() + 1);
-		return profile;
-	}
-
 	@Transactional
 	public UserResponse registerMember(RegisterMemberRequest request) {
 		String email = requireUniqueEmail(request.email());
@@ -364,6 +368,7 @@ public class RegistrationService {
 		}
 		Organization organization = organizationRepository.findByInviteCode(inviteCode)
 				.orElseThrow(() -> new InvalidRequestException("Invalid invite code."));
+		programEligibilityService.requireTeamMember(organization.getId(), email);
 
 		AppUser member = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
 				UserAccountStatus.APPROVED, organization);
@@ -394,6 +399,10 @@ public class RegistrationService {
 		}
 		if (!email.equalsIgnoreCase(identity.email())) {
 			throw new InvalidRequestException("Email does not match the signed-in account.");
+		}
+		// Team claims, program invites and startup codes trust the address as proof of who is joining.
+		if (!identity.emailVerified()) {
+			throw new InvalidRequestException("Verify your email address before registering.");
 		}
 		if (appUserRepository.findByFirebaseUid(identity.uid()).isPresent()) {
 			throw new InvalidRequestException("This account is already registered.");

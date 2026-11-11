@@ -50,16 +50,26 @@ public class AppUserService {
 	private final LoginProvisioner loginProvisioner;
 	private final TeamMembershipService teamMembershipService;
 	private final EmailDomainPolicy emailDomainPolicy;
+	private final ProgramEligibilityService programEligibilityService;
+	private final MenteeProgramService menteeProgramService;
+	private final PersonAccessService personAccessService;
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role) {
 		return findAll(role, null);
 	}
 
+	/** The admin's account list. */
+	@Transactional(readOnly = true)
+	public List<UserResponse> findAll(UUID actorId, UserRole role, UserAccountStatus status) {
+		personAccessService.requireAdmin(actorId);
+		return findAll(role, status);
+	}
+
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role, UserAccountStatus status) {
 		return appUserRepository.findAll().stream()
-				.filter(user -> role == null || user.getRole() == role)
+				.filter(user -> role == null || user.has(role))
 				.filter(user -> status == null || user.getStatus() == status)
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
 				.map(UserResponse::fromEntity)
@@ -67,14 +77,24 @@ public class AppUserService {
 	}
 
 	@Transactional(readOnly = true)
-	public UserResponse findById(UUID id) {
-		return appUserRepository.findById(id).map(UserResponse::fromEntity)
+	public UserResponse findById(UUID actorId, UUID id) {
+		return UserResponse.fromEntity(personAccessService.requireVisible(actorId, id));
+	}
+
+	/** The signed-in user for /api/auth/me, with whether their program takes individual students. */
+	@Transactional(readOnly = true)
+	public UserResponse findSignedIn(UUID id) {
+		return appUserRepository.findById(id)
+				.map(user -> UserResponse.fromEntity(user, menteeProgramService.inIndividualProgram(user)))
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
 	}
 
 	@Transactional(readOnly = true)
-	public UserProfileResponse findProfile(UUID id) {
-		return UserProfileResponse.fromEntity(domainLookupService.requireUser(id));
+	public UserProfileResponse findProfile(UUID actorId, UUID id) {
+		AppUser person = personAccessService.requireVisible(actorId, id);
+		return personAccessService.seesContactDetails(actorId, id)
+				? UserProfileResponse.fromEntity(person)
+				: UserProfileResponse.withoutContactDetails(person);
 	}
 
 	@Transactional
@@ -133,7 +153,7 @@ public class AppUserService {
 	public List<OrganizationPendingMemberResponse> findPendingMembers(UUID organizationId, UUID actorId) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		AppUser actor = domainLookupService.requireUser(actorId);
-		boolean staff = actor.getRole() == UserRole.ADMIN || actor.getRole() == UserRole.COORDINATOR;
+		boolean staff = actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR);
 		boolean teammate = actor.getOrganization() != null
 				&& actor.getOrganization().getId().equals(organization.getId());
 		if (!staff && !teammate) {
@@ -159,11 +179,16 @@ public class AppUserService {
 	public OrganizationMemberResponse addOrganizationMember(
 			UUID organizationId, CreateOrganizationMemberRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
+		// The new row is APPROVED and waits for whoever signs up with that address, so only the founder decides.
+		if (!isFounder(organization, request.actorId())) {
+			throw new InvalidRequestException("Only the organization founder can add team members");
+		}
 		String email = TextUtils.trim(request.email());
 		emailDomainPolicy.requireAllowed(email);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
 			throw new InvalidRequestException("A user with this email already exists.");
 		}
+		programEligibilityService.requireTeamMember(organizationId, email);
 
 		AppUser member = new AppUser();
 		member.setFullName(TextUtils.trim(request.fullName()));
@@ -192,7 +217,7 @@ public class AppUserService {
 	@Transactional
 	public AccountDecisionResponse decideStatus(UUID userId, DecideAccountStatusRequest request) {
 		AppUser actor = domainLookupService.requireUser(request.actorId());
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can decide account status");
 		}
 		return decide(domainLookupService.requireUser(userId), request.status());
@@ -236,13 +261,11 @@ public class AppUserService {
 	 */
 	public UserResponse revokeSignIns(UUID userId, UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can end someone's sign-ins");
 		}
 		AppUser target = domainLookupService.requireUser(userId);
-		if (target.getFirebaseUid() != null) {
-			loginProvisioner.revokeSignIns(target.getFirebaseUid());
-		}
+		loginProvisioner.revokeSignIns(target.getEmail());
 		Instant revokedAt = Instant.now();
 		appUserRepository.recordSignInsRevokedAt(target.getId(), revokedAt);
 		target.setSignInsRevokedAt(revokedAt);

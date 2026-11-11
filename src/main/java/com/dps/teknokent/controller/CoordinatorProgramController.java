@@ -27,7 +27,9 @@ import com.dps.teknokent.dto.requests.InviteProgramMentorRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.SetProgramArchivedRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
+import com.dps.teknokent.dto.requests.AddProgramEligibleEmailsRequest;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
+import com.dps.teknokent.dto.responses.ProgramEligibleEmailResponse;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.MentorPoolResponse;
 import com.dps.teknokent.dto.responses.ProgramApprovalsResponse;
@@ -40,6 +42,7 @@ import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.CoordinatorProgramService;
 import com.dps.teknokent.service.MentorPoolService;
 import com.dps.teknokent.service.ProgramApprovalService;
+import com.dps.teknokent.service.ProgramRosterService;
 import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
 import com.dps.teknokent.service.ProgramMatchingService;
@@ -62,6 +65,7 @@ public class CoordinatorProgramController {
 	private final ProgramMatchingService programMatchingService;
 	private final SyllabusPhaseService syllabusPhaseService;
 	private final ProgramApprovalService programApprovalService;
+	private final ProgramRosterService programRosterService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -110,6 +114,29 @@ public class CoordinatorProgramController {
 		return coordinatorProgramService.createEvent(CurrentActor.resolve(request.actorId()), id, request);
 	}
 
+	/** The list of addresses allowed into a roster-only program (İŞKUR). */
+	@GetMapping("/{id}/eligible-emails")
+	public List<ProgramEligibleEmailResponse> eligibleEmails(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return programRosterService.list(CurrentActor.resolve(actorId), id);
+	}
+
+	@PostMapping("/{id}/eligible-emails")
+	public List<ProgramEligibleEmailResponse> addEligibleEmails(
+			@PathVariable UUID id,
+			@Valid @RequestBody AddProgramEligibleEmailsRequest request) {
+		return programRosterService.add(CurrentActor.resolve(request.actorId()), id, request);
+	}
+
+	@DeleteMapping("/{id}/eligible-emails/{entryId}")
+	public List<ProgramEligibleEmailResponse> removeEligibleEmail(
+			@PathVariable UUID id,
+			@PathVariable UUID entryId,
+			@RequestParam(required = false) UUID actorId) {
+		return programRosterService.remove(CurrentActor.resolve(actorId), id, entryId);
+	}
+
 	@DeleteMapping("/{id}/events/{eventId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteEvent(
@@ -155,11 +182,19 @@ public class CoordinatorProgramController {
 		return programCoordinatorService.remove(CurrentActor.resolve(actorId), id, userId);
 	}
 
-	/** The "Yeni program" wizard: basic info, rules and teams with their leads, in one request. */
+	/** The admin's "Yeni Program Oluştur": type, basic info and coordinators; the program starts as a draft. */
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public CoordinatorProgramResponse.Detail create(@Valid @RequestBody CreateCoordinatorProgramRequest request) {
 		return programLaunchService.create(CurrentActor.resolve(request.actorId()), request);
+	}
+
+	/** Taslak → Aktif, admin only. */
+	@PostMapping("/{id}/launch")
+	public CoordinatorProgramResponse.Detail launch(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return coordinatorProgramService.launch(CurrentActor.resolve(actorId), id);
 	}
 
 	@GetMapping("/{id}/teams")

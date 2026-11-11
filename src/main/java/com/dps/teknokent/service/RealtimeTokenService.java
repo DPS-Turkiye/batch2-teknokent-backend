@@ -22,7 +22,8 @@ public class RealtimeTokenService {
 	private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
 	private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
 
-	public record RealtimeIdentity(UUID userId, UUID organizationId) {
+	/** {@code signedInAt} is null for a token issued without one (a frontend from before it was sent). */
+	public record RealtimeIdentity(UUID userId, UUID organizationId, Instant signedInAt) {
 	}
 
 	@Value("${app.realtime.token-secret:}")
@@ -30,9 +31,10 @@ public class RealtimeTokenService {
 	@Value("${app.realtime.token-ttl-seconds:60}")
 	private long tokenTtlSeconds;
 
-	public RealtimeTokenResponse issue(UUID userId, UUID organizationId) {
+	public RealtimeTokenResponse issue(UUID userId, UUID organizationId, Instant signedInAt) {
 		Instant expiresAt = Instant.now().plusSeconds(tokenTtlSeconds);
-		String payload = userId + ":" + organizationId + ":" + expiresAt.getEpochSecond();
+		String payload = userId + ":" + organizationId + ":" + expiresAt.getEpochSecond()
+				+ (signedInAt == null ? "" : ":" + signedInAt.toEpochMilli());
 		String token = ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + "." + sign(payload);
 		return new RealtimeTokenResponse(token, expiresAt);
 	}
@@ -61,14 +63,15 @@ public class RealtimeTokenService {
 		}
 
 		String[] parts = payload.split(":");
-		if (parts.length != 3) {
+		if (parts.length != 3 && parts.length != 4) {
 			return null;
 		}
 		try {
 			if (Instant.ofEpochSecond(Long.parseLong(parts[2])).isBefore(Instant.now())) {
 				return null;
 			}
-			return new RealtimeIdentity(UUID.fromString(parts[0]), UUID.fromString(parts[1]));
+			Instant signedInAt = parts.length == 4 ? Instant.ofEpochMilli(Long.parseLong(parts[3])) : null;
+			return new RealtimeIdentity(UUID.fromString(parts[0]), UUID.fromString(parts[1]), signedInAt);
 		} catch (IllegalArgumentException error) {
 			return null;
 		}

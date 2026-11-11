@@ -7,13 +7,18 @@ import java.util.UUID;
 
 import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 
-/** A program as its coordinator sees it: the list card, and with {@link Detail} the overview tab. */
+/**
+ * A program as its coordinator sees it: the list card, and with {@link Detail} the overview tab. The detail's
+ * {@code pendingApprovalCount} is the Onaylar tab's badge.
+ */
 public record CoordinatorProgramResponse(
 		UUID id,
 		String name,
 		ProgramStatus status,
 		ProgramLifecycle lifecycle,
+		ProgramType type,
 		String description,
 		LocalDate startDate,
 		LocalDate endDate,
@@ -41,7 +46,8 @@ public record CoordinatorProgramResponse(
 			MentorDistribution mentors,
 			List<CoordinatorRef> coordinators,
 			int missingNoteMeetings,
-			Syllabus syllabus) {
+			Syllabus syllabus,
+			int pendingApprovalCount) {
 	}
 
 	/** The syllabus file the phases were taken from; null when there is none. */
@@ -59,7 +65,10 @@ public record CoordinatorProgramResponse(
 			boolean autoMatchSuggestions,
 			int defaultMentorCapacity,
 			int communicationGapDays,
-			int bottleneckFlagDays) {
+			int bottleneckFlagDays,
+			String eligibleEmailDomain,
+			boolean rosterOnly,
+			boolean individualMentees) {
 	}
 
 	/** Active mentorships by how recently the team met its mentor; see CoordinatorProgramService#classify. */

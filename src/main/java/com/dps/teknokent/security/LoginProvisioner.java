@@ -28,6 +28,18 @@ public interface LoginProvisioner {
 	/** Whether each login has a password yet; a uid Firebase cannot answer for is left out. */
 	Map<String, Boolean> passwordsSet(Collection<String> uids);
 
-	/** Ends every Firebase sign-in of {@code uid}: its tokens stop working and it must sign in again. */
-	void revokeSignIns(String uid);
+	/**
+	 * Ends every Firebase sign-in of the login for {@code email}: its tokens stop working and it must sign in again.
+	 * Looked up by email, not by a stored uid, which goes stale when a login is deleted and created again.
+	 */
+	void revokeSignIns(String email);
+
+	/**
+	 * A Firebase custom token for {@code uid}, so a person who signed in through their institution gets an ordinary
+	 * Firebase session; a 503 when none can be made. Creates the Firebase user under that uid with {@code email}
+	 * first if it does not exist, because the bearer filter refuses a token without an e-mail. {@code emailVerified}
+	 * marks a login created here as verified, for a provider that vouches for the address; an existing login keeps
+	 * whatever it has.
+	 */
+	String customToken(String uid, String email, String displayName, boolean emailVerified);
 }

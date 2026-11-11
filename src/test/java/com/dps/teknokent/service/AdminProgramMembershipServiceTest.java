@@ -65,6 +65,9 @@ class AdminProgramMembershipServiceTest {
 	private ProgramMentorRepository programMentorRepository;
 	@Mock
 	private ProgramStartupRepository programStartupRepository;
+	@Mock
+	private ProgramEligibilityService programEligibilityService;
+
 	@InjectMocks
 	private AdminProgramMembershipService service;
 
@@ -75,7 +78,7 @@ class AdminProgramMembershipServiceTest {
 		when(domainLookupService.requireUser(mentor.getId())).thenReturn(mentor);
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId())).thenReturn(Optional.empty());
 		AppUser coordinator = user(COORDINATOR_ID, UserRole.COORDINATOR, UserAccountStatus.APPROVED);
-		when(appUserRepository.findAllById(List.of(COORDINATOR_ID))).thenReturn(List.of(coordinator));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator));
 
 		service.assignMentor(ADMIN_ID, PROGRAM_ID, mentor.getId());
 
@@ -101,6 +104,20 @@ class AdminProgramMembershipServiceTest {
 		assertThatThrownBy(() -> service.assignMentor(ADMIN_ID, PROGRAM_ID, mentor.getId()))
 				.isInstanceOf(ConflictException.class);
 		verify(programMentorRepository, never()).save(any());
+	}
+
+	@Test
+	void aStudentsPersonalTeamCannotBeAssignedAsAStartup() {
+		givenAdminAndProgram(ProgramStatus.ACTIVE);
+		Organization personal = new Organization();
+		personal.setId(UUID.randomUUID());
+		personal.setName("Ayşe Yılmaz");
+		personal.setPersonal(true);
+		when(domainLookupService.requireOrganization(personal.getId())).thenReturn(personal);
+
+		assertThatThrownBy(() -> service.assignStartup(ADMIN_ID, PROGRAM_ID, personal.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programStartupRepository, never()).save(any());
 	}
 
 	@Test

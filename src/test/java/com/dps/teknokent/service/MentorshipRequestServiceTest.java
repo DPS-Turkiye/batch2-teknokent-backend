@@ -60,6 +60,7 @@ import com.dps.teknokent.util.MeetingSlotTimes;
 
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class MentorshipRequestServiceTest {
@@ -105,6 +106,16 @@ class MentorshipRequestServiceTest {
 
     @InjectMocks
         private MentorshipRequestService mentorshipRequestService;
+
+        @Test
+        void create_refusesASelfRequestBeforeLookingUpEitherSide() {
+                UUID actorId = UUID.randomUUID();
+                assertThatThrownBy(() -> mentorshipRequestService.create(
+                                submission(actorId, UUID.randomUUID(), actorId)))
+                                .isInstanceOf(InvalidRequestException.class)
+                                .hasMessage(Texts.forRequest("error.selfMentorshipRequest"));
+                verify(mentorshipRequestRepository, never()).saveAndFlush(any());
+        }
 
         @Test
         void findAll_returnsMappedRequestsInDescendingCreationOrder() {
@@ -154,6 +165,15 @@ class MentorshipRequestServiceTest {
                 assertThat(result).hasSize(2);
                 assertThat(result.getFirst().organizationId()).isEqualTo(organizationId);
                 assertThat(result.get(1).requesterId()).isEqualTo(teammate.getId());
+        }
+
+        // A session without a startup sends a blank organization, which arrives here as null.
+        @Test
+        void findAll_withoutAScope_refusesInsteadOfListingEveryRequest() {
+                assertThatThrownBy(() -> mentorshipRequestService.findAll(null, null, null))
+                                .isInstanceOf(InvalidRequestException.class);
+
+                verifyNoInteractions(mentorshipRequestRepository);
         }
 
         @Test

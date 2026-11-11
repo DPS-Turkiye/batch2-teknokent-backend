@@ -41,6 +41,7 @@ import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -69,6 +70,9 @@ public class MentorPoolService {
 	private final MentorProfileRepository mentorProfileRepository;
 	private final MentorshipRepository mentorshipRepository;
 	private final MailService mailService;
+	private final ProgramEligibilityService programEligibilityService;
+	private final BadgeService badgeService;
+
 
 	@Transactional(readOnly = true)
 	public List<MentorPoolResponse.Row> pool(UUID actorId, UUID programId) {
@@ -78,16 +82,18 @@ public class MentorPoolService {
 	@Transactional
 	public List<MentorPoolResponse.Row> invite(UUID actorId, UUID programId, String rawEmail) {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		ProgramDrafts.requireLaunched(program);
 		String email = rawEmail.trim().toLowerCase(Locale.ROOT);
 		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(email);
 		if (existing.isPresent()) {
 			AppUser user = existing.get();
-			if (user.getRole() != UserRole.MENTOR) {
+			if (!user.has(UserRole.MENTOR)) {
 				throw new InvalidRequestException("Bu e-posta mentor olmayan bir hesaba ait.");
 			}
 			programService.inviteMentor(actorId, programId, user.getId());
 			return rows(program);
 		}
+		programEligibilityService.requirePerson(program, email);
 		ProgramMentorInvite invite = inviteRepository.findByProgramIdAndEmailIgnoreCase(programId, email)
 				.orElseGet(ProgramMentorInvite::new);
 		if (invite.getId() == null) {
@@ -110,6 +116,7 @@ public class MentorPoolService {
 	@Transactional
 	public List<MentorPoolResponse.Row> renewInvite(UUID actorId, UUID programId, UUID inviteId) {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		ProgramDrafts.requireLaunched(program);
 		ProgramMentorInvite invite = requireOpenInvite(programId, inviteId);
 		invite.setExpiresAt(Instant.now().plus(INVITE_VALIDITY));
 		inviteRepository.save(invite);
@@ -188,6 +195,9 @@ public class MentorPoolService {
 			appUserRepository.save(mentor);
 		}
 		programService.settleMentorRequest(program, mentorId, accepted);
+		if (accepted) {
+			badgeService.awardAfterMentorApproval(actorId, program, mentor);
+		}
 		return rows(program);
 	}
 
@@ -224,6 +234,7 @@ public class MentorPoolService {
 					|| programs.stream().anyMatch(program -> program.getStatus() != ProgramStatus.ACTIVE)) {
 				throw new InvalidRequestException(Texts.forRequest("error.programNotOpen"));
 			}
+			programs.forEach(program -> programEligibilityService.requirePerson(program, mentor.getEmail()));
 			Instant now = Instant.now();
 			for (UUID programId : added) {
 				ProgramMentor membership = new ProgramMentor();
@@ -248,7 +259,7 @@ public class MentorPoolService {
 
 	private AppUser requireMentorByFirebaseUid(String firebaseUid) {
 		return appUserRepository.findByFirebaseUid(firebaseUid)
-				.filter(user -> user.getRole() == UserRole.MENTOR)
+				.filter(user -> user.has(UserRole.MENTOR))
 				.orElseThrow(() -> new InvalidRequestException("Only a mentor can choose programs."));
 	}
 

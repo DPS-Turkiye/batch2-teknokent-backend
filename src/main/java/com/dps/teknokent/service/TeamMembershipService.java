@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -62,27 +63,40 @@ public class TeamMembershipService {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		AppUser person = domainLookupService.requireUser(userId);
 		List<TeamMembership> stays = teamMembershipRepository.findByUserIdOrderByJoinedAtDesc(userId);
-		if (actor.getRole() != UserRole.ADMIN && !coordinatesPerson(actor, person, stays)) {
+		if (!actor.has(UserRole.ADMIN) && !coordinatesPerson(actor, person, stays)) {
 			throw new ResourceNotFoundException("User not found: " + userId);
 		}
 		return TeamHistoryResponse.of(person, stays);
 	}
 
 	private boolean coordinatesPerson(AppUser actor, AppUser person, List<TeamMembership> stays) {
-		if (actor.getRole() != UserRole.COORDINATOR) {
+		if (!actor.has(UserRole.COORDINATOR)) {
 			return false;
 		}
-		Set<UUID> programIds = new HashSet<>();
+		return programRepository.findAllById(programReach(person, stays)).stream()
+				.anyMatch((Program program) -> ProgramCoordination.coordinates(program, actor.getId(),
+						programCoordinatorRepository));
+	}
+
+	/**
+	 * The programs that make a coordinator "the person's coordinator": their own program, and every program a
+	 * startup they are or were in belongs to. Shared by team history and the profile summary.
+	 */
+	public Set<UUID> programReach(AppUser person, List<TeamMembership> stays) {
+		Set<UUID> programIds = new LinkedHashSet<>();
 		if (person.getProgramId() != null) {
 			programIds.add(person.getProgramId());
 		}
-		for (TeamMembership stay : stays) {
-			programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(stay.getOrganization().getId()).stream()
+		Set<UUID> organizationIds = new HashSet<>();
+		if (person.getOrganization() != null) {
+			organizationIds.add(person.getOrganization().getId());
+		}
+		stays.forEach(stay -> organizationIds.add(stay.getOrganization().getId()));
+		if (!organizationIds.isEmpty()) {
+			programStartupRepository.findByOrganizationIdIn(organizationIds).stream()
 					.map(ProgramStartup::getProgramId)
 					.forEach(programIds::add);
 		}
-		return programRepository.findAllById(programIds).stream()
-				.anyMatch((Program program) -> ProgramCoordination.coordinates(program, actor.getId(),
-						programCoordinatorRepository));
+		return programIds;
 	}
 }

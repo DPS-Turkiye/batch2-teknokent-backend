@@ -31,12 +31,15 @@ import com.dps.teknokent.entity.MentorshipIntervention;
 import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipInterventionRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.NotificationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 
@@ -67,6 +70,10 @@ class AdminInterventionServiceTest {
 	private NotificationRepository notificationRepository;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private ProgramCoordinatorRepository programCoordinatorRepository;
+	@Mock
+	private AppUserRepository appUserRepository;
 	@InjectMocks
 	private AdminInterventionService service;
 
@@ -101,6 +108,38 @@ class AdminInterventionServiceTest {
 				eq("Müdahale gerekiyor"),
 				eq("ODTÜ Stars 2026 · Ayşe Demir ↔ Lumen. 48 saat içinde görüşme planlansın Not"),
 				eq("/coordinator/mentorships?mentorship=" + MENTORSHIP));
+	}
+
+	@Test
+	void openingOnAnAdminCreatedProgramTellsEveryCoordinatorAndNamesTheFirst() {
+		UUID second = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+		AppUser admin = user(ADMIN, "Demo Administrator", UserRole.ADMIN);
+		AppUser first = user(COORDINATOR, "Deniz Acar", UserRole.COORDINATOR);
+		AppUser other = user(second, "Ece Kaya", UserRole.COORDINATOR);
+		Program program = program();
+		program.setCreatedBy(ADMIN);
+		when(domainLookupService.requireUser(ADMIN)).thenReturn(admin);
+		when(domainLookupService.requireUser(COORDINATOR)).thenReturn(first);
+		when(mentorshipRepository.findById(MENTORSHIP)).thenReturn(Optional.of(mentorship()));
+		when(interventionRepository.findByMentorshipIdAndResolvedAtIsNull(MENTORSHIP)).thenReturn(Optional.empty());
+		when(programRepository.findById(PROGRAM)).thenReturn(Optional.of(program));
+		when(programCoordinatorRepository.findByProgramIdIn(any()))
+				.thenReturn(List.of(assigned(COORDINATOR, 1), assigned(second, 2)));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(admin, first, other));
+		Notification notification = new Notification();
+		notification.setId(NOTIFICATION);
+		when(notificationService.create(eq(first), anyString(), anyString(), anyString())).thenReturn(notification);
+		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(MENTOR, ORG))
+				.thenReturn(List.of());
+
+		service.open(ADMIN, new OpenInterventionRequest(ADMIN, MENTORSHIP, "Görüşme planlansın", null));
+
+		ArgumentCaptor<MentorshipIntervention> saved = ArgumentCaptor.forClass(MentorshipIntervention.class);
+		verify(interventionRepository).save(saved.capture());
+		assertThat(saved.getValue().getCoordinatorId()).isEqualTo(COORDINATOR);
+		assertThat(saved.getValue().getNotificationId()).isEqualTo(NOTIFICATION);
+		verify(notificationService).create(eq(other), anyString(), anyString(), anyString());
+		verify(notificationService, never()).create(eq(admin), anyString(), anyString(), anyString());
 	}
 
 	@Test
@@ -305,6 +344,15 @@ class AdminInterventionServiceTest {
 		program.setName("ODTÜ Stars 2026");
 		program.setCreatedBy(COORDINATOR);
 		return program;
+	}
+
+	private static ProgramCoordinator assigned(UUID userId, long order) {
+		ProgramCoordinator row = new ProgramCoordinator();
+		row.setId(UUID.randomUUID());
+		row.setProgramId(PROGRAM);
+		row.setUserId(userId);
+		row.setCreatedAt(Instant.parse("2026-11-01T10:00:00Z").plusSeconds(order));
+		return row;
 	}
 
 	private static AppUser user(UUID id, String name, UserRole role) {

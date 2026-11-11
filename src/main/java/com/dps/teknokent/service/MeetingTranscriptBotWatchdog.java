@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
-import com.dps.teknokent.dto.requests.GenerateMeetingReportRequest;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
@@ -194,10 +193,7 @@ public class MeetingTranscriptBotWatchdog {
 			return;
 		}
 		try {
-			MeetingReportResponse report = assistantService.generateMeetingReport(
-					platform,
-					nativeMeetingId,
-					new GenerateMeetingReportRequest(null, segments));
+			MeetingReportResponse report = assistantService.generateMeetingReport(segments);
 			for (UUID meetingId : meetingIds) {
 				shareService.storeGeneratedReport(meetingId, report);
 			}

@@ -48,15 +48,17 @@ public class AdminProgramMembershipService {
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramStartupRepository programStartupRepository;
+	private final ProgramEligibilityService programEligibilityService;
 
 	@Transactional
 	public void assignMentor(UUID actorId, UUID programId, UUID mentorId) {
 		requireAdmin(actorId);
 		Program program = requireActiveProgram(programId);
 		AppUser mentor = domainLookupService.requireUser(mentorId);
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("The selected user is not a mentor.");
 		}
+		programEligibilityService.requirePerson(program, mentor.getEmail());
 		ProgramMentor membership = programMentorRepository.findByProgramIdAndMentorId(programId, mentorId)
 				.orElseGet(() -> newMembership(programId, mentorId));
 		if (membership.getStatus() == ProgramMentorStatus.ACCEPTED) {
@@ -78,9 +80,13 @@ public class AdminProgramMembershipService {
 		requireAdmin(actorId);
 		Program program = requireActiveProgram(programId);
 		Organization startup = domainLookupService.requireOrganization(organizationId);
+		if (startup.isPersonal()) {
+			throw new InvalidRequestException("A student's personal team cannot join a program as a startup.");
+		}
 		if (programStartupRepository.findByProgramIdAndOrganizationId(programId, organizationId).isPresent()) {
 			throw new ConflictException("This startup is already in the program.");
 		}
+		programEligibilityService.requireTeam(program, organizationId);
 		ProgramStartup row = new ProgramStartup();
 		row.setId(UUID.randomUUID());
 		row.setProgramId(programId);
@@ -109,7 +115,7 @@ public class AdminProgramMembershipService {
 	}
 
 	private void notifyCoordinators(Program program, String memberName) {
-		appUserRepository.findAllById(ProgramCoordination.coordinatorIds(program, programCoordinatorRepository))
+		ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository)
 				.forEach(coordinator -> notificationService.create(coordinator,
 						Texts.get(coordinator, "notification.adminAddedToProgram.title"),
 						Texts.get(coordinator, "notification.adminAddedToProgram.body", memberName, program.getName()),
@@ -136,7 +142,7 @@ public class AdminProgramMembershipService {
 	}
 
 	private void requireAdmin(UUID actorId) {
-		if (domainLookupService.requireUser(actorId).getRole() != UserRole.ADMIN) {
+		if (!domainLookupService.requireUser(actorId).has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can assign people to programs.");
 		}
 	}

@@ -254,8 +254,8 @@ public class TeamChangeService {
 	}
 
 	private void notifyCoordinators(UUID programId, String key, Object... args) {
-		programRepository.findById(programId).ifPresent(program -> appUserRepository
-				.findAllById(ProgramCoordination.coordinatorIds(program, programCoordinatorRepository))
+		programRepository.findById(programId).ifPresent(program -> ProgramCoordination
+				.runners(program, programCoordinatorRepository, appUserRepository)
 				.forEach(coordinator -> notificationService.create(coordinator,
 						Texts.get(coordinator, key + ".title"), Texts.get(coordinator, key + ".body", args),
 						"/coordinator/programs/" + programId + "/approvals")));

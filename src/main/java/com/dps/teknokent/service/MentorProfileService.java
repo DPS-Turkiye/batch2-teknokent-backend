@@ -37,6 +37,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
 import com.dps.teknokent.dto.requests.MentorProgramRoleRequest;
+import com.dps.teknokent.dto.requests.StudentProfileRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
@@ -393,6 +394,10 @@ public class MentorProfileService {
 			profile.getExperiences().clear();
 			request.experiences().forEach(experience -> profile.getExperiences().add(experience.toEntity()));
 		}
+		if (request.educations() != null) {
+			profile.getEducations().clear();
+			request.educations().forEach(education -> profile.getEducations().add(education.toEntity()));
+		}
 		if (request.about() != null) {
 			profile.setAbout(request.about().trim());
 		}
@@ -405,6 +410,9 @@ public class MentorProfileService {
 		if (request.languages() != null) {
 			profile.getLanguages().clear();
 			request.languages().stream().distinct().forEach(profile.getLanguages()::add);
+		}
+		if (request.studentProfile() != null) {
+			applyStudentProfile(profile, request.studentProfile());
 		}
 		if (request.offerings() != null) {
 			profile.getOfferings().clear();
@@ -443,9 +451,23 @@ public class MentorProfileService {
 
 	private AppUser requireMentor(UUID mentorId) {
 		AppUser mentor = domainLookupService.requireUser(mentorId);
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("User is not a mentor: " + mentorId);
 		}
 		return mentor;
+	}
+
+	private static void applyStudentProfile(MentorProfile profile, StudentProfileRequest student) {
+		profile.setDepartment(TextUtils.normalizeOptional(student.department()));
+		profile.setStudyYear(TextUtils.normalizeOptional(student.studyYear()));
+		profile.setErasmus(TextUtils.normalizeOptional(student.erasmus()));
+		profile.getStrongCourses().clear();
+		if (student.strongCourses() != null) {
+			profile.getStrongCourses().addAll(TextUtils.normalizedList(student.strongCourses()));
+		}
+		profile.getProjects().clear();
+		if (student.projects() != null) {
+			profile.getProjects().addAll(TextUtils.normalizedList(student.projects()));
+		}
 	}
 }

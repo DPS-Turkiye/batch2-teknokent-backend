@@ -28,8 +28,12 @@ import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.TeamChangeStatus;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
@@ -69,6 +73,8 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.repository.TeamChangeRequestRepository;
+import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramCoordination;
@@ -113,6 +119,7 @@ public class CoordinatorProgramService {
 	private final MentorProfileRepository mentorProfileRepository;
 	private final MeetingNoteRepository meetingNoteRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
+	private final TeamChangeRequestRepository teamChangeRequestRepository;
 
 	public enum HealthBucket {
 		HEALTHY,
@@ -152,7 +159,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			UpdateProgramDetailsRequest request) {
-		Program program = requireEditableProgram(actorId, programId);
+		Program program = requireSettingsEditor(actorId, programId);
 		requireOrderedDates(request.startDate(), request.endDate(), "The program cannot end before it starts.");
 		program.setName(request.name().trim());
 		program.setDescription(blankToNull(request.description()));
@@ -179,6 +186,17 @@ public class CoordinatorProgramService {
 		if (request.bottleneckFlagDays() != null) {
 			program.setBottleneckFlagDays(request.bottleneckFlagDays());
 		}
+		if (request.eligibleEmailDomain() != null) {
+			program.setEligibleEmailDomain(EmailDomains.normalizeDomain(request.eligibleEmailDomain()));
+		}
+		if (request.rosterOnly() != null) {
+			program.setRosterOnly(request.rosterOnly());
+		}
+		if (program.getProgramType() == ProgramType.PEER_MENTORING) {
+			program.setIndividualMentees(true);
+		} else if (request.individualMentees() != null) {
+			program.setIndividualMentees(request.individualMentees());
+		}
 		programRepository.save(program);
 		return detailOf(program);
 	}
@@ -188,7 +206,7 @@ public class CoordinatorProgramService {
 			UUID actorId,
 			UUID programId,
 			ReplaceProgramPhasesRequest request) {
-		Program program = requireEditableProgram(actorId, programId);
+		Program program = requireSettingsEditor(actorId, programId);
 		writePhases(programId, request.phases());
 		attachSyllabus(program, actorId, request.syllabusDocumentId());
 		return detailOf(program);
@@ -235,6 +253,28 @@ public class CoordinatorProgramService {
 		programRepository.save(program);
 	}
 
+	/** Taslak → Aktif. Only an admin launches, and only a program with an approved coordinator to run it. */
+	@Transactional
+	public CoordinatorProgramResponse.Detail launch(UUID actorId, UUID programId) {
+		if (!requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
+			throw new InvalidRequestException("Only an admin launches a program.");
+		}
+		Program program = requireManagedProgram(actorId, programId);
+		if (program.getStatus() != ProgramStatus.DRAFT) {
+			throw new InvalidRequestException("This program has already been launched.");
+		}
+		boolean staffed = ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository)
+				.stream()
+				.anyMatch(user -> user.has(UserRole.COORDINATOR)
+						&& user.getStatus() == UserAccountStatus.APPROVED);
+		if (!staffed) {
+			throw new InvalidRequestException("Assign a coordinator before launching the program.");
+		}
+		program.setStatus(ProgramStatus.ACTIVE);
+		programRepository.save(program);
+		return detailOf(program);
+	}
+
 	/**
 	 * Archiving marks the program COMPLETED, which makes it read-only here. Mentorships are not closed:
 	 * they belong to the team and mentor, and may continue in another program.
@@ -242,6 +282,9 @@ public class CoordinatorProgramService {
 	@Transactional
 	public CoordinatorProgramResponse.Detail setArchived(UUID actorId, UUID programId, boolean archived) {
 		Program program = requireManagedProgram(actorId, programId);
+		if (program.getStatus() == ProgramStatus.DRAFT) {
+			throw new InvalidRequestException("A draft program is launched by an admin, not archived.");
+		}
 		program.setStatus(archived ? ProgramStatus.COMPLETED : ProgramStatus.ACTIVE);
 		programRepository.save(program);
 		return detailOf(program);
@@ -580,7 +623,10 @@ public class CoordinatorProgramService {
 						program.isAutoMatchSuggestions(),
 						program.getDefaultMentorCapacity(),
 						program.getCommunicationGapDays(),
-						program.getBottleneckFlagDays()),
+						program.getBottleneckFlagDays(),
+						program.getEligibleEmailDomain(),
+						program.isRosterOnly(),
+						program.isIndividualMentees()),
 				health(program, startups, snapshot),
 				awaitingTeams,
 				upcoming,
@@ -593,7 +639,22 @@ public class CoordinatorProgramService {
 										.getOrDefault(startup.getOrganizationId(), List.of()).stream())
 								.toList(),
 						snapshot.now()).size(),
-				syllabusOf(program));
+				syllabusOf(program),
+				pendingApprovalCount(program.getId()));
+	}
+
+	/**
+	 * Everything the Onaylar tab lists as waiting for the coordinator: students who signed up, mentors who asked to
+	 * join, startups awaiting approval and team change requests. Counted, not loaded; see ProgramApprovalService.
+	 */
+	int pendingApprovalCount(UUID programId) {
+		long people = appUserRepository.countByProgramIdAndPermissionAndStatus(programId, UserRole.MENTEE,
+				UserAccountStatus.PENDING);
+		long mentors = programMentorRepository.countByProgramIdAndStatusAndInvitedBy(programId,
+				ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		long startups = organizationRepository.countInProgramByApprovalStatus(programId, UserAccountStatus.PENDING);
+		long teamChanges = teamChangeRequestRepository.countByProgramIdAndStatus(programId, TeamChangeStatus.PENDING);
+		return Math.toIntExact(people + mentors + startups + teamChanges);
 	}
 
 	private CoordinatorProgramResponse.Syllabus syllabusOf(Program program) {
@@ -606,13 +667,13 @@ public class CoordinatorProgramService {
 				.orElse(null);
 	}
 
-	/** The creator first, then the coordinators added to the program. */
+	/** The creator first when it is a coordinator (an admin who created the program is not), then the added ones. */
 	public List<CoordinatorProgramResponse.CoordinatorRef> coordinatorsOf(Program program) {
 		List<UUID> ids = ProgramCoordination.coordinatorIds(program, programCoordinatorRepository);
 		Map<UUID, AppUser> users = appUserRepository.findAllById(ids).stream()
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		return ids.stream()
-				.filter(users::containsKey)
+				.filter(id -> users.containsKey(id) && users.get(id).has(UserRole.COORDINATOR))
 				.map(id -> new CoordinatorProgramResponse.CoordinatorRef(
 						id, users.get(id).getFullName(), id.equals(program.getCreatedBy())))
 				.toList();
@@ -636,16 +697,17 @@ public class CoordinatorProgramService {
 				.max(Integer::compare)
 				.orElse(null);
 		ProgramPhase current = ProgramCalendar.currentPhase(phases, snapshot.today());
-		AppUser coordinator = snapshot.coordinators().get(program.getCreatedBy());
+		AppUser coordinator = snapshot.coordinators().get(program.getId());
 		return new CoordinatorProgramResponse(
 				program.getId(),
 				program.getName(),
 				program.getStatus(),
 				ProgramCalendar.lifecycle(program.getStatus(), program.getStartDate(), snapshot.today()),
+				program.getProgramType(),
 				program.getDescription(),
 				program.getStartDate(),
 				program.getEndDate(),
-				program.getCreatedBy(),
+				coordinator == null ? program.getCreatedBy() : coordinator.getId(),
 				coordinator == null ? null : coordinator.getFullName(),
 				startups.size(),
 				(int) mentors.stream().filter(m -> m.getStatus() == ProgramMentorStatus.ACCEPTED).count(),
@@ -763,10 +825,13 @@ public class CoordinatorProgramService {
 					Map.of(), Map.of(), Set.of());
 		}
 		List<UUID> programIds = programs.stream().map(Program::getId).toList();
-		Map<UUID, AppUser> coordinators = appUserRepository
-				.findAllById(programs.stream().map(Program::getCreatedBy).collect(Collectors.toSet()))
-				.stream()
-				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		Map<UUID, AppUser> coordinators = new HashMap<>();
+		ProgramCoordination.runners(programs, programCoordinatorRepository, appUserRepository)
+				.forEach((programId, runners) -> {
+					if (!runners.isEmpty()) {
+						coordinators.put(programId, runners.get(0));
+					}
+				});
 		Map<UUID, List<ProgramPhase>> phases = programPhaseRepository.findByProgramIdInOrderByPositionAsc(programIds)
 				.stream()
 				.collect(Collectors.groupingBy(ProgramPhase::getProgramId));
@@ -819,7 +884,7 @@ public class CoordinatorProgramService {
 	}
 
 	public List<Program> managedPrograms(AppUser actor) {
-		return actor.getRole() == UserRole.ADMIN
+		return actor.has(UserRole.ADMIN)
 				? programRepository.findAllByOrderByCreatedAtDesc()
 				: ProgramCoordination.programsOf(actor.getId(), programRepository, programCoordinatorRepository);
 	}
@@ -833,10 +898,18 @@ public class CoordinatorProgramService {
 
 	public AppUser requireCoordinatorOrAdmin(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.COORDINATOR && actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.COORDINATOR) && !actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only a coordinator can manage programs.");
 		}
 		return actor;
+	}
+
+	/** Program Ayarları belong to the program's coordinators; an admin only views them. */
+	public Program requireSettingsEditor(UUID actorId, UUID programId) {
+		if (requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
+			throw new InvalidRequestException("An admin views program settings; the program's coordinators change them.");
+		}
+		return requireEditableProgram(actorId, programId);
 	}
 
 	private Program requireEditableProgram(UUID actorId, UUID programId) {
@@ -851,7 +924,7 @@ public class CoordinatorProgramService {
 		AppUser actor = requireCoordinatorOrAdmin(actorId);
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
-		if (actor.getRole() == UserRole.COORDINATOR
+		if (!actor.has(UserRole.ADMIN)
 				&& !ProgramCoordination.coordinates(program, actor.getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("Only the program coordinator can change this program.");
 		}
@@ -907,6 +980,7 @@ public class CoordinatorProgramService {
 	}
 
 	/** Everything the summaries need, fetched once per call for a set of programs. */
+	/** {@code coordinators}: the coordinator each program names, by program id. */
 	public record Snapshot(
 			LocalDate today,
 			Instant now,

@@ -18,7 +18,10 @@ public interface MentorshipRepository extends JpaRepository<Mentorship, UUID> {
 
 	boolean existsByMentorIdAndOrganizationId(UUID mentorId, UUID organizationId);
 
-	long countByStatus(MentorshipStatus status);
+	boolean existsByMentorIdAndOrganizationIdAndStatusIn(
+			UUID mentorId,
+			UUID organizationId,
+			Collection<MentorshipStatus> statuses);
 
 	long countByOrganizationIdAndStatus(UUID organizationId, MentorshipStatus status);
 

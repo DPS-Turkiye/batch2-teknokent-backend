@@ -2,6 +2,7 @@ package com.dps.teknokent.controller;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -9,22 +10,32 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.Test;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AddBotRequest;
+import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.ConflictException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AssistantService;
 import com.dps.teknokent.service.MeetingService;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,9 +58,16 @@ class AssistantControllerTest {
   @MockitoBean
   private MeetingService meetingService;
 
+  private static final UUID CALLER = UUID.randomUUID();
+
+  private static org.springframework.test.web.servlet.request.RequestPostProcessor signedIn() {
+    return authentication(new UsernamePasswordAuthenticationToken(new AppUserPrincipal(
+        CALLER, "caller@test.dev", UserRole.MENTEE, UserAccountStatus.APPROVED, "caller-uid"), null, List.of()));
+  }
+
   @Test
   void addBotReturnsCreated() throws Exception {
-    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
+    when(assistantService.addAdHocBot(eq(CALLER), any(AddBotRequest.class)))
         .thenReturn(new AddBotResponse(
             "bot-1",
             "google_meet",
@@ -58,7 +76,7 @@ class AssistantControllerTest {
             "Mentor Bot"
         ));
 
-    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+    mockMvc.perform(post("/api/assistant/bots").with(signedIn())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isCreated())
@@ -69,10 +87,10 @@ class AssistantControllerTest {
 
   @Test
   void addBotReturnsBadRequestOnInvalidUrl() throws Exception {
-    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
+    when(assistantService.addAdHocBot(eq(CALLER), any(AddBotRequest.class)))
         .thenThrow(new IllegalArgumentException("Unsupported meeting link"));
 
-    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+    mockMvc.perform(post("/api/assistant/bots").with(signedIn())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://zoom.us/j/1\"}"))
         .andExpect(status().isBadRequest())
@@ -81,10 +99,10 @@ class AssistantControllerTest {
 
   @Test
   void addBotReturnsConflictWhenEveryRecordingSlotIsTaken() throws Exception {
-    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
+    when(assistantService.addAdHocBot(eq(CALLER), any(AddBotRequest.class)))
         .thenThrow(new ConflictException("All recording slots are in use."));
 
-    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+    mockMvc.perform(post("/api/assistant/bots").with(signedIn())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isConflict())
@@ -93,7 +111,7 @@ class AssistantControllerTest {
 
   @Test
   void addBotReturnsProviderStatusOnRestClientError() throws Exception {
-    when(assistantService.addAdHocBot(any(AddBotRequest.class)))
+    when(assistantService.addAdHocBot(eq(CALLER), any(AddBotRequest.class)))
         .thenThrow(HttpClientErrorException.create(
             HttpStatus.CONFLICT,
             "Conflict",
@@ -102,7 +120,7 @@ class AssistantControllerTest {
             StandardCharsets.UTF_8
         ));
 
-    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+    mockMvc.perform(post("/api/assistant/bots").with(signedIn())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
         .andExpect(status().isConflict())
@@ -111,12 +129,12 @@ class AssistantControllerTest {
 
   @Test
   void getTranscriptReturnsOk() throws Exception {
-    when(assistantService.getTranscript("google_meet", "abc-defg-hij"))
+    when(assistantService.getTranscript(CALLER, "google_meet", "abc-defg-hij"))
         .thenReturn(new TranscriptResponse(List.of(
             new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "01:05")
         )));
 
-    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(signedIn()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.segments[0].speaker").value("Ayşe"))
         .andExpect(jsonPath("$.segments[0].text").value("Merhaba"))
@@ -125,17 +143,17 @@ class AssistantControllerTest {
 
   @Test
   void getTranscriptReturnsBadGatewayOnFailure() throws Exception {
-    when(assistantService.getTranscript("google_meet", "abc-defg-hij"))
+    when(assistantService.getTranscript(CALLER, "google_meet", "abc-defg-hij"))
         .thenThrow(new RuntimeException("provider down"));
 
-    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(user("test-user")))
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(signedIn()))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail").value("Failed to fetch transcript"));
   }
 
   @Test
   void addBotReturnsBadRequestOnBlankMeetingUrl() throws Exception {
-    mockMvc.perform(post("/api/assistant/bots").with(user("test-user"))
+    mockMvc.perform(post("/api/assistant/bots").with(signedIn())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"meetingUrl\":\"\"}"))
         .andExpect(status().isBadRequest());
@@ -143,7 +161,7 @@ class AssistantControllerTest {
 
   @Test
   void stopBotReturnsNoContentAndEndsTheMeetingInTheDatabase() throws Exception {
-    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
         .andExpect(status().isNoContent());
 
     verify(meetingService).markBotStopped("abc-defg-hij");
@@ -157,9 +175,9 @@ class AssistantControllerTest {
         HttpHeaders.EMPTY,
         "provider conflict".getBytes(StandardCharsets.UTF_8),
         StandardCharsets.UTF_8
-    )).when(assistantService).stopBot("google_meet", "abc-defg-hij");
+    )).when(assistantService).stopBot(CALLER, "google_meet", "abc-defg-hij");
 
-    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.detail").value("Failed to stop bot"));
   }
@@ -167,12 +185,79 @@ class AssistantControllerTest {
   @Test
   void stopBotReturnsBadGatewayOnFailure() throws Exception {
     org.mockito.Mockito.doThrow(new RuntimeException("provider down"))
-        .when(assistantService).stopBot("google_meet", "abc-defg-hij");
+        .when(assistantService).stopBot(CALLER, "google_meet", "abc-defg-hij");
 
-    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(user("test-user")))
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.detail").value("Failed to stop bot"));
 
     verify(meetingService, never()).markBotStopped(any());
+  }
+
+  @Test
+  void stopBotActsForTheSignedInCallerOnly() throws Exception {
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
+        .andExpect(status().isNoContent());
+
+    verify(assistantService).stopBot(CALLER, "google_meet", "abc-defg-hij");
+  }
+
+  @Test
+  void theSharedServiceCredentialsNameNobody() throws Exception {
+    when(assistantService.getTranscript(isNull(), eq("google_meet"), eq("abc-defg-hij")))
+        .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "A signed-in user is required."));
+
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij")
+            .param("actorId", CALLER.toString())
+            .with(user("test-user")))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void aNonParticipantGetsForbiddenNotAProviderError() throws Exception {
+    var forbidden = new ResponseStatusException(HttpStatus.FORBIDDEN,
+        "Only a participant of this meeting can use its assistant.");
+    when(assistantService.getTranscript(CALLER, "google_meet", "abc-defg-hij")).thenThrow(forbidden);
+    when(assistantService.addAdHocBot(eq(CALLER), any(AddBotRequest.class))).thenThrow(forbidden);
+    when(assistantService.generateMeetingReport(CALLER, "google_meet", "abc-defg-hij")).thenThrow(forbidden);
+    org.mockito.Mockito.doThrow(forbidden).when(assistantService).stopBot(CALLER, "google_meet", "abc-defg-hij");
+
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/abc-defg-hij").with(signedIn()))
+        .andExpect(status().isForbidden());
+    mockMvc.perform(post("/api/assistant/bots").with(signedIn())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"meetingUrl\":\"https://meet.google.com/abc-defg-hij\"}"))
+        .andExpect(status().isForbidden());
+    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report").with(signedIn()))
+        .andExpect(status().isForbidden());
+    mockMvc.perform(delete("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
+        .andExpect(status().isForbidden());
+
+    verify(meetingService, never()).markBotStopped(any());
+  }
+
+  @Test
+  void anUnknownMeetingIsNotFound() throws Exception {
+    when(assistantService.getTranscript(CALLER, "google_meet", "zzz-zzzz-zzz"))
+        .thenThrow(new ResourceNotFoundException("Meeting not found."));
+
+    mockMvc.perform(get("/api/assistant/transcripts/google_meet/zzz-zzzz-zzz").with(signedIn()))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void generateMeetingReportIgnoresAModelAndSegmentsFromTheClient() throws Exception {
+    when(assistantService.generateMeetingReport(CALLER, "google_meet", "abc-defg-hij"))
+        .thenReturn(new MeetingReportResponse("Rapor", null, null, "Ozet",
+            List.of(), List.of(), List.of(), List.of(), List.of(), "configured-model"));
+
+    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report").with(signedIn())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"model\":\"expensive/model\",\"segments\":[{\"id\":\"x\",\"speaker\":\"A\","
+                + "\"text\":\"any text through our key\",\"at\":\"00:00\"}]}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.model").value("configured-model"));
+
+    verify(assistantService).generateMeetingReport(CALLER, "google_meet", "abc-defg-hij");
   }
 }

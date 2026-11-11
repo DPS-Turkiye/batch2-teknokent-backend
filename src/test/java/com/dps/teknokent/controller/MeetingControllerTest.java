@@ -1,6 +1,7 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -46,11 +47,11 @@ class MeetingControllerTest {
         }
 
         @Test
-        void returnsMeetingsWithoutOrganizationFilter() throws Exception {
+        void returnsMeetingsForTheOrganization() throws Exception {
                 UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
                 UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-                when(meetingService.findAll(null, null)).thenReturn(List.of(new MeetingResponse(
+                when(meetingService.findAll(organizationId, null)).thenReturn(List.of(new MeetingResponse(
                                 UUID.fromString("00000000-0000-0000-0000-000000000011"),
                                 null,
                                 organizationId,
@@ -65,9 +66,10 @@ class MeetingControllerTest {
                                 "https://meet.google.com/xyz-abc-def",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
-                mockMvc.perform(get("/api/meetings").with(user("test-user")))
+                mockMvc.perform(get("/api/meetings").param("organizationId", organizationId.toString()).with(user("test-user")))
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$[0].organizationId").value(organizationId.toString()))
                                 .andExpect(jsonPath("$[0].mentorName").value("Dr. Kemal Arslan"))
@@ -95,6 +97,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/abc-defg-hij",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings")
@@ -125,6 +128,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/mno-pqr-stu",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null)));
 
                 mockMvc.perform(get("/api/meetings")
@@ -156,6 +160,7 @@ class MeetingControllerTest {
                                 "https://meet.google.com/alpha-beta-gamma",
                                 MeetingStatus.SCHEDULED,
                                 false,
+                                null,
                                 null));
 
                 mockMvc.perform(post("/api/meetings")
@@ -204,6 +209,24 @@ class MeetingControllerTest {
 
                 mockMvc.perform(delete("/api/meetings/" + meetingId).with(user("test-user")))
                                 .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void confirmsAndUndoesAHeldMeetingForTheNamedMentorOnServiceCredentials() throws Exception {
+                UUID meetingId = UUID.randomUUID();
+                UUID mentorId = UUID.randomUUID();
+
+                mockMvc.perform(post("/api/meetings/" + meetingId + "/held")
+                                .param("mentorId", mentorId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk());
+                mockMvc.perform(delete("/api/meetings/" + meetingId + "/held")
+                                .param("mentorId", mentorId.toString())
+                                .with(user("test-user")))
+                                .andExpect(status().isOk());
+
+                verify(meetingService).confirmHeld(meetingId, mentorId, true);
+                verify(meetingService).confirmHeld(meetingId, mentorId, false);
         }
 
         @Test

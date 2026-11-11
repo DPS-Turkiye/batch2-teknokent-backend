@@ -29,12 +29,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.PlatformFeedbackKind;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.PlatformFeedback;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.PlatformFeedbackRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.security.AppUserPrincipal;
 
 @SpringBootTest
@@ -48,6 +51,8 @@ class PlatformFeedbackIntegrationTest {
 	private AppUserRepository userRepository;
 	@Autowired
 	private PlatformFeedbackRepository feedbackRepository;
+	@Autowired
+	private ProgramRepository programRepository;
 
 	private AppUser author;
 	private AppUser admin;
@@ -207,6 +212,41 @@ class PlatformFeedbackIntegrationTest {
 				.with(authentication(signedIn(author))))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value("Geri bildirim kutusunu yalnızca yöneticiler görebilir."));
+	}
+
+	@Test
+	void feedbackKeepsTheAuthorsProgramAndTheInboxFiltersByItsType() throws Exception {
+		Program peer = new Program();
+		peer.setId(UUID.randomUUID());
+		peer.setName("İŞKUR Akran 2026");
+		peer.setCreatedBy(admin.getId());
+		peer.setCreatedAt(Instant.now());
+		peer.setProgramType(ProgramType.PEER_MENTORING);
+		programRepository.saveAndFlush(peer);
+		author.setProgramId(peer.getId());
+		userRepository.saveAndFlush(author);
+		AppUser outsider = user(UserRole.MENTEE);
+
+		mockMvc.perform(post("/api/platform-feedback").with(authentication(signedIn(author)))
+				.contentType(MediaType.APPLICATION_JSON).content(body()))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.programName").value("İŞKUR Akran 2026"))
+				.andExpect(jsonPath("$.programType").value("PEER_MENTORING"));
+		mockMvc.perform(post("/api/platform-feedback").with(authentication(signedIn(outsider)))
+				.contentType(MediaType.APPLICATION_JSON).content(body()))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.programType").value(org.hamcrest.Matchers.nullValue()));
+
+		mockMvc.perform(get("/api/admin/platform-feedback").param("programType", "PEER_MENTORING")
+				.with(authentication(signedIn(admin))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.page.content.length()").value(1))
+				.andExpect(jsonPath("$.page.content[0].programId").value(peer.getId().toString()));
+		mockMvc.perform(get("/api/admin/platform-feedback").param("programType", "STARTUP_MENTORING")
+				.with(authentication(signedIn(admin))))
+				.andExpect(jsonPath("$.page.content.length()").value(0));
+		mockMvc.perform(get("/api/admin/platform-feedback").with(authentication(signedIn(admin))))
+				.andExpect(jsonPath("$.page.content.length()").value(2));
 	}
 
 	private AppUser user(UserRole role) {

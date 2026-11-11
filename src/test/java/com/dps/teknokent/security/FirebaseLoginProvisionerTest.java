@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -44,6 +46,60 @@ class FirebaseLoginProvisionerTest {
 		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(created);
 
 		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-1");
+	}
+
+	// A custom-token user has no e-mail of its own, and the bearer filter refuses a token without one.
+	@Test
+	void createsTheInstitutionLoginWithItsEmailBeforeMintingItsToken() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(notFound);
+		when(firebaseAuth.createCustomToken("odtu_e100001")).thenReturn("custom-token");
+
+		assertThat(provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz Öğrenci", false))
+				.isEqualTo("custom-token");
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+			Map<String, Object> properties =
+					org.springframework.test.util.ReflectionTestUtils.invokeMethod(request, "getProperties");
+			return "odtu_e100001".equals(properties.get("localId"))
+					&& "e100001@metu.edu.tr".equals(properties.get("email"));
+		}));
+	}
+
+	// OTG vouches for the address and may send no name: the login is born verified, and Firebase is never given a
+	// blank display name, which it refuses.
+	@Test
+	void createsAVerifiedLoginWithoutANameWhenTheProviderVouchesForTheAddress() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUser("otg_a72ab40d")).thenThrow(notFound);
+		when(firebaseAuth.createCustomToken("otg_a72ab40d")).thenReturn("custom-token");
+
+		assertThat(provisioner.customToken("otg_a72ab40d", "ogrenci@ornek.com", null, true)).isEqualTo("custom-token");
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+			Map<String, Object> properties =
+					org.springframework.test.util.ReflectionTestUtils.invokeMethod(request, "getProperties");
+			return Boolean.TRUE.equals(properties.get("emailVerified")) && !properties.containsKey("displayName");
+		}));
+	}
+
+	@Test
+	void reusesAnExistingLoginForTheToken() throws Exception {
+		when(firebaseAuth.getUser("uid-1")).thenReturn(mock(UserRecord.class));
+		when(firebaseAuth.createCustomToken("uid-1")).thenReturn("custom-token");
+
+		assertThat(provisioner.customToken("uid-1", "ayse@metu.edu.tr", "Ayşe", true)).isEqualTo("custom-token");
+		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
+	}
+
+	@Test
+	void refusesTheTokenWhenAnotherLoginHoldsTheAddress() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		FirebaseAuthException taken = failure(ErrorCode.ALREADY_EXISTS, AuthErrorCode.EMAIL_ALREADY_EXISTS);
+		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(notFound);
+		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(taken);
+
+		assertThatThrownBy(() -> provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz", false))
+				.isInstanceOf(com.dps.teknokent.exception.ConflictException.class);
+		verify(firebaseAuth, never()).createCustomToken(anyString());
 	}
 
 	@Test
@@ -87,26 +143,35 @@ class FirebaseLoginProvisionerTest {
 	}
 
 	@Test
-	void revokesTheFirebaseSignInsOfALogin() throws Exception {
-		provisioner.revokeSignIns("uid-1");
+	void revokesTheSignInsOfTheLoginFirebaseHasForTheEmailNow() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-current");
+		when(firebaseAuth.getUserByEmail("ayse@startup.com")).thenReturn(login);
 
-		verify(firebaseAuth).revokeRefreshTokens("uid-1");
+		provisioner.revokeSignIns("ayse@startup.com");
+
+		verify(firebaseAuth).revokeRefreshTokens("uid-current");
 	}
 
-	// A login deleted in Firebase has nothing left to revoke.
+	// An address with no Firebase login has nothing left to revoke.
 	@Test
 	void treatsAMissingLoginAsAlreadySignedOut() throws Exception {
-		doThrow(failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND))
-				.when(firebaseAuth).revokeRefreshTokens("uid-gone");
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUserByEmail("gone@startup.com")).thenThrow(notFound);
 
-		provisioner.revokeSignIns("uid-gone");
+		provisioner.revokeSignIns("gone@startup.com");
+
+		verify(firebaseAuth, never()).revokeRefreshTokens(anyString());
 	}
 
 	@Test
 	void reportsAFirebaseFailureAsABadGateway() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-1");
+		when(firebaseAuth.getUserByEmail("ayse@startup.com")).thenReturn(login);
 		doThrow(failure(ErrorCode.PERMISSION_DENIED, null)).when(firebaseAuth).revokeRefreshTokens("uid-1");
 
-		assertThatThrownBy(() -> provisioner.revokeSignIns("uid-1"))
+		assertThatThrownBy(() -> provisioner.revokeSignIns("ayse@startup.com"))
 				.isInstanceOfSatisfying(ResponseStatusException.class,
 						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
 	}

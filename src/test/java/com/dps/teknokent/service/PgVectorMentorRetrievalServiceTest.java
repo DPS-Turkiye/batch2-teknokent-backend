@@ -1,5 +1,9 @@
 package com.dps.teknokent.service;
 
+import org.mockito.ArgumentCaptor;
+
+import com.dps.teknokent.dto.responses.StudentProfileResponse;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -99,6 +103,46 @@ class PgVectorMentorRetrievalServiceTest {
                                 eq(model),
                                 any(),
                                 anyString());
+        }
+
+        @Test
+        void shortlist_embedsAStudentMentorsStudiesButLeavesOtherMentorsTextAsItWas() throws Exception {
+                UUID studentId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+                UUID otherId = UUID.fromString("00000000-0000-0000-0000-000000000202");
+                MentorProfileResponse other = mentorProfile(otherId, "Bora", "Growth Mentor");
+                MentorProfileResponse student = withStudent(mentorProfile(studentId, "Ece", "Öğrenci mentor"),
+                                new StudentProfileResponse("Bilgisayar Mühendisliği", "4. sınıf",
+                                                List.of("CENG 140"), List.of(), "TU Delft"));
+                when(aiProviderClient.providerName()).thenReturn("openai");
+                when(aiProviderClient.embeddingModel()).thenReturn("text-embedding-3-small");
+                when(jdbcTemplate.queryForList(anyString(), eq(String.class), any(UUID.class), anyString(),
+                                anyString())).thenReturn(List.of());
+                when(aiProviderClient.embeddings(anyList()))
+                                .thenReturn(List.of(List.of(0.1, 0.2), List.of(0.3, 0.4)))
+                                .thenReturn(List.of(List.of(0.5, 0.6)));
+                when(jdbcTemplate.query(anyString(), any(PreparedStatementSetter.class),
+                                ArgumentMatchers.<RowMapper<UUID>>any())).thenReturn(List.of(studentId));
+
+                service.shortlist("erasmus", List.of(student, other), "openai", "text-embedding-3-small", 5);
+
+                @SuppressWarnings("unchecked")
+                ArgumentCaptor<List<String>> texts = ArgumentCaptor.forClass(List.class);
+                verify(aiProviderClient, org.mockito.Mockito.times(2)).embeddings(texts.capture());
+                List<String> documents = texts.getAllValues().getFirst();
+                assertThat(documents.get(0)).contains("Bilgisayar Mühendisliği", "CENG 140", "TU Delft");
+                assertThat(documents.get(1)).doesNotContain("Bilgisayar Mühendisliği", "TU Delft");
+                assertThat(documents.get(1).split("\n")).hasSize(6);
+        }
+
+        private static MentorProfileResponse withStudent(MentorProfileResponse m, StudentProfileResponse student) {
+                return new MentorProfileResponse(m.id(), m.fullName(), m.email(), m.initials(), m.professionalTitle(),
+                                m.company(), m.availabilityLabel(), m.responseTimeLabel(), m.meetingMode(),
+                                m.communicationPreference(), m.mentoringStyle(), m.fitLabel(), m.experienceLevel(),
+                                m.sectorExperience(), m.startupStages(), m.specialties(), m.recommendationReasons(),
+                                m.recommendationEvidence(), m.menteeCapacity(), m.about(), m.defaultMeetingDurationMinutes(),
+                                m.meetingBufferMinutes(), m.meetingFrequency(), m.prepFileRequirement(), m.languages(),
+                                m.activeMenteeCount(), m.completedMentorshipCount(), m.programNames(), m.programs(),
+                                m.experiences(), m.offerings(), student);
         }
 
         private static MentorProfileResponse mentorProfile(UUID id, String fullName, String title) {

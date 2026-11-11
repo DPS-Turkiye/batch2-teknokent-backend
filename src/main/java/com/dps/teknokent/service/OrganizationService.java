@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,7 @@ import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.InviteCodeGenerator;
@@ -38,13 +41,19 @@ public class OrganizationService {
 	@Transactional(readOnly = true)
 	public List<OrganizationResponse> findAll() {
 		return organizationRepository.findAll(Sort.by(Sort.Direction.ASC, "name")).stream()
+				.filter(organization -> !organization.isPersonal())
 				.map(OrganizationResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional(readOnly = true)
+	/** A student's personal team is no startup page anyone can open, its owner included. */
 	public OrganizationResponse findById(UUID id) {
-		return OrganizationResponse.fromEntity(domainLookupService.requireOrganization(id));
+		Organization organization = domainLookupService.requireOrganization(id);
+		if (organization.isPersonal()) {
+			throw new ResourceNotFoundException("Organization not found: " + id);
+		}
+		return OrganizationResponse.fromEntity(organization);
 	}
 
 	@Transactional
@@ -104,7 +113,8 @@ public class OrganizationService {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		AppUser actor = domainLookupService.requireUser(actorId);
 		if (!isAdmin(actor) && !isFounder(organization, actorId)) {
-			throw new InvalidRequestException("Only an admin or the organization founder can view the invite code");
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					"Only an admin or the organization founder can view the invite code");
 		}
 		if (organization.getInviteCode() == null) {
 			throw new InvalidRequestException("Invite code has not been generated yet.");
@@ -140,7 +150,7 @@ public class OrganizationService {
 	}
 
 	private static boolean isAdmin(AppUser actor) {
-		return actor.getRole() == UserRole.ADMIN;
+		return actor.has(UserRole.ADMIN);
 	}
 
 	private static boolean isFounder(Organization organization, UUID actorId) {

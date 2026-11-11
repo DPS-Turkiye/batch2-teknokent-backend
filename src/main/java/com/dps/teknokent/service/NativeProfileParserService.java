@@ -13,6 +13,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 @Service
 public class NativeProfileParserService {
+	/** The class years the student mentor form offers (frontend STUDENT_LEVELS); the parse answers with one. */
+	static final List<String> STUDY_YEARS = List.of("Hazırlık", "1. sınıf", "2. sınıf", "3. sınıf", "4. sınıf",
+			"Yüksek lisans", "Doktora");
+
 	private final PdfDocumentTextExtractor textExtractor;
 	private final LocalPiiRedactionService piiRedactionService;
 	private final AiProviderClient aiProviderClient;
@@ -70,9 +74,30 @@ public class NativeProfileParserService {
 					field("experience_level", nullableString()), field("years_of_experience", nullableInteger()),
 					field("professional_functions", stringArray()), field("industries", stringArray()),
 					field("technologies", stringArray()), field("languages", stringArray()),
-					field("work_history", arrayOf(objectSchema(List.of(
+					field("work_history", described(arrayOf(objectSchema(List.of(
 							field("title", string()), field("organization", nullableString()),
-							field("period", nullableString()), field("summary", nullableString()))))),
+							field("period", nullableString()), field("summary", nullableString())))),
+							"Every role the person held, including internships, part-time jobs, student club or "
+									+ "society roles and volunteer work, newest first")),
+					field("education", described(arrayOf(objectSchema(List.of(
+							field("school", string()), field("degree", nullableString()),
+							field("period", nullableString())))),
+							"Schools, newest first. degree holds the level and department, e.g. "
+									+ "\"Lisans, Bilgisayar Mühendisliği\", or \"Erasmus\" for an exchange "
+									+ "semester; period holds only the years or term, e.g. \"2022 – 2026\" or "
+									+ "\"2025 Güz\". Include exchange semesters and high school only if the CV "
+									+ "lists them")),
+					// Student mentors (İŞKUR) fill the studies card from these; professionals get null and [].
+					field("department", described(nullableString(),
+							"University department or major, only if the person is currently a student")),
+					field("study_year", described(nullableString(),
+							"Current class year of a student, exactly one of: " + String.join(", ", STUDY_YEARS))),
+					field("strong_courses", described(stringArray(),
+							"Courses the person lists as strong or did well in, as written, e.g. CENG 140")),
+					field("student_projects", described(stringArray(),
+							"Short titles of academic, personal or competition projects")),
+					field("exchange_experience", described(nullableString(),
+							"Erasmus, exchange or study abroad: school and term, e.g. TU Delft, Fall 2025")),
 					field("missing_fields", stringArray()), field("warnings", stringArray())));
 			default -> throw new IllegalArgumentException("Unsupported profile type: " + profileType);
 		};
@@ -124,6 +149,10 @@ public class NativeProfileParserService {
 		ArrayNode allowed = schema.putArray("enum");
 		for (String value : values) allowed.add(value);
 		return schema;
+	}
+
+	private JsonNode described(JsonNode schema, String description) {
+		return ((ObjectNode) schema).put("description", description);
 	}
 
 	private JsonNode typeUnion(String... types) {

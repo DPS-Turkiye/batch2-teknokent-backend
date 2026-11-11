@@ -2,16 +2,21 @@ package com.dps.teknokent.entity;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
 import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.ContactPreference;
+import com.dps.teknokent.domain.PermissionSource;
+import com.dps.teknokent.domain.PermissionStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.ElementCollection;
 import org.hibernate.annotations.BatchSize;
@@ -26,8 +31,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -105,4 +112,99 @@ public class AppUser {
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
+
+	/** Eager because the bearer filter and many non-transactional reads ask {@link #has}; at most five rows. */
+	@OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+	@BatchSize(size = 50)
+	@Getter(AccessLevel.NONE)
+	@Setter(AccessLevel.NONE)
+	private List<AppUserPermission> permissions = new ArrayList<>();
+
+	/**
+	 * Sets the primary role and, until accounts can hold more than one permission, makes it the only active
+	 * one, so every reader of {@code role} and of {@link #has} agrees.
+	 */
+	public void setRole(UserRole role) {
+		this.role = role;
+		if (role == null) {
+			return;
+		}
+		Instant now = Instant.now();
+		PermissionSource source = id == null ? PermissionSource.REGISTRATION : PermissionSource.ADMIN;
+		boolean held = false;
+		for (AppUserPermission grant : permissions) {
+			if (grant.getPermission() == role) {
+				held = true;
+				if (!grant.activeAt(now)) {
+					grant.reactivate(source, now);
+				}
+			} else if (grant.getStatus() == PermissionStatus.ACTIVE) {
+				grant.revoke(now);
+			}
+		}
+		if (!held) {
+			permissions.add(new AppUserPermission(this, role, source, now));
+		}
+	}
+
+	/**
+	 * The primary role counts as held only without a row, so an account inserted by a later seed migration
+	 * without its grant keeps working; dropped with {@code role} itself.
+	 */
+	public Set<UserRole> activePermissions() {
+		Set<UserRole> active = EnumSet.noneOf(UserRole.class);
+		if (role != null && permissions.stream().noneMatch(grant -> grant.getPermission() == role)) {
+			active.add(role);
+		}
+		Instant now = Instant.now();
+		for (AppUserPermission grant : permissions) {
+			if (grant.activeAt(now)) {
+				active.add(grant.getPermission());
+			}
+		}
+		return active;
+	}
+
+	public boolean has(UserRole permission) {
+		return activePermissions().contains(permission);
+	}
+
+	/**
+	 * Adds {@code permission} next to the others (unlike {@link #setRole}), or brings it back if it lapsed. An
+	 * active grant keeps its original source, so withdrawing one source never takes away what another gave.
+	 */
+	public void grant(UserRole permission, PermissionSource source, Instant now) {
+		grant(permission, source, null, now);
+	}
+
+	/** As {@link #grant(UserRole, PermissionSource, Instant)}, naming what gave it (e.g. the badge award). */
+	public void grant(UserRole permission, PermissionSource source, UUID sourceRef, Instant now) {
+		for (AppUserPermission grant : permissions) {
+			if (grant.getPermission() == permission) {
+				if (!grant.activeAt(now)) {
+					grant.reactivate(source, now);
+					grant.setSourceRef(sourceRef);
+				}
+				return;
+			}
+		}
+		AppUserPermission added = new AppUserPermission(this, permission, source, now);
+		added.setSourceRef(sourceRef);
+		permissions.add(added);
+	}
+
+	/** Revokes the active grants {@code source} gave that it no longer backs; grants from other sources stay. */
+	public void withdraw(PermissionSource source, Set<UserRole> stillBacked, Instant now) {
+		for (AppUserPermission grant : permissions) {
+			if (grant.getSource() == source && grant.getStatus() == PermissionStatus.ACTIVE
+					&& !stillBacked.contains(grant.getPermission())) {
+				grant.revoke(now);
+			}
+		}
+	}
+
+	/** Sets the primary role alone, for an account whose grants come from {@link #grant} rather than sign-up. */
+	public void setPrimaryRole(UserRole role) {
+		this.role = role;
+	}
 }

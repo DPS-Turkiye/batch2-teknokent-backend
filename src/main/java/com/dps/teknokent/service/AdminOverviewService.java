@@ -80,7 +80,7 @@ public class AdminOverviewService {
 	@Transactional(readOnly = true)
 	public AdminOverviewResponse overview(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getRole() != UserRole.ADMIN) {
+		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can view the admin overview.");
 		}
 		List<AppUser> userEntities = appUserRepository.findAll();
@@ -170,7 +170,7 @@ public class AdminOverviewService {
 
 	// An added coordinator is APPROVED at once, but cannot sign in before setting a password.
 	private static boolean mayLackPassword(AppUser user) {
-		return user.getRole() == UserRole.COORDINATOR && user.getStatus() == UserAccountStatus.APPROVED
+		return user.has(UserRole.COORDINATOR) && user.getStatus() == UserAccountStatus.APPROVED
 				&& user.getFirebaseUid() != null;
 	}
 
@@ -182,7 +182,7 @@ public class AdminOverviewService {
 				user.getRole(),
 				user.getStatus() == null ? UserAccountStatus.APPROVED : user.getStatus(),
 				user.getOrganization() == null ? null : user.getOrganization().getId(),
-				user.getOrganization() == null ? null : user.getOrganization().getName(),
+				Organization.visibleName(user.getOrganization()),
 				user.getJobTitle(),
 				user.getCreatedAt(),
 				user.getExpertise() == null ? List.of() : List.copyOf(user.getExpertise()),
@@ -197,7 +197,7 @@ public class AdminOverviewService {
 		// An admin who created the program is not its coordinator.
 		List<AppUser> coordinators = ProgramCoordination.coordinatorIds(program, programCoordinatorRepository).stream()
 				.map(usersById::get)
-				.filter(user -> user != null && user.getRole() == UserRole.COORDINATOR)
+				.filter(user -> user != null && user.has(UserRole.COORDINATOR))
 				.toList();
 		List<StartupRow> startups = programStartupRepository
 				.findByProgramIdOrderByCreatedAtAsc(program.getId())
@@ -239,6 +239,7 @@ public class AdminOverviewService {
 				program.getId(),
 				program.getName(),
 				program.getStatus().name(),
+				program.getProgramType().name(),
 				program.getCreatedAt(),
 				coordinators.isEmpty() ? null : coordinators.get(0).getId(),
 				coordinators.isEmpty()
@@ -277,7 +278,7 @@ public class AdminOverviewService {
 		return new RequestRow(
 				request.getId(),
 				request.getOrganization().getId(),
-				request.getOrganization().getName(),
+				Organization.visibleName(request.getOrganization()),
 				request.getMentor().getId(),
 				request.getMentor().getFullName(),
 				request.getSupportArea(),
@@ -292,7 +293,7 @@ public class AdminOverviewService {
 				bottleneck.getSeverity().name(),
 				bottleneck.getStatus().name(),
 				bottleneck.getOrganization().getId(),
-				bottleneck.getOrganization().getName(),
+				Organization.visibleName(bottleneck.getOrganization()),
 				bottleneck.getCreatedAt());
 	}
 

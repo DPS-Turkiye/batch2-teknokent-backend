@@ -1,5 +1,25 @@
 package com.dps.teknokent.controller;
 
+import com.dps.teknokent.service.ProgramEligibilityService;
+
+import com.dps.teknokent.security.FirebaseIdentity;
+
+import com.dps.teknokent.dto.responses.ProgramEligibilityResponse;
+
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+
+import java.util.List;
+
+import static org.mockito.Mockito.verifyNoInteractions;
+
+import static org.mockito.Mockito.verify;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -36,6 +56,72 @@ class AuthRegistrationControllerTest {
     @MockitoBean
     private RegistrationService registrationService;
 
+    @MockitoBean
+    private ProgramEligibilityService programEligibilityService;
+
+    private static final UUID ISKUR_ID = UUID.fromString("00000000-0000-0000-0000-0000000009a1");
+
+    private static UsernamePasswordAuthenticationToken registering(String email) {
+        return new UsernamePasswordAuthenticationToken(
+                new FirebaseIdentity("uid-1", email, true), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+    }
+
+    @Test
+    void answersProgramEligibilityForTheSignedInAddressOnly() throws Exception {
+        when(programEligibilityService.check(ISKUR_ID, "e1@metu.edu.tr"))
+                .thenReturn(ProgramEligibilityResponse.refused("not on the list"));
+
+        mockMvc.perform(get("/api/auth/register/program-eligibility")
+                        .param("programId", ISKUR_ID.toString())
+                        .param("email", "someone-else@metu.edu.tr")
+                        .with(authentication(registering("e1@metu.edu.tr"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligible").value(false))
+                .andExpect(jsonPath("$.message").value("not on the list"));
+        verify(programEligibilityService).check(ISKUR_ID, "e1@metu.edu.tr");
+    }
+
+    // Firebase puts the address in the token before it is verified; the list must not answer for it.
+    @Test
+    void refusesProgramEligibilityForAnUnverifiedAddressWithoutAskingTheList() throws Exception {
+        mockMvc.perform(get("/api/auth/register/program-eligibility")
+                        .param("programId", ISKUR_ID.toString())
+                        .with(authentication(new UsernamePasswordAuthenticationToken(
+                                new FirebaseIdentity("uid-1", "e1@metu.edu.tr", false), null,
+                                List.of(new SimpleGrantedAuthority("ROLE_REGISTERING"))))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligible").value(false))
+                .andExpect(jsonPath("$.message").isNotEmpty());
+        verifyNoInteractions(programEligibilityService);
+    }
+
+    @Test
+    void programEligibilityNeedsAFirebaseSignIn() throws Exception {
+        mockMvc.perform(get("/api/auth/register/program-eligibility").param("programId", ISKUR_ID.toString())
+                        .with(user("proxy").roles("ADMIN")))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(programEligibilityService);
+    }
+
+    // On the service credentials there is no Firebase login to bind, so the row could be claimed by its address later.
+    @Test
+    void refusesRegistrationOnTheServiceCredentials() throws Exception {
+        mockMvc.perform(post("/api/auth/register/founder")
+                        .with(user("proxy").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ayşe Demir",
+                                  "email": "ayse@startup.com",
+                                  "organizationName": "GreenLoop",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa",
+                                  "jobTitle": "Kurucu"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(registrationService);
+    }
+
     @Test
     void requiresAuthenticationForFounderRegister() throws Exception {
         mockMvc.perform(post("/api/auth/register/founder")
@@ -64,11 +150,12 @@ class AuthRegistrationControllerTest {
                 organizationId,
                 "GreenLoop",
                 "Kurucu",
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(post("/api/auth/register/founder")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -100,11 +187,12 @@ class AuthRegistrationControllerTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(post("/api/auth/register/mentor")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -132,11 +220,12 @@ class AuthRegistrationControllerTest {
                 organizationId,
                 "GreenLoop",
                 null,
-                null
+                null,
+                false
         ));
 
         mockMvc.perform(post("/api/auth/register/member")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -154,7 +243,7 @@ class AuthRegistrationControllerTest {
     @Test
     void rejectsFounderRegisterWhenEmailIsBlank() throws Exception {
         mockMvc.perform(post("/api/auth/register/founder")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -169,7 +258,7 @@ class AuthRegistrationControllerTest {
     @Test
     void rejectsFounderRegisterWhenPhoneContainsLetters() throws Exception {
         mockMvc.perform(post("/api/auth/register/founder")
-                        .with(user("test-user"))
+                        .with(authentication(registering("ayse@startup.com")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -39,6 +40,10 @@ public class Program {
 	@Column(nullable = false, length = 32)
 	private ProgramStatus status = ProgramStatus.ACTIVE;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "program_type", nullable = false, length = 32)
+	private ProgramType programType = ProgramType.STARTUP_MENTORING;
+
 	@Column(columnDefinition = "TEXT")
 	private String description;
 
@@ -69,6 +74,13 @@ public class Program {
 	@Column(name = "bottleneck_flag_days", nullable = false)
 	private int bottleneckFlagDays = 21;
 
+	/** Lowercase, no "@"; subdomains count. Null lets any address join. */
+	@Column(name = "eligible_email_domain")
+	private String eligibleEmailDomain;
+	@Column(name = "roster_only", nullable = false)
+	private boolean rosterOnly;
+	@Column(name = "individual_mentees", nullable = false)
+	private boolean individualMentees;
 	@Column(name = "syllabus_document_id")
 	private UUID syllabusDocumentId;
 }

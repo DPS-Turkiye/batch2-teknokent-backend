@@ -12,8 +12,6 @@ import com.dps.teknokent.entity.MentorshipRequest;
 
 public interface MentorshipRequestRepository extends JpaRepository<MentorshipRequest, UUID> {
 
-	List<MentorshipRequest> findAllByOrderByCreatedAtDesc();
-
 	List<MentorshipRequest> findByStatusInOrderByCreatedAtDesc(Collection<MentorshipRequestStatus> statuses);
 
 	List<MentorshipRequest> findByRequesterIdOrderByCreatedAtDesc(UUID requesterId);
@@ -33,6 +31,11 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 			MentorshipRequestStatus status);
 
 	boolean existsByMentorIdAndOrganizationId(UUID mentorId, UUID organizationId);
+
+	boolean existsByMentorIdAndOrganizationIdAndStatusIn(
+			UUID mentorId,
+			UUID organizationId,
+			Collection<MentorshipRequestStatus> statuses);
 
 	List<MentorshipRequest> findByOrganizationIdInAndStatus(
 			Collection<UUID> organizationIds,

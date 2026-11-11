@@ -9,6 +9,7 @@ import org.hibernate.annotations.BatchSize;
 import com.dps.teknokent.domain.MeetingFrequency;
 import com.dps.teknokent.domain.MentorLanguage;
 import com.dps.teknokent.domain.PrepFileRequirement;
+import com.dps.teknokent.util.TextUtils;
 
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -137,9 +138,62 @@ public class MentorProfile {
 	private List<MentorExperience> experiences = new ArrayList<>();
 
 	@ElementCollection
+	@CollectionTable(name = "mentor_education", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@BatchSize(size = 50)
+	private List<MentorEducation> educations = new ArrayList<>();
+
+	@ElementCollection
 	@CollectionTable(name = "mentor_offering", joinColumns = @JoinColumn(name = "mentor_id"))
 	@OrderColumn(name = "display_order")
 	@Column(name = "offering", nullable = false)
 	@BatchSize(size = 50)
 	private List<String> offerings = new ArrayList<>();
+
+	/** Student mentors (İŞKUR) only; null for everyone else. */
+	@Column(name = "department")
+	private String department;
+
+	@Column(name = "study_year", length = 32)
+	private String studyYear;
+
+	@Column(name = "erasmus", length = 500)
+	private String erasmus;
+
+	@ElementCollection
+	@CollectionTable(name = "mentor_strong_course", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@Column(name = "course", nullable = false)
+	@BatchSize(size = 50)
+	private List<String> strongCourses = new ArrayList<>();
+
+	@ElementCollection
+	@CollectionTable(name = "mentor_project", joinColumns = @JoinColumn(name = "mentor_id"))
+	@OrderColumn(name = "display_order")
+	@Column(name = "project", nullable = false, length = 500)
+	@BatchSize(size = 50)
+	private List<String> projects = new ArrayList<>();
+
+	/**
+	 * A profile row for a new mentor: onboarding and the peer-mentor wizard update a profile rather than create one, so
+	 * the presentation labels they do not collect start empty.
+	 */
+	public static MentorProfile blankFor(AppUser mentor, int sortOrder) {
+		MentorProfile profile = new MentorProfile();
+		profile.setUser(mentor);
+		profile.setInitials(TextUtils.initials(mentor.getFullName()));
+		profile.setProfessionalTitle(TextUtils.nullToEmpty(mentor.getJobTitle()));
+		profile.setCompany("");
+		profile.setAvailabilityLabel("");
+		profile.setResponseTimeLabel("");
+		profile.setMeetingMode("");
+		profile.setCommunicationPreference("");
+		profile.setMentoringStyle("");
+		profile.setFitLabel("");
+		profile.setExperienceLevel("");
+		profile.setSectorExperience("");
+		profile.setStartupStages("");
+		profile.setSortOrder(sortOrder);
+		return profile;
+	}
 }

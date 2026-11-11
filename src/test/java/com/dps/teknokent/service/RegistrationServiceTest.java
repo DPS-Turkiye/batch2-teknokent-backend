@@ -41,6 +41,7 @@ import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -57,6 +58,7 @@ import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.util.InviteCodeGenerator;
 
@@ -177,6 +179,9 @@ class RegistrationServiceTest {
     @Mock
     private EmailDomainPolicy emailDomainPolicy;
 
+    @Mock
+    private ProgramEligibilityService programEligibilityService;
+
     @InjectMocks
     private RegistrationService registrationService;
 
@@ -187,7 +192,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerFounder_createsPendingMenteeAndLinksOrganization() {
-        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
             Organization organization = invocation.getArgument(0);
@@ -219,15 +224,59 @@ class RegistrationServiceTest {
         assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(result.organizationName()).isEqualTo("GreenLoop");
         assertThat(result.jobTitle()).isEqualTo("Kurucu");
+        assertThat(result.individualMentee()).isFalse();
         verifyNoInteractions(onboardingDraftRepository);
     }
 
     @Test
+    void registerFounder_givesAStudentOfAnIndividualProgramATeamOfOne() {
+        Program iskur = new Program();
+        iskur.setId(PROGRAM_ID);
+        iskur.setIndividualMentees(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(iskur));
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+
+        var result = registrationService.registerFounder(new RegisterFounderRequest(
+                "Ali Veli", "e1@metu.edu.tr", null, null, null, null, PROGRAM_ID, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, true));
+
+        assertThat(result.organizationId()).isEqualTo(ORGANIZATION_ID);
+        assertThat(result.organizationName()).isEqualTo("Ali Veli");
+        assertThat(result.individualMentee()).isTrue();
+        verify(programEligibilityService).requirePerson(PROGRAM_ID, "e1@metu.edu.tr");
+        verifyNoInteractions(pendingMemberRepository);
+    }
+
+    @Test
+    void registerFounder_refusesSomeoneTheProgramDoesNotAllow() {
+        doThrow(new InvalidRequestException("not on list"))
+                .when(programEligibilityService).requirePerson(PROGRAM_ID, "ali@gmail.com");
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ali Veli", "ali@gmail.com", "Döngü", null, null, null, PROGRAM_ID, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("not on list");
+        verify(appUserRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(organizationRepository);
+    }
+
+    @Test
     void registerFounder_discardsTheOnboardingDraftForTheSignedInFirebaseUser() {
-        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com"));
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", true));
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
-        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
             Organization organization = invocation.getArgument(0);
             if (organization.getId() == null) {
@@ -254,6 +303,26 @@ class RegistrationServiceTest {
         verify(onboardingDraftRepository).deleteById("uid-1");
     }
 
+    // Team claims, invites and startup codes treat the address as proof, so it must be verified (E1).
+    @Test
+    void registerFounder_refusesALoginWhoseEmailIsNotVerified() {
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", false));
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
+                "Ayşe Demir",
+                "ayse@startup.com",
+                "GreenLoop",
+                "Climate tech",
+                "Kurucu",
+                "+905551112233",
+                PROGRAM_ID, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, false)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Verify your email address before registering.");
+        verify(appUserRepository, never()).saveAndFlush(any());
+    }
+
     @Test
     void registerFounder_joinsAndActivatesTheProgramChosenAtSignup() {
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
@@ -269,7 +338,7 @@ class RegistrationServiceTest {
             user.setId(USER_ID);
             return user;
         });
-        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
 
         registrationService.registerFounder(founderRequest(
                 "Ayşe Demir",
@@ -305,7 +374,7 @@ class RegistrationServiceTest {
             user.setId(USER_ID);
             return user;
         });
-        when(programRepository.existsById(PROGRAM_ID)).thenReturn(false);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233",
@@ -363,7 +432,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerFounder_withStartupLaterSignsUpIntoTheProgramWithoutAStartup() {
-        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -462,7 +531,7 @@ class RegistrationServiceTest {
         AppUser person = menteeWithoutStartup();
         when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
         when(inviteCodeGenerator.nextUnique(any())).thenReturn("KARGO1");
-        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
             Organization organization = invocation.getArgument(0);
             organization.setId(ORGANIZATION_ID);
@@ -490,6 +559,38 @@ class RegistrationServiceTest {
         verify(pendingMemberRepository).save(any(OrganizationPendingMember.class));
     }
 
+    @Test
+    void registerFounder_refusesAProgramThatIsStillADraft() {
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
+            Organization organization = invocation.getArgument(0);
+            if (organization.getId() == null) {
+                organization.setId(ORGANIZATION_ID);
+            }
+            return organization;
+        });
+        when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
+            AppUser user = invocation.getArgument(0);
+            user.setId(USER_ID);
+            return user;
+        });
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.DRAFT)));
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ayşe Demir", "ayse@startup.com", "GreenLoop", "Climate tech", "Kurucu", "+905551112233",
+                PROGRAM_ID, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("does not exist");
+        verifyNoInteractions(programStartupRepository);
+    }
+
+    private static Program program(ProgramStatus status) {
+        Program program = new Program();
+        program.setId(PROGRAM_ID);
+        program.setStatus(status);
+        return program;
+    }
+
     private static AppUser menteeWithoutStartup() {
         AppUser person = new AppUser();
         person.setId(USER_ID);
@@ -509,7 +610,7 @@ class RegistrationServiceTest {
     }
 
     private void stubFounderSaves() {
-        when(programRepository.existsById(PROGRAM_ID)).thenReturn(true);
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.ACTIVE)));
         when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(organizationRepository.saveAndFlush(any(Organization.class))).thenAnswer(invocation -> {
             Organization organization = invocation.getArgument(0);
@@ -635,6 +736,24 @@ class RegistrationServiceTest {
     }
 
     @Test
+    void registerMember_aDraftProgramsCodeDoesNotCreateTheTeamYet() {
+        ProgramTeamInvite invite = new ProgramTeamInvite();
+        invite.setProgramId(PROGRAM_ID);
+        invite.setLeadEmail("deniz@kavsak.co");
+        invite.setCode("BIGG26-K4TX");
+        when(appUserRepository.existsByEmailIgnoreCase("deniz@kavsak.co")).thenReturn(false);
+        when(programTeamInviteRepository.findByCode("BIGG26-K4TX")).thenReturn(Optional.of(invite));
+        when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(ProgramStatus.DRAFT)));
+
+        assertThatThrownBy(() -> registrationService.registerMember(new RegisterMemberRequest(
+                "Deniz Arı", "deniz@kavsak.co", "BIGG26-K4TX", null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("henüz başlatılmadı");
+        verify(organizationRepository, never()).saveAndFlush(any());
+        verify(programStartupRepository, never()).save(any());
+    }
+
+    @Test
     void registerMember_someoneElseCannotClaimATeamWithItsLeadsCode() {
         ProgramTeamInvite invite = new ProgramTeamInvite();
         invite.setLeadEmail("deniz@kavsak.co");
@@ -724,7 +843,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerMentor_linksSignedInFirebaseAccount() {
-        signIn(new FirebaseIdentity("uid-1", "kemal@mentor.com"));
+        signIn(new FirebaseIdentity("uid-1", "kemal@mentor.com", true));
 
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.empty());
@@ -763,7 +882,7 @@ class RegistrationServiceTest {
 
     @Test
     void registerMentor_rejectsEmailThatDoesNotMatchTheToken() {
-        signIn(new FirebaseIdentity("uid-1", "baskasi@mentor.com"));
+        signIn(new FirebaseIdentity("uid-1", "baskasi@mentor.com", true));
 
         when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
 

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Mentorship;
 
 public record MentorshipResponse(
@@ -38,7 +39,7 @@ public record MentorshipResponse(
 				mentorship.getMentor().getId(),
 				mentorship.getMentor().getFullName(),
 				mentorship.getOrganization().getId(),
-				mentorship.getOrganization().getName(),
+				Organization.visibleName(mentorship.getOrganization()),
 				mentorship.getStatus(),
 				mentorship.getStartDate(),
 				mentorship.getEndDate(),

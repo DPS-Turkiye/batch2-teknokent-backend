@@ -80,6 +80,32 @@ class CoordinatorConversationServiceTest {
 	private static final UUID CONVERSATION_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
 
 	@Test
+	void anAccountThatMentorsAndIsOnATeamSeesTheThreadsOfBoth() {
+		UUID organizationId = UUID.randomUUID();
+		AppUser student = user(COORDINATOR_ID, UserRole.MENTEE, organizationId);
+		student.grant(UserRole.MENTOR, com.dps.teknokent.domain.PermissionSource.BADGE, java.time.Instant.now());
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(student);
+
+		service.list(COORDINATOR_ID);
+
+		verify(conversationRepository).findByMentorId(COORDINATOR_ID);
+		verify(conversationRepository).findByOrganizationId(organizationId);
+	}
+
+	@Test
+	void aRevokedPrimaryAdminGrantCannotListStaffConversations() {
+		AppUser actor = user(COORDINATOR_ID, UserRole.ADMIN, null);
+		@SuppressWarnings("unchecked")
+		var grants = (List<com.dps.teknokent.entity.AppUserPermission>)
+				org.springframework.test.util.ReflectionTestUtils.getField(actor, "permissions");
+		grants.getFirst().setStatus(com.dps.teknokent.domain.PermissionStatus.REVOKED);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(actor);
+
+		assertThat(service.list(COORDINATOR_ID)).isEmpty();
+		verify(conversationRepository, never()).findAll();
+	}
+
+	@Test
 	void theCoordinatorStartsAThreadWithATeamOfTheProgram() {
 		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR, null));
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
@@ -116,7 +142,7 @@ class CoordinatorConversationServiceTest {
 		CoordinatorConversation conversation = teamConversation();
 		when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
 		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
-		when(appUserRepository.findAllById(List.of(COORDINATOR_ID))).thenReturn(List.of(user(COORDINATOR_ID, UserRole.COORDINATOR, null)));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(user(COORDINATOR_ID, UserRole.COORDINATOR, null)));
 
 		var message = service.send(FOUNDER_ID, CONVERSATION_ID, new SendCoordinatorMessageRequest(null, "  Merhaba  "));
 

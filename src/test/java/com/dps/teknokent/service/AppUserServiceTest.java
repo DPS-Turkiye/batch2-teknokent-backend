@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -72,6 +73,15 @@ class AppUserServiceTest {
     @Mock
     private EmailDomainPolicy emailDomainPolicy;
 
+    @Mock
+    private ProgramEligibilityService programEligibilityService;
+
+    @Mock
+    private MenteeProgramService menteeProgramService;
+
+    @Mock
+    private PersonAccessService personAccessService;
+
     @InjectMocks
     private AppUserService appUserService;
 
@@ -110,9 +120,9 @@ class AppUserServiceTest {
         Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000401"), "Teknokent");
         AppUser user = user(id, "mentor", "Dr. Kemal Arslan", UserRole.MENTOR, organization, "Ürün ve Araştırma Direktörü");
 
-        when(appUserRepository.findById(id)).thenReturn(Optional.of(user));
+        when(personAccessService.requireVisible(id, id)).thenReturn(user);
 
-        var result = appUserService.findById(id);
+        var result = appUserService.findById(id, id);
 
         assertThat(result.id()).isEqualTo(id);
         assertThat(result.email()).isEqualTo("mentor");
@@ -120,15 +130,74 @@ class AppUserServiceTest {
         assertThat(result.role()).isEqualTo(UserRole.MENTOR);
         assertThat(result.organizationId()).isEqualTo(organization.getId());
         assertThat(result.organizationName()).isEqualTo("Teknokent");
+        assertThat(result.individualMentee()).isFalse();
+    }
+
+    @Test
+    void findAll_asksForAnAdminFirst() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000311");
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN)).when(personAccessService).requireAdmin(actorId);
+
+        assertThatThrownBy(() -> appUserService.findAll(actorId, null, null))
+                .isInstanceOf(ResponseStatusException.class);
+        verify(appUserRepository, never()).findAll();
+    }
+
+    @Test
+    void findProfile_readsOnlyWhatTheAccessCheckAllows() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000312");
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000313");
+        when(personAccessService.requireVisible(actorId, id))
+                .thenThrow(new ResourceNotFoundException("User not found: " + id));
+
+        assertThatThrownBy(() -> appUserService.findProfile(actorId, id))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void findProfile_leavesPhoneAndContactPreferencesToThePersonAndAdmins() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000314");
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000315");
+        AppUser person = user(id, "kisi@example.test", "Örnek Kişi", UserRole.MENTEE, null, "Kurucu");
+        person.setPhone("+90 555 000 00 00");
+        person.setBio("Ürün odaklı");
+        person.getContactPreferences().add(ContactPreference.values()[0]);
+        when(personAccessService.requireVisible(actorId, id)).thenReturn(person);
+
+        when(personAccessService.seesContactDetails(actorId, id)).thenReturn(false);
+        var shared = appUserService.findProfile(actorId, id);
+        assertThat(shared.phone()).isNull();
+        assertThat(shared.contactPreferences()).isEmpty();
+        assertThat(shared.bio()).isEqualTo("Ürün odaklı");
+        assertThat(shared.email()).isEqualTo("kisi@example.test");
+
+        when(personAccessService.seesContactDetails(actorId, id)).thenReturn(true);
+        var full = appUserService.findProfile(actorId, id);
+        assertThat(full.phone()).isEqualTo("+90 555 000 00 00");
+        assertThat(full.contactPreferences()).hasSize(1);
+    }
+
+    @Test
+    void findSignedIn_saysWhenTheMenteesProgramTakesIndividuals() {
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000302");
+        Organization team = organization(UUID.fromString("00000000-0000-0000-0000-000000000402"), "Elif Kaya");
+        AppUser student = user(id, "elif@metu.edu.tr", "Elif Kaya", UserRole.MENTEE, team, "Öğrenci");
+        when(appUserRepository.findById(id)).thenReturn(Optional.of(student));
+        when(personAccessService.requireVisible(id, id)).thenReturn(student);
+        when(menteeProgramService.inIndividualProgram(student)).thenReturn(true);
+
+        assertThat(appUserService.findSignedIn(id).individualMentee()).isTrue();
+        assertThat(appUserService.findById(id, id).individualMentee()).isFalse();
     }
 
     @Test
     void findById_throwsWhenUserDoesNotExist() {
         UUID id = UUID.fromString("00000000-0000-0000-0000-000000000999");
 
-        when(appUserRepository.findById(id)).thenReturn(Optional.empty());
+        when(personAccessService.requireVisible(id, id))
+                .thenThrow(new ResourceNotFoundException("User not found: " + id));
 
-        assertThatThrownBy(() -> appUserService.findById(id))
+        assertThatThrownBy(() -> appUserService.findById(id, id))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("User not found: " + id);
     }
@@ -155,50 +224,62 @@ class AppUserServiceTest {
 
     @Test
     void addOrganizationMember_createsMentaeTiedToTheOrganization() {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000601");
-        Organization organization = organization(organizationId, "GreenLoop");
-        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+        Organization organization = teamWithFounder();
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
         when(appUserRepository.existsByEmailIgnoreCase("yeni.uye@greenloop.demo")).thenReturn(false);
-        when(appUserRepository.save(org.mockito.ArgumentMatchers.any(AppUser.class)))
+        when(appUserRepository.save(any(AppUser.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         var result = appUserService.addOrganizationMember(
-                organizationId,
-                new CreateOrganizationMemberRequest("Yeni Üye", "yeni.uye@greenloop.demo", "Ürün Yöneticisi"));
+                TEAM_ORG_ID,
+                new CreateOrganizationMemberRequest(
+                        TEAM_FOUNDER_ID, "Yeni Üye", "yeni.uye@greenloop.demo", "Ürün Yöneticisi"));
 
         assertThat(result.fullName()).isEqualTo("Yeni Üye");
         assertThat(result.email()).isEqualTo("yeni.uye@greenloop.demo");
         assertThat(result.role()).isEqualTo(UserRole.MENTEE);
         assertThat(result.status()).isEqualTo(UserAccountStatus.APPROVED);
-        assertThat(result.organizationId()).isEqualTo(organizationId);
+        assertThat(result.organizationId()).isEqualTo(TEAM_ORG_ID);
     }
 
     @Test
     void addOrganizationMember_rejectsDuplicateEmail() {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000701");
-        Organization organization = organization(organizationId, "GreenLoop");
-        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+        Organization organization = teamWithFounder();
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
         when(appUserRepository.existsByEmailIgnoreCase("mevcut@greenloop.demo")).thenReturn(true);
 
         assertThatThrownBy(() -> appUserService.addOrganizationMember(
-                organizationId,
-                new CreateOrganizationMemberRequest("Tekrar", "mevcut@greenloop.demo", null)))
+                TEAM_ORG_ID,
+                new CreateOrganizationMemberRequest(TEAM_FOUNDER_ID, "Tekrar", "mevcut@greenloop.demo", null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("already exists");
     }
 
     @Test
     void addOrganizationMember_rejectsAnAddressOutsideTheAllowedDomains() {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000801");
-        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization(organizationId, "GreenLoop"));
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(teamWithFounder());
         doThrow(new InvalidRequestException("domain")).when(emailDomainPolicy).requireAllowed("uye@gmail.com");
 
         assertThatThrownBy(() -> appUserService.addOrganizationMember(
-                organizationId,
-                new CreateOrganizationMemberRequest("Üye", "uye@gmail.com", null)))
+                TEAM_ORG_ID,
+                new CreateOrganizationMemberRequest(TEAM_FOUNDER_ID, "Üye", "uye@gmail.com", null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessage("domain");
         verify(appUserRepository, never()).save(any());
+    }
+
+    @Test
+    void addOrganizationMember_refusesATeammateWhoIsNotTheFounder() {
+        Organization organization = teamWithFounder();
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(organization);
+
+        assertThatThrownBy(() -> appUserService.addOrganizationMember(
+                TEAM_ORG_ID,
+                new CreateOrganizationMemberRequest(TEAM_MEMBER_ID, "Yeni Üye", "yeni.uye@greenloop.demo", null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Only the organization founder");
+        verify(appUserRepository, never()).save(any(AppUser.class));
+        verifyNoInteractions(teamMembershipService);
     }
 
     private static final UUID TEAM_ORG_ID = UUID.fromString("00000000-0000-0000-0000-000000000901");
@@ -396,11 +477,12 @@ class AppUserServiceTest {
     }
 
     @Test
-    void revokeSignIns_recordsTheTimeAndEndsTheFirebaseSignIns() {
+    void revokeSignIns_recordsTheTimeAndEndsTheFirebaseSignInsByEmail() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
         AppUser target = user(targetId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
-        target.setFirebaseUid("uid-811");
+        // A stored uid can be stale (login deleted and created again), so Firebase is asked by email.
+        target.setFirebaseUid("uid-stale");
         when(domainLookupService.requireUser(adminId))
                 .thenReturn(user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN));
         when(domainLookupService.requireUser(targetId)).thenReturn(target);
@@ -411,7 +493,7 @@ class AppUserServiceTest {
         assertThat(target.getSignInsRevokedAt()).isAfterOrEqualTo(before);
         assertThat(response.signInsRevokedAt()).isEqualTo(target.getSignInsRevokedAt());
         InOrder order = inOrder(loginProvisioner, appUserRepository);
-        order.verify(loginProvisioner).revokeSignIns("uid-811");
+        order.verify(loginProvisioner).revokeSignIns("ayse@startup.com");
         order.verify(appUserRepository).recordSignInsRevokedAt(targetId, target.getSignInsRevokedAt());
     }
 
@@ -425,7 +507,7 @@ class AppUserServiceTest {
                 .thenReturn(user(adminId, "admin@teknokent.demo", "Demo Administrator", UserRole.ADMIN));
         when(domainLookupService.requireUser(targetId)).thenReturn(target);
         doThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY))
-                .when(loginProvisioner).revokeSignIns("uid-811");
+                .when(loginProvisioner).revokeSignIns("ayse@startup.com");
 
         assertThatThrownBy(() -> appUserService.revokeSignIns(targetId, adminId))
                 .isInstanceOf(ResponseStatusException.class);
@@ -434,7 +516,7 @@ class AppUserServiceTest {
     }
 
     @Test
-    void revokeSignIns_stillEndsAppSessionsForAnAccountWithoutAFirebaseLogin() {
+    void revokeSignIns_asksFirebaseEvenWhenNoUidIsStored() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000811");
         AppUser target = user(targetId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE);
@@ -445,7 +527,7 @@ class AppUserServiceTest {
         appUserService.revokeSignIns(targetId, adminId);
 
         assertThat(target.getSignInsRevokedAt()).isNotNull();
-        verify(loginProvisioner, never()).revokeSignIns(any());
+        verify(loginProvisioner).revokeSignIns("ayse@startup.com");
     }
 
     @Test

@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.Texts;
 import com.google.firebase.auth.ActionCodeSettings;
@@ -162,15 +163,62 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		return answers;
 	}
 
+	/** Signed locally with the service account's private key, so no extra Google permission is needed. */
 	@Override
-	public void revokeSignIns(String uid) {
+	public String customToken(String uid, String email, String displayName, boolean emailVerified) {
+		ensureLogin(uid, email, displayName, emailVerified);
 		try {
+			return firebaseAuth.createCustomToken(uid);
+		} catch (FirebaseAuthException exception) {
+			throw sessionUnavailable(exception);
+		}
+	}
+
+	private void ensureLogin(String uid, String email, String displayName, boolean emailVerified) {
+		try {
+			firebaseAuth.getUser(uid);
+			return;
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() != AuthErrorCode.USER_NOT_FOUND) {
+				throw sessionUnavailable(exception);
+			}
+		}
+		UserRecord.CreateRequest request = new UserRecord.CreateRequest()
+				.setUid(uid)
+				.setEmail(email)
+				.setEmailVerified(emailVerified);
+		// Firebase refuses a blank display name; OTG may send no name at all.
+		if (displayName != null && !displayName.isBlank()) {
+			request.setDisplayName(displayName);
+		}
+		try {
+			firebaseAuth.createUser(request);
+		} catch (FirebaseAuthException exception) {
+			// Another Firebase login already holds the address while no Menton account does.
+			if (exception.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {
+				throw new ConflictException(Texts.forRequest("error.institutionEmailTaken"));
+			}
+			throw sessionUnavailable(exception);
+		}
+	}
+
+	private static ResponseStatusException sessionUnavailable(FirebaseAuthException exception) {
+		log.error("Could not prepare a Firebase login: {} {}", exception.getErrorCode(), exception.getMessage());
+		return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase could not start the session.",
+				exception);
+	}
+
+	@Override
+	public void revokeSignIns(String email) {
+		try {
+			String uid = firebaseAuth.getUserByEmail(email).getUid();
 			firebaseAuth.revokeRefreshTokens(uid);
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				log.warn("No Firebase login for {}; only app sessions are ended", email);
 				return;
 			}
-			log.error("Could not revoke the Firebase sign-ins of {}: {} {}", uid, exception.getErrorCode(),
+			log.error("Could not revoke the Firebase sign-ins of {}: {} {}", email, exception.getErrorCode(),
 					exception.getMessage());
 			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
 					Texts.forRequest("error.signInRevokeFailed", exception.getErrorCode()), exception);

@@ -3,6 +3,7 @@ package com.dps.teknokent.security;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -16,6 +17,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.security.institution.OtgLoginProvider;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -37,6 +39,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final String PROFILE_PARSE_PATH = "/api/profile-analyses";
 	private static final String PROFILE_PARSE_PREVIEW_PATH = "/api/profile-analyses/preview";
 	private static final String NOTIFICATIONS_PATH = "/api/notifications";
+	/** Acts only for the token's own user on meetings they take part in (see AssistantMeetingAccessService). */
+	private static final String ASSISTANT_PATH_PREFIX = "/api/assistant/";
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
@@ -77,8 +81,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		}
 
 		Optional<AppUser> account = appUserRepository.findByFirebaseUid(identity.get().uid())
-				.or(() -> appUserRepository.findByEmailIgnoreCase(identity.get().email())
-						.filter(FirebaseBearerFilter::claimableByEmail));
+				.or(() -> findClaimableByEmail(identity.get()));
 		if (account.isEmpty()) {
 			if (isProfileParsePreview(request)) {
 				authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
@@ -104,24 +107,38 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 			write(response, HttpServletResponse.SC_FORBIDDEN, "This endpoint is only reachable through the app");
 			return;
 		}
-		if (user.getFirebaseUid() == null) {
+		// A login deleted and created again in Firebase gets a new uid; the row was matched by email above.
+		if (!identity.get().uid().equals(user.getFirebaseUid())) {
 			user.setFirebaseUid(identity.get().uid());
 			appUserRepository.save(user);
 		}
 
+		Set<UserRole> permissions = user.activePermissions();
 		AppUserPrincipal principal = new AppUserPrincipal(
-				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getFirebaseUid());
-		authenticate(principal, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
+				user.getId(), user.getEmail(), user.getRole(), permissions, user.getStatus(), user.getFirebaseUid());
+		authenticate(principal, permissions.stream()
+				.<GrantedAuthority>map(permission -> new SimpleGrantedAuthority("ROLE_" + permission.name()))
+				.toList());
 		filterChain.doFilter(request, response);
 	}
 
 	/**
-	 * Linking a login to an existing row by email trusts whoever signs up with that address first, and
-	 * nothing here checks the address is verified. That is tolerable for mentors and mentees but not for
-	 * admins and coordinators, whose rows are seeded or created by an admin already linked to their uid.
+	 * Linking a login to a row by email (and, below, re-binding the row to it) hands the row to whoever holds
+	 * that address, so the address must be verified: Firebase lets anyone create an unverified login for an
+	 * address that has none yet. Admins and coordinators are never claimed this way; their rows are seeded
+	 * or created by an admin already linked to their uid.
 	 */
+	private Optional<AppUser> findClaimableByEmail(FirebaseIdentity identity) {
+		// An OTG login reaches a row only through InstitutionLoginService, which checks which OTG person the row is
+		// bound to; claiming by address here would skip that check.
+		if (!identity.emailVerified() || identity.uid().startsWith(OtgLoginProvider.ID + "_")) {
+			return Optional.empty();
+		}
+		return appUserRepository.findByEmailIgnoreCase(identity.email()).filter(FirebaseBearerFilter::claimableByEmail);
+	}
+
 	private static boolean claimableByEmail(AppUser user) {
-		return user.getRole() != UserRole.ADMIN && user.getRole() != UserRole.COORDINATOR;
+		return !user.has(UserRole.ADMIN) && !user.has(UserRole.COORDINATOR);
 	}
 
 	/**
@@ -131,7 +148,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	 * matching regardless, because MentorProfileService filters to APPROVED.
 	 */
 	private static boolean isOwnMentorProfileUpdate(HttpServletRequest request, AppUser user) {
-		if (!"PUT".equalsIgnoreCase(request.getMethod()) || user.getRole() != UserRole.MENTOR) {
+		if (!"PUT".equalsIgnoreCase(request.getMethod()) || !user.has(UserRole.MENTOR)) {
 			return false;
 		}
 		String ownProfile = MENTOR_PROFILE_PATH_PREFIX + user.getId();
@@ -164,6 +181,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && PROFILE_PARSE_PATH.equals(uri))
 				|| NOTIFICATIONS_PATH.equals(uri)
 				|| uri.startsWith(NOTIFICATIONS_PATH + "/")
+				|| uri.startsWith(ASSISTANT_PATH_PREFIX)
 				|| isOwnMentorProfileUpdate(request, user)
 				|| isOwnUserProfileUpdate(request, user);
 	}

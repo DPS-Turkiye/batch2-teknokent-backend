@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import com.dps.teknokent.security.AppUserPrincipal;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -280,6 +281,7 @@ class OrganizationControllerTest {
     void addsOrganizationMember() throws Exception {
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000666");
         UUID memberId = UUID.fromString("00000000-0000-0000-0000-000000000777");
+        UUID founderId = UUID.fromString("00000000-0000-0000-0000-000000000778");
 
         when(appUserService.addOrganizationMember(eq(organizationId), any(CreateOrganizationMemberRequest.class)))
                 .thenReturn(memberResponse(memberId, organizationId, "Yeni Üye", "Ürün Yöneticisi", false));
@@ -289,14 +291,36 @@ class OrganizationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "actorId": "%s",
                                   "fullName": "Yeni Üye",
                                   "email": "yeni.uye@greenloop.demo",
                                   "jobTitle": "Ürün Yöneticisi"
                                 }
-                                """))
+                                """.formatted(founderId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(memberId.toString()))
                 .andExpect(jsonPath("$.fullName").value("Yeni Üye"));
+
+        verify(appUserService).addOrganizationMember(
+                eq(organizationId), argThat(request -> founderId.equals(request.actorId())));
+    }
+
+    @Test
+    void rejectsAddingMemberWithoutAnActor() throws Exception {
+        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000667");
+
+        mockMvc.perform(post("/api/organizations/{id}/members", organizationId)
+                        .with(user("test-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Yeni Üye",
+                                  "email": "yeni.uye@greenloop.demo"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(appUserService);
     }
 
     @Test
@@ -308,6 +332,7 @@ class OrganizationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "actorId": "00000000-0000-0000-0000-000000000778",
                                   "fullName": "Yeni Üye",
                                   "email": "",
                                   "jobTitle": "Ürün Yöneticisi"

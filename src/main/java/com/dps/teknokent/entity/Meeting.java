@@ -143,6 +143,9 @@ public class Meeting {
 	@Column(name = "reminder_sent_at")
 	private Instant reminderSentAt;
 
+	@Column(name = "held_confirmed_at")
+	private Instant heldConfirmedAt;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private MeetingStatus status;

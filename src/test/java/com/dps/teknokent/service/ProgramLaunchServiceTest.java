@@ -22,6 +22,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -66,30 +68,42 @@ class ProgramLaunchServiceTest {
 	private CoordinatorMentorshipService mentorshipService;
 	@Mock
 	private PlatformTransactionManager transactionManager;
+	@Mock
+	private ProgramEligibilityService programEligibilityService;
+	@Mock
+	private NotificationService notificationService;
+
 	@InjectMocks
 	private ProgramLaunchService service;
 
 	private static final UUID ELIF = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID BURCU = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+	private static final UUID ADMIN = UUID.fromString("00000000-0000-0000-0000-0000000000ad");
 
 	@Test
-	void launchingSavesTheRulesTheCoordinatorsAndATeamCodePerTeam() {
-		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, UserRole.COORDINATOR));
+	void anAdminCreatesADraftWithItsRulesCoordinatorsAndATeamCodePerTeam() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
 		when(appUserRepository.findById(BURCU)).thenReturn(Optional.of(user(BURCU, UserRole.COORDINATOR)));
 
-		service.create(ELIF, request(List.of(ELIF, BURCU), List.of(
+		service.create(ADMIN, request(List.of(ELIF, BURCU), List.of(
 				new TeamInviteInput("Kavşak", "Deniz@Kavsak.co"),
 				new TeamInviteInput("Mira Bio", "selin@mirabio.com"))));
 
 		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
 		verify(programRepository).save(program.capture());
 		assertThat(program.getValue().getName()).isEqualTo("METU BİGG 2026");
+		assertThat(program.getValue().getStatus()).isEqualTo(ProgramStatus.DRAFT);
+		assertThat(program.getValue().getProgramType()).isEqualTo(ProgramType.STARTUP_MENTORING);
+		assertThat(program.getValue().getCreatedBy()).isEqualTo(ADMIN);
 		assertThat(program.getValue().getDefaultMentorCapacity()).isEqualTo(4);
 		assertThat(program.getValue().getCommunicationGapDays()).isEqualTo(14);
 		assertThat(program.getValue().getBottleneckFlagDays()).isEqualTo(21);
-		ArgumentCaptor<ProgramCoordinator> coordinator = ArgumentCaptor.forClass(ProgramCoordinator.class);
-		verify(programCoordinatorRepository).save(coordinator.capture());
-		assertThat(coordinator.getValue().getUserId()).isEqualTo(BURCU);
+		ArgumentCaptor<ProgramCoordinator> coordinators = ArgumentCaptor.forClass(ProgramCoordinator.class);
+		verify(programCoordinatorRepository, org.mockito.Mockito.times(2)).save(coordinators.capture());
+		assertThat(coordinators.getAllValues()).extracting(ProgramCoordinator::getUserId).containsExactly(ELIF, BURCU);
+		verify(notificationService, org.mockito.Mockito.times(2))
+				.create(any(), any(), any(), org.mockito.ArgumentMatchers.startsWith("/coordinator/programs/"));
 		ArgumentCaptor<ProgramTeamInvite> invites = ArgumentCaptor.forClass(ProgramTeamInvite.class);
 		verify(inviteRepository, org.mockito.Mockito.times(2)).save(invites.capture());
 		assertThat(invites.getAllValues()).extracting(ProgramTeamInvite::getLeadEmail)
@@ -99,42 +113,69 @@ class ProgramLaunchServiceTest {
 	}
 
 	@Test
-	void theWizardsPhasesAndSyllabusAreSavedWithTheProgram() {
+	void aCoordinatorCannotCreateAProgram() {
 		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, UserRole.COORDINATOR));
+
+		assertThatThrownBy(() -> service.create(ELIF, request(List.of(BURCU), List.of())))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void aPeerProgramTakesIndividualStudentsAndKeepsTheDefaultRules() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
+
+		service.create(ADMIN, new CreateCoordinatorProgramRequest(null, ProgramType.PEER_MENTORING, "ODTÜ Akran",
+				null, null, null, List.of(ELIF), null, null, null, null, null, null, null));
+
+		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
+		verify(programRepository).save(program.capture());
+		assertThat(program.getValue().getProgramType()).isEqualTo(ProgramType.PEER_MENTORING);
+		assertThat(program.getValue().isIndividualMentees()).isTrue();
+		assertThat(program.getValue().getDefaultMentorCapacity()).isEqualTo(4);
+		assertThat(program.getValue().getMeetingFrequencyDays()).isEqualTo(14);
+		verify(inviteRepository, never()).save(any());
+	}
+
+	@Test
+	void theWizardsPhasesAndSyllabusAreSavedWithTheProgram() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
 		List<ReplaceProgramPhasesRequest.PhaseInput> phases = List.of(
 				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", LocalDate.of(2026, 11, 3), null, "Rapor"));
 		UUID syllabusId = UUID.randomUUID();
 		CreateCoordinatorProgramRequest base = request(List.of(), List.of());
 
-		service.create(ELIF, new CreateCoordinatorProgramRequest(null, base.name(), base.description(),
+		service.create(ADMIN, new CreateCoordinatorProgramRequest(null, base.type(), base.name(), base.description(),
 				base.startDate(), base.endDate(), base.coordinatorIds(), 4, 14, 14, 21, List.of(), phases, syllabusId));
 
 		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
 		verify(programRepository).save(program.capture());
 		verify(programService).writePhases(program.getValue().getId(), phases);
-		verify(programService).attachSyllabus(program.getValue(), ELIF, syllabusId);
+		verify(programService).attachSyllabus(program.getValue(), ADMIN, syllabusId);
 	}
 
 	@Test
 	void launchingWithoutPhasesLeavesThePhasesAlone() {
-		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, UserRole.COORDINATOR));
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
 
-		service.create(ELIF, request(List.of(), List.of()));
+		service.create(ADMIN, request(List.of(), List.of()));
 
 		verify(programService, never()).writePhases(any(), any());
 	}
 
 	@Test
 	void twoTeamsCannotShareALeadEmailAndOnlyApprovedCoordinatorsCanBeAdded() {
-		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, UserRole.COORDINATOR));
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
 
-		assertThatThrownBy(() -> service.create(ELIF, request(List.of(), List.of(
+		assertThatThrownBy(() -> service.create(ADMIN, request(List.of(), List.of(
 				new TeamInviteInput("A", "same@team.co"), new TeamInviteInput("B", "SAME@team.co")))))
 				.isInstanceOf(InvalidRequestException.class);
 
 		UUID mentor = UUID.randomUUID();
 		when(appUserRepository.findById(mentor)).thenReturn(Optional.of(user(mentor, UserRole.MENTOR)));
-		assertThatThrownBy(() -> service.create(ELIF, request(List.of(mentor), List.of())))
+		assertThatThrownBy(() -> service.create(ADMIN, request(List.of(mentor), List.of())))
 				.isInstanceOf(InvalidRequestException.class);
 	}
 
@@ -251,6 +292,20 @@ class ProgramLaunchServiceTest {
 	}
 
 	@Test
+	void aDraftsCodeIsNotEmailedBeforeLaunch() {
+		UUID programId = UUID.randomUUID();
+		Program draft = new Program();
+		draft.setId(programId);
+		draft.setStatus(ProgramStatus.DRAFT);
+		when(programService.requireManagedProgram(ELIF, programId)).thenReturn(draft);
+
+		assertThatThrownBy(() -> service.sendCode(ELIF, programId, UUID.randomUUID()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("henüz başlatılmadı");
+		verify(mailService, never()).sendNow(any(), any(), any());
+	}
+
+	@Test
 	void theTeamDrawerShowsTheLeadMembersAndOnlyThisTeamsMentorships() {
 		UUID programId = UUID.randomUUID();
 		AppUser lead = user(UUID.randomUUID(), UserRole.MENTEE);
@@ -301,7 +356,7 @@ class ProgramLaunchServiceTest {
 	}
 
 	private static CreateCoordinatorProgramRequest request(List<UUID> coordinators, List<TeamInviteInput> teams) {
-		return new CreateCoordinatorProgramRequest(null, " METU BİGG 2026 ", "Kuluçka", LocalDate.of(2026, 11, 3),
+		return new CreateCoordinatorProgramRequest(null, ProgramType.STARTUP_MENTORING, " METU BİGG 2026 ", "Kuluçka", LocalDate.of(2026, 11, 3),
 				LocalDate.of(2027, 9, 30), coordinators, 4, 14, 14, 21, teams, null, null);
 	}
 

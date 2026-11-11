@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.JsonUtils;
+import com.dps.teknokent.util.ProgramCalendar;
 import com.fasterxml.jackson.databind.JsonNode;
 
 @Service
@@ -74,6 +75,7 @@ public class AiProviderClient {
 	 */
 	public JsonNode syllabusPhases(String redactedDocumentText, LocalDate programStart, LocalDate programEnd,
 			JsonNode schema) {
+		Integer totalWeeks = ProgramCalendar.totalWeeks(programStart, programEnd);
 		String instructions = """
 			Extract the program phases (stages, modules, periods) from the supplied syllabus text, in order.
 			- Extract only phases the source describes; never invent phases, dates or deliverables.
@@ -83,9 +85,22 @@ public class AiProviderClient {
 			- start_date and end_date: ISO dates (YYYY-MM-DD). Use a date the source states. When the source
 			  gives week or month numbers and the program start date is known, count from that date. Otherwise null.
 			- Return at most 12 phases. Put extraction limitations in warnings.
+			Also work out the program week by week, in weeks:
+			- One entry per program week the source covers. Week 1 starts on the program start date and every week
+			  is 7 days; week: the 1-based week number, start_date: that week's first day as an ISO date, or null
+			  when the program start date is unknown.
+			- title: what the week is about, at most 100 characters. topics, activities and deliverables: short
+			  lines (at most 150 characters each, at most 6 per list) for what is covered, what participants do,
+			  and what they hand in that week; an empty list when the source names none.
+			- When the source describes the week itself, set inferred to false. When it only gives a phase or
+			  module lasting several weeks, spread that phase's own content over its weeks and set inferred to true.
+			- Use only content the source gives; never invent topics, tasks or deliverables, and never go past the
+			  last program week.
+			- Write titles and lines in the source language.
 			- The source may be Turkish, English, or contain both languages.
-			Program start date: %s. Program end date: %s.
-			""".formatted(programStart == null ? "unknown" : programStart, programEnd == null ? "unknown" : programEnd);
+			Program start date: %s. Program end date: %s. Program weeks: %s.
+			""".formatted(programStart == null ? "unknown" : programStart, programEnd == null ? "unknown" : programEnd,
+				totalWeeks == null ? "unknown" : totalWeeks);
 		return structuredCompletion(instructions, redactedDocumentText, "syllabus_phases", schema, "phase list");
 	}
 
@@ -115,13 +130,8 @@ public class AiProviderClient {
 		}
 	}
 
-	public JsonNode generateMeetingReport(
-			String transcriptText,
-			JsonNode schema,
-			String modelOverride) {
-		String model = (modelOverride != null && !modelOverride.isBlank())
-				? modelOverride.trim()
-				: reportModel();
+	public JsonNode generateMeetingReport(String transcriptText, JsonNode schema) {
+		String model = reportModel();
 		String schemaJson = jsonUtils.writeValue(schema);
 		String instructions = """
 			You are a mentorship meeting assistant that writes structured meeting reports.
@@ -284,10 +294,7 @@ public class AiProviderClient {
 		return "";
 	}
 
-	public String resolveReportModel(String modelOverride) {
-		if (modelOverride != null && !modelOverride.isBlank()) {
-			return modelOverride.trim();
-		}
+	public String resolveReportModel() {
 		return reportModel();
 	}
 

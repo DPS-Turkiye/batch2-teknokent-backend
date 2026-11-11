@@ -59,6 +59,11 @@ class MentorPoolServiceTest {
 	private MentorshipRepository mentorshipRepository;
 	@Mock
 	private MailService mailService;
+	@Mock
+	private ProgramEligibilityService programEligibilityService;
+	@Mock
+	private BadgeService badgeService;
+
 	@InjectMocks
 	private MentorPoolService service;
 
@@ -111,6 +116,20 @@ class MentorPoolServiceTest {
 
 		assertThat(mentor.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
 		verify(programService).settleMentorRequest(any(), org.mockito.ArgumentMatchers.eq(mentor.getId()), org.mockito.ArgumentMatchers.eq(true));
+	}
+
+	// In a peer program, "Kabul Et" also awards the gate badge (the badge service decides when it applies).
+	@Test
+	void acceptingAMentorHandsTheDecisionToTheBadgesAndRejectingDoesNot() {
+		AppUser accepted = awaitingDecision();
+		service.decide(ELIF, PROGRAM_ID, accepted.getId(), true);
+		verify(badgeService).awardAfterMentorApproval(org.mockito.ArgumentMatchers.eq(ELIF), any(),
+				org.mockito.ArgumentMatchers.eq(accepted));
+
+		AppUser rejected = awaitingDecision();
+		service.decide(ELIF, PROGRAM_ID, rejected.getId(), false);
+		verify(badgeService, org.mockito.Mockito.never()).awardAfterMentorApproval(any(), any(),
+				org.mockito.ArgumentMatchers.eq(rejected));
 	}
 
 	@Test

@@ -33,12 +33,17 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.TeamChangeStatus;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.UpdateProgramDetailsRequest;
+import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Bottleneck;
@@ -48,6 +53,7 @@ import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramEvent;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramPhase;
@@ -70,6 +76,7 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.service.CoordinatorProgramService.HealthBucket;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
@@ -108,6 +115,8 @@ class CoordinatorProgramServiceTest {
 	private MeetingNoteRepository meetingNoteRepository;
 	@Mock
 	private MentorshipRequestRepository mentorshipRequestRepository;
+	@Mock
+	private TeamChangeRequestRepository teamChangeRequestRepository;
 	@InjectMocks
 	private CoordinatorProgramService service;
 
@@ -180,6 +189,18 @@ class CoordinatorProgramServiceTest {
 	}
 
 	@Test
+	void secondaryAdminPermissionBypassesTheCoordinatorAssignmentRestriction() {
+		AppUser actor = user(ADMIN_ID, UserRole.ADMIN);
+		org.springframework.test.util.ReflectionTestUtils.setField(actor, "role", UserRole.COORDINATOR);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(actor);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program(COORDINATOR_ID)));
+
+		assertThat(service.requireManagedProgram(ADMIN_ID, PROGRAM_ID).getId()).isEqualTo(PROGRAM_ID);
+		assertThat(service.list(ADMIN_ID)).isEmpty();
+		verify(programRepository).findAllByOrderByCreatedAtDesc();
+	}
+
+	@Test
 	void aMenteeCannotListPrograms() {
 		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(user(MENTEE_ID, UserRole.MENTEE));
 
@@ -219,6 +240,14 @@ class CoordinatorProgramServiceTest {
 		profile.setId(MENTOR_ID);
 		profile.setMenteeCapacity(2);
 		when(mentorProfileRepository.findAllById(any())).thenReturn(List.of(profile));
+		when(appUserRepository.countByProgramIdAndPermissionAndStatus(PROGRAM_ID, UserRole.MENTEE,
+				UserAccountStatus.PENDING)).thenReturn(1L);
+		when(programMentorRepository.countByProgramIdAndStatusAndInvitedBy(PROGRAM_ID, ProgramMentorStatus.PENDING,
+				ProgramMentorInvitedBy.MENTOR)).thenReturn(2L);
+		when(organizationRepository.countInProgramByApprovalStatus(PROGRAM_ID, UserAccountStatus.PENDING))
+				.thenReturn(3L);
+		when(teamChangeRequestRepository.countByProgramIdAndStatus(PROGRAM_ID, TeamChangeStatus.PENDING))
+				.thenReturn(4L);
 
 		var detail = service.detail(COORDINATOR_ID, PROGRAM_ID);
 
@@ -237,6 +266,7 @@ class CoordinatorProgramServiceTest {
 		assertThat(detail.mentors().full()).isEqualTo(1);
 		assertThat(detail.program().riskyMentorshipCount()).isEqualTo(1);
 		assertThat(detail.rules().meetingFrequencyDays()).isEqualTo(14);
+		assertThat(detail.pendingApprovalCount()).isEqualTo(10);
 	}
 
 	@Test
@@ -288,10 +318,123 @@ class CoordinatorProgramServiceTest {
 		stubManagedProgram(program);
 
 		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null)))
+				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null, null, null, null)))
 				.isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> service.deleteEvent(COORDINATOR_ID, PROGRAM_ID, UUID.randomUUID()))
 				.isInstanceOf(InvalidRequestException.class);
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void aDraftIsNeitherArchivedNorRestoredByTheCoordinator() {
+		Program program = program(COORDINATOR_ID);
+		program.setStatus(ProgramStatus.DRAFT);
+		stubManagedProgram(program);
+
+		assertThatThrownBy(() -> service.setArchived(COORDINATOR_ID, PROGRAM_ID, false))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.DRAFT);
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void aPeerMentoringProgramAlwaysTakesIndividualStudents() {
+		Program program = program(COORDINATOR_ID);
+		program.setProgramType(ProgramType.PEER_MENTORING);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(), List.of(), List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+
+		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "Akran", null, null, null, null, null, null, null, null, null, null, null, null, false));
+
+		assertThat(program.isIndividualMentees()).isTrue();
+		assertThat(detail.rules().individualMentees()).isTrue();
+		assertThat(detail.program().type()).isEqualTo(ProgramType.PEER_MENTORING);
+	}
+
+	@Test
+	void anAdminLaunchesADraftAndItsCoordinatorsLeaveOutTheAdmin() {
+		Program program = program(ADMIN_ID);
+		program.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		ProgramCoordinator assigned = new ProgramCoordinator();
+		assigned.setProgramId(PROGRAM_ID);
+		assigned.setUserId(COORDINATOR_ID);
+		when(programCoordinatorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of(assigned));
+		when(programCoordinatorRepository.findByProgramIdIn(any())).thenReturn(List.of(assigned));
+		when(appUserRepository.findAllById(any()))
+				.thenReturn(List.of(user(ADMIN_ID, UserRole.ADMIN), user(COORDINATOR_ID, UserRole.COORDINATOR)));
+		when(programPhaseRepository.findByProgramIdInOrderByPositionAsc(anyList())).thenReturn(List.of());
+		when(programStartupRepository.findByProgramIdIn(anyList())).thenReturn(List.of());
+		when(programMentorRepository.findByProgramIdIn(anyList())).thenReturn(List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+
+		var detail = service.launch(ADMIN_ID, PROGRAM_ID);
+
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.ACTIVE);
+		assertThat(detail.program().lifecycle()).isNotEqualTo(ProgramLifecycle.DRAFT);
+		assertThat(detail.coordinators()).extracting(CoordinatorProgramResponse.CoordinatorRef::id)
+				.containsExactly(COORDINATOR_ID);
+		assertThat(detail.program().coordinatorId()).isEqualTo(COORDINATOR_ID);
+		verify(programRepository).save(program);
+	}
+
+	@Test
+	void aDraftWhoseOnlyCoordinatorWasRejectedIsNotLaunched() {
+		Program program = program(ADMIN_ID);
+		program.setStatus(ProgramStatus.DRAFT);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		ProgramCoordinator assigned = new ProgramCoordinator();
+		assigned.setProgramId(PROGRAM_ID);
+		assigned.setUserId(COORDINATOR_ID);
+		when(programCoordinatorRepository.findByProgramIdIn(any())).thenReturn(List.of(assigned));
+		AppUser rejected = user(COORDINATOR_ID, UserRole.COORDINATOR);
+		rejected.setStatus(UserAccountStatus.REJECTED);
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(user(ADMIN_ID, UserRole.ADMIN), rejected));
+
+		assertThatThrownBy(() -> service.launch(ADMIN_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Assign a coordinator");
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.DRAFT);
+	}
+
+	@Test
+	void onlyAnAdminLaunchesOnlyADraftAndOnlyWithACoordinator() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR));
+		assertThatThrownBy(() -> service.launch(COORDINATOR_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+
+		Program program = program(ADMIN_ID);
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		assertThatThrownBy(() -> service.launch(ADMIN_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("already");
+
+		program.setStatus(ProgramStatus.DRAFT);
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(user(ADMIN_ID, UserRole.ADMIN)));
+		assertThatThrownBy(() -> service.launch(ADMIN_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("coordinator");
+		assertThat(program.getStatus()).isEqualTo(ProgramStatus.DRAFT);
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void anAdminOnlyViewsProgramSettings() {
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
+
+		assertThatThrownBy(() -> service.updateDetails(ADMIN_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null, null, null, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin views");
 		verify(programRepository, never()).save(any());
 	}
 
@@ -321,7 +464,7 @@ class CoordinatorProgramServiceTest {
 				.thenReturn(List.of());
 
 		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, " METU Stars 2026 ", "  ", today, today.plusDays(100), 10, null, false, null, null, null, null));
+				null, " METU Stars 2026 ", "  ", today, today.plusDays(100), 10, null, false, null, null, null, null, null, null, null));
 
 		assertThat(program.getName()).isEqualTo("METU Stars 2026");
 		assertThat(program.getDescription()).isNull();
@@ -333,11 +476,43 @@ class CoordinatorProgramServiceTest {
 	}
 
 	@Test
+	void updatingDetailsSetsAndClearsTheEligibilityRules() {
+		Program program = program(COORDINATOR_ID);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(), List.of(), List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+
+		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "İŞKUR", null, null, null, null, null, null, null, null, null, null, " @METU.edu.tr ", true, true));
+
+		assertThat(detail.rules().eligibleEmailDomain()).isEqualTo("metu.edu.tr");
+		assertThat(detail.rules().rosterOnly()).isTrue();
+		assertThat(detail.rules().individualMentees()).isTrue();
+
+		service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "İŞKUR", null, null, null, null, null, null, null, null, null, null, "", null, null));
+		assertThat(program.getEligibleEmailDomain()).isNull();
+		assertThat(program.isRosterOnly()).isTrue();
+	}
+
+	@Test
+	void anInvalidEligibleDomainIsRefused() {
+		stubManagedProgram(program(COORDINATOR_ID));
+
+		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "İŞKUR", null, null, null, null, null, null, null, null, null, null, "metu edu", null, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("metu edu");
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
 	void aProgramCannotEndBeforeItStarts() {
 		stubManagedProgram(program(COORDINATOR_ID));
 
 		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "METU Stars", null, today, today.minusDays(1), null, null, null, null, null, null, null)))
+				null, "METU Stars", null, today, today.minusDays(1), null, null, null, null, null, null, null, null, null, null)))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programRepository, never()).save(any());
 	}

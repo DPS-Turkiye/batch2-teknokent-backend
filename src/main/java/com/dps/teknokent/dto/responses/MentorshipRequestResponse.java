@@ -8,6 +8,7 @@ import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.MentorshipRequest;
 
 public record MentorshipRequestResponse(
@@ -49,7 +50,7 @@ public record MentorshipRequestResponse(
 				request.getRequester().getId(),
 				request.getRequester().getFullName(),
 				request.getOrganization().getId(),
-				request.getOrganization().getName(),
+				Organization.visibleName(request.getOrganization()),
 				request.getMentor().getId(),
 				request.getMentor().getFullName(),
 				request.getRequestedForName(),

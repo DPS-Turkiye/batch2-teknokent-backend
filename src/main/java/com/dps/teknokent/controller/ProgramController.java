@@ -30,9 +30,11 @@ import com.dps.teknokent.dto.responses.ProgramDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
+import com.dps.teknokent.dto.responses.ProgramWeekResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.ProgramCalendarService;
+import com.dps.teknokent.service.ProgramWeekService;
 import com.dps.teknokent.service.ProgramService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -47,6 +49,7 @@ public class ProgramController {
 
 	private final ProgramService programService;
 	private final ProgramCalendarService programCalendarService;
+	private final ProgramWeekService programWeekService;
 
 	@GetMapping
 	public List<ProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -83,6 +86,18 @@ public class ProgramController {
 			throw new InvalidRequestException("actorId is required");
 		}
 		return programCalendarService.eventsFor(resolved, from, to);
+	}
+
+	/** "Bu hafta" on Süreç: the running week of the caller's program and its syllabus phases in that week. */
+	@GetMapping("/mine/this-week")
+	public ProgramWeekResponse thisWeek(
+			@RequestParam(required = false) UUID programId,
+			@RequestParam(required = false) UUID actorId) {
+		UUID resolved = resolveActorId(actorId);
+		if (resolved == null) {
+			throw new InvalidRequestException("actorId is required");
+		}
+		return programWeekService.thisWeek(resolved, programId);
 	}
 
 	@PutMapping("/mine/active")

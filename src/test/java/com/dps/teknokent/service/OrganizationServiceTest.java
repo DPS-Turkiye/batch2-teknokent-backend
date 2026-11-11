@@ -24,7 +24,11 @@ import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.InviteCodeGenerator;
 
@@ -47,6 +51,32 @@ class OrganizationServiceTest {
 
     @InjectMocks
     private OrganizationService organizationService;
+
+    @Test
+    void findAll_leavesOutStudentsPersonalTeams() {
+        Organization startup = new Organization();
+        startup.setName("Flexvision");
+        Organization personal = new Organization();
+        personal.setName("Ayşe Yılmaz");
+        personal.setPersonal(true);
+        when(organizationRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(personal, startup));
+
+        assertThat(organizationService.findAll()).extracting(OrganizationResponse::name)
+                .containsExactly("Flexvision");
+    }
+
+    @Test
+    void findById_answersNotFoundForAPersonalTeam() {
+        Organization personal = new Organization();
+        personal.setId(ORGANIZATION_ID);
+        personal.setName("Ayşe Yılmaz");
+        personal.setPersonal(true);
+        when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(personal);
+
+        assertThatThrownBy(() -> organizationService.findById(ORGANIZATION_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
 
     @Test
     void getInviteCode_allowsFounderAndAdmin() {
@@ -75,8 +105,10 @@ class OrganizationServiceTest {
         when(domainLookupService.requireUser(OTHER_ID)).thenReturn(outsider);
 
         assertThatThrownBy(() -> organizationService.getInviteCode(ORGANIZATION_ID, OTHER_ID))
-                .isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("admin or the organization founder");
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("admin or the organization founder")
+                .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode())
+                        .isEqualTo(HttpStatus.FORBIDDEN));
     }
 
     @Test

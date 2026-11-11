@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -43,6 +45,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingServiceTest {
@@ -62,6 +65,9 @@ class MeetingServiceTest {
 	@Mock
 	private DocumentRequestService documentRequestService;
 
+	@Mock
+	private ApplicationEventPublisher eventPublisher;
+
 	private MeetingService meetingService;
 
 	private final UUID mentorId = UUID.randomUUID();
@@ -79,7 +85,8 @@ class MeetingServiceTest {
 				appUserRepository,
 				notificationService,
 				documentRequestService,
-				new TranscriptBotCapacityService(meetingRepository, 2));
+				new TranscriptBotCapacityService(meetingRepository, 2),
+				eventPublisher);
 		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(any()))
 				.thenReturn(List.of());
 	}
@@ -89,6 +96,112 @@ class MeetingServiceTest {
 		user.setId(id);
 		user.setRole(UserRole.MENTOR);
 		return user;
+	}
+
+	private Meeting heldCandidate(UUID mentor, Instant at, String meetLink, MeetingStatus status) {
+		Meeting meeting = new Meeting();
+		meeting.setId(UUID.randomUUID());
+		meeting.setMentor(mentor(mentor));
+		meeting.setOrganization(organization());
+		meeting.setScheduledAt(at);
+		meeting.setDurationMinutes(60);
+		meeting.setMeetLink(meetLink);
+		meeting.setStatus(status);
+		return meeting;
+	}
+
+	@Test
+	void confirmHeldCoversTheGroupSessionButNotACancelledSeat() {
+		Instant at = Instant.now().minus(2, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		Meeting otherTeam = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		Meeting cancelledSeat = heldCandidate(mentorId, at, null, MeetingStatus.CANCELLED);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at))
+				.thenReturn(List.of(meeting, otherTeam, cancelledSeat));
+
+		MeetingResponse response = meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		assertThat(response.heldConfirmedAt()).isNotNull();
+		assertThat(otherTeam.getHeldConfirmedAt()).isEqualTo(meeting.getHeldConfirmedAt());
+		assertThat(cancelledSeat.getHeldConfirmedAt()).isNull();
+	}
+
+	@Test
+	void confirmHeldLeavesOlderMeetingsOnTheSameMeetLinkAlone() {
+		String link = "https://meet.google.com/abc-defg-hij";
+		Instant at = Instant.now().minus(1, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		Meeting lastWeek = heldCandidate(mentorId, at.minus(7, ChronoUnit.DAYS), link, MeetingStatus.SCHEDULED);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMeetLinkContainingIgnoreCase("abc-defg-hij"))
+				.thenReturn(List.of(meeting, lastWeek));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(link, at)).thenReturn(List.of(meeting));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		assertThat(meeting.getHeldConfirmedAt()).isNotNull();
+		assertThat(lastWeek.getHeldConfirmedAt()).isNull();
+	}
+
+	@Test
+	void confirmingHeldChecksTheAchievementsOfTheMentorAndOfMenteesWhoAlreadyGaveFeedback() {
+		Instant at = Instant.now().minus(2, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		UUID menteeId = UUID.randomUUID();
+		MeetingFeedback earlier = new MeetingFeedback();
+		earlier.setAuthor(namedUser(menteeId, "Ece Öğrenci", UserRole.MENTEE));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting));
+		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(List.of(meeting.getId()), UserRole.MENTEE))
+				.thenReturn(List.of(earlier));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		verify(eventPublisher).publishEvent(new AchievementsMayChangeEvent(Set.of(mentorId, menteeId)));
+	}
+
+	@Test
+	void undoingHeldChecksNoAchievements() {
+		Instant at = Instant.now().minus(1, ChronoUnit.DAYS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		meeting.setHeldConfirmedAt(at);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, false);
+
+		verify(eventPublisher, never()).publishEvent(any(Object.class));
+	}
+
+	@Test
+	void confirmHeldUndoClearsTheConfirmation() {
+		Instant at = Instant.now().minus(1, ChronoUnit.DAYS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		meeting.setHeldConfirmedAt(at);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting));
+
+		assertThat(meetingService.confirmHeld(meeting.getId(), mentorId, false).heldConfirmedAt()).isNull();
+	}
+
+	@Test
+	void confirmHeldRefusesAnotherMentorAFutureMeetingAndACancelledOne() {
+		Meeting past = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null, MeetingStatus.SCHEDULED);
+		Meeting future = heldCandidate(mentorId, Instant.now().plus(1, ChronoUnit.HOURS), null, MeetingStatus.SCHEDULED);
+		Meeting cancelled = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null,
+				MeetingStatus.CANCELLED);
+		when(meetingRepository.findById(past.getId())).thenReturn(Optional.of(past));
+		when(meetingRepository.findById(future.getId())).thenReturn(Optional.of(future));
+		when(meetingRepository.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+
+		assertThatThrownBy(() -> meetingService.confirmHeld(past.getId(), otherMentorId, true))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> meetingService.confirmHeld(future.getId(), mentorId, true))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> meetingService.confirmHeld(cancelled.getId(), mentorId, true))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(meetingRepository, never()).saveAll(any());
 	}
 
 	private Organization organization() {
@@ -332,22 +445,13 @@ class MeetingServiceTest {
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 
+	// A session without a startup sends a blank organization, which arrives here as null.
 	@Test
-	void findAllWithoutOrganizationIdReturnsAllMeetingsOrderedBySchedule() {
-		UUID demoOrganizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-		UUID demoMentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
-		Meeting meeting = namedMeeting(
-				UUID.fromString("00000000-0000-0000-0000-000000000301"), demoOrganizationId, demoMentorId,
-				"Roadmap review", MeetingStatus.SCHEDULED, 60);
+	void findAllWithoutAScopeRefusesInsteadOfListingEveryMeeting() {
+		assertThatThrownBy(() -> meetingService.findAll(null, null))
+				.isInstanceOf(InvalidRequestException.class);
 
-		when(meetingRepository.findAllByOrderByScheduledAtDesc()).thenReturn(List.of(meeting));
-
-		List<MeetingResponse> result = meetingService.findAll(null, null);
-
-		assertThat(result).hasSize(1);
-		assertThat(result.get(0).id()).isEqualTo(meeting.getId());
-		assertThat(result.get(0).status()).isEqualTo(MeetingStatus.SCHEDULED);
-		assertThat(result.get(0).agenda()).isEqualTo("Roadmap review");
+		verifyNoInteractions(meetingRepository);
 	}
 
 	@Test
@@ -711,6 +815,7 @@ class MeetingServiceTest {
 
 		assertThat(response.ratings()).containsExactly(5, 4, 5);
 		assertThat(response.benefits()).containsExactly("Finansal modeli anlamak");
+		verify(eventPublisher).publishEvent(new AchievementsMayChangeEvent(Set.of(mentorId)));
 	}
 
 	@Test

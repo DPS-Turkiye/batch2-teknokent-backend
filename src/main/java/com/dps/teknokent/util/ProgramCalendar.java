@@ -15,6 +15,9 @@ public final class ProgramCalendar {
 	}
 
 	public static ProgramLifecycle lifecycle(ProgramStatus status, LocalDate startDate, LocalDate today) {
+		if (status == ProgramStatus.DRAFT) {
+			return ProgramLifecycle.DRAFT;
+		}
 		if (status == ProgramStatus.COMPLETED) {
 			return ProgramLifecycle.COMPLETED;
 		}
@@ -58,5 +61,27 @@ public final class ProgramCalendar {
 			latestStarted = phase;
 		}
 		return latestStarted;
+	}
+
+	/** The first day of program week {@code week} (1-based): weeks run from the start date, not from Monday. */
+	public static LocalDate weekStart(LocalDate startDate, int week) {
+		return startDate.plusWeeks(week - 1L);
+	}
+
+	/** The last day of program week {@code week}: six days after its start, or the program's end if sooner. */
+	public static LocalDate weekEnd(LocalDate startDate, LocalDate endDate, int week) {
+		LocalDate last = weekStart(startDate, week).plusDays(6);
+		return endDate != null && endDate.isBefore(last) ? endDate : last;
+	}
+
+	/**
+	 * The dated phases that overlap {@code from}–{@code to} (both inclusive), in their saved order. A phase without
+	 * a start never counts; one without an end runs on.
+	 */
+	public static List<ProgramPhase> phasesBetween(List<ProgramPhase> phases, LocalDate from, LocalDate to) {
+		return phases.stream()
+				.filter(phase -> phase.getStartDate() != null && !phase.getStartDate().isAfter(to))
+				.filter(phase -> phase.getEndDate() == null || !phase.getEndDate().isBefore(from))
+				.toList();
 	}
 }

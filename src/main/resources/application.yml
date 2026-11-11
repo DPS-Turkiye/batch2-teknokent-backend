@@ -39,6 +39,9 @@ spring:
     user:
       name: ${SECURITY_USERNAME}
       password: ${SECURITY_PASSWORD}
+      # The frontend's service credential. Paths only the frontend may call check for this role
+      # (SecurityConfig.SERVICE_ONLY_PATHS); no Menton account ever gets it.
+      roles: SERVICE
 
   data:
     redis:
@@ -93,6 +96,18 @@ app:
   firebase:
     project-id: ${FIREBASE_PROJECT_ID:}
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
+  institution-login:
+    # Local development only: a persona picker stands in for ODTÜ's login. Never on a shared or production server.
+    dev-stub: ${INSTITUTION_LOGIN_DEV_STUB:false}
+  otg-login:
+    # "OTG ile giriş yap" (ODTÜ TEKNOKENT Girişimcilik, OAuth 2.0 + PKCE). Off unless OTG_LOGIN_ENABLED=true; the
+    # secret comes only from the environment.
+    enabled: ${OTG_LOGIN_ENABLED:false}
+    issuer: ${OTG_ISSUER:https://girisimcilik.odtuteknokent.com.tr/auth/v1}
+    userinfo-url: ${OTG_USERINFO_URL:https://girisimcilik.odtuteknokent.com.tr/api/oauth/userinfo}
+    client-id: ${OTG_CLIENT_ID:}
+    client-secret: ${OTG_CLIENT_SECRET:}
+    redirect-uri: ${OTG_REDIRECT_URI:}
   notifications:
     reminders:
       enabled: ${NOTIFICATION_REMINDERS_ENABLED:true}
@@ -114,6 +129,15 @@ app:
     allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://menton.com.tr,https://www.menton.com.tr}
     document-ttl-hours: ${REALTIME_DOCUMENT_TTL_HOURS:12}
     seed-lock-seconds: ${REALTIME_SEED_LOCK_SECONDS:30}
+  # Office hours opened from Moodle (LTI 1.3). Empty values leave LTI off; see .env.example.
+  lti:
+    platform-issuer: ${LTI_PLATFORM_ISSUER:}
+    client-id: ${LTI_CLIENT_ID:}
+    deployment-ids: ${LTI_DEPLOYMENT_IDS:}
+    platform-auth-url: ${LTI_PLATFORM_AUTH_URL:}
+    platform-jwks-url: ${LTI_PLATFORM_JWKS_URL:}
+    tool-launch-url: ${LTI_TOOL_LAUNCH_URL:}
+    tool-private-key: ${LTI_TOOL_PRIVATE_KEY:}
   documents:
     # Same trusted frontend origins as app.realtime.allowed-origins by default.
     # Exact origins only: a pattern such as https://*.amplifyapp.com trusts every Amplify app on the internet.

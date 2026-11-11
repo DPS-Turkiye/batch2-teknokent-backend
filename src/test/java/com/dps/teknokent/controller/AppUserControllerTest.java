@@ -22,25 +22,33 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
+import com.dps.teknokent.dto.responses.PersonSummaryResponse;
 import com.dps.teknokent.dto.responses.TeamHistoryResponse;
+import com.dps.teknokent.dto.responses.UserProfileResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.PersonSummaryService;
 import com.dps.teknokent.service.TeamMembershipService;
 
 @WebMvcTest(AppUserController.class)
 @Import(SecurityConfig.class)
 class AppUserControllerTest {
+
+    private static final UUID ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000ad");
 
     @Autowired
     private MockMvc mockMvc;
@@ -50,6 +58,9 @@ class AppUserControllerTest {
 
     @MockitoBean
     private TeamMembershipService teamMembershipService;
+
+    @MockitoBean
+    private PersonSummaryService personSummaryService;
 
     @Test
     void requiresAuthenticationForUsersList() throws Exception {
@@ -62,7 +73,7 @@ class AppUserControllerTest {
         UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000101");
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-        when(appUserService.findAll(UserRole.MENTOR, null)).thenReturn(List.of(new UserResponse(
+        when(appUserService.findAll(ADMIN_ID, UserRole.MENTOR, null)).thenReturn(List.of(new UserResponse(
                 userId,
                 "mentor@teknokent.demo",
                 "Dr. Kemal Arslan",
@@ -71,10 +82,12 @@ class AppUserControllerTest {
                 organizationId,
                 "Teknokent",
                 "Ürün & Araştırma Direktörü",
-                null
+                null,
+                false
         )));
 
-        mockMvc.perform(get("/api/users").param("role", "MENTOR").with(user("test-user")))
+        mockMvc.perform(get("/api/users").param("role", "MENTOR").param("actorId", ADMIN_ID.toString())
+                        .with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(userId.toString()))
                 .andExpect(jsonPath("$[0].email").value("mentor@teknokent.demo"))
@@ -86,7 +99,7 @@ class AppUserControllerTest {
         UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000102");
         UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-        when(appUserService.findById(userId)).thenReturn(new UserResponse(
+        when(appUserService.findById(ADMIN_ID, userId)).thenReturn(new UserResponse(
                 userId,
                 "mentee@teknokent.demo",
                 "Elif Demir",
@@ -95,10 +108,11 @@ class AppUserControllerTest {
                 organizationId,
                 "Teknokent",
                 "Product Designer",
-                null
+                null,
+                false
         ));
 
-        mockMvc.perform(get("/api/users/{id}", userId).with(user("test-user")))
+        mockMvc.perform(get("/api/users/{id}", userId).param("actorId", ADMIN_ID.toString()).with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(userId.toString()))
                 .andExpect(jsonPath("$.fullName").value("Elif Demir"))
@@ -110,7 +124,7 @@ class AppUserControllerTest {
         UUID firstUserId = UUID.fromString("00000000-0000-0000-0000-000000000103");
         UUID secondUserId = UUID.fromString("00000000-0000-0000-0000-000000000104");
 
-        when(appUserService.findAll(isNull(), isNull())).thenReturn(List.of(
+        when(appUserService.findAll(eq(ADMIN_ID), isNull(), isNull())).thenReturn(List.of(
                 new UserResponse(
                         firstUserId,
                         "admin@teknokent.demo",
@@ -120,7 +134,8 @@ class AppUserControllerTest {
                         null,
                         null,
                         "Platform Admin",
-                        null
+                        null,
+                        false
                 ),
                 new UserResponse(
                         secondUserId,
@@ -131,11 +146,12 @@ class AppUserControllerTest {
                         null,
                         null,
                         "Mentor",
-                        null
+                        null,
+                        false
                 )
         ));
 
-        mockMvc.perform(get("/api/users").with(user("test-user")))
+        mockMvc.perform(get("/api/users").param("actorId", ADMIN_ID.toString()).with(user("test-user")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].email").value("admin@teknokent.demo"))
                 .andExpect(jsonPath("$[1].role").value("MENTOR"));
@@ -173,7 +189,8 @@ class AppUserControllerTest {
                                 organizationId,
                                 "GreenLoop",
                                 "Kurucu",
-                                null
+                                null,
+                                false
                         ),
                         "ABCD2345"
                 ));
@@ -243,7 +260,7 @@ class AppUserControllerTest {
         Instant revokedAt = Instant.parse("2026-10-23T15:00:00Z");
         when(appUserService.revokeSignIns(userId, adminId)).thenReturn(new UserResponse(
                 userId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE, UserAccountStatus.APPROVED,
-                null, null, "Kurucu", revokedAt));
+                null, null, "Kurucu", revokedAt, false));
 
         mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
                         .with(user("test-user"))
@@ -270,5 +287,114 @@ class AppUserControllerTest {
                                 null, List.of()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
+    }
+
+    @Test
+    void theAccountListNamesWhoIsAsking() throws Exception {
+        mockMvc.perform(get("/api/users").with(user("test-user")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void theAccountListRefusesWhomTheServiceRefuses() throws Exception {
+        UUID mentee = UUID.fromString("00000000-0000-0000-0000-0000000000e1");
+        when(appUserService.findAll(eq(mentee), isNull(), isNull()))
+                .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Only an admin can list accounts"));
+
+        mockMvc.perform(get("/api/users").param("actorId", mentee.toString()).with(user("test-user")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aProfileNamesWhoIsAsking() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000105");
+
+        mockMvc.perform(get("/api/users/{id}/profile", userId).with(user("test-user")))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/users/{id}", userId).with(user("test-user")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returnsTheProfileForTheNamedActor() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000106");
+        when(appUserService.findProfile(ADMIN_ID, userId)).thenReturn(new UserProfileResponse(
+                userId, "Örnek Kişi", "kisi@example.test", null, null, null, null, List.of(), List.of()));
+
+        mockMvc.perform(get("/api/users/{id}/profile", userId).param("actorId", ADMIN_ID.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Örnek Kişi"));
+    }
+
+    @Test
+    void anUnrelatedCallerGetsNotFound() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000107");
+        UUID stranger = UUID.fromString("00000000-0000-0000-0000-0000000000e2");
+        when(appUserService.findProfile(stranger, userId))
+                .thenThrow(new ResourceNotFoundException("User not found: " + userId));
+        when(appUserService.findById(stranger, userId))
+                .thenThrow(new ResourceNotFoundException("User not found: " + userId));
+
+        mockMvc.perform(get("/api/users/{id}/profile", userId).param("actorId", stranger.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/users/{id}", userId).param("actorId", stranger.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isNotFound());
+    }
+
+    // A signed-in caller is the actor, whatever actorId the query names.
+    @Test
+    void aSignedInCallerReadsAsThemselves() throws Exception {
+        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000e3");
+        when(appUserService.findProfile(signedIn, signedIn)).thenReturn(new UserProfileResponse(
+                signedIn, "Örnek Kişi", "kisi@example.test", null, null, null, null, List.of(), List.of()));
+
+        mockMvc.perform(get("/api/users/{id}/profile", signedIn)
+                        .param("actorId", ADMIN_ID.toString())
+                        .with(authentication(new UsernamePasswordAuthenticationToken(
+                                new AppUserPrincipal(signedIn, "kisi@example.test", UserRole.MENTEE,
+                                        UserAccountStatus.APPROVED, "uid"),
+                                null, List.of()))))
+                .andExpect(status().isOk());
+        verify(appUserService).findProfile(signedIn, signedIn);
+    }
+
+    @Test
+    void summaryRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/users/{id}/summary", UUID.randomUUID()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void returnsTheSummaryForTheSignedInCallerNotTheRequestedActor() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000803");
+        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+        when(personSummaryService.summary(signedIn, userId)).thenReturn(new PersonSummaryResponse(userId,
+                "Deniz Yıldız", "deniz@example.test", UserRole.MENTOR, UserAccountStatus.APPROVED, "Danışman",
+                null, null, List.of(), null, null, null, List.of()));
+
+        mockMvc.perform(get("/api/users/{id}/summary", userId)
+                        .param("actorId", "00000000-0000-0000-0000-000000000999")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(
+                                new AppUserPrincipal(signedIn, "coordinator@tnt", UserRole.COORDINATOR,
+                                        UserAccountStatus.APPROVED, "uid"),
+                                null, List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
+    }
+
+    @Test
+    void summaryIsNotFoundWhenTheCallerMayNotSeeThePerson() throws Exception {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000804");
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+        when(personSummaryService.summary(actorId, userId))
+                .thenThrow(new ResourceNotFoundException("User not found: " + userId));
+
+        mockMvc.perform(get("/api/users/{id}/summary", userId)
+                        .param("actorId", actorId.toString())
+                        .with(user("test-user")))
+                .andExpect(status().isNotFound());
     }
 }

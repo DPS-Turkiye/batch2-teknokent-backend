@@ -13,10 +13,12 @@ import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -32,9 +34,15 @@ public class MenteeProgramService {
 	private final AppUserRepository appUserRepository;
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final ProgramRepository programRepository;
 
 	/** The startup's chosen program, else the last program it joined. */
 	public Optional<UUID> programOf(Organization organization) {
+		// A student's personal team never joins a program as a startup; it belongs to the student's own program.
+		if (organization.isPersonal()) {
+			AppUser student = organization.getFounder();
+			return Optional.ofNullable(student == null ? null : student.getProgramId());
+		}
 		if (organization.getActiveProgramId() != null) {
 			return Optional.of(organization.getActiveProgramId());
 		}
@@ -51,6 +59,14 @@ public class MenteeProgramService {
 		return Optional.ofNullable(mentee.getProgramId());
 	}
 
+	/** Whether the mentee's program takes students as teams of one (İŞKUR-style). */
+	public boolean inIndividualProgram(AppUser user) {
+		if (!user.has(UserRole.MENTEE)) {
+			return false;
+		}
+		return programOf(user).flatMap(programRepository::findById).map(Program::isIndividualMentees).orElse(false);
+	}
+
 	/**
 	 * The mentors {@code actorId} may see and ask, or empty when nothing limits them: anyone who is not a mentee,
 	 * and a mentee outside every program.
@@ -61,7 +77,7 @@ public class MenteeProgramService {
 			return Optional.empty();
 		}
 		return appUserRepository.findById(actorId)
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.flatMap(this::programOf)
 				.map(this::acceptedMentorIds);
 	}

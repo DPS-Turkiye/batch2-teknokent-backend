@@ -91,7 +91,7 @@ public class MentorshipService {
 		}
 
 		AppUser mentor = domainLookupService.requireUser(request.mentorId());
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 
@@ -185,7 +185,7 @@ public class MentorshipService {
 					MentorshipWeekCheck check = checks.get(mentorship.getId());
 					return new MentorshipWeekCheckResponse(
 							mentorship.getId(),
-							mentorship.getOrganization().getName(),
+							Organization.visibleName(mentorship.getOrganization()),
 							mentorship.getDaysPerWeek(),
 							mentorship.getStartDate(),
 							mentorship.getEndDate(),
@@ -213,7 +213,7 @@ public class MentorshipService {
 		MentorshipWeekCheck saved = mentorshipWeekCheckRepository.save(check);
 		return new MentorshipWeekCheckResponse(
 				mentorship.getId(),
-				mentorship.getOrganization().getName(),
+				Organization.visibleName(mentorship.getOrganization()),
 				mentorship.getDaysPerWeek(),
 				mentorship.getStartDate(),
 				mentorship.getEndDate(),
@@ -223,7 +223,7 @@ public class MentorshipService {
 
 	private void notifyOrgMentees(Mentorship mentorship) {
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(mentorship.getOrganization().getId()).stream()
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.forEach(mentee -> notificationService.create(
 						mentee,
 						Texts.get(mentee, "notification.regularMentorshipStarted.title"),

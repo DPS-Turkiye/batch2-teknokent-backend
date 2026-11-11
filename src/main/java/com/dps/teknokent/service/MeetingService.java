@@ -2,10 +2,13 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +53,7 @@ public class MeetingService {
 	private final NotificationService notificationService;
 	private final DocumentRequestService documentRequestService;
 	private final TranscriptBotCapacityService transcriptBotCapacity;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public MeetingService(
 			MeetingRepository meetingRepository,
@@ -59,7 +63,8 @@ public class MeetingService {
 			AppUserRepository appUserRepository,
 			NotificationService notificationService,
 			DocumentRequestService documentRequestService,
-			TranscriptBotCapacityService transcriptBotCapacity) {
+			TranscriptBotCapacityService transcriptBotCapacity,
+			ApplicationEventPublisher eventPublisher) {
 		this.meetingRepository = meetingRepository;
 		this.mentorshipRequestRepository = mentorshipRequestRepository;
 		this.domainLookupService = domainLookupService;
@@ -68,6 +73,7 @@ public class MeetingService {
 		this.notificationService = notificationService;
 		this.documentRequestService = documentRequestService;
 		this.transcriptBotCapacity = transcriptBotCapacity;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Transactional(readOnly = true)
@@ -78,7 +84,8 @@ public class MeetingService {
 		} else if (organizationId != null) {
 			meetings = meetingRepository.findByOrganizationIdOrderByScheduledAtDesc(organizationId);
 		} else {
-			meetings = meetingRepository.findAllByOrderByScheduledAtDesc();
+			// A session without a startup sends a blank organization, which arrives as null: not "every meeting".
+			throw new InvalidRequestException("mentorId or organizationId is required");
 		}
 		return meetings.stream()
 				.map(MeetingResponse::fromEntity)
@@ -90,7 +97,7 @@ public class MeetingService {
 		AppUser mentor = null;
 		if (request.mentorId() != null) {
 			mentor = domainLookupService.requireUser(request.mentorId());
-			if (mentor.getRole() != UserRole.MENTOR) {
+			if (!mentor.has(UserRole.MENTOR)) {
 				throw new InvalidRequestException("Selected user does not have the MENTOR role");
 			}
 		}
@@ -114,7 +121,7 @@ public class MeetingService {
 			return;
 		}
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(meeting.getOrganization().getId()).stream()
-				.filter(user -> user.getRole() == UserRole.MENTEE)
+				.filter(user -> user.has(UserRole.MENTEE))
 				.forEach(mentee -> notificationService.create(
 						mentee,
 						NotificationCategory.MEETING_CHANGE,
@@ -398,7 +405,53 @@ public class MeetingService {
 		feedback.getRatings().addAll(request.ratings());
 		feedback.getBenefits().addAll(request.benefits());
 
-		return MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
+		MeetingFeedbackResponse saved = MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
+		Set<UUID> affected = new HashSet<>(Set.of(authorId));
+		if (meeting.getMentor() != null) {
+			affected.add(meeting.getMentor().getId());
+		}
+		eventPublisher.publishEvent(new AchievementsMayChangeEvent(affected));
+		return saved;
+	}
+
+	/**
+	 * The mentor's "Görüşme yapıldı" on a meeting that has started, or its undo. It covers the whole room, so a
+	 * group session counts once for the mentor and once for each team in it.
+	 */
+	@Transactional
+	public MeetingResponse confirmHeld(UUID meetingId, UUID mentorId, boolean held) {
+		Meeting meeting = requireMeeting(meetingId);
+		if (meeting.getMentor() == null || !meeting.getMentor().getId().equals(mentorId)) {
+			throw new InvalidRequestException("Only the meeting's mentor can confirm that it was held.");
+		}
+		if (held && meeting.getStatus() == MeetingStatus.CANCELLED) {
+			throw new InvalidRequestException("A cancelled meeting cannot be confirmed as held.");
+		}
+		Instant now = Instant.now();
+		if (held && meeting.getScheduledAt().isAfter(now)) {
+			throw new InvalidRequestException("A meeting can be confirmed as held only after it starts.");
+		}
+		// A reused Meet link joins older meetings into the room too, so only the same mentor's same slot counts.
+		List<Meeting> room = roommates(meeting).stream()
+				.filter(mate -> mate.getMentor() != null && mate.getMentor().getId().equals(mentorId))
+				.filter(mate -> meeting.getScheduledAt().equals(mate.getScheduledAt()))
+				.toList();
+		for (Meeting mate : room) {
+			if (!held) {
+				mate.setHeldConfirmedAt(null);
+			} else if (mate.getHeldConfirmedAt() == null && mate.getStatus() != MeetingStatus.CANCELLED) {
+				mate.setHeldConfirmedAt(now);
+			}
+		}
+		meetingRepository.saveAll(room);
+		if (held) {
+			// The mentees who already left feedback can reach "Aktif Mentee" once the session counts as held.
+			Set<UUID> affected = new HashSet<>(Set.of(mentorId));
+			meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(room.stream().map(Meeting::getId).toList(),
+					UserRole.MENTEE).forEach(item -> affected.add(item.getAuthor().getId()));
+			eventPublisher.publishEvent(new AchievementsMayChangeEvent(affected));
+		}
+		return MeetingResponse.fromEntity(meeting);
 	}
 
 	@Transactional(readOnly = true)
@@ -444,7 +497,7 @@ public class MeetingService {
 
 	private AppUser requireMentor(UUID mentorId) {
 		AppUser mentor = domainLookupService.requireUser(mentorId);
-		if (mentor.getRole() != UserRole.MENTOR) {
+		if (!mentor.has(UserRole.MENTOR)) {
 			throw new InvalidRequestException("Selected user does not have the MENTOR role");
 		}
 		return mentor;

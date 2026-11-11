@@ -17,6 +17,7 @@ import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.InstitutionDirectoryService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -29,10 +30,13 @@ import lombok.RequiredArgsConstructor;
 public class AuthMeController {
 
 	private final AppUserService appUserService;
+	private final InstitutionDirectoryService institutionDirectoryService;
 
 	@GetMapping("/me")
 	public UserResponse me() {
-		return appUserService.findById(signedInUserId());
+		UUID userId = signedInUserId();
+		return appUserService.findSignedIn(userId)
+				.withInstitutionKinds(institutionDirectoryService.kindsOf(userId));
 	}
 
 	/** The language this user's notifications and e-mails are written in. */

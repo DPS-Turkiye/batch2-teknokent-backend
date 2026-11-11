@@ -152,7 +152,7 @@ public class ProgramMatchingService {
 			throw new InvalidRequestException("Only a mentor in this program's pool can be matched.");
 		}
 		AppUser mentor = appUserRepository.findById(mentorId)
-				.filter(user -> user.getRole() == UserRole.MENTOR)
+				.filter(user -> user.has(UserRole.MENTOR))
 				.orElseThrow(() -> new ResourceNotFoundException("Mentor not found: " + mentorId));
 		boolean alreadyMatched = mentorshipRepository.findByOrganizationIdIn(List.of(team.getId())).stream()
 				.anyMatch(mentorship -> MATCHED.contains(mentorship.getStatus())
@@ -181,7 +181,7 @@ public class ProgramMatchingService {
 				Texts.get(mentor, "notification.matchedWithTeam.body", program.getName(), team.getName()),
 				"/mentor-dashboard");
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(team.getId()).stream()
-				.filter(member -> member.getRole() == UserRole.MENTEE)
+				.filter(member -> member.has(UserRole.MENTEE))
 				.forEach(member -> notificationService.create(
 						member,
 						Texts.get(member, "notification.mentorAssigned.title"),
