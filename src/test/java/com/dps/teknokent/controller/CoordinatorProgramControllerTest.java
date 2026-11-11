@@ -315,6 +315,11 @@ class CoordinatorProgramControllerTest {
 						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
 								+ "\"newCoordinators\":[{\"fullName\":\" \",\"email\":\"yeni@teknokent.org\"}]}"))
 				.andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/coordinator/programs")
+						.with(authentication(signedIn()))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\",\"newCoordinators\":[null]}"))
+				.andExpect(status().isBadRequest());
 		verify(programLaunchService, times(1)).create(eq(SIGNED_IN_ID), any());
 	}
 

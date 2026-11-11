@@ -104,10 +104,12 @@ public class AdminCoordinatorService {
 	public AppUser coordinatorForNewProgram(String email, String fullName, String programName) {
 		String normalized = normalize(email);
 		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(normalized);
-		CoordinatorCandidateStatus status = classify(existing);
-		if (status == CoordinatorCandidateStatus.ALREADY_COORDINATOR && existing.isPresent()) {
+		// The same test as choosing a coordinator by id, so the search, the id and the email agree on who counts.
+		if (existing.isPresent() && existing.get().has(UserRole.COORDINATOR)
+				&& existing.get().getStatus() == UserAccountStatus.APPROVED) {
 			return existing.get();
 		}
+		CoordinatorCandidateStatus status = classify(existing);
 		if (status != CoordinatorCandidateStatus.NEW) {
 			throw new InvalidRequestException(newProgramRefusal(status, normalized));
 		}

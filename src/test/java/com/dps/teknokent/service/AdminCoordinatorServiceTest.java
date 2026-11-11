@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.CoordinatorCandidateStatus;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AddCoordinatorRequest;
@@ -260,6 +262,16 @@ class AdminCoordinatorServiceTest {
 		verify(appUserRepository, never()).save(any());
 		verify(loginProvisioner, never()).loginFor(anyString(), anyString());
 		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aNewProgramTakesAnAccountWithAnActiveCoordinatorPermissionLikeTheSearchDoes() {
+		AppUser mentor = user(MENTOR_ID, "ece@mentor.org", UserRole.MENTOR);
+		mentor.grant(UserRole.COORDINATOR, PermissionSource.ADMIN, Instant.now());
+		when(appUserRepository.findByEmailIgnoreCase("ece@mentor.org")).thenReturn(Optional.of(mentor));
+
+		assertThat(service.coordinatorForNewProgram("ece@mentor.org", "Ece", "METU BİGG 2026")).isSameAs(mentor);
+		verify(appUserRepository, never()).save(any());
 	}
 
 	@Test
