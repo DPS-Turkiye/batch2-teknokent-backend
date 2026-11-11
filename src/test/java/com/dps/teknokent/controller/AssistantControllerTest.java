@@ -22,7 +22,10 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
+import com.dps.teknokent.domain.MeetingBotEndReason;
+import com.dps.teknokent.domain.MeetingBotState;
 import com.dps.teknokent.dto.responses.AddBotResponse;
+import com.dps.teknokent.dto.responses.BotStateResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.ConflictException;
@@ -234,6 +237,37 @@ class AssistantControllerTest {
         .andExpect(status().isForbidden());
 
     verify(meetingService, never()).markBotStopped(any());
+  }
+
+  @Test
+  void getBotStateReturnsTheStateAndEndReason() throws Exception {
+    when(assistantService.botState(CALLER, "google_meet", "abc-defg-hij"))
+        .thenReturn(new BotStateResponse("google_meet", "abc-defg-hij",
+            MeetingBotState.FAILED, MeetingBotEndReason.JOIN_FAILED));
+
+    mockMvc.perform(get("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.state").value("FAILED"))
+        .andExpect(jsonPath("$.endReason").value("JOIN_FAILED"));
+  }
+
+  @Test
+  void getBotStateReturnsBadGatewayWhenTheProviderIsDown() throws Exception {
+    when(assistantService.botState(CALLER, "google_meet", "abc-defg-hij"))
+        .thenThrow(new IllegalStateException("connection refused"));
+
+    mockMvc.perform(get("/api/assistant/bots/google_meet/abc-defg-hij").with(signedIn()))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.detail").value("Failed to read bot state"));
+  }
+
+  @Test
+  void getBotStateOfAMeetingTheCallerIsNotInIsNotFound() throws Exception {
+    when(assistantService.botState(CALLER, "google_meet", "zzz-zzzz-zzz"))
+        .thenThrow(new ResourceNotFoundException("Meeting not found."));
+
+    mockMvc.perform(get("/api/assistant/bots/google_meet/zzz-zzzz-zzz").with(signedIn()))
+        .andExpect(status().isNotFound());
   }
 
   @Test
