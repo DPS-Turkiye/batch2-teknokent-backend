@@ -1,5 +1,13 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.tuple;
+
+import com.dps.teknokent.repository.ProgramPhaseRepository;
+
+import com.dps.teknokent.entity.ProgramPhase;
+
+import com.dps.teknokent.dto.responses.ProcessPhaseResponse;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -93,6 +101,12 @@ class StartupProcessServiceTest {
 
     @Mock
     private ProgramStartupRepository programStartupRepository;
+
+    @Mock
+    private MenteeProgramService menteeProgramService;
+
+    @Mock
+    private ProgramPhaseRepository programPhaseRepository;
 
     @InjectMocks
     private StartupProcessService startupProcessService;
@@ -247,7 +261,7 @@ class StartupProcessServiceTest {
 
         assertThatThrownBy(() -> startupProcessService.createRound(ORG_ID, new CreateStartupRoundRequest(
                 FOUNDER_ID, "Value proposition & onboarding", "MVP test turu", StartupStage.MVP,
-                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 8, 2))))
+                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 8, 2), null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("end before it starts");
 
@@ -263,7 +277,7 @@ class StartupProcessServiceTest {
 
         startupProcessService.createRound(ORG_ID, new CreateStartupRoundRequest(
                 FOUNDER_ID, "Value proposition & onboarding", "MVP test turu", StartupStage.MVP,
-                LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 31)));
+                LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 31), null));
 
         verify(startupRoundRepository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getName()).isEqualTo("MVP test turu");
@@ -281,7 +295,7 @@ class StartupProcessServiceTest {
         ArgumentCaptor<ActionItem> saved = ArgumentCaptor.forClass(ActionItem.class);
 
         startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
-                FOUNDER_ID, round.getId(), null, "Kullanıcı testi raporu", null, null));
+                FOUNDER_ID, round.getId(), null, "Kullanıcı testi raporu", null, null, null));
 
         verify(actionItemRepository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getStage()).isEqualTo(StartupStage.MVP);
@@ -302,7 +316,7 @@ class StartupProcessServiceTest {
                 .thenReturn(Optional.of(new MentorshipRequest()));
 
         startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
-                MENTOR_ID, null, StartupStage.FINANCE, "Finansal model", null, null));
+                MENTOR_ID, null, StartupStage.FINANCE, "Finansal model", null, null, null));
 
         verify(notificationService).create(
                 eq(organization.getFounder()),
@@ -313,14 +327,122 @@ class StartupProcessServiceTest {
     }
 
     @Test
-    void createAssignment_rejectsOneWithNeitherStageNorRound() {
+    void createAssignment_withoutAPhaseIsStillAnAssignmentPlacedByItsDate() {
         Organization organization = startup();
         when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
         when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        ArgumentCaptor<ActionItem> saved = ArgumentCaptor.forClass(ActionItem.class);
+
+        startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
+                FOUNDER_ID, null, null, "Başlıksız", null, null, null));
+
+        verify(actionItemRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().isProcessAssignment()).isTrue();
+        assertThat(saved.getValue().getProgramPhaseId()).isNull();
+        assertThat(saved.getValue().getStage()).isNull();
+    }
+
+    @Test
+    void createAssignment_linksAPhaseOfTheTeamsProgram() {
+        Organization organization = startup();
+        ProgramPhase problem = phase("Problem", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31));
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(menteeProgramService.programOf(organization)).thenReturn(Optional.of(PROGRAM_ID));
+        when(programPhaseRepository.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of(problem));
+        ArgumentCaptor<ActionItem> saved = ArgumentCaptor.forClass(ActionItem.class);
+
+        startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
+                FOUNDER_ID, null, null, "Problem tanımı", null, null, problem.getId()));
+
+        verify(actionItemRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getProgramPhaseId()).isEqualTo(problem.getId());
+    }
+
+    @Test
+    void createAssignment_refusesAPhaseOfAnotherProgram() {
+        Organization organization = startup();
+        when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+        when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+        when(menteeProgramService.programOf(organization)).thenReturn(Optional.of(PROGRAM_ID));
+        when(programPhaseRepository.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of());
 
         assertThatThrownBy(() -> startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
-                FOUNDER_ID, null, null, "Başlıksız", null, null)))
-                .isInstanceOf(InvalidRequestException.class);
+                FOUNDER_ID, null, null, "Başka programın fazı", null, null, UUID.randomUUID())))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(actionItemRepository, never()).saveAndFlush(any(ActionItem.class));
+    }
+
+    @Test
+    void phaseCards_followTheDates() {
+        List<ProgramPhase> phases = List.of(
+                phase("Problem", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)),
+                phase("Çözüm", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31)),
+                phase("Pazar", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)),
+                phase("Tarihsiz", null, null));
+
+        assertThat(StartupProcessService.phaseCards(phases, TODAY))
+                .extracting(ProcessPhaseResponse::name, ProcessPhaseResponse::state)
+                .containsExactly(
+                        tuple("Problem", StartupStageState.COMPLETED),
+                        tuple("Çözüm", StartupStageState.CURRENT),
+                        tuple("Pazar", StartupStageState.UPCOMING),
+                        tuple("Tarihsiz", StartupStageState.UPCOMING));
+        assertThat(StartupProcessService.phaseCards(phases, LocalDate.of(2026, 10, 15)))
+                .extracting(ProcessPhaseResponse::state)
+                .as("after the last phase every dated phase is completed")
+                .containsExactly(StartupStageState.COMPLETED, StartupStageState.COMPLETED,
+                        StartupStageState.COMPLETED, StartupStageState.UPCOMING);
+    }
+
+    @Test
+    void phaseOf_prefersTheLinkedPhaseThenTheDueDateThenTheDayItWasMade() {
+        ProgramPhase july = phase("Problem", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        ProgramPhase august = phase("Çözüm", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31));
+        List<ProgramPhase> phases = List.of(july, august);
+        ActionItem linked = assignment("Bağlı", null);
+        linked.setProgramPhaseId(july.getId());
+        linked.setDueDate(LocalDate.of(2026, 8, 20));
+        ActionItem due = assignment("Teslim tarihli", null);
+        due.setDueDate(LocalDate.of(2026, 7, 10));
+        ActionItem made = assignment("Tarihsiz", null);
+        ActionItem staleLink = assignment("Silinmiş faza bağlı", null);
+        staleLink.setProgramPhaseId(UUID.randomUUID());
+        staleLink.setDueDate(LocalDate.of(2026, 8, 5));
+        ActionItem outside = assignment("Fazsız", null);
+        outside.setDueDate(LocalDate.of(2026, 12, 1));
+
+        assertThat(StartupProcessService.phaseOf(linked, phases)).isEqualTo(july.getId());
+        assertThat(StartupProcessService.phaseOf(due, phases)).isEqualTo(july.getId());
+        assertThat(StartupProcessService.phaseOf(made, phases)).isEqualTo(august.getId());
+        assertThat(StartupProcessService.phaseOf(staleLink, phases)).isEqualTo(august.getId());
+        assertThat(StartupProcessService.phaseOf(outside, phases)).isNull();
+    }
+
+    @Test
+    void describe_showsTheProgramsPhasesAndTheCurrentOne() {
+        Organization organization = startup();
+        ProgramPhase july = phase("Problem", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        ProgramPhase august = phase("Çözüm", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31));
+        when(menteeProgramService.programOf(organization)).thenReturn(Optional.of(PROGRAM_ID));
+        when(programPhaseRepository.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of(july, august));
+        ActionItem finance = assignment("Finansal model", StartupStage.FINANCE);
+
+        when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(ORG_ID)).thenReturn(List.of(finance));
+
+        var process = startupProcessService.describe(organization, TODAY);
+
+        assertThat(process.phases()).extracting(ProcessPhaseResponse::id).containsExactly(july.getId(), august.getId());
+        assertThat(process.currentPhaseId()).isEqualTo(august.getId());
+        assertThat(process.assignments().getFirst().phaseId()).isEqualTo(august.getId());
+    }
+
+    @Test
+    void describe_withoutAProgramHasNoPhasesAndNoCurrentOne() {
+        var process = startupProcessService.describe(startup(), TODAY);
+
+        assertThat(process.phases()).isEmpty();
+        assertThat(process.currentPhaseId()).isNull();
     }
 
     @Test
@@ -408,9 +530,20 @@ class StartupProcessServiceTest {
         item.setId(UUID.randomUUID());
         item.setTitle(title);
         item.setStage(stage);
+        item.setProcessAssignment(stage != null);
         item.setStatus(ActionItemStatus.OPEN);
         item.setCreatedAt(Instant.parse("2026-08-10T09:00:00Z"));
         return item;
+    }
+
+    private static ProgramPhase phase(String name, LocalDate start, LocalDate end) {
+        ProgramPhase phase = new ProgramPhase();
+        phase.setId(UUID.randomUUID());
+        phase.setProgramId(PROGRAM_ID);
+        phase.setName(name);
+        phase.setStartDate(start);
+        phase.setEndDate(end);
+        return phase;
     }
 
     private static StoredDocument document(UUID organizationId) {

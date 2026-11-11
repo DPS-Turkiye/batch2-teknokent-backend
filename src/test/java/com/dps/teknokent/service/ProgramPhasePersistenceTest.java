@@ -68,15 +68,15 @@ class ProgramPhasePersistenceTest {
 	void replacingPhasesTwiceKeepsOnlyTheLatestInOrder() {
 		LocalDate start = LocalDate.of(2026, 2, 1);
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(), new ReplaceProgramPhasesRequest(
-				null, List.of(new PhaseInput("Başvuru", start, start.plusDays(27), null),
-						new PhaseInput("Seçim", null, null, null)), null));
+				null, List.of(new PhaseInput("Başvuru", start, start.plusDays(27), null, null),
+						new PhaseInput("Seçim", null, null, null, null)), null));
 		entityManager.flush();
 
 		var detail = coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(),
 				new ReplaceProgramPhasesRequest(null, List.of(
-						new PhaseInput("Seçim", start, start.plusDays(10), null),
-						new PhaseInput("Eşleşme", null, null, null),
-						new PhaseInput("Demo Day", null, null, null)), null));
+						new PhaseInput("Seçim", start, start.plusDays(10), null, null),
+						new PhaseInput("Eşleşme", null, null, null, null),
+						new PhaseInput("Demo Day", null, null, null, null)), null));
 		entityManager.flush();
 		entityManager.clear();
 
@@ -88,9 +88,35 @@ class ProgramPhasePersistenceTest {
 	}
 
 	@Test
+	void aPhaseSentBackWithItsIdKeepsItThroughReorderingAndOnlyLeftOutPhasesGo() {
+		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(), new ReplaceProgramPhasesRequest(
+				null, List.of(new PhaseInput("Problem", null, null, null, null),
+						new PhaseInput("Çözüm", null, null, null, null),
+						new PhaseInput("Pazar", null, null, null, null)), null));
+		entityManager.flush();
+		List<ProgramPhase> first = programPhaseRepository.findByProgramIdOrderByPositionAsc(program.getId());
+		UUID problem = first.get(0).getId();
+		UUID solution = first.get(1).getId();
+
+		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(), new ReplaceProgramPhasesRequest(
+				null, List.of(new PhaseInput("Çözüm ve Değer", null, null, null, solution),
+						new PhaseInput("Problem", null, null, null, problem),
+						new PhaseInput("Doğrulama", null, null, null, null)), null));
+		entityManager.flush();
+		entityManager.clear();
+
+		List<ProgramPhase> second = programPhaseRepository.findByProgramIdOrderByPositionAsc(program.getId());
+		assertThat(second).extracting(phase -> phase.getPosition() + ":" + phase.getName())
+				.containsExactly("0:Çözüm ve Değer", "1:Problem", "2:Doğrulama");
+		assertThat(second.get(0).getId()).isEqualTo(solution);
+		assertThat(second.get(1).getId()).isEqualTo(problem);
+		assertThat(second.get(2).getId()).isNotIn(first.stream().map(ProgramPhase::getId).toList());
+	}
+
+	@Test
 	void anEmptyListClearsThePhases() {
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(),
-				new ReplaceProgramPhasesRequest(null, List.of(new PhaseInput("Başvuru", null, null, null)), null));
+				new ReplaceProgramPhasesRequest(null, List.of(new PhaseInput("Başvuru", null, null, null, null)), null));
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(),
 				new ReplaceProgramPhasesRequest(null, List.of(), null));
 		entityManager.flush();
@@ -105,8 +131,8 @@ class ProgramPhasePersistenceTest {
 
 		var detail = coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(),
 				new ReplaceProgramPhasesRequest(null, List.of(
-						new PhaseInput("Keşif", null, null, "  Problem doğrulama raporu "),
-						new PhaseInput("Demo Day", null, null, " ")), syllabus.getId()));
+						new PhaseInput("Keşif", null, null, "  Problem doğrulama raporu ", null),
+						new PhaseInput("Demo Day", null, null, " ", null)), syllabus.getId()));
 
 		assertThat(detail.program().phases())
 				.extracting(phase -> phase.name() + ":" + phase.expectedOutput())

@@ -10,7 +10,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * The phases in order; the list replaces the program's current phases. A {@code syllabusDocumentId} also
+ * The phases in order; the list replaces the program's current phases. A phase sent with its {@code id} keeps it
+ * (Süreç assignments stay linked to it); one without is new, and a saved phase left out is removed. A {@code syllabusDocumentId} also
  * replaces the program's syllabus file; null keeps the current one.
  */
 public record ReplaceProgramPhasesRequest(
@@ -22,6 +23,7 @@ public record ReplaceProgramPhasesRequest(
 			@NotBlank @Size(max = 120) String name,
 			LocalDate startDate,
 			LocalDate endDate,
-			@Size(max = 200) String expectedOutput) {
+			@Size(max = 200) String expectedOutput,
+			UUID id) {
 	}
 }

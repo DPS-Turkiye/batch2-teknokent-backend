@@ -27,12 +27,14 @@ import com.dps.teknokent.dto.requests.CreateStartupRoundRequest;
 import com.dps.teknokent.dto.requests.SubmitProcessAssignmentRequest;
 import com.dps.teknokent.dto.requests.UpdateStartupStageRequest;
 import com.dps.teknokent.dto.responses.ProcessAssignmentResponse;
+import com.dps.teknokent.dto.responses.ProcessPhaseResponse;
 import com.dps.teknokent.dto.responses.StartupProcessResponse;
 import com.dps.teknokent.dto.responses.StartupRoundResponse;
 import com.dps.teknokent.dto.responses.StartupStageResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.StartupRound;
 import com.dps.teknokent.entity.StoredDocument;
@@ -41,6 +43,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
@@ -53,9 +56,9 @@ import com.dps.teknokent.util.Texts;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The Süreç tab: where the startup stands on its journey, the round it is
+ * The Süreç tab: the phases of the team's program and where today falls in them, the round it is
  * focused on, and the Ödevler it has been given. Ödevler are action items
- * that carry a stage, so they also surface wherever action items do.
+ * marked as process assignments, so they also surface wherever action items do.
  */
 @Service
 @RequiredArgsConstructor
@@ -73,6 +76,8 @@ public class StartupProcessService {
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final NotificationService notificationService;
+	private final MenteeProgramService menteeProgramService;
+	private final ProgramPhaseRepository programPhaseRepository;
 
 	@Transactional(readOnly = true)
 	public StartupProcessResponse get(UUID organizationId, UUID actorId) {
@@ -103,6 +108,7 @@ public class StartupProcessService {
 		round.setTitle(TextUtils.trim(request.title()));
 		round.setName(TextUtils.trim(request.name()));
 		round.setStage(request.stage());
+		round.setProgramPhaseId(requirePhaseOf(organization, request.phaseId()));
 		round.setStartsOn(request.startsOn());
 		round.setEndsOn(request.endsOn());
 		round.setCreatedBy(actor);
@@ -119,9 +125,8 @@ public class StartupProcessService {
 				: startupRoundRepository.findByIdAndOrganizationId(request.roundId(), organizationId)
 						.orElseThrow(() -> new ResourceNotFoundException("Round not found: " + request.roundId()));
 		StartupStage stage = request.stage() != null ? request.stage() : round == null ? null : round.getStage();
-		if (stage == null) {
-			throw new InvalidRequestException("An assignment needs a stage or a round");
-		}
+		UUID phaseId = request.phaseId() != null ? requirePhaseOf(organization, request.phaseId())
+				: round == null ? null : round.getProgramPhaseId();
 
 		ActionItem item = new ActionItem();
 		item.setOrganization(organization);
@@ -132,7 +137,9 @@ public class StartupProcessService {
 		item.setDescription(TextUtils.normalizeOptional(request.description()));
 		item.setStatus(ActionItemStatus.OPEN);
 		item.setDueDate(request.dueDate());
+		item.setProcessAssignment(true);
 		item.setStage(stage);
+		item.setProgramPhaseId(phaseId);
 		item.setRound(round);
 		item.setCreatedBy(actor);
 		actionItemRepository.saveAndFlush(item);
@@ -153,7 +160,7 @@ public class StartupProcessService {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		requireTeamOrEditor(organization, request.actorId());
 		ActionItem item = actionItemRepository.findByIdAndOrganizationId(assignmentId, organizationId)
-				.filter(found -> found.getStage() != null)
+				.filter(ActionItem::isProcessAssignment)
 				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
 		StoredDocument document = storedDocumentRepository.findById(request.documentId())
 				.orElseThrow(() -> new ResourceNotFoundException("Document not found: " + request.documentId()));
@@ -171,22 +178,93 @@ public class StartupProcessService {
 		List<StartupRound> rounds = startupRoundRepository.findByOrganizationIdOrderByStartsOnDesc(organization.getId());
 		List<ActionItem> assignments = actionItemRepository
 				.findByOrganizationIdOrderByCreatedAtDesc(organization.getId()).stream()
-				.filter(item -> item.getStage() != null)
+				.filter(ActionItem::isProcessAssignment)
 				.toList()
 				.reversed();
 		Map<UUID, String> filenames = submissionFilenames(assignments);
 		StartupRound currentRound = pickCurrentRound(rounds, today);
+		List<ProgramPhase> phases = phasesOf(organization);
+		List<ProcessPhaseResponse> cards = phaseCards(phases, today);
 
 		return new StartupProcessResponse(
 				organization.getId(),
 				organization.getCurrentStage(),
 				stages(organization.getCurrentStage()),
-				currentRound == null ? null : StartupRoundResponse.fromEntity(currentRound),
-				rounds.stream().map(StartupRoundResponse::fromEntity).toList(),
+				currentRound == null ? null : roundOf(currentRound, phases),
+				rounds.stream().map(round -> roundOf(round, phases)).toList(),
 				assignments.stream()
 						.map(item -> ProcessAssignmentResponse.fromEntity(item,
-								filenames.get(item.getSubmissionDocumentId())))
-						.toList());
+								filenames.get(item.getSubmissionDocumentId()), phaseOf(item, phases)))
+						.toList(),
+				cards.stream()
+						.filter(card -> card.state() == StartupStageState.CURRENT)
+						.map(ProcessPhaseResponse::id)
+						.findFirst()
+						.orElse(null),
+				cards);
+	}
+
+	/** The phases of the team's program, in order; none without a program. */
+	private List<ProgramPhase> phasesOf(Organization organization) {
+		return menteeProgramService.programOf(organization)
+				.map(programPhaseRepository::findByProgramIdOrderByPositionAsc)
+				.orElse(List.of());
+	}
+
+	/** A phase of the team's program, or a 404 for any other id. */
+	private UUID requirePhaseOf(Organization organization, UUID phaseId) {
+		if (phaseId == null) {
+			return null;
+		}
+		return phasesOf(organization).stream()
+				.map(ProgramPhase::getId)
+				.filter(phaseId::equals)
+				.findFirst()
+				.orElseThrow(() -> new ResourceNotFoundException("Phase not found: " + phaseId));
+	}
+
+	static List<ProcessPhaseResponse> phaseCards(List<ProgramPhase> phases, LocalDate today) {
+		return phases.stream()
+				.map(phase -> new ProcessPhaseResponse(phase.getId(), phase.getName(), phase.getPosition(),
+						phase.getStartDate(), phase.getEndDate(), phase.getExpectedOutput(), stateOf(phase, today)))
+				.toList();
+	}
+
+	private static StartupStageState stateOf(ProgramPhase phase, LocalDate today) {
+		if (phase.getEndDate() != null && phase.getEndDate().isBefore(today)) {
+			return StartupStageState.COMPLETED;
+		}
+		return covers(phase, today) ? StartupStageState.CURRENT : StartupStageState.UPCOMING;
+	}
+
+	/**
+	 * The phase an Ödev belongs to: the one it names while that is still a phase of the program, else the one its
+	 * due date (or the day it was made) falls in; null when none does.
+	 */
+	static UUID phaseOf(ActionItem item, List<ProgramPhase> phases) {
+		LocalDate day = item.getDueDate() != null ? item.getDueDate()
+				: item.getCreatedAt() == null ? null : LocalDate.ofInstant(item.getCreatedAt(), PROGRAM_ZONE);
+		return linkedOrCovering(item.getProgramPhaseId(), day, phases);
+	}
+
+	private static StartupRoundResponse roundOf(StartupRound round, List<ProgramPhase> phases) {
+		return StartupRoundResponse.fromEntity(round,
+				linkedOrCovering(round.getProgramPhaseId(), round.getStartsOn(), phases));
+	}
+
+	private static UUID linkedOrCovering(UUID linked, LocalDate day, List<ProgramPhase> phases) {
+		if (linked != null && phases.stream().anyMatch(phase -> linked.equals(phase.getId()))) {
+			return linked;
+		}
+		if (day == null) {
+			return null;
+		}
+		return phases.stream().filter(phase -> covers(phase, day)).map(ProgramPhase::getId).findFirst().orElse(null);
+	}
+
+	private static boolean covers(ProgramPhase phase, LocalDate day) {
+		return phase.getStartDate() != null && !phase.getStartDate().isAfter(day)
+				&& (phase.getEndDate() == null || !phase.getEndDate().isBefore(day));
 	}
 
 	/** The round running today; failing that the next one planned; failing that the last one held. */
