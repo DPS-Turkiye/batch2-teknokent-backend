@@ -34,6 +34,7 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.ProfileAnalysisService;
 import com.dps.teknokent.service.SyllabusPhaseService;
+import com.dps.teknokent.service.WeeklyProgramService;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -53,6 +54,9 @@ class CvParseRateLimitTest {
 
 	@MockitoBean
 	private SyllabusPhaseService syllabusPhaseService;
+
+	@MockitoBean
+	private WeeklyProgramService weeklyProgramService;
 
 	@BeforeEach
 	void stubParse() {
@@ -98,6 +102,18 @@ class CvParseRateLimitTest {
 				.andExpect(header().exists("X-Rate-Limit-Retry-After-Seconds"));
 	}
 
+	@Test
+	void weeklyProgramReadsGetTheSameTightBudget() throws Exception {
+		Authentication coordinator = signedIn(UserRole.COORDINATOR);
+		for (int i = 0; i < 10; i++) {
+			mockMvc.perform(weeklyProgramRead().with(authentication(coordinator))).andExpect(status().isOk());
+		}
+
+		mockMvc.perform(weeklyProgramRead().with(authentication(coordinator)))
+				.andExpect(status().isTooManyRequests())
+				.andExpect(header().exists("X-Rate-Limit-Retry-After-Seconds"));
+	}
+
 	private void spendCvBudget(Authentication caller) throws Exception {
 		for (int i = 0; i < 10; i++) {
 			mockMvc.perform(preview().with(authentication(caller))).andExpect(status().isOk());
@@ -111,6 +127,13 @@ class CvParseRateLimitTest {
 
 	private static MockHttpServletRequestBuilder syllabusParse() {
 		return post("/api/coordinator/programs/syllabus/phases")
+				.contentType("application/json")
+				.content("{\"documentId\": \"" + UUID.randomUUID() + "\"}")
+				.header("X-Forwarded-For", OFFICE_IP);
+	}
+
+	private static MockHttpServletRequestBuilder weeklyProgramRead() {
+		return post("/api/coordinator/programs/{id}/weekly-program/read", UUID.randomUUID())
 				.contentType("application/json")
 				.content("{\"documentId\": \"" + UUID.randomUUID() + "\"}")
 				.header("X-Forwarded-For", OFFICE_IP);

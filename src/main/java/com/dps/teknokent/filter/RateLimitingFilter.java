@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 @Component
 @ConditionalOnProperty(name = "rate-limiting.enabled", havingValue = "true", matchIfMissing = true)
@@ -34,9 +35,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 	private static final String CV_PARSE_PATH = "/api/profile-analyses";
 	private static final String CV_PREVIEW_PATH = CV_PARSE_PATH + "/preview";
 	private static final String SYLLABUS_PARSE_PATH = "/api/coordinator/programs/syllabus/phases";
+	private static final Pattern WEEKLY_PROGRAM_READ_PATH =
+			Pattern.compile("/api/coordinator/programs/[^/]+/weekly-program/read");
 
 	/**
-	 * Each CV or syllabus parse runs OCR and a paid LLM call, so it gets a far tighter budget than the general limit.
+	 * Each CV, syllabus or weekly program parse runs OCR and a paid LLM call, so it gets a far tighter budget than the general limit.
 	 */
 	private static final long CV_PARSE_CAPACITY = 10;
 	private static final long CV_PARSE_WINDOW_MS = 10 * 60_000;
@@ -74,7 +77,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 				&& (CV_PARSE_PATH.equals(path)
 						|| CV_PREVIEW_PATH.equals(path)
 						|| path.startsWith(CV_PREVIEW_PATH + "/documents/")
-						|| SYLLABUS_PARSE_PATH.equals(path));
+						|| SYLLABUS_PARSE_PATH.equals(path)
+						|| WEEKLY_PROGRAM_READ_PATH.matcher(path).matches());
 	}
 
 	/**
