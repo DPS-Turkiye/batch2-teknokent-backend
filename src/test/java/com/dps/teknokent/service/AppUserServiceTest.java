@@ -76,6 +76,9 @@ class AppUserServiceTest {
     @Mock
     private MenteeProgramService menteeProgramService;
 
+    @Mock
+    private PersonAccessService personAccessService;
+
     @InjectMocks
     private AppUserService appUserService;
 
@@ -114,9 +117,9 @@ class AppUserServiceTest {
         Organization organization = organization(UUID.fromString("00000000-0000-0000-0000-000000000401"), "Teknokent");
         AppUser user = user(id, "mentor", "Dr. Kemal Arslan", UserRole.MENTOR, organization, "Ürün ve Araştırma Direktörü");
 
-        when(appUserRepository.findById(id)).thenReturn(Optional.of(user));
+        when(personAccessService.requireVisible(id, id)).thenReturn(user);
 
-        var result = appUserService.findById(id);
+        var result = appUserService.findById(id, id);
 
         assertThat(result.id()).isEqualTo(id);
         assertThat(result.email()).isEqualTo("mentor");
@@ -128,24 +131,70 @@ class AppUserServiceTest {
     }
 
     @Test
+    void findAll_asksForAnAdminFirst() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000311");
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN)).when(personAccessService).requireAdmin(actorId);
+
+        assertThatThrownBy(() -> appUserService.findAll(actorId, null, null))
+                .isInstanceOf(ResponseStatusException.class);
+        verify(appUserRepository, never()).findAll();
+    }
+
+    @Test
+    void findProfile_readsOnlyWhatTheAccessCheckAllows() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000312");
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000313");
+        when(personAccessService.requireVisible(actorId, id))
+                .thenThrow(new ResourceNotFoundException("User not found: " + id));
+
+        assertThatThrownBy(() -> appUserService.findProfile(actorId, id))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void findProfile_leavesPhoneAndContactPreferencesToThePersonAndAdmins() {
+        UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000314");
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000315");
+        AppUser person = user(id, "kisi@example.test", "Örnek Kişi", UserRole.MENTEE, null, "Kurucu");
+        person.setPhone("+90 555 000 00 00");
+        person.setBio("Ürün odaklı");
+        person.getContactPreferences().add(ContactPreference.values()[0]);
+        when(personAccessService.requireVisible(actorId, id)).thenReturn(person);
+
+        when(personAccessService.seesContactDetails(actorId, id)).thenReturn(false);
+        var shared = appUserService.findProfile(actorId, id);
+        assertThat(shared.phone()).isNull();
+        assertThat(shared.contactPreferences()).isEmpty();
+        assertThat(shared.bio()).isEqualTo("Ürün odaklı");
+        assertThat(shared.email()).isEqualTo("kisi@example.test");
+
+        when(personAccessService.seesContactDetails(actorId, id)).thenReturn(true);
+        var full = appUserService.findProfile(actorId, id);
+        assertThat(full.phone()).isEqualTo("+90 555 000 00 00");
+        assertThat(full.contactPreferences()).hasSize(1);
+    }
+
+    @Test
     void findSignedIn_saysWhenTheMenteesProgramTakesIndividuals() {
         UUID id = UUID.fromString("00000000-0000-0000-0000-000000000302");
         Organization team = organization(UUID.fromString("00000000-0000-0000-0000-000000000402"), "Elif Kaya");
         AppUser student = user(id, "elif@metu.edu.tr", "Elif Kaya", UserRole.MENTEE, team, "Öğrenci");
         when(appUserRepository.findById(id)).thenReturn(Optional.of(student));
+        when(personAccessService.requireVisible(id, id)).thenReturn(student);
         when(menteeProgramService.inIndividualProgram(student)).thenReturn(true);
 
         assertThat(appUserService.findSignedIn(id).individualMentee()).isTrue();
-        assertThat(appUserService.findById(id).individualMentee()).isFalse();
+        assertThat(appUserService.findById(id, id).individualMentee()).isFalse();
     }
 
     @Test
     void findById_throwsWhenUserDoesNotExist() {
         UUID id = UUID.fromString("00000000-0000-0000-0000-000000000999");
 
-        when(appUserRepository.findById(id)).thenReturn(Optional.empty());
+        when(personAccessService.requireVisible(id, id))
+                .thenThrow(new ResourceNotFoundException("User not found: " + id));
 
-        assertThatThrownBy(() -> appUserService.findById(id))
+        assertThatThrownBy(() -> appUserService.findById(id, id))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("User not found: " + id);
     }
