@@ -175,7 +175,7 @@ class AiProviderClientTest {
             setField(client, "openRouterAppName", "TeamTNT Spring Backend");
 
             JsonNode schema = jsonUtils.readTree("{\"type\":\"object\"}");
-            JsonNode report = client.generateMeetingReport("Toplanti metni", schema, null);
+            JsonNode report = client.generateMeetingReport("Toplanti metni", schema);
 
             assertThat(report.path("title").asText()).isEqualTo("Rapor");
             assertThat(bodies).hasSize(2);
