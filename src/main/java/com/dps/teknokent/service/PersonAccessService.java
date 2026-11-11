@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramType;
@@ -38,13 +39,14 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Who may read a person's account and profile (e-mail, phone, bio). Anyone may read their own, even while
- * pending; otherwise the caller must be approved and an admin, a teammate (same startup), a mentor with a live
- * request or a mentorship with the person's startup (either way round), the coordinator of a program the person is
- * in, or a member of a program the person runs (the program page links its coordinator). Taking part in the same
- * program is not enough: admins and coordinators open everyone else's profile from their own dashboards.
- * Coordinators are scoped like the admin profile summary: startup-mentoring programs they run, never through their
- * own pool invites, and never other staff. Everyone else gets "not found", so the endpoints do not confirm who exists. Phone numbers and contact
- * preferences stay with the person and admins: no screen shows them to anyone else.
+ * pending. Otherwise the caller must be approved and one of: an admin; a teammate (same startup); a mentor with a
+ * live request or a mentorship with the person's startup; a member of a startup whose request the mentor accepted
+ * or whose mentorship with them has not ended; the coordinator of a program the person is in; a member of a
+ * program the person runs (the program page links its coordinator). Taking part in the same program is not
+ * enough: admins and coordinators open everyone else's profile from their own dashboards. Coordinators are scoped
+ * like the admin profile summary: startup-mentoring programs they run, never through their own pool invites, and
+ * never other staff. Everyone else gets "not found", so the endpoints do not confirm who exists. Phone numbers
+ * and contact preferences stay with the person and admins: no screen shows them to anyone else.
  */
 @Service
 @RequiredArgsConstructor
@@ -64,6 +66,10 @@ public class PersonAccessService {
 	private static final Set<MentorshipRequestStatus> LIVE_REQUESTS = EnumSet.of(MentorshipRequestStatus.PENDING,
 			MentorshipRequestStatus.MORE_INFO_REQUESTED, MentorshipRequestStatus.COUNTER_PROPOSED,
 			MentorshipRequestStatus.ACCEPTED);
+
+	/** A completed or cancelled mentorship no longer opens the mentor to the startup (as in program matching). */
+	private static final Set<MentorshipStatus> ONGOING_MENTORSHIPS = EnumSet.of(MentorshipStatus.PLANNED,
+			MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
 
 	@Transactional(readOnly = true)
 	public AppUser requireVisible(UUID actorId, UUID personId) {
@@ -99,7 +105,7 @@ public class PersonAccessService {
 
 	private boolean related(AppUser actor, AppUser person) {
 		if (actor.has(UserRole.ADMIN) || sameStartup(actor, person)
-				|| mentorOf(actor, person) || mentorOf(person, actor)) {
+				|| mentorOf(actor, person) || theirMentor(actor, person)) {
 			return true;
 		}
 		return coordinatesProgramOf(actor, person) || coordinatesAnyOf(person, memberPrograms(actor));
@@ -120,6 +126,21 @@ public class PersonAccessService {
 		return mentorshipRequestRepository.existsByMentorIdAndOrganizationIdAndStatusIn(mentor.getId(),
 				organization.getId(), LIVE_REQUESTS)
 				|| mentorshipRepository.existsByMentorIdAndOrganizationId(mentor.getId(), organization.getId());
+	}
+
+	/**
+	 * The other way round, a startup only sees a mentor who took them on: an accepted request or a mentorship
+	 * that has not ended. Sending a request alone does not open a mentor's e-mail.
+	 */
+	private boolean theirMentor(AppUser member, AppUser mentor) {
+		Organization organization = member.getOrganization();
+		if (!mentor.has(UserRole.MENTOR) || organization == null) {
+			return false;
+		}
+		return mentorshipRequestRepository.existsByMentorIdAndOrganizationIdAndStatusIn(mentor.getId(),
+				organization.getId(), Set.of(MentorshipRequestStatus.ACCEPTED))
+				|| mentorshipRepository.existsByMentorIdAndOrganizationIdAndStatusIn(mentor.getId(),
+						organization.getId(), ONGOING_MENTORSHIPS);
 	}
 
 	/** Programs the user is in now: their own, their current team's, and the mentor pools that accepted them. */

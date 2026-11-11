@@ -24,6 +24,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramType;
@@ -193,12 +194,62 @@ class PersonAccessServiceTest {
 	}
 
 	@Test
-	void theMenteeSeesTheirStartupsMentor() {
+	void theMenteeSeesTheMentorTheirStartupIsInAMentorshipWith() {
 		AppUser mentor = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
-		when(mentorshipRepository.existsByMentorIdAndOrganizationId(mentor.getId(), startup.getId()))
-				.thenReturn(true);
+		mentorshipIn(mentor, MentorshipStatus.ACTIVE);
 
 		assertThat(service.requireVisible(person.getId(), mentor.getId())).isSameAs(mentor);
+	}
+
+	@Test
+	void theMenteeSeesAMentorWhoAcceptedTheirRequest() {
+		AppUser mentor = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
+		requestTo(mentor, MentorshipRequestStatus.ACCEPTED);
+
+		assertThat(service.requireVisible(person.getId(), mentor.getId())).isSameAs(mentor);
+	}
+
+	@Test
+	void aPendingRequestDoesNotOpenTheMentorToTheMentee() {
+		AppUser mentor = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
+		requestTo(mentor, MentorshipRequestStatus.PENDING);
+
+		assertHidden(person, mentor);
+	}
+
+	@Test
+	void aClosedMentorshipDoesNotOpenTheMentorToTheMentee() {
+		AppUser mentor = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
+		mentorshipIn(mentor, MentorshipStatus.COMPLETED);
+		AppUser other = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
+		mentorshipIn(other, MentorshipStatus.CANCELLED);
+
+		assertHidden(person, mentor);
+		assertHidden(person, other);
+	}
+
+	@Test
+	void theMentorStillSeesTheMenteeWhileTheirRequestIsPending() {
+		AppUser mentor = user(UserRole.MENTOR, UserAccountStatus.APPROVED);
+		requestTo(mentor, MentorshipRequestStatus.PENDING);
+
+		assertThat(service.requireVisible(mentor.getId(), person.getId())).isSameAs(person);
+	}
+
+	/** The person's startup sent the mentor a request now in {@code status}. */
+	private void requestTo(AppUser mentor, MentorshipRequestStatus status) {
+		when(mentorshipRequestRepository.existsByMentorIdAndOrganizationIdAndStatusIn(eq(mentor.getId()),
+				eq(startup.getId()), anyCollection()))
+				.thenAnswer(invocation -> invocation.<Collection<?>>getArgument(2).contains(status));
+	}
+
+	/** A mentorship between the mentor and the person's startup, now in {@code status}. */
+	private void mentorshipIn(AppUser mentor, MentorshipStatus status) {
+		when(mentorshipRepository.existsByMentorIdAndOrganizationId(mentor.getId(), startup.getId()))
+				.thenReturn(true);
+		when(mentorshipRepository.existsByMentorIdAndOrganizationIdAndStatusIn(eq(mentor.getId()),
+				eq(startup.getId()), anyCollection()))
+				.thenAnswer(invocation -> invocation.<Collection<?>>getArgument(2).contains(status));
 	}
 
 	@Test
