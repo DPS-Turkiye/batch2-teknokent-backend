@@ -186,7 +186,7 @@ public class AssistantService {
       if (missing.getStatusCode().value() != HttpStatus.NOT_FOUND.value()) {
         throw missing;
       }
-      log.info("No stoppable bot for {}; treating it as stopped", nativeMeetingId);
+      log.warn("No stoppable bot for {}; treating it as stopped", nativeMeetingId);
     }
   }
 
