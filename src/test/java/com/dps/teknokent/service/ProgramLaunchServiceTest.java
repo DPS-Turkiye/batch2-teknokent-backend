@@ -172,7 +172,7 @@ class ProgramLaunchServiceTest {
 	void theWizardsPhasesAndSyllabusAreSavedWithTheProgram() {
 		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
 		List<ReplaceProgramPhasesRequest.PhaseInput> phases = List.of(
-				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", LocalDate.of(2026, 11, 3), null, "Rapor"));
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", LocalDate.of(2026, 11, 3), null, "Rapor", null));
 		UUID syllabusId = UUID.randomUUID();
 		CreateCoordinatorProgramRequest base = request(List.of(), List.of());
 
