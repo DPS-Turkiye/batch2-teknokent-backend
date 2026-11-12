@@ -73,6 +73,7 @@ import com.dps.teknokent.repository.InstitutionPersonRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.repository.PeerMentorDraftRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
@@ -96,6 +97,7 @@ class PeerMentoringServiceTest {
 	private final ProgramMentorRepository programMentors = mock(ProgramMentorRepository.class);
 	private final ProgramRepository programRepository = mock(ProgramRepository.class);
 	private final MentorAvailabilitySlotRepository slots = mock(MentorAvailabilitySlotRepository.class);
+	private final PeerMentorDraftRepository drafts = mock(PeerMentorDraftRepository.class);
 	private PeerMentoringService service;
 	private List<MentorProfileResponse> programProfiles;
 	private MentorProfile published;
@@ -107,7 +109,7 @@ class PeerMentoringServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new PeerMentoringService(lookup, directory, people, programs, profiles, requestService, requests,
-				personalTeams, profileRepository, users, badges, peerCategories, programMentors, programRepository, slots);
+				personalTeams, profileRepository, users, badges, peerCategories, programMentors, programRepository, slots, drafts);
 		student = user("Ayşe Yılmaz", Set.of(IdentityKind.STUDENT), UserRole.MENTEE);
 		student.setProgramId(PROGRAM_ID);
 		peerMentor = user("Zeynep Demir", Set.of(IdentityKind.STUDENT), UserRole.MENTEE, UserRole.MENTOR);
@@ -167,6 +169,7 @@ class PeerMentoringServiceTest {
 
 		ArgumentCaptor<MentorProfile> profile = ArgumentCaptor.forClass(MentorProfile.class);
 		verify(profileRepository).save(profile.capture());
+		verify(drafts).deleteByUserId(peerMentor.getId());
 		assertThat(profile.getValue().getUser()).isSameAs(peerMentor);
 		assertThat(profile.getValue().getSortOrder()).isEqualTo(5);
 		assertThat(profile.getValue().getSpecialties()).containsExactly("CAREER_INTERNSHIP", "INTERNATIONAL");
@@ -579,6 +582,7 @@ class PeerMentoringServiceTest {
 		assertThat(published.getExperiences()).extracting(MentorExperience::getTitle).containsExactly("Asistan");
 		assertThat(published.getSpecialties()).isEmpty();
 		verify(profileRepository, never()).save(any());
+		verify(drafts, never()).deleteByUserId(any());
 	}
 
 	@Test
