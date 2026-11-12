@@ -38,7 +38,7 @@ import com.dps.teknokent.repository.OfficeHoursUserRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
 /** The academician side of Menton office hours through the real beans: no Moodle launch anywhere. */
-@SpringBootTest
+@SpringBootTest(properties = "app.edition=ODTU")
 @AutoConfigureMockMvc
 @Transactional
 class OfficeHoursMeIntegrationTest {

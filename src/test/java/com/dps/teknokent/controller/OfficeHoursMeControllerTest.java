@@ -24,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -38,6 +39,7 @@ import com.dps.teknokent.service.OfficeHoursMeService;
 
 @WebMvcTest(OfficeHoursMeController.class)
 @Import(SecurityConfig.class)
+@TestPropertySource(properties = "app.edition=ODTU")
 class OfficeHoursMeControllerTest {
 
     private static final UUID ACTOR = UUID.fromString("00000000-0000-0000-0000-00000000d001");
