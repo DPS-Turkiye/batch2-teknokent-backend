@@ -15,4 +15,11 @@ public interface MentorAvailabilitySlotRepository extends JpaRepository<MentorAv
 	boolean existsByMentorIdAndStartsAt(UUID mentorId, Instant startsAt);
 
 	List<MentorAvailabilitySlot> findByRuleIdAndStartsAtAfter(UUID ruleId, Instant startsAt);
+
+	/**
+	 * The next slots outside the weekly windows: ones the mentor added by hand, and booked ones kept after their
+	 * weekly window was removed. Callers drop the booked ones.
+	 */
+	List<MentorAvailabilitySlot> findTop20ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(
+			UUID mentorId, Instant startsAt);
 }
