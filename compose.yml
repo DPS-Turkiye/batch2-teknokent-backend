@@ -3,11 +3,12 @@ name: teamtnt
 services:
   app:
     build: .
-    image: teknokent-app:local
+    # dev/editions runs a second stack with its own image tag and env file; both default to the usual ones.
+    image: ${APP_IMAGE:-teknokent-app:local}
     ports:
       - "${APP_PORT:-8080}:8080"
     env_file:
-      - .env
+      - ${APP_ENV_FILE:-.env}
     environment:
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432

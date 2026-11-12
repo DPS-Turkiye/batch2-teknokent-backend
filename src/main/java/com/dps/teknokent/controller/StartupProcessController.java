@@ -56,7 +56,7 @@ public class StartupProcessController {
 			@Valid @RequestBody CreateStartupRoundRequest request) {
 		return startupProcessService.createRound(organizationId, new CreateStartupRoundRequest(
 				CurrentActor.resolve(request.actorId()), request.title(), request.name(), request.stage(),
-				request.startsOn(), request.endsOn()));
+				request.startsOn(), request.endsOn(), request.phaseId()));
 	}
 
 	@PostMapping("/assignments")
@@ -66,7 +66,7 @@ public class StartupProcessController {
 			@Valid @RequestBody CreateProcessAssignmentRequest request) {
 		return startupProcessService.createAssignment(organizationId, new CreateProcessAssignmentRequest(
 				CurrentActor.resolve(request.actorId()), request.roundId(), request.stage(), request.title(),
-				request.description(), request.dueDate()));
+				request.description(), request.dueDate(), request.phaseId()));
 	}
 
 	@PutMapping("/assignments/{assignmentId}/submission")
