@@ -32,10 +32,12 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.OfficeHoursRequestAction;
 import com.dps.teknokent.dto.requests.AnswerOfficeHoursRequest;
+import com.dps.teknokent.dto.requests.CreateMentonOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.UpdateOfficeHoursProfileRequest;
 import com.dps.teknokent.dto.responses.OfficeHoursProfileResponse;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.service.OfficeHoursMeService;
+import com.dps.teknokent.service.OfficeHoursStudentMeService;
 
 @WebMvcTest(OfficeHoursMeController.class)
 @Import(SecurityConfig.class)
@@ -50,6 +52,8 @@ class OfficeHoursMeControllerTest {
 
     @MockitoBean
     private OfficeHoursMeService meService;
+    @MockitoBean
+    private OfficeHoursStudentMeService studentService;
 
     /** The frontend's server: Spring's Basic user, given ROLE_SERVICE by spring.security.user.roles. */
     private static RequestPostProcessor frontendServer() {
@@ -136,5 +140,40 @@ class OfficeHoursMeControllerTest {
                 .andExpect(status().isOk());
         verify(meService).answer(ACTOR, REQUEST, new AnswerOfficeHoursRequest(OfficeHoursRequestAction.ACCEPT,
                 Instant.parse("2026-11-24T11:00:00Z"), null, null));
+    }
+
+    @Test
+    void aStudentsRequestNeedsATitleAndATimeAndAnswersCreated() throws Exception {
+        String academician = UUID.randomUUID().toString();
+        mockMvc.perform(post("/api/office-hours/me/requests").param("actorId", ACTOR.toString())
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"academicianId\":\"" + academician + "\",\"startsAt\":\"2026-11-24T11:00:00Z\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/office-hours/me/requests").param("actorId", ACTOR.toString())
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"academicianId\":\"" + academician + "\",\"title\":\"Staj\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(studentService);
+
+        mockMvc.perform(post("/api/office-hours/me/requests").param("actorId", ACTOR.toString())
+                        .with(frontendServer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"academicianId\":\"" + academician
+                                + "\",\"startsAt\":\"2026-11-24T14:00:00+03:00\",\"title\":\"Staj\"}"))
+                .andExpect(status().isCreated());
+        verify(studentService).request(ACTOR, new CreateMentonOfficeHoursRequest(UUID.fromString(academician),
+                Instant.parse("2026-11-24T11:00:00Z"), "Staj", null));
+    }
+
+    @Test
+    void theStudentRoutesAreAlsoForTheFrontendServerOnly() throws Exception {
+        UsernamePasswordAuthenticationToken mentee = new UsernamePasswordAuthenticationToken("someone", null,
+                List.of(new SimpleGrantedAuthority("ROLE_MENTEE")));
+        mockMvc.perform(get("/api/office-hours/me/academicians").param("actorId", ACTOR.toString())
+                        .with(authentication(mentee)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(studentService);
     }
 }
