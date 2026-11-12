@@ -12,10 +12,12 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.ProfileAnalysis;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
@@ -24,6 +26,7 @@ import com.dps.teknokent.util.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,8 +58,45 @@ class ProfileAnalysisServiceTest {
 	@Mock
 	private DocumentService documentService;
 
+	@Spy
+	private AiFeatures aiFeatures = TestAiFeatures.allOn();
+
 	@InjectMocks
 	private ProfileAnalysisService profileAnalysisService;
+
+	private void switchOffProfileParsing() {
+		ReflectionTestUtils.setField(
+				profileAnalysisService, "aiFeatures", TestAiFeatures.allOnExcept(AiFeature.PROFILE_PARSING));
+	}
+
+	@Test
+	void aSwitchedOffParseStoresNothingAndNeverReachesTheParser() {
+		switchOffProfileParsing();
+
+		assertThatThrownBy(() -> profileAnalysisService.parse(
+				UUID.randomUUID(), null, "mentee", true, "auto", cvPdf()))
+				.isInstanceOf(AiFeatureDisabledException.class);
+		verifyNoInteractions(documentService, nativeProfileParserService, profileAnalysisRepository);
+	}
+
+	@Test
+	void aSwitchedOffPreviewNeverReachesTheParser() {
+		switchOffProfileParsing();
+
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf()))
+				.isInstanceOf(AiFeatureDisabledException.class);
+		verifyNoInteractions(nativeProfileParserService);
+	}
+
+	@Test
+	void aSwitchedOffStoredCvPreviewNeverReadsTheCv() {
+		switchOffProfileParsing();
+
+		assertThatThrownBy(() -> profileAnalysisService.parseStoredCvPreview(
+				UUID.randomUUID(), UUID.randomUUID(), "individual_mentee", true, "auto"))
+				.isInstanceOf(AiFeatureDisabledException.class);
+		verifyNoInteractions(documentService, nativeProfileParserService);
+	}
 
 	private static MockMultipartFile cvPdf() {
 		return new MockMultipartFile(

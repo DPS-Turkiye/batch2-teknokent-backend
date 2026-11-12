@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
 import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
@@ -55,10 +56,31 @@ class MeetingTranscriptBotWatchdogTest {
 
 	@BeforeEach
 	void setUp() {
-		AssistantService assistantService = new AssistantService(providerClient, meetingReportService, null, null);
 		when(transcriptCleanupService.clean(any())).thenAnswer(call -> call.getArgument(0));
-		watchdog = new MeetingTranscriptBotWatchdog(
-				meetingRepository, meetingService, assistantService, shareService, transcriptCleanupService);
+		watchdog = watchdogWith(TestAiFeatures.allOn());
+	}
+
+	private MeetingTranscriptBotWatchdog watchdogWith(AiFeatures aiFeatures) {
+		AssistantService assistantService =
+				new AssistantService(providerClient, meetingReportService, null, null, aiFeatures);
+		return new MeetingTranscriptBotWatchdog(
+				meetingRepository, meetingService, assistantService, shareService, transcriptCleanupService,
+				aiFeatures);
+	}
+
+	@Test
+	void keepsOnlyTheTranscriptWhenMeetingReportsAreSwitchedOff() {
+		watchdog = watchdogWith(TestAiFeatures.allOnExcept(AiFeature.MEETING_REPORT));
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		providerTranscript();
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+
+		watchdog.closeFinishedMeetings(now);
+
+		verify(shareService).storeGeneratedTranscript(eq(meetingId), any());
+		verify(meetingReportService, never()).generate(any());
+		verify(shareService, never()).storeGeneratedReport(any(), any());
 	}
 
 	@Test

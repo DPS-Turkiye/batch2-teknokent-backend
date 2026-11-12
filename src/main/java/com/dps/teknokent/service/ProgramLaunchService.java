@@ -73,6 +73,7 @@ public class ProgramLaunchService {
 	private final ProgramEligibilityService programEligibilityService;
 	private final NotificationService notificationService;
 	private final AdminCoordinatorService adminCoordinatorService;
+	private final EditionService editionService;
 
 
 	/** An admin creates every program as a draft (Taslak) with its coordinators; launching is a separate step. */
@@ -82,6 +83,7 @@ public class ProgramLaunchService {
 		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin creates programs.");
 		}
+		editionService.requireProgramType(request.type());
 		if (request.startDate() != null && request.endDate() != null && request.endDate().isBefore(request.startDate())) {
 			throw new InvalidRequestException("The program cannot end before it starts.");
 		}

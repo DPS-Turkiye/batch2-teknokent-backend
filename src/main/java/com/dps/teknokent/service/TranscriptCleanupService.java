@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.util.JsonSchemaUtils;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -28,9 +29,11 @@ public class TranscriptCleanupService {
 	private final AiProviderClient aiProviderClient;
 	private final LocalPiiRedactionService piiRedactionService;
 	private final JsonSchemaUtils jsonSchemaUtils;
+	private final AiFeatures aiFeatures;
 
 	public List<TranscriptSegmentResponse> clean(List<TranscriptSegmentResponse> segments) {
-		if (segments == null || segments.isEmpty()) {
+		// The cleanup sends transcript lines out, so it goes with the meeting report's switch.
+		if (segments == null || segments.isEmpty() || !aiFeatures.isEnabled(AiFeature.MEETING_REPORT)) {
 			return segments;
 		}
 		// A line with an e-mail, phone or ID number never leaves the server; it stays as the recogniser wrote it.

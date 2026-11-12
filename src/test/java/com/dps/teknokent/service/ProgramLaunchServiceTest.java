@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,9 +20,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import com.dps.teknokent.domain.Edition;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.TeamJoinStatus;
@@ -76,6 +79,8 @@ class ProgramLaunchServiceTest {
 	private NotificationService notificationService;
 	@Mock
 	private AdminCoordinatorService adminCoordinatorService;
+	@Spy
+	private EditionService editionService = new EditionService("TEKNOKENT");
 
 	@InjectMocks
 	private ProgramLaunchService service;
@@ -128,6 +133,7 @@ class ProgramLaunchServiceTest {
 
 	@Test
 	void aPeerProgramTakesIndividualStudentsAndKeepsTheDefaultRules() {
+		doReturn(Edition.ODTU).when(editionService).current();
 		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
 		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
 
@@ -141,6 +147,29 @@ class ProgramLaunchServiceTest {
 		assertThat(program.getValue().getDefaultMentorCapacity()).isEqualTo(4);
 		assertThat(program.getValue().getMeetingFrequencyDays()).isEqualTo(14);
 		verify(inviteRepository, never()).save(any());
+	}
+
+	@Test
+	void theTeknokentEditionRefusesAPeerProgram() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+
+		assertThatThrownBy(() -> service.create(ADMIN, new CreateCoordinatorProgramRequest(null,
+				ProgramType.PEER_MENTORING, "ODTÜ Akran", null, null, null, List.of(ELIF), null, null, null, null,
+				null, null, null, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not available");
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void theOdtuEditionRefusesAStartupProgram() {
+		doReturn(Edition.ODTU).when(editionService).current();
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+
+		assertThatThrownBy(() -> service.create(ADMIN, request(List.of(ELIF), List.of())))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not available");
+		verify(programRepository, never()).save(any());
 	}
 
 	@Test
