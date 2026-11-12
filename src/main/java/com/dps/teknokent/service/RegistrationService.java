@@ -72,6 +72,7 @@ public class RegistrationService {
 	private final InviteCodeGenerator inviteCodeGenerator;
 	private final TeamMembershipService teamMembershipService;
 	private final NotificationService notificationService;
+	private final EmailDomainPolicy emailDomainPolicy;
 	private final ProgramEligibilityService programEligibilityService;
 	private final EditionService editionService;
 
@@ -433,6 +434,7 @@ public class RegistrationService {
 
 	private String requireUniqueEmail(String rawEmail) {
 		String email = TextUtils.trim(rawEmail);
+		emailDomainPolicy.requireAllowed(email);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
 			throw new InvalidRequestException("A user with this email already exists.");
 		}

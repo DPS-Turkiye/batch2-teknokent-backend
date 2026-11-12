@@ -439,7 +439,8 @@ public class PeerMentoringService {
 				PeerTopicCategory.fromText(request.getSupportArea()),
 				request.getSummary(),
 				request.getStatus(),
-				request.getCreatedAt());
+				request.getCreatedAt(),
+				request.getAcceptedAt());
 	}
 
 	String departmentOf(UUID userId, String fallback) {
