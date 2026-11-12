@@ -28,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.PersonProgramRelation;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
@@ -48,6 +49,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.entity.MentorAvailabilityException;
 import com.dps.teknokent.entity.MentorAvailabilityRule;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
+import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
 import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
@@ -91,6 +93,8 @@ class PersonSummaryServiceTest {
 	@Mock
 	private MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 	@Mock
+	private MeetingRepository meetingRepository;
+	@Mock
 	private ProgramRepository programRepository;
 	@Mock
 	private ProgramCoordinatorRepository programCoordinatorRepository;
@@ -112,7 +116,8 @@ class PersonSummaryServiceTest {
 		service = new PersonSummaryService(domainLookupService, mentorProfileService, mentorProfileRepository,
 				programMentorRepository, programStartupRepository, teamMembershipRepository, teamMembershipService,
 				new MentorAvailabilitySummaryService(mentorAvailabilityRuleRepository,
-						mentorAvailabilityExceptionRepository, mentorAvailabilitySlotRepository, CLOCK),
+						mentorAvailabilityExceptionRepository, mentorAvailabilitySlotRepository, meetingRepository,
+						CLOCK),
 				programRepository, programCoordinatorRepository);
 		when(programStartupRepository.findByOrganizationIdIn(anyCollection())).thenAnswer(invocation -> {
 			Collection<UUID> ids = invocation.getArgument(0);
@@ -381,8 +386,13 @@ class PersonSummaryServiceTest {
 		MentorAvailabilitySlot extra = new MentorAvailabilitySlot();
 		extra.setStartsAt(Instant.parse("2026-11-14T09:00:00Z"));
 		extra.setDurationMinutes(45);
-		when(mentorAvailabilitySlotRepository.findTop10ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(
-				mentor.getId(), NOW)).thenReturn(List.of(extra));
+		MentorAvailabilitySlot booked = new MentorAvailabilitySlot();
+		booked.setStartsAt(Instant.parse("2026-11-15T09:00:00Z"));
+		booked.setDurationMinutes(45);
+		when(mentorAvailabilitySlotRepository.findTop20ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(
+				mentor.getId(), NOW)).thenReturn(List.of(extra, booked));
+		when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentor.getId(),
+				booked.getStartsAt(), MeetingStatus.SCHEDULED)).thenReturn(true);
 
 		PersonSummaryResponse.Availability availability =
 				service.summary(COORDINATOR_ID, mentor.getId()).mentor().availability();
@@ -408,6 +418,17 @@ class PersonSummaryServiceTest {
 		assertThat(availability.weekly()).isEmpty();
 		assertThat(availability.daysOff()).isEmpty();
 		assertThat(availability.extraSlots()).isEmpty();
+	}
+
+	@Test
+	void aMenteeGetsNoAvailabilityAndNoAvailabilityLookups() {
+		AppUser mentee = register(user(UUID.randomUUID(), UserRole.MENTEE));
+		mentee.setProgramId(OWN_PROGRAM);
+
+		assertThat(service.summary(ADMIN_ID, mentee.getId()).mentor()).isNull();
+		verify(mentorAvailabilityRuleRepository, never()).findByMentorIdOrderByDayOfWeekAscStartTimeAsc(any());
+		verify(mentorAvailabilitySlotRepository, never())
+				.findTop20ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(any(), any());
 	}
 
 	@Test
