@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.Test;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AddBotRequest;
@@ -25,6 +26,7 @@ import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.security.AppUserPrincipal;
@@ -259,5 +261,15 @@ class AssistantControllerTest {
         .andExpect(jsonPath("$.model").value("configured-model"));
 
     verify(assistantService).generateMeetingReport(CALLER, "google_meet", "abc-defg-hij");
+  }
+
+  @Test
+  void aSwitchedOffMeetingReportIsRefusedWithATypedCodeNotAProviderFailure() throws Exception {
+    when(assistantService.generateMeetingReport(CALLER, "google_meet", "abc-defg-hij"))
+        .thenThrow(new AiFeatureDisabledException(AiFeature.MEETING_REPORT));
+
+    mockMvc.perform(post("/api/assistant/bots/google_meet/abc-defg-hij/report").with(signedIn()))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("AI_FEATURE_DISABLED"));
   }
 }
