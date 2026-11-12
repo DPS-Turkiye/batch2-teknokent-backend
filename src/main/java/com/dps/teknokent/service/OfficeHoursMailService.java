@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -85,28 +86,55 @@ public class OfficeHoursMailService {
 			case MEETING -> meetingRepository.findByRequestId(request.getId())
 					.map(meeting -> List.of(meeting.getScheduledAt())).orElse(List.of());
 		};
-		send(people.get(to), people.get(from), course(request), request.getTopic(), event.key, times, note);
+		compose(people.get(to), people.get(from), course(request), request.getTopic(), event.key, times, note)
+				.ifPresent(mail -> mailService.sendAfterCommit(mail.to(), mail.subject(), mail.body()));
 	}
 
-	/** The reminder both sides get shortly before they meet. */
-	public void meetingSoon(OfficeHoursMeeting meeting) {
+	/** Which side of a meeting a reminder is for. */
+	public enum Side {
+		STUDENT, INSTRUCTOR
+	}
+
+	/** How a reminder went: sent, nothing to send (no address, mail switched off), or failed and worth retrying. */
+	public enum Delivery {
+		SENT, NOTHING_TO_SEND, FAILED
+	}
+
+	/**
+	 * The reminder one side gets before they meet, sent now rather than after a commit, so the caller learns whether
+	 * it went and can try again later.
+	 */
+	public Delivery meetingSoon(OfficeHoursMeeting meeting, Side side) {
 		OfficeHoursRequest request = requestRepository.findById(meeting.getRequestId()).orElse(null);
-		if (request == null) {
-			return;
+		if (request == null || !mailService.isConfigured()) {
+			return Delivery.NOTHING_TO_SEND;
 		}
 		Map<UUID, OfficeHoursUser> people = people(request);
-		OfficeHoursUser student = people.get(meeting.getStudentId());
-		OfficeHoursUser instructor = people.get(meeting.getInstructorId());
-		OfficeHoursCourse course = course(request);
-		List<Instant> at = List.of(meeting.getScheduledAt());
-		send(student, instructor, course, request.getTopic(), "meetingSoon", at, null);
-		send(instructor, student, course, request.getTopic(), "meetingSoon", at, null);
+		OfficeHoursUser to = people.get(meeting.getStudentId());
+		OfficeHoursUser from = people.get(meeting.getInstructorId());
+		if (side == Side.INSTRUCTOR) {
+			to = people.get(meeting.getInstructorId());
+			from = people.get(meeting.getStudentId());
+		}
+		Optional<Mail> mail = compose(to, from, course(request), request.getTopic(), "meetingSoon",
+				List.of(meeting.getScheduledAt()), null);
+		if (mail.isEmpty()) {
+			return Delivery.NOTHING_TO_SEND;
+		}
+		if (mailService.sendNow(mail.get().to(), mail.get().subject(), mail.get().body())) {
+			return Delivery.SENT;
+		}
+		return Delivery.FAILED;
 	}
 
-	private void send(OfficeHoursUser to, OfficeHoursUser from, OfficeHoursCourse course, String topic, String event,
-			List<Instant> times, String note) {
+	private record Mail(String to, String subject, String body) {
+	}
+
+	/** The e-mail for one person, or nothing when they or the course are gone or Moodle shared no address. */
+	private static Optional<Mail> compose(OfficeHoursUser to, OfficeHoursUser from, OfficeHoursCourse course,
+			String topic, String event, List<Instant> times, String note) {
 		if (to == null || from == null || course == null || to.getEmail() == null) {
-			return;
+			return Optional.empty();
 		}
 		AppLanguage language = to.getPreferredLanguage();
 		String key = "officeHours.mail." + event;
@@ -120,11 +148,11 @@ public class OfficeHoursMailService {
 			details.add(Texts.get(language, "officeHours.mail.note", note));
 		}
 		String body = Texts.get(language, "officeHours.mail.body", to.getFullName(),
-				Texts.get(language, key + ".line", from.getFullName(), course.getTitle()), String.join("\n\n", details), topic,
-				courseLink(course));
+				Texts.get(language, key + ".line", from.getFullName(), course.getTitle()), String.join("\n\n", details),
+				topic, courseLink(course));
 		// A step with no times or note leaves an empty paragraph; fold it away.
-		mailService.sendAfterCommit(to.getEmail(), Texts.get(language, key + ".subject", course.getTitle()),
-				body.replaceAll("\n{3,}", "\n\n"));
+		return Optional.of(new Mail(to.getEmail(), Texts.get(language, key + ".subject", course.getTitle()),
+				body.replaceAll("\n{3,}", "\n\n")));
 	}
 
 	private Map<UUID, OfficeHoursUser> people(OfficeHoursRequest request) {

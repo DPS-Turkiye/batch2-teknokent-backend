@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.entity.OfficeHoursMeeting;
 
@@ -21,10 +22,38 @@ public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursM
 
 	Optional<OfficeHoursMeeting> findByRequestId(UUID requestId);
 
-	List<OfficeHoursMeeting> findByReminderSentAtIsNullAndScheduledAtBetween(Instant from, Instant until);
+	/** Meetings starting in (from, until] that still owe either side its reminder. */
+	@Query("""
+			select m from OfficeHoursMeeting m
+			where m.scheduledAt > :from and m.scheduledAt <= :until
+			and (m.studentRemindedAt is null or m.instructorRemindedAt is null)
+			""")
+	List<OfficeHoursMeeting> findReminderDue(@Param("from") Instant from, @Param("until") Instant until);
 
-	/** Marks the reminder sent unless another run already did; 1 means this run sends it. */
+	// A side is claimed before its reminder is sent, so two servers never both send it, and released when sending
+	// failed, so the next run tries again. Each runs in its own transaction: the claim must be visible to the other
+	// server before the slow send starts.
+
+	@Transactional
 	@Modifying
-	@Query("UPDATE OfficeHoursMeeting m SET m.reminderSentAt = :now WHERE m.id = :id AND m.reminderSentAt IS NULL")
-	int markReminded(@Param("id") UUID id, @Param("now") Instant now);
+	@Query("update OfficeHoursMeeting m set m.studentRemindedAt = :now where m.id = :id and m.studentRemindedAt is null")
+	int claimStudentReminder(@Param("id") UUID id, @Param("now") Instant now);
+
+	@Transactional
+	@Modifying
+	@Query("""
+			update OfficeHoursMeeting m set m.instructorRemindedAt = :now
+			where m.id = :id and m.instructorRemindedAt is null
+			""")
+	int claimInstructorReminder(@Param("id") UUID id, @Param("now") Instant now);
+
+	@Transactional
+	@Modifying
+	@Query("update OfficeHoursMeeting m set m.studentRemindedAt = null where m.id = :id")
+	int releaseStudentReminder(@Param("id") UUID id);
+
+	@Transactional
+	@Modifying
+	@Query("update OfficeHoursMeeting m set m.instructorRemindedAt = null where m.id = :id")
+	int releaseInstructorReminder(@Param("id") UUID id);
 }
