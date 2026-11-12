@@ -44,6 +44,7 @@ import com.dps.teknokent.dto.requests.RegisterFounderRequest;
 import com.dps.teknokent.dto.requests.RegisterMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.RegistrationService;
 
 @WebMvcTest(AuthRegistrationController.class)
@@ -134,6 +135,27 @@ class AuthRegistrationControllerTest {
                                 }
                                 """))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // A founder without a startup is refused with a code the sign-up screen can act on.
+    @Test
+    void founderRegisterWithoutAStartupAnswersWithItsCode() throws Exception {
+        when(registrationService.registerFounder(any(RegisterFounderRequest.class)))
+                .thenThrow(new InvalidRequestException("Startup adı gerekli.", RegistrationService.STARTUP_REQUIRED));
+
+        mockMvc.perform(post("/api/auth/register/founder")
+                        .with(authentication(registering("ayse@startup.com")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ayşe Demir",
+                                  "email": "ayse@startup.com",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("STARTUP_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("Startup adı gerekli."));
     }
 
     @Test
