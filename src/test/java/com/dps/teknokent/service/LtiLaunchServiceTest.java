@@ -167,6 +167,28 @@ class LtiLaunchServiceTest {
     }
 
     @Test
+    void aLaunchThatNamesNoLanguageKeepsTheOneSaved() {
+        OfficeHoursUser known = new OfficeHoursUser();
+        known.setId(UUID.randomUUID());
+        known.setPreferredLanguage(AppLanguage.EN);
+        OfficeHoursCourse course = new OfficeHoursCourse();
+        course.setId(UUID.randomUUID());
+        OfficeHoursEnrollment enrollment = new OfficeHoursEnrollment();
+        enrollment.setRole(OfficeHoursRole.STUDENT);
+        when(stateStore.consume("state-1")).thenReturn(Optional.of("nonce-1"));
+        when(verifier.verify("token", "nonce-1")).thenReturn(new LtiLaunchClaims(ISSUER, "42", "Ayşe Yılmaz",
+                null, "7", "CENG 101", "Introduction to Computing", List.of(LtiLaunchService.INSTRUCTOR_ROLE), null));
+        when(userRepository.findByIssuerAndSubject(ISSUER, "42")).thenReturn(Optional.of(known));
+        when(courseRepository.findByIssuerAndContextId(ISSUER, "7")).thenReturn(Optional.of(course));
+        when(enrollmentRepository.findByUserIdAndCourseId(known.getId(), course.getId()))
+                .thenReturn(Optional.of(enrollment));
+
+        service.completeLaunch(new LtiLaunchRequest("token", "state-1"));
+
+        assertThat(known.getPreferredLanguage()).isEqualTo(AppLanguage.EN);
+    }
+
+    @Test
     void refusesAStateThatIsUnknownOrAlreadyUsed() {
         when(stateStore.consume("used")).thenReturn(Optional.empty());
 
