@@ -119,6 +119,7 @@ class OfficeHoursStudentMeIntegrationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].id").value(listedId))
+				.andExpect(jsonPath("$[0].accountId").value(academician.getId().toString()))
 				.andExpect(jsonPath("$[0].fullName").value("Elif Şahin"))
 				.andExpect(jsonPath("$[0].academicTitle").value("Doç. Dr."))
 				.andExpect(jsonPath("$[0].place").value("A-204"))

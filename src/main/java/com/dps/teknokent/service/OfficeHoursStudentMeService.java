@@ -255,7 +255,8 @@ public class OfficeHoursStudentMeService {
 		}
 
 		OfficeHoursAcademicianResponse response() {
-			return new OfficeHoursAcademicianResponse(person.getId(), record.getFullName(), record.getAcademicTitle(),
+			return new OfficeHoursAcademicianResponse(person.getId(), person.getAppUserId(), record.getFullName(),
+					record.getAcademicTitle(),
 					record.getDepartmentName(), record.getFaculty(), settings.getDefaultPlace(),
 					settings.getOnlineLink(), settings.getContactEmail(), settings.getDefaultMeetingDurationMinutes());
 		}
