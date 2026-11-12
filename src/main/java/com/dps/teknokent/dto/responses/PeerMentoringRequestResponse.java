@@ -17,7 +17,9 @@ public record PeerMentoringRequestResponse(
 		PeerTopicCategory category,
 		String message,
 		MentorshipRequestStatus status,
-		Instant createdAt) {
+		Instant createdAt,
+		/** When the mentor accepted: the mentorship's start date; null until then. */
+		Instant acceptedAt) {
 
 	public record Person(UUID userId, String fullName, String department) {
 	}
