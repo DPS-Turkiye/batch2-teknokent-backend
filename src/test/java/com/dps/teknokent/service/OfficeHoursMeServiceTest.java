@@ -93,9 +93,10 @@ class OfficeHoursMeServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OfficeHoursMeService(institutionPeople, userRepository, settingsRepository, requestRepository,
-                messageRepository, meetingRepository, courseRepository, availabilityService, bookingService,
-                slotService, Clock.fixed(NOW, ZoneOffset.UTC));
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        service = new OfficeHoursMeService(new OfficeHoursPeople(institutionPeople, userRepository, clock),
+                userRepository, settingsRepository, requestRepository, messageRepository, meetingRepository,
+                courseRepository, availabilityService, bookingService, slotService, clock);
         lenient().when(messageRepository.findByRequestIdInOrderByCreatedAtAsc(any())).thenReturn(List.of());
         lenient().when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of());
         lenient().when(slotService.defaultMeetingMinutes(PERSON)).thenReturn(30);

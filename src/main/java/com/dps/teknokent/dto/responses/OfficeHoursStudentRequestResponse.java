@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.OfficeHoursRequestAction;
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 
 /**
@@ -12,6 +13,7 @@ import com.dps.teknokent.domain.OfficeHoursRequestStatus;
  * @param time           the booked meeting once accepted, otherwise the time they asked for
  * @param proposedTimes  the academician's other times while the request waits for the student
  * @param courseName     empty for a request made from Menton
+ * @param allowedActions what the student may still do with it
  */
 public record OfficeHoursStudentRequestResponse(
 		UUID id,
@@ -26,7 +28,8 @@ public record OfficeHoursStudentRequestResponse(
 		String rejectionReason,
 		String place,
 		String onlineLink,
-		Instant requestedAt) {
+		Instant requestedAt,
+		List<OfficeHoursRequestAction> allowedActions) {
 
 	/** Who the request went to, as ODTÜ's record names them. */
 	public record Academician(UUID id, String fullName, String academicTitle, String department) {
