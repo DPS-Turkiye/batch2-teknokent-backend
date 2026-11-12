@@ -28,8 +28,8 @@ public record SavePeerMentorProfileRequest(
 		@Size(max = 500) String erasmus,
 		@NotBlank @Size(min = 20, max = 2000) String helpWith,
 		@Size(max = 255) @Pattern(regexp = "^$|^https?://.+", message = "must be a http(s) link") String linkedinUrl,
-		/** A level for some of the chosen categories; left out, the saved levels stay. */
-		@Size(max = 8) Map<PeerTopicCategory, PeerTopicLevel> levels,
+		/** A level for some of the chosen categories (others are dropped); left out, the saved levels stay. */
+		@Size(max = 8) Map<PeerTopicCategory, @NotNull PeerTopicLevel> levels,
 		/** The experience cards, in order; left out, the saved cards stay, an empty list removes them. */
 		@Size(max = 10) List<@NotNull @Valid PeerExperienceCardRequest> experiences) {
 }

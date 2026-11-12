@@ -151,6 +151,26 @@ class PeerMentoringControllerTest {
 	}
 
 	@Test
+	void aMonthNotWrittenAsYearAndMonthAnUnknownCategoryOrElevenCardsAreBadRequests() throws Exception {
+		String card = "{\"kind\": \"JOB\", \"title\": \"İş\", \"startedOn\": \"2025-06\"}";
+		for (String extra : List.of(
+				"\"experiences\": [{\"kind\": \"JOB\", \"title\": \"İş\", \"startedOn\": \"2025-06-01\"}]",
+				"\"levels\": {\"ASTRONOMY\": \"BASIC\"}",
+				"\"levels\": {\"CAREER_INTERNSHIP\": null}",
+				"\"experiences\": [" + String.join(",", java.util.Collections.nCopies(11, card)) + "]")) {
+			mockMvc.perform(put("/api/peer-mentoring/profile").with(user("proxy"))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+							{"actorId": "%s", "categories": ["CAREER_INTERNSHIP"], "subTopics": [],
+							 "helpWith": "Staj başvurusunda yardımcı olabilirim.", %s}
+							""".formatted(ACTOR, extra)))
+					.andExpect(status().isBadRequest());
+		}
+
+		verifyNoInteractions(peerMentoringService);
+	}
+
+	@Test
 	void countsComePerActiveCategory() throws Exception {
 		when(peerMentoringService.mentorCounts(ACTOR)).thenReturn(List.of(
 				new PeerCategoryCountResponse(PeerTopicCategory.CAREER_INTERNSHIP, 3)));
