@@ -292,7 +292,6 @@ class RegistrationServiceTest {
     @Test
     void registerFounder_refusesALoginWhoseEmailIsNotVerified() {
         signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", false));
-        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
 
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir",
@@ -869,8 +868,6 @@ class RegistrationServiceTest {
     void registerMentor_rejectsEmailThatDoesNotMatchTheToken() {
         signIn(new FirebaseIdentity("uid-1", "baskasi@mentor.com", true));
 
-        when(appUserRepository.existsByEmailIgnoreCase("kemal@mentor.com")).thenReturn(false);
-
         assertThatThrownBy(() -> registrationService.registerMentor(new RegisterMentorRequest(
                 "Dr. Kemal Arslan",
                 "kemal@mentor.com",
@@ -901,10 +898,27 @@ class RegistrationServiceTest {
         verify(organizationRepository, never()).saveAndFlush(any(Organization.class));
     }
 
+    // A login cannot use sign-up to ask whether someone else's address has an account.
+    @Test
+    void registerFounder_checksTheLoginBeforeSayingWhetherTheAddressIsTaken() {
+        signIn(new FirebaseIdentity("uid-1", "meraklı@example.com", true));
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ayşe Demir",
+                "ayse@startup.com",
+                "GreenLoop",
+                null,
+                null,
+                null,
+                null, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("does not match");
+        verify(appUserRepository, never()).existsByEmailIgnoreCase(any());
+    }
+
     @Test
     void registerFounder_rejectsLoginAlreadyLinkedToAnAccount() {
         signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", true));
-        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
         when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(new AppUser()));
 
         assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
