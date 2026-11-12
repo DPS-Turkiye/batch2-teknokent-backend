@@ -29,21 +29,25 @@ import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.PeerTopicCategory;
+import com.dps.teknokent.domain.PeerTopicLevel;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
+import com.dps.teknokent.dto.requests.PeerExperienceCardRequest;
 import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.PeerCategoryCountResponse;
+import com.dps.teknokent.dto.responses.PeerExperienceCardResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
 import com.dps.teknokent.dto.responses.PeerMentorDetailResponse;
 import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.InstitutionPerson;
+import com.dps.teknokent.entity.MentorExperience;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
@@ -141,9 +145,11 @@ public class PeerMentoringService {
 		if (card.categories().isEmpty()) {
 			throw mentorNotFound(mentorId);
 		}
+		MentorProfile published = mentorProfileRepository.findById(mentorId).orElseThrow(() -> mentorNotFound(mentorId));
 		return PeerMentorDetailResponse.of(card, profile,
 				webLinkOrNull(domainLookupService.requireUser(mentorId).getLinkedinUrl()),
-				mentorProfileService.findAvailabilityRules(mentorId));
+				mentorProfileService.findAvailabilityRules(mentorId), levelsFor(published, card.categories()),
+				cardsOf(published));
 	}
 
 	/** For each category active in the student's program, how many of its peer mentors offer it. */
@@ -254,7 +260,24 @@ public class PeerMentoringService {
 				.orElseGet(() -> MentorProfile.blankFor(mentor, mentorProfileRepository.findMaxSortOrder() + 1));
 		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(
 				mentor.getId());
-		profile.setSpecialties(new ArrayList<>(request.categories().stream().distinct().map(Enum::name).toList()));
+		List<PeerTopicCategory> chosen = request.categories().stream().distinct().toList();
+		List<MentorExperience> cards = request.experiences() == null ? null
+				: request.experiences().stream().map(PeerMentoringService::experienceCard).toList();
+		profile.setSpecialties(new ArrayList<>(chosen.stream().map(Enum::name).toList()));
+		if (request.levels() != null) {
+			profile.getCategoryLevels().clear();
+			request.levels().forEach((category, level) -> {
+				if (level != null) {
+					profile.getCategoryLevels().put(category, level);
+				}
+			});
+		}
+		// A level outlives neither its category nor a payload that leaves levels out.
+		profile.getCategoryLevels().keySet().retainAll(chosen);
+		if (cards != null) {
+			profile.getExperiences().clear();
+			profile.getExperiences().addAll(cards);
+		}
 		profile.setOfferings(new ArrayList<>(cleaned(request.subTopics())));
 		profile.setStrongCourses(new ArrayList<>(cleaned(request.strongCourses())));
 		profile.setProjects(new ArrayList<>(cleaned(request.projects())));
@@ -270,8 +293,9 @@ public class PeerMentoringService {
 	private PeerMentorProfileResponse toProfileResponse(AppUser mentor, MentorProfile profile) {
 		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(
 				mentor.getId());
+		List<PeerTopicCategory> offered = offeredCategories(profile.getSpecialties(), activeForMentor(mentor));
 		return new PeerMentorProfileResponse(
-				offeredCategories(profile.getSpecialties(), activeForMentor(mentor)),
+				offered,
 				List.copyOf(profile.getOfferings()),
 				List.copyOf(profile.getStrongCourses()),
 				List.copyOf(profile.getProjects()),
@@ -280,7 +304,34 @@ public class PeerMentoringService {
 				mentor.getLinkedinUrl(),
 				person.map(InstitutionPerson::getDepartmentName).orElse(profile.getDepartment()),
 				person.map(InstitutionPerson::getClassYear).orElseGet(() -> parseYear(profile.getStudyYear())),
-				profile.getMenteeCapacity());
+				profile.getMenteeCapacity(),
+				levelsFor(profile, offered),
+				cardsOf(profile));
+	}
+
+	/** Months are whole: a card stores the first day of its start and end months. */
+	private static MentorExperience experienceCard(PeerExperienceCardRequest card) {
+		if (card.endedOn() != null && card.endedOn().isBefore(card.startedOn())) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerExperienceMonths"));
+		}
+		return new MentorExperience(card.title().trim(), blankToNull(card.organization()), null,
+				blankToNull(card.summary()), card.kind(), card.startedOn().atDay(1),
+				card.endedOn() == null ? null : card.endedOn().atDay(1));
+	}
+
+	private static Map<PeerTopicCategory, PeerTopicLevel> levelsFor(MentorProfile profile,
+			Collection<PeerTopicCategory> shown) {
+		Map<PeerTopicCategory, PeerTopicLevel> levels = new EnumMap<>(PeerTopicCategory.class);
+		profile.getCategoryLevels().forEach((category, level) -> {
+			if (shown.contains(category)) {
+				levels.put(category, level);
+			}
+		});
+		return levels;
+	}
+
+	private static List<PeerExperienceCardResponse> cardsOf(MentorProfile profile) {
+		return profile.getExperiences().stream().map(PeerExperienceCardResponse::of).toList();
 	}
 
 	private static List<String> cleaned(List<String> values) {

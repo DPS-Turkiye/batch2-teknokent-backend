@@ -1,9 +1,11 @@
 package com.dps.teknokent.dto.responses;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.dps.teknokent.domain.PeerTopicCategory;
+import com.dps.teknokent.domain.PeerTopicLevel;
 
 /**
  * One peer mentor's profile page as a student of the same program sees it (frontend PeerMentorDetail): the card, plus
@@ -25,10 +27,14 @@ public record PeerMentorDetailResponse(
 		List<String> projects,
 		String erasmus,
 		String linkedinUrl,
-		List<MentorAvailabilityRuleResponse> weeklyHours) {
+		List<MentorAvailabilityRuleResponse> weeklyHours,
+		/** Levels for the categories on the card only. */
+		Map<PeerTopicCategory, PeerTopicLevel> levels,
+		List<PeerExperienceCardResponse> experiences) {
 
 	public static PeerMentorDetailResponse of(PeerMentorCardResponse card, MentorProfileResponse profile,
-			String linkedinUrl, List<MentorAvailabilityRuleResponse> weeklyHours) {
+			String linkedinUrl, List<MentorAvailabilityRuleResponse> weeklyHours,
+			Map<PeerTopicCategory, PeerTopicLevel> levels, List<PeerExperienceCardResponse> experiences) {
 		StudentProfileResponse studies = profile.studentProfile();
 		return new PeerMentorDetailResponse(card.mentorId(), card.fullName(), card.department(), card.classYear(),
 				card.categories(), card.helpWith(), card.recommendationReasons(), card.capacityFull(), card.badges(),
@@ -38,6 +44,8 @@ public record PeerMentorDetailResponse(
 				studies == null ? List.of() : studies.projects(),
 				studies == null ? null : studies.erasmus(),
 				linkedinUrl,
-				List.copyOf(weeklyHours));
+				List.copyOf(weeklyHours),
+				Map.copyOf(levels),
+				List.copyOf(experiences));
 	}
 }

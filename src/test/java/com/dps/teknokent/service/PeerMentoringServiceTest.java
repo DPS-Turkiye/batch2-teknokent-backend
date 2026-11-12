@@ -12,10 +12,14 @@ import static org.mockito.Mockito.when;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -31,18 +35,22 @@ import com.dps.teknokent.domain.BadgeKind;
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.PeerExperienceKind;
 import com.dps.teknokent.domain.PeerTopicCategory;
+import com.dps.teknokent.domain.PeerTopicLevel;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
+import com.dps.teknokent.dto.requests.PeerExperienceCardRequest;
 import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.PeerCategoryCountResponse;
+import com.dps.teknokent.dto.responses.PeerExperienceCardResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
 import com.dps.teknokent.dto.responses.PeerMentorDetailResponse;
 import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
@@ -51,6 +59,7 @@ import com.dps.teknokent.dto.responses.PublicBadgeResponse;
 import com.dps.teknokent.dto.responses.StudentProfileResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.InstitutionPerson;
+import com.dps.teknokent.entity.MentorExperience;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
@@ -89,6 +98,7 @@ class PeerMentoringServiceTest {
 	private final MentorAvailabilitySlotRepository slots = mock(MentorAvailabilitySlotRepository.class);
 	private PeerMentoringService service;
 	private List<MentorProfileResponse> programProfiles;
+	private MentorProfile published;
 
 	private AppUser student;
 	private AppUser peerMentor;
@@ -130,6 +140,8 @@ class PeerMentoringServiceTest {
 		running.setId(PROGRAM_ID);
 		running.setStatus(ProgramStatus.ACTIVE);
 		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(running));
+		published = MentorProfile.blankFor(peerMentor, 1);
+		when(profileRepository.findById(peerMentor.getId())).thenReturn(Optional.of(published));
 		when(badges.publicOf(peerMentor.getId())).thenReturn(List.of(
 				new PublicBadgeResponse(BadgeCode.SESSIONS_10, BadgeKind.ACHIEVEMENT, PROGRAM_ID, Instant.now())));
 	}
@@ -149,7 +161,9 @@ class PeerMentoringServiceTest {
 				List.of("Tedarik zinciri simülasyonu"),
 				"  ",
 				"  Staj başvurusu ve Erasmus planlamasında yardımcı olabilirim.  ",
-				"https://linkedin.com/in/zeynep"));
+				"https://linkedin.com/in/zeynep",
+				null,
+				null));
 
 		ArgumentCaptor<MentorProfile> profile = ArgumentCaptor.forClass(MentorProfile.class);
 		verify(profileRepository).save(profile.capture());
@@ -257,7 +271,7 @@ class PeerMentoringServiceTest {
 
 		assertThatThrownBy(() -> service.saveProfile(peerMentor.getId(), new SavePeerMentorProfileRequest(null,
 				List.of(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.INTERNATIONAL), List.of(), List.of(),
-				List.of(), null, "Staj başvurusunda yardımcı olabilirim.", null)))
+				List.of(), null, "Staj başvurusunda yardımcı olabilirim.", null, null, null)))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(profileRepository, never()).save(any());
 	}
@@ -502,6 +516,100 @@ class PeerMentoringServiceTest {
 
 		assertThat(service.mentors(student.getId(), null, null, null, true)).isEmpty();
 		verify(slots, never()).findMentorIdsWithFreeSlotBetween(any(), any(), any(), any());
+	}
+
+	@Test
+	void theWizardSavesALevelForChosenCategoriesOnlyAndTheExperienceCardsInOrder() {
+		when(profileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		Map<PeerTopicCategory, PeerTopicLevel> levels = new EnumMap<>(PeerTopicCategory.class);
+		levels.put(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED);
+		levels.put(PeerTopicCategory.ENTREPRENEURSHIP, PeerTopicLevel.BASIC);
+
+		PeerMentorProfileResponse saved = service.saveProfile(peerMentor.getId(), wizard(levels, List.of(
+				new PeerExperienceCardRequest(PeerExperienceKind.INTERNSHIP, "  Yazılım stajyeri ", " Aselsan ",
+						YearMonth.of(2025, 6), YearMonth.of(2025, 8), "  "),
+				new PeerExperienceCardRequest(PeerExperienceKind.CLUB, "Kulüp başkanı", null, YearMonth.of(2024, 10),
+						null, "IEEE ODTÜ"))));
+
+		assertThat(published.getCategoryLevels()).containsExactly(
+				Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
+		assertThat(published.getExperiences()).satisfiesExactly(
+				internship -> {
+					assertThat(internship.getKind()).isEqualTo(PeerExperienceKind.INTERNSHIP);
+					assertThat(internship.getTitle()).isEqualTo("Yazılım stajyeri");
+					assertThat(internship.getOrganization()).isEqualTo("Aselsan");
+					assertThat(internship.getStartedOn()).isEqualTo(LocalDate.of(2025, 6, 1));
+					assertThat(internship.getEndedOn()).isEqualTo(LocalDate.of(2025, 8, 1));
+					assertThat(internship.getSummary()).isNull();
+					assertThat(internship.getPeriod()).isNull();
+				},
+				club -> assertThat(club.getEndedOn()).isNull());
+		assertThat(saved.levels()).containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
+		assertThat(saved.experiences()).extracting(PeerExperienceCardResponse::startedOn)
+				.containsExactly(YearMonth.of(2025, 6), YearMonth.of(2024, 10));
+	}
+
+	@Test
+	void leftOutLevelsAndCardsStayButALevelGoesWithItsCategoryAndAnEmptyListClearsTheCards() {
+		when(profileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		published.getCategoryLevels().put(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.INTERMEDIATE);
+		published.getCategoryLevels().put(PeerTopicCategory.TECHNICAL_DIGITAL, PeerTopicLevel.ADVANCED);
+		published.getExperiences().add(card(PeerExperienceKind.JOB, "Asistan"));
+
+		service.saveProfile(peerMentor.getId(), wizard(null, null));
+
+		assertThat(published.getCategoryLevels()).containsExactly(
+				Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.INTERMEDIATE));
+		assertThat(published.getExperiences()).extracting(MentorExperience::getTitle).containsExactly("Asistan");
+
+		service.saveProfile(peerMentor.getId(), wizard(Map.of(), List.of()));
+
+		assertThat(published.getCategoryLevels()).isEmpty();
+		assertThat(published.getExperiences()).isEmpty();
+	}
+
+	@Test
+	void aCardThatEndsBeforeItStartsIsRefusedBeforeAnythingChanges() {
+		published.getExperiences().add(card(PeerExperienceKind.JOB, "Asistan"));
+
+		assertThatThrownBy(() -> service.saveProfile(peerMentor.getId(), wizard(null, List.of(
+				new PeerExperienceCardRequest(PeerExperienceKind.INTERNSHIP, "Staj", null, YearMonth.of(2025, 9),
+						YearMonth.of(2025, 6), null)))))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(published.getExperiences()).extracting(MentorExperience::getTitle).containsExactly("Asistan");
+		assertThat(published.getSpecialties()).isEmpty();
+		verify(profileRepository, never()).save(any());
+	}
+
+	@Test
+	void theMentorsOwnProfileAndTheirPublicPageShowLevelsOnlyForCategoriesOnShowAndTheCards() {
+		published.setSpecialties(new java.util.ArrayList<>(List.of("CAREER_INTERNSHIP", "INTERNATIONAL")));
+		published.getCategoryLevels().put(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED);
+		published.getCategoryLevels().put(PeerTopicCategory.INTERNATIONAL, PeerTopicLevel.BASIC);
+		published.getExperiences().add(new MentorExperience("METU Stars Mentoru", null, null, null));
+		when(peerCategories.activeIn(List.of(PROGRAM_ID))).thenReturn(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP));
+		activate(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP));
+
+		PeerMentorProfileResponse own = service.profile(peerMentor.getId());
+		PeerMentorDetailResponse page = service.mentor(student.getId(), peerMentor.getId());
+
+		assertThat(own.levels()).containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
+		assertThat(page.levels()).containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
+		assertThat(page.experiences()).singleElement().satisfies(line -> {
+			assertThat(line.kind()).isEqualTo(PeerExperienceKind.OTHER);
+			assertThat(line.title()).isEqualTo("METU Stars Mentoru");
+			assertThat(line.startedOn()).isNull();
+		});
+	}
+
+	private SavePeerMentorProfileRequest wizard(Map<PeerTopicCategory, PeerTopicLevel> levels,
+			List<PeerExperienceCardRequest> experiences) {
+		return new SavePeerMentorProfileRequest(null, List.of(PeerTopicCategory.CAREER_INTERNSHIP), List.of(),
+				List.of(), List.of(), null, "Staj başvurusunda yardımcı olabilirim.", null, levels, experiences);
+	}
+
+	private static MentorExperience card(PeerExperienceKind kind, String title) {
+		return new MentorExperience(title, null, null, null, kind, LocalDate.of(2024, 1, 1), null);
 	}
 
 	private AppUser user(String name, Set<IdentityKind> kinds, UserRole... roles) {
