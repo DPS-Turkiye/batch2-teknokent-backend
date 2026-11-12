@@ -893,7 +893,32 @@ class RegistrationServiceTest {
                 null,
                 null, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("already exists");
+                // In the reader's language, so the sign-up screen can show why instead of a generic 400.
+                .hasMessage("Bu e-posta adresiyle kayıtlı bir hesap zaten var. Kayıt olmak yerine giriş yap.")
+                .extracting(error -> ((InvalidRequestException) error).code())
+                .isEqualTo(RegistrationService.EMAIL_ALREADY_REGISTERED);
+        verify(appUserRepository, never()).saveAndFlush(any(AppUser.class));
+        verify(organizationRepository, never()).saveAndFlush(any(Organization.class));
+    }
+
+    @Test
+    void registerFounder_rejectsLoginAlreadyLinkedToAnAccount() {
+        signIn(new FirebaseIdentity("uid-1", "ayse@startup.com", true));
+        when(appUserRepository.existsByEmailIgnoreCase("ayse@startup.com")).thenReturn(false);
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(new AppUser()));
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ayşe Demir",
+                "ayse@startup.com",
+                "GreenLoop",
+                null,
+                null,
+                null,
+                null, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Bu giriş zaten kayıtlı bir hesaba bağlı. Kayıt olmak yerine giriş yap.")
+                .extracting(error -> ((InvalidRequestException) error).code())
+                .isEqualTo(RegistrationService.ACCOUNT_ALREADY_REGISTERED);
     }
 
     private static void signIn(FirebaseIdentity identity) {

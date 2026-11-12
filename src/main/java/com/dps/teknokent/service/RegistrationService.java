@@ -58,6 +58,11 @@ import com.dps.teknokent.util.Texts;
 @RequiredArgsConstructor
 public class RegistrationService {
 
+	/** Sign-up met an address that already has an account; the client sends the person to sign in. */
+	public static final String EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED";
+	/** This Firebase login already belongs to an account. */
+	public static final String ACCOUNT_ALREADY_REGISTERED = "ACCOUNT_ALREADY_REGISTERED";
+
 	private final AppUserRepository appUserRepository;
 	private final OrganizationRepository organizationRepository;
 	private final MentorProfileRepository mentorProfileRepository;
@@ -404,7 +409,8 @@ public class RegistrationService {
 			throw new InvalidRequestException("Verify your email address before registering.");
 		}
 		if (appUserRepository.findByFirebaseUid(identity.uid()).isPresent()) {
-			throw new InvalidRequestException("This account is already registered.");
+			throw new InvalidRequestException(Texts.forRequest("error.accountAlreadyRegistered"),
+					ACCOUNT_ALREADY_REGISTERED);
 		}
 		user.setFirebaseUid(identity.uid());
 	}
@@ -420,7 +426,8 @@ public class RegistrationService {
 	private String requireUniqueEmail(String rawEmail) {
 		String email = TextUtils.trim(rawEmail);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
-			throw new InvalidRequestException("A user with this email already exists.");
+			throw new InvalidRequestException(Texts.forRequest("error.emailAlreadyRegistered"),
+					EMAIL_ALREADY_REGISTERED);
 		}
 		return email;
 	}

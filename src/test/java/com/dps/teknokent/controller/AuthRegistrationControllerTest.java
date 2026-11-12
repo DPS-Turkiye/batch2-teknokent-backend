@@ -44,6 +44,7 @@ import com.dps.teknokent.dto.requests.RegisterFounderRequest;
 import com.dps.teknokent.dto.requests.RegisterMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterMentorRequest;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.RegistrationService;
 
 @WebMvcTest(AuthRegistrationController.class)
@@ -134,6 +135,49 @@ class AuthRegistrationControllerTest {
                                 }
                                 """))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // A sign-up whose address already has an account: the reason and its code reach the client, not a bare 400.
+    @Test
+    void founderRegisterForAnExistingAddressAnswersWithItsCode() throws Exception {
+        when(registrationService.registerFounder(any(RegisterFounderRequest.class)))
+                .thenThrow(new InvalidRequestException("Bu e-posta adresiyle kayıtlı bir hesap zaten var.",
+                        RegistrationService.EMAIL_ALREADY_REGISTERED));
+
+        mockMvc.perform(post("/api/auth/register/founder")
+                        .with(authentication(registering("ayse@startup.com")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ayşe Demir",
+                                  "email": "ayse@startup.com",
+                                  "organizationName": "GreenLoop",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_REGISTERED"))
+                .andExpect(jsonPath("$.message").value("Bu e-posta adresiyle kayıtlı bir hesap zaten var."));
+    }
+
+    // A field the form let through still comes back by name, so the sign-up screen can point at it.
+    @Test
+    void founderRegisterNamesTheInvalidField() throws Exception {
+        mockMvc.perform(post("/api/auth/register/founder")
+                        .with(authentication(registering("ayse@startup.com")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ayşe Demir",
+                                  "email": "ayse@startup.com",
+                                  "organizationName": "GreenLoop",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa",
+                                  "phone": "0532 123 45 67"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.phone").exists());
+        verifyNoInteractions(registrationService);
     }
 
     @Test
