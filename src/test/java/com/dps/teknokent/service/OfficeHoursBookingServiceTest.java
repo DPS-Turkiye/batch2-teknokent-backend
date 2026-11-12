@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -337,5 +338,23 @@ class OfficeHoursBookingServiceTest {
 
         verify(requestRepository).findByCourseIdAndStudentIdOrderByCreatedAtDesc(COURSE, STUDENT);
         verify(requestRepository).findByCourseIdAndInstructorIdOrderByCreatedAtDesc(COURSE, ACADEMIC);
+    }
+
+    @Test
+    void aTimeAnotherOpenRequestHoldsIsNotAskedForOrOfferedAgain() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        enrolled(ACADEMIC, OfficeHoursRole.INSTRUCTOR);
+        Instant held = Instant.parse("2026-11-10T11:00:00Z");
+        when(slotService.heldTimes(ACADEMIC, null)).thenReturn(Set.of(held));
+
+        assertThatThrownBy(() -> service.create(STUDENT, COURSE, new CreateOfficeHoursRequest(
+                ACADEMIC, "Ödev 2", null, List.of(TUESDAY_2PM)))).isInstanceOf(ConflictException.class);
+
+        existing(OfficeHoursRequestStatus.PENDING);
+        when(slotService.heldTimes(ACADEMIC, REQUEST)).thenReturn(Set.of(held));
+        assertThatThrownBy(() -> service.decide(ACADEMIC, COURSE, REQUEST, new DecideOfficeHoursRequest(
+                OfficeHoursRequestStatus.COUNTER_PROPOSED, null, null, List.of(TUESDAY_2PM))))
+                .isInstanceOf(ConflictException.class);
+        verify(requestRepository, never()).saveAndFlush(any());
     }
 }
