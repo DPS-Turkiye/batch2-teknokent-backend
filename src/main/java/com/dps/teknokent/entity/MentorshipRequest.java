@@ -190,6 +190,7 @@ public class MentorshipRequest {
 	/**
 	 * A request reaches ACCEPTED along several paths (the mentor's answer, the mentee taking a proposed time, a
 	 * meeting made from the calendar, a coordinator's match), so the start is stamped on save rather than in each one.
+	 * A bulk JPQL or native UPDATE skips this, so one that accepts requests must set accepted_at itself.
 	 */
 	@PrePersist
 	@PreUpdate
