@@ -8,9 +8,12 @@ import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
+import com.dps.teknokent.domain.AiFeature;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,7 +27,7 @@ class AiProviderClientTest {
 
     @Test
     void providerNameAndModelSelection_useOpenrouterSettings() throws Exception {
-        AiProviderClient client = new AiProviderClient(jsonUtils);
+        AiProviderClient client = new AiProviderClient(jsonUtils, TestAiFeatures.allOn());
 
         setField(client, "provider", "openrouter");
         setField(client, "openRouterEmbeddingModel", "openrouter-embedding");
@@ -50,7 +53,7 @@ class AiProviderClientTest {
         });
 
         try {
-            AiProviderClient client = new AiProviderClient(jsonUtils);
+            AiProviderClient client = new AiProviderClient(jsonUtils, TestAiFeatures.allOn());
             setField(client, "provider", "openrouter");
             setField(client, "openRouterApiKey", "test-key");
             setField(client, "openRouterBaseUrl", "http://localhost:" + server.getAddress().getPort());
@@ -98,7 +101,7 @@ class AiProviderClientTest {
         });
 
         try {
-            AiProviderClient client = new AiProviderClient(jsonUtils);
+            AiProviderClient client = new AiProviderClient(jsonUtils, TestAiFeatures.allOn());
             setField(client, "provider", "openrouter");
             setField(client, "openRouterApiKey", "test-key");
             setField(client, "openRouterBaseUrl", "http://localhost:" + server.getAddress().getPort());
@@ -129,7 +132,7 @@ class AiProviderClientTest {
         });
 
         try {
-            AiProviderClient client = new AiProviderClient(jsonUtils);
+            AiProviderClient client = new AiProviderClient(jsonUtils, TestAiFeatures.allOn());
             setField(client, "provider", "openai");
             setField(client, "openAiApiKey", "test-key");
             setField(client, "openAiBaseUrl", "http://localhost:" + server.getAddress().getPort());
@@ -167,7 +170,7 @@ class AiProviderClientTest {
         });
 
         try {
-            AiProviderClient client = new AiProviderClient(jsonUtils);
+            AiProviderClient client = new AiProviderClient(jsonUtils, TestAiFeatures.allOn());
             setField(client, "provider", "openrouter");
             setField(client, "openRouterApiKey", "test-key");
             setField(client, "openRouterBaseUrl", "http://localhost:" + server.getAddress().getPort());
@@ -181,6 +184,39 @@ class AiProviderClientTest {
             assertThat(bodies).hasSize(2);
             assertThat(bodies.get(0)).contains("\"reasoning\"");
             assertThat(bodies.get(1)).doesNotContain("\"reasoning\"");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void aSwitchedOffFeatureSendsNothingToTheProvider() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = startServer(exchange -> {
+            requests.incrementAndGet();
+            writeJson(exchange, 500, "{}");
+        });
+
+        try {
+            AiProviderClient client = new AiProviderClient(jsonUtils, TestAiFeatures.allOnExcept(AiFeature.values()));
+            setField(client, "provider", "openrouter");
+            setField(client, "openRouterApiKey", "test-key");
+            setField(client, "openRouterBaseUrl", "http://localhost:" + server.getAddress().getPort());
+            JsonNode schema = jsonUtils.readTree("{\"type\": \"object\"}");
+
+            assertThatThrownBy(() -> client.structuredProfile("mentee", "CV metni", schema))
+                    .isInstanceOf(AiFeatureDisabledException.class);
+            assertThatThrownBy(() -> client.syllabusPhases("Hafta 1", null, null, schema))
+                    .isInstanceOf(AiFeatureDisabledException.class);
+            assertThatThrownBy(() -> client.generateMeetingReport("Ayşe: merhaba", schema))
+                    .isInstanceOf(AiFeatureDisabledException.class);
+            assertThatThrownBy(() -> client.cleanTranscript("s1\tmerhaba", schema))
+                    .isInstanceOf(AiFeatureDisabledException.class);
+            assertThatThrownBy(() -> client.taskHandover("Members:", schema))
+                    .isInstanceOf(AiFeatureDisabledException.class);
+            assertThatThrownBy(() -> client.embeddings(List.of("Java")))
+                    .isInstanceOf(AiFeatureDisabledException.class);
+            assertThat(requests.get()).isZero();
         } finally {
             server.stop(0);
         }
