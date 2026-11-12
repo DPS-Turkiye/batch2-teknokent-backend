@@ -47,7 +47,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * The student side of office hours on Menton: the academicians who chose to be listed, their open times, and the
- * student's own requests. ODTÜ's record must say the account is a student; otherwise everything is a 404. A request
+ * student's own requests. Where to meet and the online link come with a request only once it is a meeting. ODTÜ's record must say the account is a student; otherwise everything is a 404. A request
  * goes to a listed academician for one of their open slots, through the same booking rules as the Moodle routes.
  */
 @Service
@@ -55,6 +55,9 @@ import lombok.RequiredArgsConstructor;
 public class OfficeHoursStudentMeService {
 
 	private static final Collator TURKISH = Collator.getInstance(Locale.forLanguageTag("tr"));
+	/** How many open requests a student may have with one academician at a time. */
+	static final int MAX_OPEN_PER_ACADEMICIAN = 3;
+
 	private static final Set<OfficeHoursRequestStatus> OPEN = Set.of(OfficeHoursRequestStatus.PENDING,
 			OfficeHoursRequestStatus.MORE_INFO_REQUESTED, OfficeHoursRequestStatus.COUNTER_PROPOSED);
 
@@ -107,11 +110,17 @@ public class OfficeHoursStudentMeService {
 		}
 		String slot = MeetingSlotTimes.formatMachineSlot(submission.startsAt());
 		UUID studentId = people.personFor(accountId, record).getId();
-		boolean asked = requestRepository.findTop200ByStudentIdOrderByCreatedAtDesc(studentId).stream()
-				.anyMatch(open -> OPEN.contains(open.getStatus()) && open.getInstructorId().equals(instructorId)
-						&& slots(open.getPreferredSlots()).contains(slot));
-		if (asked) {
+		userRepository.findForUpdate(studentId);
+		List<OfficeHoursRequest> openWithThem = requestRepository.findTop200ByStudentIdOrderByCreatedAtDesc(studentId)
+				.stream()
+				.filter(open -> OPEN.contains(open.getStatus()) && open.getInstructorId().equals(instructorId))
+				.toList();
+		if (openWithThem.stream().anyMatch(open -> slots(open.getPreferredSlots()).contains(slot))) {
 			throw new ConflictException("You have already asked for this time.");
+		}
+		if (openWithThem.size() >= MAX_OPEN_PER_ACADEMICIAN) {
+			throw new ConflictException("You already have " + MAX_OPEN_PER_ACADEMICIAN
+					+ " open requests with this academician. Wait for an answer first.");
 		}
 		OfficeHoursRequest created = bookingService.createRequest(studentId, null,
 				new CreateOfficeHoursRequest(instructorId, submission.title(), submission.description(), List.of(slot)));
@@ -191,8 +200,6 @@ public class OfficeHoursStudentMeService {
 				.recordsOf(instructors.values().stream().map(OfficeHoursUser::getAppUserId).toList());
 		Map<UUID, OfficeHoursSettings> settings = settingsRepository.findAllById(instructorIds).stream()
 				.collect(Collectors.toMap(OfficeHoursSettings::getInstructorId, Function.identity()));
-		Map<UUID, Integer> minutes = instructorIds.stream()
-				.collect(Collectors.toMap(Function.identity(), slotService::defaultMeetingMinutes));
 		List<UUID> courseIds = requests.stream().map(OfficeHoursRequest::getCourseId).filter(Objects::nonNull)
 				.distinct().toList();
 		Map<UUID, String> courses = courseIds.isEmpty() ? Map.of()
@@ -203,7 +210,7 @@ public class OfficeHoursStudentMeService {
 			InstitutionPerson record = instructor == null || instructor.getAppUserId() == null ? null
 					: records.get(instructor.getAppUserId());
 			OfficeHoursSettings where = settings.getOrDefault(request.getInstructorId(), new OfficeHoursSettings());
-			int length = minutes.get(request.getInstructorId());
+			int length = where.getDefaultMeetingDurationMinutes();
 			OfficeHoursMeeting meeting = meetings.get(request.getId());
 			OfficeHoursTimeResponse time = meeting != null
 					? OfficeHoursTimeResponse.of(meeting.getScheduledAt(), meeting.getDurationMinutes())
@@ -216,7 +223,8 @@ public class OfficeHoursStudentMeService {
 					request.getTopic(), request.getExpectedOutcome(),
 					request.getCourseId() == null ? null : courses.get(request.getCourseId()), time,
 					times(request.getProposedSlots(), length), request.getInstructorMessage(),
-					request.getRejectionReason(), where.getDefaultPlace(), where.getOnlineLink(),
+					request.getRejectionReason(), meeting == null ? null : where.getDefaultPlace(),
+					meeting == null ? null : where.getOnlineLink(),
 					request.getCreatedAt(), OfficeHoursRequestAction.allowedFor(OfficeHoursRole.STUDENT,
 							request.getStatus()));
 		}).toList();

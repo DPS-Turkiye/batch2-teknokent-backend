@@ -134,7 +134,7 @@ class OfficeHoursStudentMeIntegrationTest {
 				.andExpect(jsonPath("$.status").value("PENDING"))
 				.andExpect(jsonPath("$.academician.fullName").value("Elif Şahin"))
 				.andExpect(jsonPath("$.topic").value("Staj"))
-				.andExpect(jsonPath("$.place").value("A-204"))
+				.andExpect(jsonPath("$.place").doesNotExist())
 				.andExpect(jsonPath("$.allowedActions[0]").value("WITHDRAW"))
 				.andReturn().getResponse().getContentAsString();
 		String requestId = JsonPath.read(created, "$.id");
@@ -154,12 +154,25 @@ class OfficeHoursStudentMeIntegrationTest {
 				"{\"accept\":true,\"time\":\"" + second + "\"}")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("ACCEPTED"))
+				.andExpect(jsonPath("$.place").value("A-204"))
 				.andExpect(jsonPath("$.allowedActions.length()").value(0));
 		assertThat(meetings.findAll()).hasSize(1);
 		mockMvc.perform(get("/api/office-hours/me/meetings").param("actorId", academician.getId().toString())
 						.with(frontendServer()))
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].student.fullName").value("Ali Kaya"));
+	}
+
+	@Test
+	void aStudentKeepsAtMostThreeOpenRequestsWithOneAcademician() throws Exception {
+		String listedId = officeHoursUsers.findByAppUserId(academician.getId()).orElseThrow().getId().toString();
+		String slots = getAs(student, "/api/office-hours/me/academicians/" + listedId + "/slots");
+		for (int index = 0; index < 4; index++) {
+			String ask = "{\"academicianId\":\"" + listedId + "\",\"startsAt\":\""
+					+ JsonPath.read(slots, "$[" + index + "].startsAt") + "\",\"title\":\"Staj\"}";
+			postAs(student, "/api/office-hours/me/requests", ask)
+					.andExpect(index < 3 ? status().isCreated() : status().isConflict());
+		}
 	}
 
 	@Test
