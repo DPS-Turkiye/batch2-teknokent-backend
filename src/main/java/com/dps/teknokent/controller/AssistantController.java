@@ -18,6 +18,7 @@ import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.ErrorResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -115,7 +116,7 @@ public class AssistantController {
       return ResponseEntity.ok(response);
     } catch (InvalidRequestException ex) {
       return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
-    } catch (ResponseStatusException | ResourceNotFoundException ex) {
+    } catch (ResponseStatusException | ResourceNotFoundException | AiFeatureDisabledException ex) {
       throw ex;
     } catch (Exception ex) {
       return providerFailure("Failed to generate meeting report", ex);

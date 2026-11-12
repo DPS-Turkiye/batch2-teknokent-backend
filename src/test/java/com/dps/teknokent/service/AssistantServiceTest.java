@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,17 +26,20 @@ import com.dps.teknokent.dto.provider.ProviderBotSummary;
 import com.dps.teknokent.dto.provider.ProviderRunningBot;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
 import com.dps.teknokent.dto.responses.BotStateResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
@@ -52,6 +56,9 @@ class AssistantServiceTest {
 
   @Mock
   private AssistantMeetingAccessService accessService;
+
+  @Spy
+  private AiFeatures aiFeatures = TestAiFeatures.allOn();
 
   @InjectMocks
   private AssistantService assistantService;
@@ -356,6 +363,18 @@ class AssistantServiceTest {
 
     verify(meetingReportService).generate(List.of(
         new TranscriptSegmentResponse("s1", "Ayşe", "Merhaba", "01:05")));
+  }
+
+  @Test
+  void aSwitchedOffReportIsRefusedAfterTheAccessCheckWithoutFetchingTheTranscript() {
+    allowed();
+    ReflectionTestUtils.setField(
+        assistantService, "aiFeatures", TestAiFeatures.allOnExcept(AiFeature.MEETING_REPORT));
+
+    assertThatThrownBy(() -> assistantService.generateMeetingReport(CALLER, "google_meet", "abc-defg-hij"))
+        .isInstanceOf(AiFeatureDisabledException.class);
+    verify(providerClient, never()).getTranscript(any(), any());
+    verify(meetingReportService, never()).generate(any());
   }
 
   @Test

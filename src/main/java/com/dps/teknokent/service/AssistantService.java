@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClientResponseException;
 import com.dps.teknokent.domain.MeetingBotEndReason;
 import com.dps.teknokent.domain.MeetingBotState;
 import com.dps.teknokent.util.Texts;
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.util.TimeFormatUtils;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
@@ -42,6 +43,7 @@ public class AssistantService {
   private final MeetingReportService meetingReportService;
   private final TranscriptBotCapacityService capacityService;
   private final AssistantMeetingAccessService accessService;
+  private final AiFeatures aiFeatures;
 
   /**
    * A bot asked for from the assistant, outside a booked meeting. It counts the bots running right now plus the
@@ -219,6 +221,7 @@ public class AssistantService {
    */
   public MeetingReportResponse generateMeetingReport(UUID callerId, String platform, String nativeMeetingId) {
     var parsed = accessService.requireAccess(callerId, platform, nativeMeetingId);
+    aiFeatures.require(AiFeature.MEETING_REPORT);
     return generateMeetingReport(getTranscript(parsed.platform(), parsed.nativeMeetingId()).segments());
   }
 

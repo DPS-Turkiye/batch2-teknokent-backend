@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.JsonSchemaUtils;
@@ -34,7 +35,20 @@ class TranscriptCleanupServiceTest {
 			new TranscriptSegmentResponse("s3", "Deniz", "tamam", "00:20"));
 
 	private TranscriptCleanupService service() {
-		return new TranscriptCleanupService(aiProviderClient, new LocalPiiRedactionService(), new JsonSchemaUtils(jsonUtils));
+		return service(TestAiFeatures.allOn());
+	}
+
+	private TranscriptCleanupService service(AiFeatures aiFeatures) {
+		return new TranscriptCleanupService(
+				aiProviderClient, new LocalPiiRedactionService(), new JsonSchemaUtils(jsonUtils), aiFeatures);
+	}
+
+	@Test
+	void sendsNothingOutWhenMeetingReportsAreSwitchedOff() {
+		List<TranscriptSegmentResponse> kept = service(TestAiFeatures.allOnExcept(AiFeature.MEETING_REPORT)).clean(raw);
+
+		assertThat(kept).isEqualTo(raw);
+		verifyNoInteractions(aiProviderClient);
 	}
 
 	@Test

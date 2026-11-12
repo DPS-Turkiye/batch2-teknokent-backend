@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.dto.responses.ApiErrorResponse;
+import com.dps.teknokent.util.Texts;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -36,6 +37,19 @@ public class GlobalExceptionHandler {
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiErrorResponse handleConflict(ConflictException exception, HttpServletRequest request) {
 		return response(HttpStatus.CONFLICT, exception.getMessage(), request, Map.of());
+	}
+
+	@ExceptionHandler(AiFeatureDisabledException.class)
+	@ResponseStatus(HttpStatus.FORBIDDEN)
+	public ApiErrorResponse handleAiFeatureDisabled(AiFeatureDisabledException exception, HttpServletRequest request) {
+		return new ApiErrorResponse(
+				Instant.now(),
+				HttpStatus.FORBIDDEN.value(),
+				HttpStatus.FORBIDDEN.getReasonPhrase(),
+				Texts.forRequest("error.aiFeatureDisabled"),
+				request.getRequestURI(),
+				Map.of(),
+				AiFeatureDisabledException.CODE);
 	}
 
 	@ExceptionHandler(ResponseStatusException.class)
