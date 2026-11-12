@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.entity.ActionItem;
@@ -53,6 +54,7 @@ public class TaskHandoverService {
 	private final NotificationService notificationService;
 	private final ApplicationEventPublisher eventPublisher;
 	private final JsonUtils jsonUtils;
+	private final AiFeatures aiFeatures;
 
 	/** Inside the leave's transaction: the to-do list shows the tasks as left right away. */
 	public void markLeft(AppUser leaver, Organization organization) {
@@ -101,6 +103,9 @@ public class TaskHandoverService {
 
 	/** Task id → member id; empty when the AI is unavailable, so every task goes to the fallback. */
 	private Map<UUID, UUID> suggest(List<ActionItem> tasks, List<AppUser> stay, AppUser lead) {
+		if (!aiFeatures.isEnabled(AiFeature.TASK_HANDOVER)) {
+			return Map.of();
+		}
 		Map<String, UUID> memberIds = new LinkedHashMap<>();
 		Map<String, UUID> taskIds = new LinkedHashMap<>();
 		StringBuilder input = new StringBuilder("Members (id, job title, open tasks, team lead):\n");

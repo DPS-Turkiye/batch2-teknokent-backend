@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import com.dps.teknokent.domain.AiFeature;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -43,6 +44,7 @@ public class ProfileAnalysisService {
 	private final MentorRecommendationService mentorRecommendationService;
 	private final DocumentService documentService;
 	private final JsonUtils jsonUtils;
+	private final AiFeatures aiFeatures;
 
 	/**
 	 * Same as {@link #parse} but with the organization taken from the signed-in
@@ -72,6 +74,8 @@ public class ProfileAnalysisService {
 	public ProfileAnalysisResponse parse(
 			UUID organizationId, UUID appUserId, String profileType, boolean consentAccepted, String ocrMode,
 			MultipartFile file) {
+		// Before anything is stored: a refused parse must not leave the PDF behind.
+		aiFeatures.require(AiFeature.PROFILE_PARSING);
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		validateProfileType(profileType);
 		validateOcrMode(ocrMode);
@@ -117,6 +121,7 @@ public class ProfileAnalysisService {
 	 * to keep. The CV itself is uploaded separately through POST /api/documents.
 	 */
 	public Map<String, Object> parsePreview(String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
+		aiFeatures.require(AiFeature.PROFILE_PARSING);
 		validatePreviewProfileType(profileType);
 		validateOcrMode(ocrMode);
 		requireConsent(consentAccepted);
@@ -130,6 +135,7 @@ public class ProfileAnalysisService {
 	 */
 	public Map<String, Object> parseStoredCvPreview(
 			UUID callerUserId, UUID documentId, String profileType, boolean consentAccepted, String ocrMode) {
+		aiFeatures.require(AiFeature.PROFILE_PARSING);
 		validatePreviewProfileType(profileType);
 		validateOcrMode(ocrMode);
 		requireConsent(consentAccepted);

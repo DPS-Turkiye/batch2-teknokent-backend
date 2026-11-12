@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -23,6 +24,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.exception.AiFeatureDisabledException;
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.ExtractSyllabusPhasesRequest;
@@ -74,9 +77,23 @@ class SyllabusPhaseServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new SyllabusPhaseService(programService, storedDocumentRepository, programRepository,
+		service = serviceWith(TestAiFeatures.allOn());
+	}
+
+	private SyllabusPhaseService serviceWith(AiFeatures aiFeatures) {
+		return new SyllabusPhaseService(programService, storedDocumentRepository, programRepository,
 				programCoordinatorRepository, objectStorage, textExtractor, piiRedactionService, aiProviderClient,
-				jsonUtils);
+				jsonUtils, aiFeatures);
+	}
+
+	@Test
+	void refusesBeforeReadingTheFileWhenSyllabusReadingIsSwitchedOff() {
+		whenActorIs(COORDINATOR_ID, UserRole.COORDINATOR);
+		SyllabusPhaseService switchedOff = serviceWith(TestAiFeatures.allOnExcept(AiFeature.SYLLABUS));
+
+		assertThatThrownBy(() -> switchedOff.extract(COORDINATOR_ID, request()))
+				.isInstanceOf(AiFeatureDisabledException.class);
+		verifyNoInteractions(storedDocumentRepository, objectStorage, textExtractor, aiProviderClient);
 	}
 
 	@Test
