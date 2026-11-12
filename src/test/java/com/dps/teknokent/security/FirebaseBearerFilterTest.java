@@ -281,6 +281,60 @@ class FirebaseBearerFilterTest {
         assertThat(((AppUserPrincipal) principal).role()).isEqualTo(UserRole.ADMIN);
     }
 
+    // An admin's deletion clears the uid and the address, so this row should never be found; if one ever were,
+    // the login must read as "not registered", which sends the person to sign-up.
+    @Test
+    void aDeletedAccountsTombstoneIsNeverSignedIn() throws Exception {
+        AppUser tombstone = user(UserAccountStatus.DELETED);
+        when(firebaseTokenVerifier.enabled()).thenReturn(true);
+        when(firebaseTokenVerifier.verify("good"))
+                .thenReturn(Optional.of(new FirebaseIdentity("uid-1", "ayse@startup.com", true)));
+        when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(tombstone));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request("/api/auth/me", "Bearer good"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chain.getRequest()).isNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(appUserRepository, never()).save(any());
+    }
+
+    // The deletion takes its actor from the token alone, so it is the one admin path a token may reach.
+    @Test
+    void anAdminsOwnTokenReachesTheUserDeletionAndNoOtherAdminPath() throws Exception {
+        AppUser admin = user(UserAccountStatus.APPROVED);
+        admin.setRole(UserRole.ADMIN);
+        signsInAs(admin);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request("POST", "/api/admin/users/" + OTHER_USER_ID + "/delete", "Bearer good"), response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        assertThat(((AppUserPrincipal) principal).id()).isEqualTo(USER_ID);
+        SecurityContextHolder.clearContext();
+
+        for (String[] call : new String[][] {
+                { "GET", "/api/admin/users/" + OTHER_USER_ID + "/delete" },
+                { "POST", "/api/admin/users/" + OTHER_USER_ID + "/delete/extra" },
+                { "POST", "/api/admin/users/not-an-id/delete" },
+                { "POST", "/api/admin/users/" + OTHER_USER_ID },
+                { "GET", "/api/admin/overview" },
+                { "POST", "/api/admin/programs/" + OTHER_USER_ID + "/mentors/" + OTHER_USER_ID } }) {
+            MockHttpServletResponse refused = new MockHttpServletResponse();
+            MockFilterChain stopped = new MockFilterChain();
+
+            filter.doFilter(request(call[0], call[1], "Bearer good"), refused, stopped);
+
+            assertThat(refused.getStatus()).as(call[0] + " " + call[1]).isEqualTo(403);
+            assertThat(stopped.getRequest()).isNull();
+            SecurityContextHolder.clearContext();
+        }
+    }
+
     // Endpoints off the browser's own paths trust ids sent in the request, so a token, even an
     // admin's, must not reach them directly; the proxy sets identity from its session instead.
     @Test

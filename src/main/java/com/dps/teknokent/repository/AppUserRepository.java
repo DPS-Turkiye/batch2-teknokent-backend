@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
+
+import jakarta.persistence.LockModeType;
 
 public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	List<AppUser> findByOrganizationIdOrderByFullNameAsc(UUID organizationId);
@@ -31,6 +34,13 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	Optional<AppUser> findByEmailIgnoreCase(String email);
 
 	Optional<AppUser> findByFirebaseUid(String firebaseUid);
+
+	/** The row locked until the transaction ends, so two admins cannot delete the same account at once. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select u from AppUser u where u.id = :id")
+	Optional<AppUser> findByIdForUpdate(@Param("id") UUID id);
+
+	List<AppUser> findByStatusNot(UserAccountStatus status);
 
 	/** Match effective grants, using role only for legacy users without that permission's row. */
 	String HAS_PERMISSION = "((u.role = :role and not exists (select p.id from AppUserPermission p "

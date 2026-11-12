@@ -90,7 +90,7 @@ class AppUserServiceTest {
         AppUser zeynep = user(UUID.fromString("00000000-0000-0000-0000-000000000101"), "zeynep", "Zeynep Arslan", UserRole.MENTOR);
         AppUser ahmet = user(UUID.fromString("00000000-0000-0000-0000-000000000102"), "ahmet", "Ahmet Yılmaz", UserRole.MENTEE);
 
-        when(appUserRepository.findAll()).thenReturn(List.of(zeynep, ahmet));
+        when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(zeynep, ahmet));
 
         var result = appUserService.findAll(null);
 
@@ -105,7 +105,7 @@ class AppUserServiceTest {
         AppUser mentorB = user(UUID.fromString("00000000-0000-0000-0000-000000000202"), "mentorB", "Ahmet Yılmaz", UserRole.MENTOR);
         AppUser mentee = user(UUID.fromString("00000000-0000-0000-0000-000000000203"), "mentee", "Elif Demir", UserRole.MENTEE);
 
-        when(appUserRepository.findAll()).thenReturn(List.of(mentorA, mentee, mentorB));
+        when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(mentorA, mentee, mentorB));
 
         var result = appUserService.findAll(UserRole.MENTOR);
 
@@ -140,7 +140,7 @@ class AppUserServiceTest {
 
         assertThatThrownBy(() -> appUserService.findAll(actorId, null, null))
                 .isInstanceOf(ResponseStatusException.class);
-        verify(appUserRepository, never()).findAll();
+        verify(appUserRepository, never()).findByStatusNot(UserAccountStatus.DELETED);
     }
 
     @Test
@@ -357,7 +357,7 @@ class AppUserServiceTest {
         pending.setStatus(UserAccountStatus.PENDING);
         AppUser approved = user(UUID.fromString("00000000-0000-0000-0000-000000000802"), "approved", "Elif Demir", UserRole.MENTEE);
 
-        when(appUserRepository.findAll()).thenReturn(List.of(pending, approved));
+        when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(pending, approved));
 
         var result = appUserService.findAll(null, UserAccountStatus.PENDING);
 

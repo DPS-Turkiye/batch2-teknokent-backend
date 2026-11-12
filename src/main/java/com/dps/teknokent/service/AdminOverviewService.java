@@ -83,7 +83,7 @@ public class AdminOverviewService {
 		if (!actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only an admin can view the admin overview.");
 		}
-		List<AppUser> userEntities = appUserRepository.findAll();
+		List<AppUser> userEntities = appUserRepository.findByStatusNot(UserAccountStatus.DELETED);
 		Map<String, Boolean> passwords = loginProvisioner.passwordsSet(userEntities.stream()
 				.filter(AdminOverviewService::mayLackPassword)
 				.map(AppUser::getFirebaseUid)
@@ -108,7 +108,7 @@ public class AdminOverviewService {
 		Set<UUID> teams = programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId()).stream()
 				.map(ProgramStartup::getOrganizationId)
 				.collect(Collectors.toSet());
-		return build(List.of(program), program.getId(), teams, appUserRepository.findAll(), List.of(), List.of());
+		return build(List.of(program), program.getId(), teams, appUserRepository.findByStatusNot(UserAccountStatus.DELETED), List.of(), List.of());
 	}
 
 	/**
