@@ -58,6 +58,11 @@ import com.dps.teknokent.util.Texts;
 @RequiredArgsConstructor
 public class RegistrationService {
 
+	/** Sign-up met an address that already has an account; the client sends the person to sign in. */
+	public static final String EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED";
+	/** This Firebase login already belongs to an account. */
+	public static final String ACCOUNT_ALREADY_REGISTERED = "ACCOUNT_ALREADY_REGISTERED";
+
 	private final AppUserRepository appUserRepository;
 	private final OrganizationRepository organizationRepository;
 	private final MentorProfileRepository mentorProfileRepository;
@@ -391,9 +396,17 @@ public class RegistrationService {
 	}
 
 	private void applyFirebaseIdentity(AppUser user, String email) {
+		requireOwnVerifiedLogin(email).ifPresent(identity -> user.setFirebaseUid(identity.uid()));
+	}
+
+	/**
+	 * The signed-in login must be this address's own, verified, and not yet registered. Runs before anything
+	 * answers about the address, so a login cannot ask whether someone else's address has an account.
+	 */
+	private Optional<FirebaseIdentity> requireOwnVerifiedLogin(String email) {
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication == null || !(authentication.getPrincipal() instanceof FirebaseIdentity identity)) {
-			return;
+			return Optional.empty();
 		}
 		if (!email.equalsIgnoreCase(identity.email())) {
 			throw new InvalidRequestException("Email does not match the signed-in account.");
@@ -403,9 +416,10 @@ public class RegistrationService {
 			throw new InvalidRequestException("Verify your email address before registering.");
 		}
 		if (appUserRepository.findByFirebaseUid(identity.uid()).isPresent()) {
-			throw new InvalidRequestException("This account is already registered.");
+			throw new InvalidRequestException(Texts.forRequest("error.accountAlreadyRegistered"),
+					ACCOUNT_ALREADY_REGISTERED);
 		}
-		user.setFirebaseUid(identity.uid());
+		return Optional.of(identity);
 	}
 
 	private void discardOnboardingDraft() {
@@ -418,9 +432,11 @@ public class RegistrationService {
 
 	private String requireUniqueEmail(String rawEmail) {
 		String email = TextUtils.trim(rawEmail);
+		requireOwnVerifiedLogin(email);
 		emailDomainPolicy.requireAllowed(email);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
-			throw new InvalidRequestException("A user with this email already exists.");
+			throw new InvalidRequestException(Texts.forRequest("error.emailAlreadyRegistered"),
+					EMAIL_ALREADY_REGISTERED);
 		}
 		return email;
 	}
