@@ -2,7 +2,9 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +25,7 @@ import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
+import com.dps.teknokent.dto.requests.NewCoordinatorInput;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamDetailResponse;
@@ -69,6 +72,7 @@ public class ProgramLaunchService {
 	private final PlatformTransactionManager transactionManager;
 	private final ProgramEligibilityService programEligibilityService;
 	private final NotificationService notificationService;
+	private final AdminCoordinatorService adminCoordinatorService;
 	private final EditionService editionService;
 
 
@@ -83,6 +87,7 @@ public class ProgramLaunchService {
 		if (request.startDate() != null && request.endDate() != null && request.endDate().isBefore(request.startDate())) {
 			throw new InvalidRequestException("The program cannot end before it starts.");
 		}
+		ProgramCoordinators coordinators = checkCoordinators(actorId, request);
 		Program program = new Program();
 		program.setId(UUID.randomUUID());
 		program.setName(request.name().trim());
@@ -111,11 +116,15 @@ public class ProgramLaunchService {
 		}
 		programRepository.save(program);
 
-		for (UUID coordinatorId : new LinkedHashSet<>(request.coordinatorIds())) {
-			AppUser coordinator = appUserRepository.findById(coordinatorId)
-					.filter(user -> user.has(UserRole.COORDINATOR)
-							&& user.getStatus() == UserAccountStatus.APPROVED)
-					.orElseThrow(() -> new InvalidRequestException("Only approved coordinators can run a program."));
+		if (request.phases() != null) {
+			programService.writePhases(program.getId(), request.phases());
+		}
+		programService.attachSyllabus(program, actor.getId(), request.syllabusDocumentId());
+		if (request.teams() != null) {
+			invite(program, request.teams(), actor.getId());
+		}
+		// Last, once everything else has been checked: an invite creates a Firebase login that a rollback cannot undo.
+		for (AppUser coordinator : createCoordinators(actorId, coordinators, program)) {
 			ProgramCoordinator row = new ProgramCoordinator();
 			row.setId(UUID.randomUUID());
 			row.setProgramId(program.getId());
@@ -129,14 +138,53 @@ public class ProgramLaunchService {
 					Texts.get(coordinator, "notification.addedAsCoordinator.body", program.getName()),
 					"/coordinator/programs/" + program.getId());
 		}
-		if (request.phases() != null) {
-			programService.writePhases(program.getId(), request.phases());
-		}
-		programService.attachSyllabus(program, actor.getId(), request.syllabusDocumentId());
-		if (request.teams() != null) {
-			invite(program, request.teams(), actor.getId());
-		}
 		return programService.detail(actorId, program.getId());
+	}
+
+	/** The coordinators a request names, all checked before the program is saved or anyone is invited. */
+	private record ProgramCoordinators(List<AppUser> byId, List<AdminCoordinatorService.CheckedInvite> invites) {
+	}
+
+	/**
+	 * Existing coordinators by id, then the emails the admin typed (each counted once). Every one is checked here,
+	 * before any invite creates a login or sends a mail, so a refused email leaves nothing behind.
+	 */
+	private ProgramCoordinators checkCoordinators(UUID actorId, CreateCoordinatorProgramRequest request) {
+		List<UUID> ids = request.coordinatorIds() == null ? List.of() : request.coordinatorIds();
+		List<NewCoordinatorInput> invites = request.newCoordinators() == null ? List.of() : request.newCoordinators();
+		if (ids.size() + invites.size() == 0) {
+			throw new InvalidRequestException("A program needs at least one coordinator.");
+		}
+		if (ids.size() + invites.size() > CreateCoordinatorProgramRequest.MAX_COORDINATORS) {
+			throw new InvalidRequestException(
+					"A program starts with at most " + CreateCoordinatorProgramRequest.MAX_COORDINATORS + " coordinators.");
+		}
+		List<AppUser> byId = new ArrayList<>();
+		for (UUID coordinatorId : new LinkedHashSet<>(ids)) {
+			byId.add(appUserRepository.findById(coordinatorId)
+					.filter(user -> user.has(UserRole.COORDINATOR)
+							&& user.getStatus() == UserAccountStatus.APPROVED)
+					.orElseThrow(() -> new InvalidRequestException("Only approved coordinators can run a program.")));
+		}
+		Set<String> invitedEmails = new HashSet<>();
+		List<AdminCoordinatorService.CheckedInvite> checked = new ArrayList<>();
+		for (NewCoordinatorInput invite : invites) {
+			if (invitedEmails.add(invite.email().trim().toLowerCase(Locale.ROOT))) {
+				checked.add(adminCoordinatorService.checkNewProgramCoordinator(actorId, invite.email(), invite.fullName()));
+			}
+		}
+		return new ProgramCoordinators(byId, checked);
+	}
+
+	/** Each person once: the coordinators by id, then the invites, which only now create accounts and logins. */
+	private Collection<AppUser> createCoordinators(UUID actorId, ProgramCoordinators coordinators, Program program) {
+		Map<UUID, AppUser> byId = new LinkedHashMap<>();
+		coordinators.byId().forEach(user -> byId.putIfAbsent(user.getId(), user));
+		for (AdminCoordinatorService.CheckedInvite invite : coordinators.invites()) {
+			AppUser coordinator = adminCoordinatorService.coordinatorForNewProgram(actorId, invite, program.getName());
+			byId.putIfAbsent(coordinator.getId(), coordinator);
+		}
+		return byId.values();
 	}
 
 	@Transactional(readOnly = true)

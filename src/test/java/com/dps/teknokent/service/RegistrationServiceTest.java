@@ -114,6 +114,18 @@ class RegistrationServiceTest {
     }
 
     @Test
+    void registerFounder_rejectsAnAddressOutsideTheAllowedDomains() {
+        doThrow(new InvalidRequestException("domain")).when(emailDomainPolicy).requireAllowed("ayse@gmail.com");
+
+        assertThatThrownBy(() -> registrationService.registerFounder(founderRequest(
+                "Ayşe Demir", "ayse@gmail.com", "Döngü", null, null, null, null, null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("domain");
+        verify(appUserRepository, never()).save(any());
+        verifyNoInteractions(organizationRepository);
+    }
+
+    @Test
     void registerFounder_rejectsAnUnknownSector() {
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "Döngü", null, null, null, null, null, null, null,
@@ -167,6 +179,9 @@ class RegistrationServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
 
     @Mock
     private ProgramEligibilityService programEligibilityService;

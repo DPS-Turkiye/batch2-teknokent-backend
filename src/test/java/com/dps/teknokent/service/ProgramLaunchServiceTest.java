@@ -31,6 +31,8 @@ import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
+import com.dps.teknokent.dto.requests.NewCoordinatorInput;
+import com.dps.teknokent.service.AdminCoordinatorService.CheckedInvite;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
@@ -75,6 +77,8 @@ class ProgramLaunchServiceTest {
 	private ProgramEligibilityService programEligibilityService;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private AdminCoordinatorService adminCoordinatorService;
 	@Spy
 	private EditionService editionService = new EditionService("TEKNOKENT");
 
@@ -134,7 +138,7 @@ class ProgramLaunchServiceTest {
 		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
 
 		service.create(ADMIN, new CreateCoordinatorProgramRequest(null, ProgramType.PEER_MENTORING, "ODTÜ Akran",
-				null, null, null, List.of(ELIF), null, null, null, null, null, null, null));
+				null, null, null, List.of(ELIF), null, null, null, null, null, null, null, null));
 
 		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
 		verify(programRepository).save(program.capture());
@@ -151,7 +155,7 @@ class ProgramLaunchServiceTest {
 
 		assertThatThrownBy(() -> service.create(ADMIN, new CreateCoordinatorProgramRequest(null,
 				ProgramType.PEER_MENTORING, "ODTÜ Akran", null, null, null, List.of(ELIF), null, null, null, null,
-				null, null, null)))
+				null, null, null, null)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("not available");
 		verify(programRepository, never()).save(any());
@@ -174,10 +178,11 @@ class ProgramLaunchServiceTest {
 		List<ReplaceProgramPhasesRequest.PhaseInput> phases = List.of(
 				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", LocalDate.of(2026, 11, 3), null, "Rapor", null));
 		UUID syllabusId = UUID.randomUUID();
-		CreateCoordinatorProgramRequest base = request(List.of(), List.of());
+		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
+		CreateCoordinatorProgramRequest base = request(List.of(ELIF), List.of());
 
 		service.create(ADMIN, new CreateCoordinatorProgramRequest(null, base.type(), base.name(), base.description(),
-				base.startDate(), base.endDate(), base.coordinatorIds(), 4, 14, 14, 21, List.of(), phases, syllabusId));
+				base.startDate(), base.endDate(), base.coordinatorIds(), null, 4, 14, 14, 21, List.of(), phases, syllabusId));
 
 		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
 		verify(programRepository).save(program.capture());
@@ -188,8 +193,9 @@ class ProgramLaunchServiceTest {
 	@Test
 	void launchingWithoutPhasesLeavesThePhasesAlone() {
 		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
 
-		service.create(ADMIN, request(List.of(), List.of()));
+		service.create(ADMIN, request(List.of(ELIF), List.of()));
 
 		verify(programService, never()).writePhases(any(), any());
 	}
@@ -384,9 +390,108 @@ class ProgramLaunchServiceTest {
 		return waiting;
 	}
 
+	@Test
+	void invitesNewEmailsNextToExistingCoordinatorsAndCountsEachPersonOnce() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
+		UUID invited = UUID.randomUUID();
+		CheckedInvite yeni = new CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null);
+		CheckedInvite elif = new CheckedInvite("elif@teknokent.org", "Elif", user(ELIF, UserRole.COORDINATOR));
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "Yeni@Teknokent.org", "Yeni Kişi")).thenReturn(yeni);
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "elif@teknokent.org", "Elif")).thenReturn(elif);
+		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, yeni, "METU BİGG 2026"))
+				.thenReturn(user(invited, UserRole.COORDINATOR));
+		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, elif, "METU BİGG 2026")).thenReturn(elif.existing());
+
+		service.create(ADMIN, withInvites(List.of(ELIF), List.of(
+				new NewCoordinatorInput("Yeni Kişi", "Yeni@Teknokent.org"),
+				new NewCoordinatorInput("Yeni Kişi", " yeni@teknokent.org "),
+				new NewCoordinatorInput("Elif", "elif@teknokent.org"))));
+
+		ArgumentCaptor<ProgramCoordinator> rows = ArgumentCaptor.forClass(ProgramCoordinator.class);
+		verify(programCoordinatorRepository, org.mockito.Mockito.times(2)).save(rows.capture());
+		assertThat(rows.getAllValues()).extracting(ProgramCoordinator::getUserId).containsExactly(ELIF, invited);
+		verify(adminCoordinatorService, org.mockito.Mockito.times(2)).checkNewProgramCoordinator(any(), any(), any());
+	}
+
+	@Test
+	void aProgramWithOnlyInvitedCoordinatorsIsCreated() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		UUID invited = UUID.randomUUID();
+		CheckedInvite yeni = new CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null);
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@teknokent.org", "Yeni Kişi")).thenReturn(yeni);
+		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, yeni, "METU BİGG 2026"))
+				.thenReturn(user(invited, UserRole.COORDINATOR));
+
+		service.create(ADMIN, withInvites(null, List.of(new NewCoordinatorInput("Yeni Kişi", "yeni@teknokent.org"))));
+
+		ArgumentCaptor<ProgramCoordinator> rows = ArgumentCaptor.forClass(ProgramCoordinator.class);
+		verify(programCoordinatorRepository).save(rows.capture());
+		assertThat(rows.getValue().getUserId()).isEqualTo(invited);
+	}
+
+	@Test
+	void refusesAProgramWithNoCoordinatorOrMoreThanTen() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		List<NewCoordinatorInput> six = java.util.stream.IntStream.range(0, 6)
+				.mapToObj(i -> new NewCoordinatorInput("Kişi " + i, "kisi" + i + "@x.org")).toList();
+		List<UUID> five = java.util.stream.IntStream.range(0, 5).mapToObj(i -> UUID.randomUUID()).toList();
+
+		assertThatThrownBy(() -> service.create(ADMIN, withInvites(null, null)))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.create(ADMIN, withInvites(List.of(), List.of())))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.create(ADMIN, withInvites(five, six)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programRepository, never()).save(any());
+		verify(adminCoordinatorService, never()).checkNewProgramCoordinator(any(), any(), any());
+		verify(adminCoordinatorService, never()).coordinatorForNewProgram(any(), any(), any());
+	}
+
+	// Ege's case on #184: a new email first, then a mentor. The mentor is refused before the new email gets a login.
+	@Test
+	void checksEveryInviteBeforeAnyInviteCreatesALogin() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@teknokent.org", "Yeni Kişi"))
+				.thenReturn(new CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null));
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "mentor@x.org", "Mentor"))
+				.thenThrow(new InvalidRequestException("mentor@x.org already has a menton account"));
+
+		assertThatThrownBy(() -> service.create(ADMIN, withInvites(null, List.of(
+				new NewCoordinatorInput("Yeni Kişi", "yeni@teknokent.org"),
+				new NewCoordinatorInput("Mentor", "mentor@x.org")))))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("mentor@x.org");
+		verify(adminCoordinatorService, never()).coordinatorForNewProgram(any(), any(), any());
+		verify(programRepository, never()).save(any());
+		verify(programCoordinatorRepository, never()).save(any());
+	}
+
+	// Invites act last: a team the program cannot take stops the create before anyone gets a login.
+	@Test
+	void aRefusedTeamStopsTheCreateBeforeAnyInviteCreatesALogin() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@teknokent.org", "Yeni Kişi"))
+				.thenReturn(new CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null));
+		CreateCoordinatorProgramRequest base =
+				withInvites(null, List.of(new NewCoordinatorInput("Yeni Kişi", "yeni@teknokent.org")));
+		List<TeamInviteInput> twice = List.of(
+				new TeamInviteInput("Kavşak", "deniz@kavsak.co"), new TeamInviteInput("Mira", "deniz@kavsak.co"));
+
+		assertThatThrownBy(() -> service.create(ADMIN, new CreateCoordinatorProgramRequest(null, base.type(),
+				base.name(), null, null, null, null, base.newCoordinators(), null, null, null, null, twice, null, null)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(adminCoordinatorService, never()).coordinatorForNewProgram(any(), any(), any());
+	}
+
+	private static CreateCoordinatorProgramRequest withInvites(List<UUID> ids, List<NewCoordinatorInput> invites) {
+		return new CreateCoordinatorProgramRequest(null, ProgramType.STARTUP_MENTORING, " METU BİGG 2026 ", null, null,
+				null, ids, invites, null, null, null, null, null, null, null);
+	}
+
 	private static CreateCoordinatorProgramRequest request(List<UUID> coordinators, List<TeamInviteInput> teams) {
 		return new CreateCoordinatorProgramRequest(null, ProgramType.STARTUP_MENTORING, " METU BİGG 2026 ", "Kuluçka", LocalDate.of(2026, 11, 3),
-				LocalDate.of(2027, 9, 30), coordinators, 4, 14, 14, 21, teams, null, null);
+				LocalDate.of(2027, 9, 30), coordinators, null, 4, 14, 14, 21, teams, null, null);
 	}
 
 	private static AppUser user(UUID id, UserRole role) {
