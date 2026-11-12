@@ -109,10 +109,7 @@ public class WeeklyProgramService {
 						ProgramCalendar.weekEnd(start, end, phase.lastWeek()), phase.expectedOutput()))
 				.toList();
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = request.weeks();
-		// After the end every week is past, so the last one is kept as well.
-		Integer currentWeek = today.isAfter(end)
-				? Integer.valueOf(totalWeeks + 1)
-				: ProgramCalendar.currentWeek(start, end, today);
+		Integer currentWeek = firstReplacedWeek(start, end, today);
 		if (request.keepPast() && currentWeek != null) {
 			phases = keepCompletedPhases(savedPhases, phases, today);
 			weeks = keepPastWeeks(savedWeeks, weeks, currentWeek);
@@ -212,7 +209,18 @@ public class WeeklyProgramService {
 				new WeeklyProgramProposalResponse.Existing(
 						programPhaseRepository.findByProgramIdOrderByPositionAsc(programId).size(),
 						programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId).size(),
-						ProgramCalendar.currentWeek(program.getStartDate(), program.getEndDate(), today)));
+						firstReplacedWeek(program.getStartDate(), program.getEndDate(), today)));
+	}
+
+	/**
+	 * The first week a keep-past save replaces, which the read reports so the coordinator is told what the save
+	 * does: the running week, or one past the last after the end, when every week is past. Null before the start.
+	 */
+	static Integer firstReplacedWeek(LocalDate start, LocalDate end, LocalDate today) {
+		if (today.isAfter(end)) {
+			return ProgramCalendar.totalWeeks(start, end) + 1;
+		}
+		return ProgramCalendar.currentWeek(start, end, today);
 	}
 
 	/**

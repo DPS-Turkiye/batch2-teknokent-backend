@@ -336,6 +336,32 @@ class WeeklyProgramServiceTest {
 	}
 
 	@Test
+	void readingForAnEndedProgramReportsTheSameKeptWeeksTheSaveKeeps() {
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		program.setStartDate(today.minusDays(70));
+		program.setEndDate(today.minusDays(8));
+		editing();
+		when(storedDocumentRepository.findById(DOCUMENT_ID)).thenReturn(Optional.of(weeklyProgram(COORDINATOR_ID)));
+		stubText("Hafta 1", "Hafta 1", 1);
+		when(aiProviderClient.weeklyProgram(anyString(), any(), any(), any())).thenReturn(lookAlikeAnswer());
+
+		WeeklyProgramProposalResponse proposal = service.read(COORDINATOR_ID, PROGRAM_ID, readRequest());
+
+		assertThat(proposal.totalWeeks()).isEqualTo(9);
+		assertThat(proposal.existing().currentWeek())
+				.as("every week is past, so a keep-past save keeps the last one too")
+				.isEqualTo(10);
+	}
+
+	@Test
+	void theFirstReplacedWeekIsNullBeforeTheStartTheRunningWeekThenOnePastTheEnd() {
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, START.minusDays(1))).isNull();
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, START)).isEqualTo(1);
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, END)).isEqualTo(11);
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, END.plusDays(1))).isEqualTo(12);
+	}
+
+	@Test
 	void completedPhasesStayAndAPhaseRunningIntoTodayStartsAfterThem() {
 		LocalDate today = LocalDate.of(2026, 11, 20);
 		List<ReplaceProgramPhasesRequest.PhaseInput> kept = WeeklyProgramService.keepCompletedPhases(
