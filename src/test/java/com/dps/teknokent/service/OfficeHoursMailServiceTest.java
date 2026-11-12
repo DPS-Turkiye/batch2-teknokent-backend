@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,7 +31,9 @@ import com.dps.teknokent.repository.OfficeHoursCourseRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestRepository;
 import com.dps.teknokent.repository.OfficeHoursUserRepository;
+import com.dps.teknokent.service.OfficeHoursMailService.Delivery;
 import com.dps.teknokent.service.OfficeHoursMailService.Event;
+import com.dps.teknokent.service.OfficeHoursMailService.Side;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
 @ExtendWith(MockitoExtension.class)
@@ -133,18 +137,41 @@ class OfficeHoursMailServiceTest {
         verifyNoInteractions(mailService);
     }
 
-    @Test
-    void bothSidesAreRemindedOfTheirMeetingWithTheOtherOne() {
+    private OfficeHoursMeeting meeting() {
         OfficeHoursMeeting meeting = new OfficeHoursMeeting();
         meeting.setRequestId(request.getId());
         meeting.setStudentId(student.getId());
         meeting.setInstructorId(academic.getId());
         meeting.setScheduledAt(TUESDAY_3PM);
         lenient().when(requestRepository.findById(request.getId())).thenReturn(Optional.of(request));
+        lenient().when(mailService.isConfigured()).thenReturn(true);
+        return meeting;
+    }
 
-        service.meetingSoon(meeting);
+    @Test
+    void eachSideIsRemindedOfTheMeetingWithTheOtherOneAndHearsWhetherItWent() {
+        OfficeHoursMeeting meeting = meeting();
+        when(mailService.sendNow(eq("ayse@metu.edu.tr"), any(), any())).thenReturn(true);
+        when(mailService.sendNow(eq("ali@metu.edu.tr"), any(), any())).thenReturn(false);
 
-        assertThat(sentTo("ayse@metu.edu.tr")[1]).contains("Ali Kaya ile CENG 101 dersi için ofis saati görüşmeniz");
-        assertThat(sentTo("ali@metu.edu.tr")[1]).contains("Your office hours meeting with Ayşe Yılmaz for CENG 101");
+        assertThat(service.meetingSoon(meeting, Side.STUDENT)).isEqualTo(Delivery.SENT);
+        assertThat(service.meetingSoon(meeting, Side.INSTRUCTOR)).isEqualTo(Delivery.FAILED);
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(mailService).sendNow(eq("ayse@metu.edu.tr"), any(), body.capture());
+        assertThat(body.getValue()).contains("Ali Kaya ile CENG 101 dersi için ofis saati görüşmeniz");
+        verify(mailService).sendNow(eq("ali@metu.edu.tr"), any(), body.capture());
+        assertThat(body.getValue()).contains("Your office hours meeting with Ayşe Yılmaz for CENG 101");
+    }
+
+    @Test
+    void aReminderWithNoAddressOrWithMailSwitchedOffHasNothingToSendRatherThanFailing() {
+        OfficeHoursMeeting meeting = meeting();
+        student.setEmail(null);
+        assertThat(service.meetingSoon(meeting, Side.STUDENT)).isEqualTo(Delivery.NOTHING_TO_SEND);
+
+        when(mailService.isConfigured()).thenReturn(false);
+        assertThat(service.meetingSoon(meeting, Side.INSTRUCTOR)).isEqualTo(Delivery.NOTHING_TO_SEND);
+        verify(mailService, never()).sendNow(any(), any(), any());
     }
 }

@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.entity.OfficeHoursMeeting;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
+import com.dps.teknokent.service.OfficeHoursMailService.Delivery;
+import com.dps.teknokent.service.OfficeHoursMailService.Side;
 
 @ExtendWith(MockitoExtension.class)
 class OfficeHoursReminderServiceTest {
@@ -35,18 +38,57 @@ class OfficeHoursReminderServiceTest {
         return meeting;
     }
 
+    private void due(OfficeHoursMeeting... meetings) {
+        when(meetingRepository.findReminderDue(NOW, NOW.plus(OfficeHoursReminderService.REMINDER_LEAD)))
+                .thenReturn(List.of(meetings));
+    }
+
     @Test
-    void remindsMeetingsStartingWithinTheMentorLeadOnceEvenWithTwoServers() {
+    void remindsBothSides24HoursAheadAndNeverWhatTheOtherServerClaimed() {
         OfficeHoursMeeting mine = meeting();
         OfficeHoursMeeting takenByTheOtherServer = meeting();
-        when(meetingRepository.findByReminderSentAtIsNullAndCancelledAtIsNullAndScheduledAtBetween(NOW,
-                NOW.plus(NotificationReminderService.MEETING_LEAD))).thenReturn(List.of(mine, takenByTheOtherServer));
-        when(meetingRepository.markReminded(mine.getId(), NOW)).thenReturn(1);
-        when(meetingRepository.markReminded(takenByTheOtherServer.getId(), NOW)).thenReturn(0);
+        due(mine, takenByTheOtherServer);
+        when(meetingRepository.claimStudentReminder(mine.getId(), NOW)).thenReturn(1);
+        when(meetingRepository.claimInstructorReminder(mine.getId(), NOW)).thenReturn(1);
+        when(meetingRepository.claimStudentReminder(takenByTheOtherServer.getId(), NOW)).thenReturn(0);
+        when(meetingRepository.claimInstructorReminder(takenByTheOtherServer.getId(), NOW)).thenReturn(0);
+        when(mailService.meetingSoon(any(), any())).thenReturn(Delivery.SENT);
 
         service.remindUpcomingMeetings(NOW);
 
-        verify(mailService).meetingSoon(mine);
-        verify(mailService, never()).meetingSoon(takenByTheOtherServer);
+        verify(mailService).meetingSoon(mine, Side.STUDENT);
+        verify(mailService).meetingSoon(mine, Side.INSTRUCTOR);
+        verify(mailService, never()).meetingSoon(takenByTheOtherServer, Side.STUDENT);
+        verify(mailService, never()).meetingSoon(takenByTheOtherServer, Side.INSTRUCTOR);
+        verify(meetingRepository, never()).releaseStudentReminder(any());
+    }
+
+    @Test
+    void aFailedSendGivesItsSideBackForTheNextRunAndLeavesTheOtherSideAlone() {
+        OfficeHoursMeeting meeting = meeting();
+        due(meeting);
+        when(meetingRepository.claimStudentReminder(meeting.getId(), NOW)).thenReturn(1);
+        when(meetingRepository.claimInstructorReminder(meeting.getId(), NOW)).thenReturn(1);
+        when(mailService.meetingSoon(meeting, Side.STUDENT)).thenReturn(Delivery.SENT);
+        when(mailService.meetingSoon(meeting, Side.INSTRUCTOR)).thenReturn(Delivery.FAILED);
+
+        service.remindUpcomingMeetings(NOW);
+
+        verify(meetingRepository).releaseInstructorReminder(meeting.getId());
+        verify(meetingRepository, never()).releaseStudentReminder(any());
+    }
+
+    @Test
+    void aSideAlreadyRemindedIsNotTriedAgainAndNothingToSendIsNotRetried() {
+        OfficeHoursMeeting meeting = meeting();
+        meeting.setStudentRemindedAt(NOW.minusSeconds(60));
+        due(meeting);
+        when(meetingRepository.claimInstructorReminder(meeting.getId(), NOW)).thenReturn(1);
+        when(mailService.meetingSoon(meeting, Side.INSTRUCTOR)).thenReturn(Delivery.NOTHING_TO_SEND);
+
+        service.remindUpcomingMeetings(NOW);
+
+        verify(meetingRepository, never()).claimStudentReminder(any(), any());
+        verify(meetingRepository, never()).releaseInstructorReminder(any());
     }
 }
