@@ -79,6 +79,13 @@ springdoc:
 
 ai:
   provider: ${AI_PROVIDER:openai}
+  # One switch per feature that sends data to the AI provider; all on unless a deployment turns one off.
+  features:
+    profile-parsing: ${AI_PROFILE_PARSING_ENABLED:true}
+    syllabus: ${AI_SYLLABUS_ENABLED:true}
+    matching: ${AI_MATCHING_ENABLED:true}
+    meeting-report: ${AI_MEETING_REPORT_ENABLED:true}
+    task-handover: ${AI_TASK_HANDOVER_ENABLED:true}
   openai:
     api-key: ${OPENAI_API_KEY:}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

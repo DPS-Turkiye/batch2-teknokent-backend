@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
@@ -53,6 +54,7 @@ public class MentorRecommendationService {
 	private final MentorProfileService mentorProfileService;
 	private final PgVectorMentorRetrievalService pgVectorRetrievalService;
 	private final MenteeProgramService menteeProgramService;
+	private final AiFeatures aiFeatures;
 
 	@Value("${AI_PROVIDER:openrouter}")
 	private String provider;
@@ -99,9 +101,11 @@ public class MentorRecommendationService {
 		List<MentorProfileResponse> candidates = mentors;
 		boolean vectorRetrieved = false;
 		try {
-			candidates = pgVectorRetrievalService.shortlist(
-					queryText(request), mentors, normalizedProvider(), embeddingModel(), 15);
-			vectorRetrieved = true;
+			if (aiFeatures.isEnabled(AiFeature.MATCHING)) {
+				candidates = pgVectorRetrievalService.shortlist(
+						queryText(request), mentors, normalizedProvider(), embeddingModel(), 15);
+				vectorRetrieved = true;
+			}
 		} catch (Exception exception) {
 			log.warn(
 					"Semantic mentor retrieval failed; using deterministic fallback. "

@@ -28,8 +28,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.service.ProfileAnalysisService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -101,6 +104,40 @@ class ProfileAnalysisControllerTest {
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.id").value(analysisId.toString()))
                                 .andExpect(jsonPath("$.status").value("CONFIRMED"));
+        }
+
+        @Test
+        void aSwitchedOffParseIsRefusedWithATypedCodeNotAServerError() throws Exception {
+                when(profileAnalysisService.parsePreview(eq("individual_mentee"), eq(true), eq("auto"), any()))
+                                .thenThrow(new AiFeatureDisabledException(AiFeature.PROFILE_PARSING));
+
+                mockMvc.perform(multipart("/api/profile-analyses/preview")
+                                .file(new MockMultipartFile(
+                                                "file",
+                                                "cv.pdf",
+                                                "application/pdf",
+                                                "dummy pdf bytes".getBytes(StandardCharsets.UTF_8)))
+                                .param("consentAccepted", "true")
+                                .with(user("test-user")))
+                                .andExpect(status().isForbidden())
+                                .andExpect(jsonPath("$.code").value("AI_FEATURE_DISABLED"))
+                                .andExpect(jsonPath("$.message").value("Bu yapay zekâ özelliği bu sistemde kapalı."));
+        }
+
+        @Test
+        void anOrdinaryErrorCarriesNoCode() throws Exception {
+                when(profileAnalysisService.parsePreview(eq("individual_mentee"), eq(false), eq("auto"), any()))
+                                .thenThrow(new InvalidRequestException("Consent required."));
+
+                mockMvc.perform(multipart("/api/profile-analyses/preview")
+                                .file(new MockMultipartFile(
+                                                "file",
+                                                "cv.pdf",
+                                                "application/pdf",
+                                                "dummy pdf bytes".getBytes(StandardCharsets.UTF_8)))
+                                .with(user("test-user")))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.code").doesNotExist());
         }
 
         @Test
