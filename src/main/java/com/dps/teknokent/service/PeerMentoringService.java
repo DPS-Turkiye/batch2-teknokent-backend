@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
@@ -77,6 +78,7 @@ public class PeerMentoringService {
 	private static final Locale TR = Locale.forLanguageTag("tr");
 	/** "Bu hafta müsait": a free slot within the next seven days. */
 	static final Duration THIS_WEEK = Duration.ofDays(7);
+	private static final Pattern WEB_LINK = Pattern.compile("^https?://\\S+$", Pattern.CASE_INSENSITIVE);
 
 	private final DomainLookupService domainLookupService;
 	private final InstitutionDirectoryService institutionDirectoryService;
@@ -139,7 +141,8 @@ public class PeerMentoringService {
 		if (card.categories().isEmpty()) {
 			throw mentorNotFound(mentorId);
 		}
-		return PeerMentorDetailResponse.of(card, profile, domainLookupService.requireUser(mentorId).getLinkedinUrl(),
+		return PeerMentorDetailResponse.of(card, profile,
+				webLinkOrNull(domainLookupService.requireUser(mentorId).getLinkedinUrl()),
 				mentorProfileService.findAvailabilityRules(mentorId));
 	}
 
@@ -291,7 +294,7 @@ public class PeerMentoringService {
 
 	/**
 	 * The peer mentors of the student's program, the student left out; with {@code onlyMentorId}, at most that one, so a
-	 * single profile does not load the whole program's activity.
+	 * single profile counts mentees and meetings for that mentor alone.
 	 */
 	private List<MentorProfileResponse> peerMentorsFor(AppUser student, UUID onlyMentorId) {
 		Optional<UUID> program = menteeProgramService.programOf(student);
@@ -309,23 +312,33 @@ public class PeerMentoringService {
 				.toList();
 	}
 
+	/** Compared the way the text search is, with Turkish case rules ("İ" and "ı"). */
 	private static boolean offers(MentorProfileResponse profile, String subTopic) {
+		String wanted = subTopic.toLowerCase(TR);
 		return profile.offerings() != null
-				&& profile.offerings().stream().anyMatch(offered -> offered.trim().equalsIgnoreCase(subTopic));
+				&& profile.offerings().stream().anyMatch(offered -> offered.trim().toLowerCase(TR).equals(wanted));
 	}
 
 	/**
-	 * The mentors among these with a free slot that can still be booked (no sooner than the booking lead) and starts
-	 * within {@link #THIS_WEEK}; one query for the whole list.
+	 * The mentors among these with a free slot in the next {@link #THIS_WEEK} that can still be booked, i.e. no sooner
+	 * than the booking lead; one query for the whole list.
 	 */
 	private Set<UUID> freeThisWeek(Collection<MentorProfileResponse> mentors) {
 		if (mentors.isEmpty()) {
 			return Set.of();
 		}
-		Instant from = Instant.now().plus(MeetingSlotTimes.MIN_BOOKING_LEAD);
+		Instant now = Instant.now();
 		return Set.copyOf(mentorAvailabilitySlotRepository.findMentorIdsWithFreeSlotBetween(
-				mentors.stream().map(MentorProfileResponse::id).toList(), from, from.plus(THIS_WEEK),
-				MeetingStatus.SCHEDULED));
+				mentors.stream().map(MentorProfileResponse::id).toList(), now.plus(MeetingSlotTimes.MIN_BOOKING_LEAD),
+				now.plus(THIS_WEEK), MeetingStatus.SCHEDULED));
+	}
+
+	/**
+	 * Only the peer wizard checks that the LinkedIn address is a web link; sign-up and the profile form do not, so
+	 * anything else is held back rather than handed to another student's browser.
+	 */
+	private static String webLinkOrNull(String url) {
+		return url != null && WEB_LINK.matcher(url.trim()).matches() ? url.trim() : null;
 	}
 
 	private static ResourceNotFoundException mentorNotFound(UUID mentorId) {

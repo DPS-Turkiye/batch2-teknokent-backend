@@ -63,6 +63,17 @@ class MentorFreeSlotQueryTest {
 	}
 
 	@Test
+	void anotherMentorsMeetingAtTheSameTimeTakesNothing() {
+		AppUser free = mentor("still-free");
+		AppUser other = mentor("other-booked");
+		Instant at = Instant.parse("2026-11-18T12:00:00Z");
+		slot(free, at);
+		meeting(other, at, MeetingStatus.SCHEDULED);
+
+		assertThat(query(free)).containsExactly(free.getId());
+	}
+
+	@Test
 	void theWindowIncludesItsStartAndExcludesItsEnd() {
 		AppUser atStart = mentor("start");
 		AppUser atEnd = mentor("end");

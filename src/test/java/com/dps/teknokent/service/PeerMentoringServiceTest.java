@@ -398,6 +398,26 @@ class PeerMentoringServiceTest {
 	}
 
 	@Test
+	void aLinkedInAddressThatIsNotAWebLinkIsHeldBack() {
+		peerMentor.setLinkedinUrl("javascript:alert(1)");
+
+		assertThat(service.mentor(student.getId(), peerMentor.getId()).linkedinUrl()).isNull();
+	}
+
+	@Test
+	void aProfileWithoutStudiesOrSubTopicsComesBackEmptyNotNull() {
+		programProfiles = List.of(profile(peerMentor, List.of("CAREER_INTERNSHIP"), "CV ve staj", null, 0));
+
+		PeerMentorDetailResponse detail = service.mentor(student.getId(), peerMentor.getId());
+
+		assertThat(detail.subTopics()).isEmpty();
+		assertThat(detail.strongCourses()).isEmpty();
+		assertThat(detail.projects()).isEmpty();
+		assertThat(detail.erasmus()).isNull();
+		assertThat(detail.linkedinUrl()).isNull();
+	}
+
+	@Test
 	void aProfileIsFoundOnlyForAPeerMentorTheDirectoryLists() {
 		assertThatThrownBy(() -> service.mentor(student.getId(), teknokentMentor.getId()))
 				.isInstanceOf(ResourceNotFoundException.class);
@@ -460,7 +480,7 @@ class PeerMentoringServiceTest {
 
 	@Test
 	@SuppressWarnings("unchecked")
-	void thisWeekStartsAfterTheBookingLeadAndRunsSevenDaysForTheListedMentorsOnly() {
+	void thisWeekRunsFromTheBookingLeadToSevenDaysAheadForTheListedMentorsOnly() {
 		Instant before = Instant.now();
 
 		service.mentors(student.getId(), null, null, null, true);
@@ -472,7 +492,8 @@ class PeerMentoringServiceTest {
 				eq(MeetingStatus.SCHEDULED));
 		assertThat(ids.getValue()).containsExactly(peerMentor.getId());
 		assertThat(from.getValue()).isAfterOrEqualTo(before.plus(MeetingSlotTimes.MIN_BOOKING_LEAD));
-		assertThat(Duration.between(from.getValue(), until.getValue())).isEqualTo(Duration.ofDays(7));
+		assertThat(Duration.between(from.getValue(), until.getValue()))
+				.isEqualTo(Duration.ofDays(7).minus(MeetingSlotTimes.MIN_BOOKING_LEAD));
 	}
 
 	@Test
