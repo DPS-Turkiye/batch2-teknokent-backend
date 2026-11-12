@@ -130,17 +130,6 @@ class ProgramCoordinatorServiceTest {
 		verify(programCoordinatorRepository, never()).delete(any());
 	}
 
-	@Test
-	void candidatesLeaveOutWhoeverAlreadyRunsTheProgram() {
-		when(programService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program);
-		UUID can = UUID.randomUUID();
-		when(programCoordinatorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
-		when(appUserRepository.findByPermissionAndStatusOrderByFullNameAsc(UserRole.COORDINATOR, UserAccountStatus.APPROVED))
-				.thenReturn(List.of(user(ELIF, "Elif Demir", UserRole.COORDINATOR), user(can, "Can Yılmaz", UserRole.COORDINATOR)));
-
-		assertThat(service.candidates(ELIF, PROGRAM_ID)).extracting(CoordinatorRef::id).containsExactly(can);
-	}
-
 	private static Program program() {
 		Program program = new Program();
 		program.setId(PROGRAM_ID);

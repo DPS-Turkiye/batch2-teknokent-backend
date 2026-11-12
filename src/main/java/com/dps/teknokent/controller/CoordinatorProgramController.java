@@ -160,13 +160,6 @@ public class CoordinatorProgramController {
 		return programCoordinatorService.list(CurrentActor.resolve(actorId), id);
 	}
 
-	@GetMapping("/{id}/coordinators/candidates")
-	public List<CoordinatorProgramResponse.CoordinatorRef> coordinatorCandidates(
-			@PathVariable UUID id,
-			@RequestParam(required = false) UUID actorId) {
-		return programCoordinatorService.candidates(CurrentActor.resolve(actorId), id);
-	}
-
 	@PostMapping("/{id}/coordinators")
 	public List<CoordinatorProgramResponse.CoordinatorRef> addCoordinator(
 			@PathVariable UUID id,

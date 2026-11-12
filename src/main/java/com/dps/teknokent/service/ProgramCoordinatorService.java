@@ -2,7 +2,6 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -36,18 +35,6 @@ public class ProgramCoordinatorService {
 	@Transactional(readOnly = true)
 	public List<CoordinatorProgramResponse.CoordinatorRef> list(UUID actorId, UUID programId) {
 		return refs(programService.requireManagedProgram(actorId, programId));
-	}
-
-	/** Approved coordinators who could be added, i.e. not already running this program. */
-	@Transactional(readOnly = true)
-	public List<CoordinatorProgramResponse.CoordinatorRef> candidates(UUID actorId, UUID programId) {
-		Program program = programService.requireManagedProgram(actorId, programId);
-		Set<UUID> current = Set.copyOf(ProgramCoordination.coordinatorIds(program, programCoordinatorRepository));
-		return appUserRepository.findByPermissionAndStatusOrderByFullNameAsc(UserRole.COORDINATOR, UserAccountStatus.APPROVED)
-				.stream()
-				.filter(user -> !current.contains(user.getId()))
-				.map(user -> new CoordinatorProgramResponse.CoordinatorRef(user.getId(), user.getFullName(), false))
-				.toList();
 	}
 
 	@Transactional

@@ -188,6 +188,15 @@ class CoordinatorProgramControllerTest {
 		verify(coordinatorProgramService).deleteEvent(SIGNED_IN_ID, PROGRAM_ID, eventId);
 	}
 
+	// Admins now find coordinators through /api/admin/coordinators/search; nobody lists every coordinator here.
+	@Test
+	void noLongerListsEveryCoordinatorAsACandidate() throws Exception {
+		mockMvc.perform(get("/api/coordinator/programs/{id}/coordinators/candidates", PROGRAM_ID)
+						.with(authentication(signedIn())))
+				.andExpect(status().is4xxClientError());
+		verifyNoInteractions(programCoordinatorService);
+	}
+
 	@Test
 	void archivesAndManagesCoordinatorsAsTheSignedInUser() throws Exception {
 		UUID other = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
