@@ -76,6 +76,55 @@ public class AiProviderClient {
 	}
 
 	/**
+	 * A week-by-week program read from a weekly program file, with the phases its weeks fall into. The caller turns
+	 * week numbers into dates; the dates the source prints are only returned to be checked against the program.
+	 */
+	public JsonNode weeklyProgram(String redactedDocumentText, LocalDate programStart, LocalDate programEnd,
+			JsonNode schema) {
+		Integer totalWeeks = ProgramCalendar.totalWeeks(programStart, programEnd);
+		String instructions = """
+			The supplied text is a program's week-by-week schedule (often a table with one row per week). Read it
+			into weeks, then group the weeks into phases.
+			Weeks: one entry per week row of the source, in order.
+			- week: the week number the source gives (for example "3 · ZİYARET / GEZİ 1" is week 3). When the source
+			  gives no number, count the rows from 1.
+			- source_date: the date the source prints for that week, as an ISO date (YYYY-MM-DD), or null. Copy it
+			  even when it does not fit the program calendar; never change it to fit.
+			- title: the week's own name or theme as written (for example "Keşfetmeye Başla"); when the week has no
+			  name, its main session title. At most 100 characters.
+			- topics: what is taught: the session or training titles, then speakers as one line starting
+			  "Konuşmacı: ", then every recommended book or film as its own line starting "Kitap: " or "Film: ".
+			- activities: what participants attend or do together: every workshop cell as a line starting
+			  "Workshop: " (even when it only names who runs it), visits and trips as lines starting "Ziyaret: ",
+			  with any date or place the source gives.
+			- Keep every non-empty cell of a week row in one of these lists; drop nothing the row says.
+			- deliverables: the tasks participants must complete or hand in that week, one per line.
+			- Lines are short (at most 150 characters), at most 6 per list, and an empty list when the source has
+			  nothing. Leave out empty placeholders such as "–".
+			- phase: the name of the phase the week belongs to; it must equal one of the phase names below.
+			Phases: consecutive weeks that work toward the same goal, in order (for example a problem phase, an idea
+			or solution phase, a market and business model phase, a validation and pitch phase).
+			- Use the phase or module headings the source gives when it has them. Otherwise analyse the weeks'
+			  themes, topics and tasks and propose short phase names in the source language (at most 60 characters).
+			- first_week and last_week: the first and last week number of the phase. Every week belongs to exactly
+			  one phase; phases never overlap and follow the week order.
+			- A visit, trip or break week belongs to the phase around it; it is not a phase of its own unless the
+			  source says so.
+			- expected_output: what participants should have at the end of the phase, as one short line drawn from
+			  its weeks' tasks (at most 150 characters), or null.
+			- Return between 2 and 8 phases when the program has at least 4 weeks.
+			Notes: events or notes that are not one week's content (for example a demo day after the last week, or a
+			general note under the table), one short line each with any date the source gives.
+			Warnings: problems reading the source, one short line each.
+			- Use only what the source says; never invent sessions, tasks, dates or people.
+			- Write titles, lines and names in the source language. The source may be Turkish, English, or both.
+			Program start date: %s. Program end date: %s. Program weeks: %s.
+			""".formatted(programStart == null ? "unknown" : programStart, programEnd == null ? "unknown" : programEnd,
+				totalWeeks == null ? "unknown" : totalWeeks);
+		return structuredCompletion(instructions, redactedDocumentText, "weekly_program", schema, "weekly program");
+	}
+
+	/**
 	 * Program phases from a syllabus. Dates are only filled when the text states them, or states week numbers
 	 * that the program start date turns into dates.
 	 */

@@ -238,19 +238,22 @@ public class CoordinatorProgramService {
 	}
 
 	/**
-	 * Links a syllabus the actor uploaded to the program; null leaves the current one. Someone else's file
-	 * reads as missing, so its id reveals nothing.
+	 * Links a weekly program (or an older syllabus) the actor uploaded to the program; null leaves the current one.
+	 * Someone else's file reads as missing, so its id reveals nothing.
 	 */
 	public void attachSyllabus(Program program, UUID actorId, UUID documentId) {
 		if (documentId == null || documentId.equals(program.getSyllabusDocumentId())) {
 			return;
 		}
 		storedDocumentRepository.findById(documentId)
-				.filter(document -> actorId.equals(document.getUserId())
-						&& DocumentKind.SYLLABUS.value().equals(document.getKind()))
+				.filter(document -> actorId.equals(document.getUserId()) && isProgramFile(document.getKind()))
 				.orElseThrow(() -> new ResourceNotFoundException("Syllabus not found: " + documentId));
 		program.setSyllabusDocumentId(documentId);
 		programRepository.save(program);
+	}
+
+	private static boolean isProgramFile(String kind) {
+		return DocumentKind.WEEKLY_PROGRAM.value().equals(kind) || DocumentKind.SYLLABUS.value().equals(kind);
 	}
 
 	/** Taslak → Aktif. Only an admin launches, and only a program with an approved coordinator to run it. */
@@ -663,7 +666,8 @@ public class CoordinatorProgramService {
 		}
 		return storedDocumentRepository.findById(program.getSyllabusDocumentId())
 				.map(document -> new CoordinatorProgramResponse.Syllabus(
-						document.getId(), document.getOriginalFilename(), document.getSizeBytes(), document.getCreatedAt()))
+						document.getId(), document.getOriginalFilename(), document.getSizeBytes(), document.getCreatedAt(),
+						document.getKind()))
 				.orElse(null);
 	}
 
