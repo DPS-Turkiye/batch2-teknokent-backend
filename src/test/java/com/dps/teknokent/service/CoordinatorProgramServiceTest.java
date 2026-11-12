@@ -270,18 +270,18 @@ class CoordinatorProgramServiceTest {
 	}
 
 	@Test
-	void replacingPhasesDeletesAndFlushesBeforeSavingInOrder() {
+	void replacingPhasesDeletesTheLeftOutOnesAndFlushesBeforeSavingInOrder() {
 		stubManagedProgram(program(COORDINATOR_ID));
 		stubProgramRows(List.of(), List.of(), List.of());
 		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
 				.thenReturn(List.of());
 
 		service.replacePhases(COORDINATOR_ID, PROGRAM_ID, new ReplaceProgramPhasesRequest(null, List.of(
-				new ReplaceProgramPhasesRequest.PhaseInput("  Başvuru ", today, today.plusDays(10), null),
-				new ReplaceProgramPhasesRequest.PhaseInput("Demo Day", null, null, null)), null));
+				new ReplaceProgramPhasesRequest.PhaseInput("  Başvuru ", today, today.plusDays(10), null, null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Demo Day", null, null, null, null)), null));
 
 		InOrder order = inOrder(programPhaseRepository);
-		order.verify(programPhaseRepository).deleteByProgramId(PROGRAM_ID);
+		order.verify(programPhaseRepository).deleteAll(List.of());
 		order.verify(programPhaseRepository).flush();
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ProgramPhase>> saved = ArgumentCaptor.forClass(List.class);
@@ -296,9 +296,9 @@ class CoordinatorProgramServiceTest {
 		stubManagedProgram(program(COORDINATOR_ID));
 
 		assertThatThrownBy(() -> service.replacePhases(COORDINATOR_ID, PROGRAM_ID, new ReplaceProgramPhasesRequest(
-				null, List.of(new ReplaceProgramPhasesRequest.PhaseInput("Seçim", today, today.minusDays(1), null)), null)))
+				null, List.of(new ReplaceProgramPhasesRequest.PhaseInput("Seçim", today, today.minusDays(1), null, null)), null)))
 				.isInstanceOf(InvalidRequestException.class);
-		verify(programPhaseRepository, never()).deleteByProgramId(any());
+		verify(programPhaseRepository, never()).deleteAll(anyList());
 	}
 
 	@Test

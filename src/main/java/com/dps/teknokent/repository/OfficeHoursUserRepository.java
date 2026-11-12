@@ -22,7 +22,7 @@ public interface OfficeHoursUserRepository extends JpaRepository<OfficeHoursUser
 	@Query(value = """
 			INSERT INTO office_hours_user (id, app_user_id, full_name, created_at, last_launch_at)
 			VALUES (:id, :appUserId, :fullName, :now, :now)
-			ON CONFLICT (app_user_id) DO NOTHING
+			ON CONFLICT DO NOTHING
 			""", nativeQuery = true)
 	int insertForAccountIfAbsent(@Param("id") UUID id, @Param("appUserId") UUID appUserId,
 			@Param("fullName") String fullName, @Param("now") Instant now);

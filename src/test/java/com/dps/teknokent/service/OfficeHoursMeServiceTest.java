@@ -192,6 +192,7 @@ class OfficeHoursMeServiceTest {
         service.saveAvailability(ACCOUNT, hours);
 
         verify(userRepository).insertForAccountIfAbsent(any(), eq(ACCOUNT), eq("Elif Şahin"), eq(NOW));
+        verify(settingsRepository).insertIfAbsent(PERSON, 45, 15, NOW);
         verify(availabilityService).write(PERSON, hours);
     }
 
@@ -199,17 +200,38 @@ class OfficeHoursMeServiceTest {
     void savesWhereAndHowStudentsMeetThemAndWhetherTheyAreListed() {
         academic();
         hasPerson();
-        when(settingsRepository.findById(PERSON)).thenReturn(Optional.empty());
+        OfficeHoursSettings row = new OfficeHoursSettings();
+        row.setInstructorId(PERSON);
+        when(settingsRepository.findById(PERSON)).thenReturn(Optional.of(row));
         when(settingsRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         OfficeHoursProfileResponse saved = service.saveProfile(ACCOUNT,
                 new UpdateOfficeHoursProfileRequest(true, "  A-204  ", " ", "elif@example.edu"));
 
+        verify(settingsRepository).insertIfAbsent(PERSON, 45, 15, NOW);
         assertThat(saved).isEqualTo(new OfficeHoursProfileResponse(true, "A-204", null, "elif@example.edu"));
         ArgumentCaptor<OfficeHoursSettings> settings = ArgumentCaptor.forClass(OfficeHoursSettings.class);
         verify(settingsRepository).saveAndFlush(settings.capture());
         assertThat(settings.getValue().getInstructorId()).isEqualTo(PERSON);
         assertThat(settings.getValue().getUpdatedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void takesOnlyAnOnlineLinkWithARealHostAndNoUserName() {
+        academic();
+        hasPerson();
+        OfficeHoursSettings row = new OfficeHoursSettings();
+        row.setInstructorId(PERSON);
+        lenient().when(settingsRepository.findById(PERSON)).thenReturn(Optional.of(row));
+        lenient().when(settingsRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        for (String bad : List.of("https://user:pass@meet.example.com/x", "https://intranet/x", "ftp://meet.example.com",
+                "https://meet example.com")) {
+            assertThatThrownBy(() -> service.saveProfile(ACCOUNT, new UpdateOfficeHoursProfileRequest(true, null, bad,
+                    null))).as(bad).isInstanceOf(InvalidRequestException.class);
+        }
+        assertThat(service.saveProfile(ACCOUNT, new UpdateOfficeHoursProfileRequest(true, null,
+                "HTTPS://meet.example.com/abc-defg", null)).onlineLink()).isEqualTo("HTTPS://meet.example.com/abc-defg");
     }
 
     @Test
@@ -219,7 +241,7 @@ class OfficeHoursMeServiceTest {
         OfficeHoursRequest fromMenton = request(null, STUDENT, OfficeHoursRequestStatus.PENDING);
         OfficeHoursRequest fromCourse = request(COURSE, MOODLE_STUDENT, OfficeHoursRequestStatus.PENDING);
         fromCourse.setId(UUID.randomUUID());
-        when(requestRepository.findByInstructorIdOrderByCreatedAtDesc(PERSON))
+        when(requestRepository.findTop200ByInstructorIdOrderByCreatedAtDesc(PERSON))
                 .thenReturn(List.of(fromMenton, fromCourse));
         OfficeHoursUser moodle = person(MOODLE_STUDENT, null, "Moodle Öğrenci");
         moodle.setIssuer("https://odtuclass.example");
@@ -243,7 +265,7 @@ class OfficeHoursMeServiceTest {
         assertThat(menton.courseName()).isNull();
         assertThat(menton.note()).isEqualTo("CV'ye bakalım");
         assertThat(menton.requestedTimes())
-                .containsExactly(new OfficeHoursTimeResponse(TUESDAY_2PM, TUESDAY_2PM.plusSeconds(30 * 60)));
+                .containsExactly(OfficeHoursTimeResponse.of(TUESDAY_2PM, 30));
         assertThat(menton.allowedActions()).containsExactly(OfficeHoursRequestAction.ACCEPT,
                 OfficeHoursRequestAction.DECLINE, OfficeHoursRequestAction.PROPOSE_TIMES);
 
@@ -260,7 +282,7 @@ class OfficeHoursMeServiceTest {
     void anAnsweredRequestOffersNothingMore() {
         academic();
         hasPerson();
-        when(requestRepository.findByInstructorIdOrderByCreatedAtDesc(PERSON))
+        when(requestRepository.findTop200ByInstructorIdOrderByCreatedAtDesc(PERSON))
                 .thenReturn(List.of(request(null, STUDENT, OfficeHoursRequestStatus.DECLINED)));
         when(userRepository.findAllById(any())).thenReturn(List.of(person(STUDENT, null, "Ali Kaya")));
 
@@ -272,7 +294,7 @@ class OfficeHoursMeServiceTest {
         academic();
         hasPerson();
         OfficeHoursRequest pending = request(null, STUDENT, OfficeHoursRequestStatus.PENDING);
-        when(requestRepository.findById(REQUEST)).thenReturn(Optional.of(pending));
+        when(requestRepository.findForUpdate(REQUEST)).thenReturn(Optional.of(pending));
         when(bookingService.decide(eq(pending), eq(PERSON), any())).thenReturn(pending);
         when(userRepository.findAllById(any())).thenReturn(List.of(person(STUDENT, null, "Ali Kaya")));
 
@@ -288,7 +310,7 @@ class OfficeHoursMeServiceTest {
         academic();
         hasPerson();
         OfficeHoursRequest pending = request(null, STUDENT, OfficeHoursRequestStatus.PENDING);
-        when(requestRepository.findById(REQUEST)).thenReturn(Optional.of(pending));
+        when(requestRepository.findForUpdate(REQUEST)).thenReturn(Optional.of(pending));
         when(bookingService.decide(eq(pending), eq(PERSON), any())).thenReturn(pending);
         when(userRepository.findAllById(any())).thenReturn(List.of(person(STUDENT, null, "Ali Kaya")));
 
@@ -304,7 +326,7 @@ class OfficeHoursMeServiceTest {
     void asksNoQuestionOnARequestFromMentonWhereTheStudentCannotAnswer() {
         academic();
         hasPerson();
-        when(requestRepository.findById(REQUEST))
+        when(requestRepository.findForUpdate(REQUEST))
                 .thenReturn(Optional.of(request(null, STUDENT, OfficeHoursRequestStatus.PENDING)));
 
         assertThatThrownBy(() -> service.answer(ACCOUNT, REQUEST, new AnswerOfficeHoursRequest(
@@ -319,7 +341,7 @@ class OfficeHoursMeServiceTest {
         hasPerson();
         OfficeHoursRequest someoneElses = request(null, STUDENT, OfficeHoursRequestStatus.PENDING);
         someoneElses.setInstructorId(UUID.randomUUID());
-        when(requestRepository.findById(REQUEST)).thenReturn(Optional.of(someoneElses));
+        when(requestRepository.findForUpdate(REQUEST)).thenReturn(Optional.of(someoneElses));
 
         assertThatThrownBy(() -> service.answer(ACCOUNT, REQUEST, new AnswerOfficeHoursRequest(
                 OfficeHoursRequestAction.DECLINE, null, null, null))).isInstanceOf(ResourceNotFoundException.class);
@@ -332,7 +354,7 @@ class OfficeHoursMeServiceTest {
 
         assertThatThrownBy(() -> service.answer(ACCOUNT, REQUEST, new AnswerOfficeHoursRequest(
                 OfficeHoursRequestAction.DECLINE, null, null, null))).isInstanceOf(ResourceNotFoundException.class);
-        verify(requestRepository, never()).findById(any());
+        verify(requestRepository, never()).findForUpdate(any());
     }
 
     @Test
@@ -346,7 +368,7 @@ class OfficeHoursMeServiceTest {
         meeting.setStudentId(STUDENT);
         meeting.setScheduledAt(TUESDAY_2PM);
         meeting.setDurationMinutes(45);
-        when(meetingRepository.findByInstructorIdOrderByScheduledAtAsc(PERSON)).thenReturn(List.of(meeting));
+        when(meetingRepository.findByInstructorIdAndScheduledAtAfterOrderByScheduledAtAsc(eq(PERSON), any())).thenReturn(List.of(meeting));
         when(requestRepository.findAllById(List.of(REQUEST)))
                 .thenReturn(List.of(request(null, STUDENT, OfficeHoursRequestStatus.ACCEPTED)));
         when(userRepository.findAllById(any())).thenReturn(List.of(person(STUDENT, null, "Ali Kaya")));

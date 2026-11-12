@@ -16,7 +16,8 @@ import jakarta.validation.constraints.Size;
 public record RegisterFounderRequest(
 		@NotBlank @Size(max = 255) String fullName,
 		@NotBlank @Email @Size(max = 255) String email,
-		// Required unless startupLater; checked in RegistrationService.
+		// Required except in an individual-mentee program, where the team is named after the person; checked in
+		// RegistrationService (STARTUP_REQUIRED).
 		@Size(max = 255) String organizationName,
 		@Size(max = 5000) String description,
 		@Size(max = 255) String jobTitle,
@@ -37,7 +38,5 @@ public record RegisterFounderRequest(
 		@Size(max = 4) List<@NotNull ContactPreference> contactPreferences,
 		@Size(max = 255) String mvpUrl,
 		@Size(max = 20) List<@Valid OnboardingTeamMemberRequest> teamMembers,
-		@Min(1900) @Max(2100) Integer foundedYear,
-		// "Startup'ı daha sonra oluşturacağım": the person signs up into the program without a startup.
-		Boolean startupLater) implements StartupProfileFields {
+		@Min(1900) @Max(2100) Integer foundedYear) implements StartupProfileFields {
 }

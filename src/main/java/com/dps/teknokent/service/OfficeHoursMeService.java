@@ -1,7 +1,10 @@
 package com.dps.teknokent.service;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Clock;
-import java.util.ArrayList;
+import java.time.Duration;
+import java.util.Locale;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -62,8 +65,8 @@ import com.dps.teknokent.util.TextUtils;
 @Service
 public class OfficeHoursMeService {
 
-	private static final Set<OfficeHoursRequestStatus> ANSWERABLE = Set.of(OfficeHoursRequestStatus.PENDING,
-			OfficeHoursRequestStatus.MORE_INFO_REQUESTED);
+	/** How far back the academician's calendar reaches. */
+	private static final Duration MEETING_HISTORY = Duration.ofDays(180);
 
 	private final InstitutionPersonRepository institutionPeople;
 	private final OfficeHoursUserRepository userRepository;
@@ -117,7 +120,7 @@ public class OfficeHoursMeService {
 	public OfficeHoursAvailabilityResponse saveAvailability(UUID accountId,
 			UpdateOfficeHoursAvailabilityRequest request) {
 		InstitutionPerson record = requireAcademic(accountId);
-		return availabilityService.write(personFor(accountId, record).getId(), request);
+		return availabilityService.write(academicianFor(accountId, record), request);
 	}
 
 	@Transactional(readOnly = true)
@@ -130,15 +133,12 @@ public class OfficeHoursMeService {
 	@Transactional
 	public OfficeHoursProfileResponse saveProfile(UUID accountId, UpdateOfficeHoursProfileRequest request) {
 		InstitutionPerson record = requireAcademic(accountId);
-		UUID instructorId = personFor(accountId, record).getId();
-		OfficeHoursSettings settings = settingsRepository.findById(instructorId).orElseGet(() -> {
-			OfficeHoursSettings created = new OfficeHoursSettings();
-			created.setInstructorId(instructorId);
-			return created;
-		});
+		UUID instructorId = academicianFor(accountId, record);
+		OfficeHoursSettings settings = settingsRepository.findById(instructorId)
+				.orElseThrow(() -> new IllegalStateException("Office-hours settings missing"));
 		settings.setListed(request.listed());
 		settings.setDefaultPlace(TextUtils.normalizeOptional(request.defaultPlace()));
-		settings.setOnlineLink(TextUtils.normalizeOptional(request.onlineLink()));
+		settings.setOnlineLink(webLink(request.onlineLink()));
 		settings.setContactEmail(TextUtils.normalizeOptional(request.contactEmail()));
 		settings.setUpdatedAt(clock.instant());
 		return profileOf(settingsRepository.saveAndFlush(settings));
@@ -149,7 +149,7 @@ public class OfficeHoursMeService {
 	public List<OfficeHoursInboxRequestResponse> inbox(UUID accountId) {
 		requireAcademic(accountId);
 		return existing(accountId)
-				.map(person -> inboxItems(requestRepository.findByInstructorIdOrderByCreatedAtDesc(person.getId())))
+				.map(person -> inboxItems(requestRepository.findTop200ByInstructorIdOrderByCreatedAtDesc(person.getId())))
 				.orElse(List.of());
 	}
 
@@ -158,7 +158,7 @@ public class OfficeHoursMeService {
 		requireAcademic(accountId);
 		UUID instructorId = existing(accountId).map(OfficeHoursUser::getId)
 				.orElseThrow(OfficeHoursMeService::requestNotFound);
-		OfficeHoursRequest request = requestRepository.findById(requestId)
+		OfficeHoursRequest request = requestRepository.findForUpdate(requestId)
 				.filter(found -> found.getInstructorId().equals(instructorId))
 				.orElseThrow(OfficeHoursMeService::requestNotFound);
 		if (!allowedActions(request).contains(answer.action())) {
@@ -169,7 +169,7 @@ public class OfficeHoursMeService {
 		return inboxItems(List.of(bookingService.decide(request, instructorId, decision(answer)))).getFirst();
 	}
 
-	/** The academician's booked meetings, soonest first. */
+	/** The academician's booked meetings from the last half year on, soonest first. */
 	@Transactional(readOnly = true)
 	public List<OfficeHoursAcademicianMeetingResponse> meetings(UUID accountId) {
 		requireAcademic(accountId);
@@ -178,7 +178,9 @@ public class OfficeHoursMeService {
 			return List.of();
 		}
 		UUID instructorId = person.get().getId();
-		List<OfficeHoursMeeting> meetings = meetingRepository.findByInstructorIdOrderByScheduledAtAsc(instructorId);
+		List<OfficeHoursMeeting> meetings = meetingRepository
+				.findByInstructorIdAndScheduledAtAfterOrderByScheduledAtAsc(instructorId,
+						clock.instant().minus(MEETING_HISTORY));
 		if (meetings.isEmpty()) {
 			return List.of();
 		}
@@ -228,6 +230,38 @@ public class OfficeHoursMeService {
 		return person;
 	}
 
+	/** The academician's office-hours id, with their settings row in place for the save that follows. */
+	private UUID academicianFor(UUID accountId, InstitutionPerson record) {
+		UUID instructorId = personFor(accountId, record).getId();
+		OfficeHoursSettings defaults = new OfficeHoursSettings();
+		settingsRepository.insertIfAbsent(instructorId, defaults.getDefaultMeetingDurationMinutes(),
+				defaults.getMeetingBufferMinutes(), clock.instant());
+		return instructorId;
+	}
+
+	/**
+	 * The online meeting link students will open: a web address with a real host and no user name or password in
+	 * it, so it cannot pass for a different site.
+	 */
+	private static String webLink(String value) {
+		String link = TextUtils.normalizeOptional(value);
+		if (link == null) {
+			return null;
+		}
+		try {
+			URI uri = new URI(link);
+			String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+			String host = uri.getHost();
+			if ((scheme.equals("https") || scheme.equals("http")) && host != null && host.contains(".")
+					&& uri.getRawUserInfo() == null) {
+				return link;
+			}
+		} catch (URISyntaxException exception) {
+			// Falls through to the same answer as any other unusable link.
+		}
+		throw new InvalidRequestException("Online link must be a web address such as https://meet.example.com/abc");
+	}
+
 	private List<OfficeHoursInboxRequestResponse> inboxItems(List<OfficeHoursRequest> requests) {
 		if (requests.isEmpty()) {
 			return List.of();
@@ -251,23 +285,21 @@ public class OfficeHoursMeService {
 					students.get(request.getStudentId()), request.getTopic(), request.getExpectedOutcome(),
 					courseName(courses, request.getCourseId()), times(request.getPreferredSlots(), length),
 					times(request.getProposedSlots(), length), messages.getOrDefault(request.getId(), List.of()),
-					meeting == null ? null : new OfficeHoursTimeResponse(meeting.getScheduledAt(),
-							meeting.getScheduledAt().plusSeconds(meeting.getDurationMinutes() * 60L)),
+					meeting == null ? null
+							: OfficeHoursTimeResponse.of(meeting.getScheduledAt(), meeting.getDurationMinutes()),
 					request.getRejectionReason(), request.getCreatedAt(), allowedActions(request));
 		}).toList();
 	}
 
-	/** Asking needs the student's reply step, which only the Moodle course pages have so far. */
+	/**
+	 * The academic's answers the course pages allow, less asking a question on a Menton request: only the Moodle
+	 * course pages have the student's reply step so far.
+	 */
 	private static List<OfficeHoursRequestAction> allowedActions(OfficeHoursRequest request) {
-		if (!ANSWERABLE.contains(request.getStatus())) {
-			return List.of();
-		}
-		List<OfficeHoursRequestAction> actions = new ArrayList<>(List.of(OfficeHoursRequestAction.ACCEPT,
-				OfficeHoursRequestAction.DECLINE, OfficeHoursRequestAction.PROPOSE_TIMES));
-		if (request.getCourseId() != null && request.getStatus() == OfficeHoursRequestStatus.PENDING) {
-			actions.add(OfficeHoursRequestAction.ASK_QUESTION);
-		}
-		return List.copyOf(actions);
+		List<OfficeHoursRequestAction> actions = OfficeHoursRequestAction.allowedFor(OfficeHoursRole.INSTRUCTOR,
+				request.getStatus());
+		return request.getCourseId() != null ? actions
+				: actions.stream().filter(action -> action != OfficeHoursRequestAction.ASK_QUESTION).toList();
 	}
 
 	private static DecideOfficeHoursRequest decision(AnswerOfficeHoursRequest answer) {
@@ -286,6 +318,8 @@ public class OfficeHoursMeService {
 							: answer.times().stream().map(MeetingSlotTimes::formatMachineSlot).toList());
 			case ASK_QUESTION -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.MORE_INFO_REQUESTED, message,
 					null, null);
+			case REPLY, ACCEPT_PROPOSED, WITHDRAW -> throw new InvalidRequestException(
+					"Only the student can do that with a request");
 		};
 	}
 
@@ -331,7 +365,7 @@ public class OfficeHoursMeService {
 		return Arrays.stream(joined.split(","))
 				.map(MeetingSlotTimes::parseMachineSlot)
 				.filter(Objects::nonNull)
-				.map(startsAt -> new OfficeHoursTimeResponse(startsAt, startsAt.plusSeconds(minutes * 60L)))
+				.map(startsAt -> OfficeHoursTimeResponse.of(startsAt, minutes))
 				.toList();
 	}
 

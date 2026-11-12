@@ -48,6 +48,33 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-1");
 	}
 
+	@Test
+	void reusesAVerifiedLoginForTheEmailAsItIs() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-owner");
+		when(login.isEmailVerified()).thenReturn(true);
+		when(firebaseAuth.getUserByEmail("ayse@tekno.com")).thenReturn(login);
+
+		assertThat(provisioner.loginFor("ayse@tekno.com", "Ayşe")).isEqualTo("uid-owner");
+		verify(firebaseAuth, never()).updateUser(any(UserRecord.UpdateRequest.class));
+		verify(firebaseAuth, never()).revokeRefreshTokens(anyString());
+	}
+
+	// Someone could have made that login with a password of their own before the admin invited the address.
+	@Test
+	void locksOutAnUnverifiedLoginBeforeReusingIt() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-unverified");
+		when(login.isEmailVerified()).thenReturn(false);
+		when(firebaseAuth.getUserByEmail("yeni@tekno.com")).thenReturn(login);
+
+		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-unverified");
+
+		verify(firebaseAuth).updateUser(any(UserRecord.UpdateRequest.class));
+		verify(firebaseAuth).revokeRefreshTokens("uid-unverified");
+		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
+	}
+
 	// A custom-token user has no e-mail of its own, and the bearer filter refuses a token without one.
 	@Test
 	void createsTheInstitutionLoginWithItsEmailBeforeMintingItsToken() throws Exception {
