@@ -30,7 +30,14 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(InvalidRequestException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiErrorResponse handleInvalidRequest(InvalidRequestException exception, HttpServletRequest request) {
-		return response(HttpStatus.BAD_REQUEST, exception.getMessage(), request, Map.of());
+		return new ApiErrorResponse(
+				Instant.now(),
+				HttpStatus.BAD_REQUEST.value(),
+				HttpStatus.BAD_REQUEST.getReasonPhrase(),
+				exception.getMessage(),
+				request.getRequestURI(),
+				Map.of(),
+				exception.code());
 	}
 
 	@ExceptionHandler(ConflictException.class)
