@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
@@ -34,6 +35,7 @@ public class MeetingTranscriptBotWatchdog {
 	private final AssistantService assistantService;
 	private final MeetingAssistantShareService shareService;
 	private final TranscriptCleanupService transcriptCleanupService;
+	private final AiFeatures aiFeatures;
 	private final ConcurrentHashMap<String, Instant> emptySince = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, Boolean> sawHumans = new ConcurrentHashMap<>();
 
@@ -190,6 +192,10 @@ public class MeetingTranscriptBotWatchdog {
 			log.warn("Could not store the transcript for {}: {}", nativeMeetingId, error.getMessage());
 		}
 		if (segments.isEmpty()) {
+			return;
+		}
+		if (!aiFeatures.isEnabled(AiFeature.MEETING_REPORT)) {
+			log.debug("Meeting reports are switched off; kept only the transcript for {}", nativeMeetingId);
 			return;
 		}
 		try {

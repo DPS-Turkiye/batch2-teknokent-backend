@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.entity.ActionItem;
@@ -43,9 +45,13 @@ class TaskHandoverServiceTest {
 	private final NotificationService notificationService = mock(NotificationService.class);
 	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
-	private final TaskHandoverService service = new TaskHandoverService(actionItemRepository, appUserRepository,
-			organizationRepository, aiProviderClient, new LocalPiiRedactionService(), notificationService,
-			eventPublisher, jsonUtils);
+	private final TaskHandoverService service = serviceWith(TestAiFeatures.allOn());
+
+	private TaskHandoverService serviceWith(AiFeatures aiFeatures) {
+		return new TaskHandoverService(actionItemRepository, appUserRepository, organizationRepository,
+				aiProviderClient, new LocalPiiRedactionService(), notificationService, eventPublisher, jsonUtils,
+				aiFeatures);
+	}
 
 	private Organization startup;
 	private AppUser leaver;
@@ -125,6 +131,16 @@ class TaskHandoverServiceTest {
 
 		assertThat(pitch.getOwner()).isSameAs(lead);
 		assertThat(mockups.getOwner()).isSameAs(lead);
+	}
+
+	@Test
+	void onMemberLeft_givesEverythingToTheLeadWithoutAskingTheAiWhenHandoverIsSwitchedOff() {
+		serviceWith(TestAiFeatures.allOnExcept(AiFeature.TASK_HANDOVER))
+				.onMemberLeft(new TeamMemberLeftEvent(ORGANIZATION_ID, leaver.getId()));
+
+		assertThat(pitch.getOwner()).isSameAs(lead);
+		assertThat(mockups.getOwner()).isSameAs(lead);
+		verifyNoInteractions(aiProviderClient);
 	}
 
 	@Test
