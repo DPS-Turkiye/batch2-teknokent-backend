@@ -24,8 +24,11 @@ public record OfficeHoursRequestResponse(
 		Cancellation cancellation,
 		Instant createdAt) {
 
-	/** Who called the accepted meeting off, when, and why if they said. */
-	public record Cancellation(UUID cancelledById, String reason, Instant cancelledAt) {
+	/**
+	 * Who called the accepted meeting off, when, and why if they said. {@code late} when it was less than 24 hours
+	 * before the start (FR-OH-14).
+	 */
+	public record Cancellation(UUID cancelledById, String reason, Instant cancelledAt, boolean late) {
 	}
 
 	public record Message(UUID id, UUID authorId, OfficeHoursMessageType type, String body, Instant createdAt) {

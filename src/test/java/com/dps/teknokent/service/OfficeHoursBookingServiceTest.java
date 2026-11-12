@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -363,9 +364,29 @@ class OfficeHoursBookingServiceTest {
         assertThat(response.cancellation().reason()).isEqualTo("Hastayım");
         verify(mailService).requestChanged(any(), eq(Event.CANCELLED_BY_STUDENT), eq("Hastayım"));
 
-        acceptedMeetingAt(NOW.plusSeconds(3600));
+        acceptedMeetingAt(NOW.plus(Duration.ofDays(2)));
         service.cancel(ACADEMIC, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null));
         verify(mailService).requestChanged(any(), eq(Event.CANCELLED_BY_INSTRUCTOR), isNull());
+    }
+
+    @Test
+    void anAcademicCancellingWithin24HoursMustSayWhyAndTheCancelIsMarkedLate() {
+        acceptedMeetingAt(NOW.plus(Duration.ofHours(23)));
+        assertThatThrownBy(() -> service.cancel(ACADEMIC, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(" ")))
+                .isInstanceOf(InvalidRequestException.class);
+
+        OfficeHoursRequestResponse late = service.cancel(ACADEMIC, COURSE, REQUEST,
+                new CancelOfficeHoursMeetingRequest("Toplantıya çağrıldım"));
+        assertThat(late.cancellation().late()).isTrue();
+
+        // The student needs no reason, even late; the cancel is still marked late.
+        acceptedMeetingAt(NOW.plus(Duration.ofHours(2)));
+        assertThat(service.cancel(STUDENT, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null))
+                .cancellation().late()).isTrue();
+
+        acceptedMeetingAt(NOW.plus(Duration.ofHours(25)));
+        assertThat(service.cancel(ACADEMIC, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null))
+                .cancellation().late()).isFalse();
     }
 
     @Test

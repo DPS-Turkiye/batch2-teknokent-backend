@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
@@ -60,6 +61,9 @@ import com.dps.teknokent.util.TextUtils;
  */
 @Service
 public class OfficeHoursBookingService {
+
+	/** FR-OH-14: closer than this, an academic must give a reason and the cancel is marked late. */
+	static final Duration LATE_CANCEL_WINDOW = Duration.ofHours(24);
 
 	private static final Set<OfficeHoursRequestStatus> OPEN = Set.of(OfficeHoursRequestStatus.PENDING,
 			OfficeHoursRequestStatus.MORE_INFO_REQUESTED, OfficeHoursRequestStatus.COUNTER_PROPOSED);
@@ -287,12 +291,21 @@ public class OfficeHoursBookingService {
 			throw new InvalidRequestException("A meeting that has started can no longer be cancelled");
 		}
 		String reason = TextUtils.normalizeOptional(cancellation.reason());
+		// FR-OH-14: the student was planning around it, so an academic calling it off this close has to say why.
+		if (!student && reason == null && isLateCancel(meeting.getScheduledAt(), now)) {
+			throw new InvalidRequestException(Texts.forRequest("error.officeHoursLateCancelReason"));
+		}
 		meeting.setCancelledAt(now);
 		meeting.setCancelledBy(userId);
 		meeting.setCancellationReason(reason);
 		meetingRepository.save(meeting);
 		request.setStatus(OfficeHoursRequestStatus.CANCELLED);
 		return saveAndTell(request, student ? Event.CANCELLED_BY_STUDENT : Event.CANCELLED_BY_INSTRUCTOR, reason);
+	}
+
+	/** Called off less than 24 hours before the start. Worked out from the times, so nothing else is stored. */
+	static boolean isLateCancel(Instant scheduledAt, Instant cancelledAt) {
+		return cancelledAt.isAfter(scheduledAt.minus(LATE_CANCEL_WINDOW));
 	}
 
 	/**
@@ -443,7 +456,8 @@ public class OfficeHoursBookingService {
 							meeting.getDurationMinutes()),
 					meeting == null || meeting.getCancelledAt() == null ? null
 							: new OfficeHoursRequestResponse.Cancellation(meeting.getCancelledBy(),
-									meeting.getCancellationReason(), meeting.getCancelledAt()),
+									meeting.getCancellationReason(), meeting.getCancelledAt(),
+									isLateCancel(meeting.getScheduledAt(), meeting.getCancelledAt())),
 					request.getCreatedAt());
 		}).toList();
 	}
