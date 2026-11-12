@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -23,6 +24,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.WeeklyProgramWarning;
 import com.dps.teknokent.dto.requests.ReadWeeklyProgramRequest;
@@ -35,6 +37,7 @@ import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.entity.StoredDocument;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -88,7 +91,7 @@ class WeeklyProgramServiceTest {
 	void setUp() {
 		service = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService, programPhaseRepository,
 				programWeekRepository, storedDocumentRepository, objectStorage, textExtractor, piiRedactionService,
-				aiProviderClient, jsonUtils);
+				aiProviderClient, jsonUtils, TestAiFeatures.allOn());
 		program = new Program();
 		program.setId(PROGRAM_ID);
 		program.setStartDate(START);
@@ -129,6 +132,18 @@ class WeeklyProgramServiceTest {
 		assertThat(proposal.notes()).containsExactly("9 Ocak Cumartesi — Demo Day");
 		assertThat(proposal.existing()).isEqualTo(new WeeklyProgramProposalResponse.Existing(0, 0,
 				ProgramCalendar.currentWeek(START, END, LocalDate.now(MeetingSlotTimes.APP_ZONE))));
+	}
+
+	@Test
+	void refusesBeforeReadingTheFileWhenSyllabusReadingIsSwitchedOff() {
+		editing();
+		WeeklyProgramService switchedOff = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService,
+				programPhaseRepository, programWeekRepository, storedDocumentRepository, objectStorage, textExtractor,
+				piiRedactionService, aiProviderClient, jsonUtils, TestAiFeatures.allOnExcept(AiFeature.SYLLABUS));
+
+		assertThatThrownBy(() -> switchedOff.read(COORDINATOR_ID, PROGRAM_ID, readRequest()))
+				.isInstanceOf(AiFeatureDisabledException.class);
+		verifyNoInteractions(storedDocumentRepository, objectStorage, textExtractor, aiProviderClient);
 	}
 
 	@Test

@@ -32,7 +32,7 @@ import jakarta.persistence.EntityManager;
 /** The one-step save against a real persistence context: phases, weeks and the file land together. */
 @DataJpaTest
 @Import({ WeeklyProgramService.class, CoordinatorProgramService.class, ProgramWeekPlanService.class,
-		DomainLookupService.class, LocalPiiRedactionService.class })
+		DomainLookupService.class, LocalPiiRedactionService.class, AiFeatures.class })
 class WeeklyProgramPersistenceTest {
 
 	// Starts in the future, so the save never meets "keep the past".
