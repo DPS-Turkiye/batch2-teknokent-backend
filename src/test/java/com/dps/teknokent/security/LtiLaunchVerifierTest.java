@@ -96,7 +96,8 @@ class LtiLaunchVerifierTest {
         assertThat(claims.contextLabel()).isEqualTo("CENG 101");
         assertThat(claims.contextTitle()).isEqualTo("Introduction to Computing");
         assertThat(claims.roles()).containsExactly("http://purl.imsglobal.org/vocab/lis/v2/membership#Learner");
-        assertThat(claims.language()).isEqualTo(AppLanguage.TR);
+        // No launch_presentation: the launch names no language, so a saved one is kept.
+        assertThat(claims.language()).isNull();
     }
 
     @Test

@@ -3,13 +3,13 @@ package com.dps.teknokent.service;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 
@@ -72,8 +72,12 @@ public class OfficeHoursMailService {
 	/** Tells the side that did not act; {@code note} is their message, question, answer or reason, if any. */
 	public void requestChanged(OfficeHoursRequest request, Event event, String note) {
 		Map<UUID, OfficeHoursUser> people = people(request);
-		UUID to = event.toInstructor ? request.getInstructorId() : request.getStudentId();
-		UUID from = event.toInstructor ? request.getStudentId() : request.getInstructorId();
+		UUID to = request.getStudentId();
+		UUID from = request.getInstructorId();
+		if (event.toInstructor) {
+			to = request.getInstructorId();
+			from = request.getStudentId();
+		}
 		List<Instant> times = switch (event.times) {
 			case NONE -> List.of();
 			case PREFERRED -> instants(request.getPreferredSlots());
@@ -106,15 +110,17 @@ public class OfficeHoursMailService {
 		}
 		AppLanguage language = to.getPreferredLanguage();
 		String key = "officeHours.mail." + event;
-		String details = Stream.of(
-						times.isEmpty() ? null : times.stream()
-								.map(at -> "- " + MeetingSlotTimes.formatForPeople(at, language))
-								.collect(Collectors.joining("\n")),
-						note == null ? null : Texts.get(language, "officeHours.mail.note", note))
-				.filter(Objects::nonNull)
-				.collect(Collectors.joining("\n\n"));
+		// The times, then the other side's message: whichever the step has.
+		List<String> details = new ArrayList<>();
+		if (!times.isEmpty()) {
+			details.add(times.stream().map(at -> "- " + MeetingSlotTimes.formatForPeople(at, language))
+					.collect(Collectors.joining("\n")));
+		}
+		if (note != null) {
+			details.add(Texts.get(language, "officeHours.mail.note", note));
+		}
 		String body = Texts.get(language, "officeHours.mail.body", to.getFullName(),
-				Texts.get(language, key + ".line", from.getFullName(), course.getTitle()), details, topic,
+				Texts.get(language, key + ".line", from.getFullName(), course.getTitle()), String.join("\n\n", details), topic,
 				courseLink(course));
 		// A step with no times or note leaves an empty paragraph; fold it away.
 		mailService.sendAfterCommit(to.getEmail(), Texts.get(language, key + ".subject", course.getTitle()),

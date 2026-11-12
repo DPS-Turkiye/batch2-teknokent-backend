@@ -125,13 +125,19 @@ public class LtiLaunchVerifier {
 		return list.stream().filter(String.class::isInstance).map(String.class::cast).toList();
 	}
 
-	/** Moodle sends the person's language as "en", "en_us" or "tr"; anything not English reads as Turkish. */
+	/**
+	 * Moodle sends the person's language as "en", "en_us" or "tr"; anything not English reads as Turkish. Null when
+	 * the launch names none (the claim is optional), so a saved choice is not reset to Turkish.
+	 */
 	private static AppLanguage language(JWTClaimsSet claims) {
 		Map<String, Object> presentation = mapClaim(claims, CLAIM_PREFIX + "launch_presentation");
-		Object locale = presentation == null ? null : presentation.get("locale");
-		return locale instanceof String code && code.toLowerCase(Locale.ROOT).startsWith("en")
-				? AppLanguage.EN
-				: AppLanguage.TR;
+		if (presentation == null || !(presentation.get("locale") instanceof String code)) {
+			return null;
+		}
+		if (code.toLowerCase(Locale.ROOT).startsWith("en")) {
+			return AppLanguage.EN;
+		}
+		return AppLanguage.TR;
 	}
 
 	/** A context value as text: LMSes send ids as strings or as numbers, so either is accepted. */
