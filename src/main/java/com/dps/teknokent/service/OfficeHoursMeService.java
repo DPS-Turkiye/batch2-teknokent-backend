@@ -5,7 +5,6 @@ import java.net.URISyntaxException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Locale;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -68,9 +67,6 @@ public class OfficeHoursMeService {
 
 	/** How far back the academician's calendar reaches. */
 	private static final Duration MEETING_HISTORY = Duration.ofDays(180);
-
-	private static final Set<OfficeHoursRequestStatus> ANSWERABLE = Set.of(OfficeHoursRequestStatus.PENDING,
-			OfficeHoursRequestStatus.MORE_INFO_REQUESTED);
 
 	private final InstitutionPersonRepository institutionPeople;
 	private final OfficeHoursUserRepository userRepository;
@@ -289,23 +285,21 @@ public class OfficeHoursMeService {
 					students.get(request.getStudentId()), request.getTopic(), request.getExpectedOutcome(),
 					courseName(courses, request.getCourseId()), times(request.getPreferredSlots(), length),
 					times(request.getProposedSlots(), length), messages.getOrDefault(request.getId(), List.of()),
-					meeting == null ? null : new OfficeHoursTimeResponse(meeting.getScheduledAt(),
-							meeting.getScheduledAt().plusSeconds(meeting.getDurationMinutes() * 60L)),
+					meeting == null ? null
+							: OfficeHoursTimeResponse.of(meeting.getScheduledAt(), meeting.getDurationMinutes()),
 					request.getRejectionReason(), request.getCreatedAt(), allowedActions(request));
 		}).toList();
 	}
 
-	/** Asking needs the student's reply step, which only the Moodle course pages have so far. */
+	/**
+	 * The academic's answers the course pages allow, less asking a question on a Menton request: only the Moodle
+	 * course pages have the student's reply step so far.
+	 */
 	private static List<OfficeHoursRequestAction> allowedActions(OfficeHoursRequest request) {
-		if (!ANSWERABLE.contains(request.getStatus())) {
-			return List.of();
-		}
-		List<OfficeHoursRequestAction> actions = new ArrayList<>(List.of(OfficeHoursRequestAction.ACCEPT,
-				OfficeHoursRequestAction.DECLINE, OfficeHoursRequestAction.PROPOSE_TIMES));
-		if (request.getCourseId() != null && request.getStatus() == OfficeHoursRequestStatus.PENDING) {
-			actions.add(OfficeHoursRequestAction.ASK_QUESTION);
-		}
-		return List.copyOf(actions);
+		List<OfficeHoursRequestAction> actions = OfficeHoursRequestAction.allowedFor(OfficeHoursRole.INSTRUCTOR,
+				request.getStatus());
+		return request.getCourseId() != null ? actions
+				: actions.stream().filter(action -> action != OfficeHoursRequestAction.ASK_QUESTION).toList();
 	}
 
 	private static DecideOfficeHoursRequest decision(AnswerOfficeHoursRequest answer) {
@@ -324,6 +318,8 @@ public class OfficeHoursMeService {
 							: answer.times().stream().map(MeetingSlotTimes::formatMachineSlot).toList());
 			case ASK_QUESTION -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.MORE_INFO_REQUESTED, message,
 					null, null);
+			case REPLY, ACCEPT_PROPOSED, WITHDRAW -> throw new InvalidRequestException(
+					"Only the student can do that with a request");
 		};
 	}
 
@@ -369,7 +365,7 @@ public class OfficeHoursMeService {
 		return Arrays.stream(joined.split(","))
 				.map(MeetingSlotTimes::parseMachineSlot)
 				.filter(Objects::nonNull)
-				.map(startsAt -> new OfficeHoursTimeResponse(startsAt, startsAt.plusSeconds(minutes * 60L)))
+				.map(startsAt -> OfficeHoursTimeResponse.of(startsAt, minutes))
 				.toList();
 	}
 

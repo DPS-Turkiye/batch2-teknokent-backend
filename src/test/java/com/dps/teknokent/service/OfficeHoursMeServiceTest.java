@@ -265,7 +265,7 @@ class OfficeHoursMeServiceTest {
         assertThat(menton.courseName()).isNull();
         assertThat(menton.note()).isEqualTo("CV'ye bakalım");
         assertThat(menton.requestedTimes())
-                .containsExactly(new OfficeHoursTimeResponse(TUESDAY_2PM, TUESDAY_2PM.plusSeconds(30 * 60)));
+                .containsExactly(OfficeHoursTimeResponse.of(TUESDAY_2PM, 30));
         assertThat(menton.allowedActions()).containsExactly(OfficeHoursRequestAction.ACCEPT,
                 OfficeHoursRequestAction.DECLINE, OfficeHoursRequestAction.PROPOSE_TIMES);
 
