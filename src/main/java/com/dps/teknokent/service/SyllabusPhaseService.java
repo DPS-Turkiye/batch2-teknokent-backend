@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import com.dps.teknokent.domain.AiFeature;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
@@ -58,9 +59,11 @@ public class SyllabusPhaseService {
 	private final LocalPiiRedactionService piiRedactionService;
 	private final AiProviderClient aiProviderClient;
 	private final JsonUtils jsonUtils;
+	private final AiFeatures aiFeatures;
 
 	public SyllabusPhasesResponse extract(UUID actorId, ExtractSyllabusPhasesRequest request) {
 		AppUser actor = programService.requireCoordinatorOrAdmin(actorId);
+		aiFeatures.require(AiFeature.SYLLABUS);
 		StoredDocument document = requireReadable(actor, request.documentId());
 		ExtractionResult extraction = textExtractor.extract(objectStorage.get(document.getS3Key()), "auto");
 		String text = piiRedactionService.redact(extraction.text()).text();

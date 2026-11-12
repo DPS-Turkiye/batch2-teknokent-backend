@@ -12,12 +12,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.StudentProfileResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,7 +37,7 @@ class MentorRecommendationServiceTest {
 	@BeforeEach
 	void setUp() {
 		recommendationService = new MentorRecommendationService(mentorProfileService, pgVectorRetrievalService,
-				menteeProgramService);
+				menteeProgramService, TestAiFeatures.allOn());
 		ReflectionTestUtils.setField(recommendationService, "provider", "openrouter");
 		ReflectionTestUtils.setField(recommendationService, "openRouterModel", "openai/text-embedding-3-small");
 		ReflectionTestUtils.setField(recommendationService, "openAiModel", "text-embedding-3-small");
@@ -74,6 +76,22 @@ class MentorRecommendationServiceTest {
 				.containsExactly("Ali Yazılım", "Zeynep Finans");
 		assertThat(result.mentors().getFirst().recommendationReasons())
 				.contains("Talebinizle örtüşen uzmanlık: Yapay zeka");
+	}
+
+	@Test
+	void ranksByTheRulesWithoutAnyEmbeddingCallWhenAiMatchingIsSwitchedOff() {
+		ReflectionTestUtils.setField(recommendationService, "aiFeatures", TestAiFeatures.allOnExcept(AiFeature.MATCHING));
+		MentorProfileResponse financeMentor = mentor("Zeynep Finans", "Finans ve yatırım", List.of("Yatırım"));
+		MentorProfileResponse softwareMentor = mentor("Ali Yazılım", "Yazılım mimarı", List.of("Yazılım"));
+		when(mentorProfileService.findAll()).thenReturn(List.of(financeMentor, softwareMentor));
+
+		var result = recommendationService.recommend(new RecommendMentorsRequest(
+				"Yazılım", "Yazılım mimarisi desteği", "THIS_WEEK", "SINGLE_MEETING", "ONLINE",
+				null, null, null, List.of(), null));
+
+		assertThat(result.matchingMethod()).isEqualTo("DETERMINISTIC");
+		assertThat(result.mentors()).extracting(MentorProfileResponse::fullName).first().isEqualTo("Ali Yazılım");
+		verifyNoInteractions(pgVectorRetrievalService);
 	}
 
 	@Test
