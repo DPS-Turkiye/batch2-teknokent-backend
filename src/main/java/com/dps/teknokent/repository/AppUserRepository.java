@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -41,6 +42,15 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	@Query("select u from AppUser u where " + HAS_PERMISSION + " and u.status = :status order by u.fullName asc")
 	List<AppUser> findByPermissionAndStatusOrderByFullNameAsc(@Param("role") UserRole role,
 			@Param("status") UserAccountStatus status);
+
+	/**
+	 * Accounts holding {@code role} whose email starts with {@code prefix}: lowercase, with LIKE's {@code %},
+	 * {@code _} and backslash already escaped by the caller.
+	 */
+	@Query("select u from AppUser u where " + HAS_PERMISSION + " and u.status = :status "
+			+ "and lower(u.email) like concat(:prefix, '%') escape '\\' order by lower(u.email) asc")
+	List<AppUser> findByPermissionAndStatusAndEmailPrefix(@Param("role") UserRole role,
+			@Param("status") UserAccountStatus status, @Param("prefix") String prefix, Pageable page);
 
 	/** The program's students who have a personal team, for counting their peer sessions with the program. */
 	@Query("select u from AppUser u where u.programId = :programId and u.organization.personal = true")

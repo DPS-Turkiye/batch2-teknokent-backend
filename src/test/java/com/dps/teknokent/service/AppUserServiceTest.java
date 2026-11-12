@@ -71,6 +71,9 @@ class AppUserServiceTest {
     private TeamMembershipService teamMembershipService;
 
     @Mock
+    private EmailDomainPolicy emailDomainPolicy;
+
+    @Mock
     private ProgramEligibilityService programEligibilityService;
 
     @Mock
@@ -250,6 +253,19 @@ class AppUserServiceTest {
                 new CreateOrganizationMemberRequest(TEAM_FOUNDER_ID, "Tekrar", "mevcut@greenloop.demo", null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("already exists");
+    }
+
+    @Test
+    void addOrganizationMember_rejectsAnAddressOutsideTheAllowedDomains() {
+        when(domainLookupService.requireOrganization(TEAM_ORG_ID)).thenReturn(teamWithFounder());
+        doThrow(new InvalidRequestException("domain")).when(emailDomainPolicy).requireAllowed("uye@gmail.com");
+
+        assertThatThrownBy(() -> appUserService.addOrganizationMember(
+                TEAM_ORG_ID,
+                new CreateOrganizationMemberRequest(TEAM_FOUNDER_ID, "Üye", "uye@gmail.com", null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("domain");
+        verify(appUserRepository, never()).save(any());
     }
 
     @Test

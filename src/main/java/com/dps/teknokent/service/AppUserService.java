@@ -49,6 +49,7 @@ public class AppUserService {
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final LoginProvisioner loginProvisioner;
 	private final TeamMembershipService teamMembershipService;
+	private final EmailDomainPolicy emailDomainPolicy;
 	private final ProgramEligibilityService programEligibilityService;
 	private final MenteeProgramService menteeProgramService;
 	private final PersonAccessService personAccessService;
@@ -183,6 +184,7 @@ public class AppUserService {
 			throw new InvalidRequestException("Only the organization founder can add team members");
 		}
 		String email = TextUtils.trim(request.email());
+		emailDomainPolicy.requireAllowed(email);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
 			throw new InvalidRequestException("A user with this email already exists.");
 		}

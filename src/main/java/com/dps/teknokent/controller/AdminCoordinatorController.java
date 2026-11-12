@@ -1,5 +1,6 @@
 package com.dps.teknokent.controller;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -17,8 +18,10 @@ import com.dps.teknokent.dto.requests.AddCoordinatorRequest;
 import com.dps.teknokent.dto.requests.SetCoordinatorAccessRequest;
 import com.dps.teknokent.dto.responses.CoordinatorAccountResponse;
 import com.dps.teknokent.dto.responses.CoordinatorCandidateResponse;
+import com.dps.teknokent.dto.responses.CoordinatorSearchResult;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.AdminCoordinatorService;
+import com.dps.teknokent.service.CoordinatorSearchService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -31,12 +34,22 @@ import lombok.RequiredArgsConstructor;
 public class AdminCoordinatorController {
 
 	private final AdminCoordinatorService adminCoordinatorService;
+	private final CoordinatorSearchService coordinatorSearchService;
 
 	@GetMapping("/candidate")
 	public CoordinatorCandidateResponse candidate(
 			@RequestParam String email,
 			@RequestParam(required = false) UUID actorId) {
 		return adminCoordinatorService.candidate(CurrentActor.resolve(actorId), email);
+	}
+
+	/** Approved coordinators whose email starts with {@code q} (at least 3 characters, at most 10 results). */
+	@GetMapping("/search")
+	public List<CoordinatorSearchResult> search(
+			@RequestParam String q,
+			@RequestParam(required = false) UUID programId,
+			@RequestParam(required = false) UUID actorId) {
+		return coordinatorSearchService.search(CurrentActor.resolve(actorId), q, programId);
 	}
 
 	@PostMapping
