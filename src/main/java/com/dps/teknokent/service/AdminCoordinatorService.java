@@ -93,28 +93,47 @@ public class AdminCoordinatorService {
 		return toResponse(coordinator, outcome);
 	}
 
+	/** An email the admin typed as a program coordinator, checked but not acted on: {@code existing} is set for an
+	 * approved coordinator, null for an email that will get a new account. Only this service makes one. */
+	record CheckedInvite(String email, String fullName, AppUser existing) {
+	}
+
 	/**
-	 * A coordinator named by email in the admin's "Yeni Program Oluştur". An approved coordinator is simply returned.
-	 * A new email gets an approved coordinator account and a login now, and after the program commits a mail that
-	 * names the program and carries a password setup link. Any other account is refused: promoting a mentor or
-	 * mentee, or reactivating a coordinator, stays a deliberate step in Koordinatör ekle. The caller has checked
-	 * that the actor is an admin.
+	 * Checks an email typed in "Yeni Program Oluştur" or Koordinatörler without changing anything, so a request's
+	 * invites can all be checked before any of them creates a login or sends a mail. An approved coordinator joins as
+	 * is (the same test as choosing one by id); an email with no account may be invited; any other account is
+	 * refused, since promoting a mentor or mentee, or reactivating a coordinator, stays a deliberate step in
+	 * Koordinatör ekle.
 	 */
 	@Transactional
-	public AppUser coordinatorForNewProgram(String email, String fullName, String programName) {
+	CheckedInvite checkNewProgramCoordinator(UUID actorId, String email, String fullName) {
+		requireAdmin(actorId);
 		String normalized = normalize(email);
 		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(normalized);
-		// The same test as choosing a coordinator by id, so the search, the id and the email agree on who counts.
 		if (existing.isPresent() && existing.get().has(UserRole.COORDINATOR)
 				&& existing.get().getStatus() == UserAccountStatus.APPROVED) {
-			return existing.get();
+			return new CheckedInvite(normalized, existing.get().getFullName(), existing.get());
 		}
 		CoordinatorCandidateStatus status = classify(existing);
 		if (status != CoordinatorCandidateStatus.NEW) {
 			throw new InvalidRequestException(newProgramRefusal(status, normalized));
 		}
-		AppUser coordinator = newCoordinator(normalized, fullName.trim());
-		coordinator.setFirebaseUid(loginProvisioner.loginFor(normalized, coordinator.getFullName()));
+		return new CheckedInvite(normalized, fullName.trim(), null);
+	}
+
+	/**
+	 * Acts on a {@link CheckedInvite}: an approved coordinator is returned as is; a new email gets an approved
+	 * coordinator account and a login now, and after the program commits a mail that names the program and carries
+	 * a password setup link.
+	 */
+	@Transactional
+	AppUser coordinatorForNewProgram(UUID actorId, CheckedInvite invite, String programName) {
+		requireAdmin(actorId);
+		if (invite.existing() != null) {
+			return invite.existing();
+		}
+		AppUser coordinator = newCoordinator(invite.email(), invite.fullName());
+		coordinator.setFirebaseUid(loginProvisioner.loginFor(invite.email(), coordinator.getFullName()));
 		coordinator.setRole(UserRole.COORDINATOR);
 		coordinator.setStatus(UserAccountStatus.APPROVED);
 		appUserRepository.save(coordinator);

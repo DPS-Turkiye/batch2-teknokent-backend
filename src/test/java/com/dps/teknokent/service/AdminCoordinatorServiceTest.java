@@ -220,7 +220,9 @@ class AdminCoordinatorServiceTest {
 		when(loginProvisioner.passwordSetupLink("yeni@teknokent.org", LOGIN))
 				.thenReturn(Optional.of("https://auth.example/reset?oobCode=9"));
 
-		AppUser invited = service.coordinatorForNewProgram(" Yeni@Teknokent.ORG ", " Yeni Kişi ", "METU BİGG 2026");
+		stubAdmin();
+		AppUser invited = service.coordinatorForNewProgram(ADMIN_ID,
+				service.checkNewProgramCoordinator(ADMIN_ID, " Yeni@Teknokent.ORG ", " Yeni Kişi "), "METU BİGG 2026");
 
 		verify(appUserRepository).save(invited);
 		assertThat(invited.getEmail()).isEqualTo("yeni@teknokent.org");
@@ -246,7 +248,9 @@ class AdminCoordinatorServiceTest {
 		when(mailService.link("/login")).thenReturn(LOGIN);
 		when(loginProvisioner.passwordSetupLink("yeni@teknokent.org", LOGIN)).thenReturn(Optional.empty());
 
-		service.coordinatorForNewProgram("yeni@teknokent.org", "Yeni Kişi", "METU BİGG 2026");
+		stubAdmin();
+		service.coordinatorForNewProgram(ADMIN_ID,
+				service.checkNewProgramCoordinator(ADMIN_ID, "yeni@teknokent.org", "Yeni Kişi"), "METU BİGG 2026");
 
 		verify(mailService).sendAfterCommit(eq("yeni@teknokent.org"), anyString(), contains(LOGIN));
 	}
@@ -256,7 +260,9 @@ class AdminCoordinatorServiceTest {
 		AppUser existing = user(MENTOR_ID, "ayse@teknokent.org", UserRole.COORDINATOR);
 		when(appUserRepository.findByEmailIgnoreCase("ayse@teknokent.org")).thenReturn(Optional.of(existing));
 
-		assertThat(service.coordinatorForNewProgram("AYSE@teknokent.org", "Başka Ad", "METU BİGG 2026"))
+		stubAdmin();
+		assertThat(service.coordinatorForNewProgram(ADMIN_ID,
+				service.checkNewProgramCoordinator(ADMIN_ID, "AYSE@teknokent.org", "Başka Ad"), "METU BİGG 2026"))
 				.isSameAs(existing);
 		assertThat(existing.getFullName()).isEqualTo("Ayşe Demir");
 		verify(appUserRepository, never()).save(any());
@@ -270,12 +276,14 @@ class AdminCoordinatorServiceTest {
 		mentor.grant(UserRole.COORDINATOR, PermissionSource.ADMIN, Instant.now());
 		when(appUserRepository.findByEmailIgnoreCase("ece@mentor.org")).thenReturn(Optional.of(mentor));
 
-		assertThat(service.coordinatorForNewProgram("ece@mentor.org", "Ece", "METU BİGG 2026")).isSameAs(mentor);
+		stubAdmin();
+		assertThat(service.checkNewProgramCoordinator(ADMIN_ID, "ece@mentor.org", "Ece").existing()).isSameAs(mentor);
 		verify(appUserRepository, never()).save(any());
 	}
 
 	@Test
 	void aNewProgramNeverPromotesOrReactivatesAnExistingAccount() {
+		stubAdmin();
 		AppUser mentor = user(MENTOR_ID, "mentor@x.org", UserRole.MENTOR);
 		AppUser mentee = user(UUID.randomUUID(), "mentee@x.org", UserRole.MENTEE);
 		AppUser admin = user(ADMIN_ID, "admin@x.org", UserRole.ADMIN);
@@ -285,11 +293,45 @@ class AdminCoordinatorServiceTest {
 			when(appUserRepository.findByEmailIgnoreCase(account.getEmail())).thenReturn(Optional.of(account));
 			UserRole before = account.getRole();
 
-			assertThatThrownBy(() -> service.coordinatorForNewProgram(account.getEmail(), "Ad", "METU BİGG 2026"))
+			assertThatThrownBy(() -> service.checkNewProgramCoordinator(ADMIN_ID, account.getEmail(), "Ad"))
 					.isInstanceOf(InvalidRequestException.class)
 					.hasMessageContaining(account.getEmail());
 			assertThat(account.getRole()).isEqualTo(before);
 		}
+		verify(appUserRepository, never()).save(any());
+		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void onlyAnAdminCanCheckOrCreateAProgramCoordinator() {
+		UUID coordinatorId = UUID.randomUUID();
+		when(domainLookupService.requireUser(coordinatorId))
+				.thenReturn(user(coordinatorId, "ayse@teknokent.org", UserRole.COORDINATOR));
+		AdminCoordinatorService.CheckedInvite invite =
+				new AdminCoordinatorService.CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null);
+
+		assertThatThrownBy(() -> service.checkNewProgramCoordinator(coordinatorId, "yeni@teknokent.org", "Yeni Kişi"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+		assertThatThrownBy(() -> service.coordinatorForNewProgram(coordinatorId, invite, "METU BİGG 2026"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("admin");
+		verify(appUserRepository, never()).findByEmailIgnoreCase(anyString());
+		verify(loginProvisioner, never()).loginFor(anyString(), anyString());
+		verify(appUserRepository, never()).save(any());
+		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void checkingAnInviteCreatesNothing() {
+		stubAdmin();
+		when(appUserRepository.findByEmailIgnoreCase("yeni@teknokent.org")).thenReturn(Optional.empty());
+
+		AdminCoordinatorService.CheckedInvite invite =
+				service.checkNewProgramCoordinator(ADMIN_ID, " Yeni@Teknokent.org ", " Yeni Kişi ");
+
+		assertThat(invite).isEqualTo(new AdminCoordinatorService.CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null));
+		verify(loginProvisioner, never()).loginFor(anyString(), anyString());
 		verify(appUserRepository, never()).save(any());
 		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
 	}

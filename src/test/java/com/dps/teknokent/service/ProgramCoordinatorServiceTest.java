@@ -31,6 +31,7 @@ import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.service.AdminCoordinatorService.CheckedInvite;
 
 @ExtendWith(MockitoExtension.class)
 class ProgramCoordinatorServiceTest {
@@ -79,7 +80,9 @@ class ProgramCoordinatorServiceTest {
 		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
 		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(program);
 		UUID invited = UUID.randomUUID();
-		when(adminCoordinatorService.coordinatorForNewProgram("yeni@x.org", "Yeni Kişi", program.getName()))
+		CheckedInvite checked = new CheckedInvite("yeni@x.org", "Yeni Kişi", null);
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@x.org", "Yeni Kişi")).thenReturn(checked);
+		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, checked, program.getName()))
 				.thenReturn(user(invited, "Yeni Kişi", UserRole.COORDINATOR));
 
 		service.invite(ADMIN, PROGRAM_ID, new NewCoordinatorInput("Yeni Kişi", "yeni@x.org"));
@@ -95,15 +98,16 @@ class ProgramCoordinatorServiceTest {
 		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, "Elif", UserRole.COORDINATOR));
 		assertThatThrownBy(() -> service.invite(ELIF, PROGRAM_ID, new NewCoordinatorInput("Yeni", "yeni@x.org")))
 				.isInstanceOf(InvalidRequestException.class);
-		verify(adminCoordinatorService, never()).coordinatorForNewProgram(any(), any(), any());
+		verify(adminCoordinatorService, never()).checkNewProgramCoordinator(any(), any(), any());
 
 		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
 		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(program);
-		when(adminCoordinatorService.coordinatorForNewProgram("burcu@x.org", "Burcu", program.getName()))
-				.thenReturn(user(BURCU, "Burcu Şen", UserRole.COORDINATOR));
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "burcu@x.org", "Burcu"))
+				.thenReturn(new CheckedInvite("burcu@x.org", "Burcu Şen", user(BURCU, "Burcu Şen", UserRole.COORDINATOR)));
 		when(programCoordinatorRepository.existsByProgramIdAndUserId(PROGRAM_ID, BURCU)).thenReturn(true);
 		assertThatThrownBy(() -> service.invite(ADMIN, PROGRAM_ID, new NewCoordinatorInput("Burcu", "burcu@x.org")))
 				.isInstanceOf(InvalidRequestException.class);
+		verify(adminCoordinatorService, never()).coordinatorForNewProgram(any(), any(), any());
 		verify(programCoordinatorRepository, never()).save(any());
 	}
 

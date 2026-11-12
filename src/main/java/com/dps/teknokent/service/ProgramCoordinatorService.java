@@ -73,9 +73,13 @@ public class ProgramCoordinatorService {
 			NewCoordinatorInput invite) {
 		requireAdmin(actorId);
 		Program program = programService.requireManagedProgram(actorId, programId);
-		AppUser coordinator = adminCoordinatorService.coordinatorForNewProgram(
-				invite.email(), invite.fullName(), program.getName());
-		return attach(actorId, program, coordinator);
+		AdminCoordinatorService.CheckedInvite checked =
+				adminCoordinatorService.checkNewProgramCoordinator(actorId, invite.email(), invite.fullName());
+		if (checked.existing() != null
+				&& ProgramCoordination.coordinates(program, checked.existing().getId(), programCoordinatorRepository)) {
+			throw new InvalidRequestException("This coordinator already runs the program.");
+		}
+		return attach(actorId, program, adminCoordinatorService.coordinatorForNewProgram(actorId, checked, program.getName()));
 	}
 
 	private List<CoordinatorProgramResponse.CoordinatorRef> attach(UUID actorId, Program program, AppUser user) {
