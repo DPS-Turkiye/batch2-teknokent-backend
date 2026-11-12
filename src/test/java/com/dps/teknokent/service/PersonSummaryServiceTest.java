@@ -8,7 +8,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -40,6 +45,12 @@ import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.TeamMembership;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.entity.MentorAvailabilityException;
+import com.dps.teknokent.entity.MentorAvailabilityRule;
+import com.dps.teknokent.entity.MentorAvailabilitySlot;
+import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
+import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
+import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
@@ -57,6 +68,8 @@ class PersonSummaryServiceTest {
 	private static final UUID PAST_PROGRAM = UUID.fromString("00000000-0000-0000-0000-0000000000a4");
 	private static final UUID COORDINATOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID OTHER_COORDINATOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+	private static final Instant NOW = Instant.parse("2026-11-12T22:30:00Z");
+	private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 	private static final UUID ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000d1");
 
 	@Mock
@@ -71,6 +84,12 @@ class PersonSummaryServiceTest {
 	private ProgramStartupRepository programStartupRepository;
 	@Mock
 	private TeamMembershipRepository teamMembershipRepository;
+	@Mock
+	private MentorAvailabilityRuleRepository mentorAvailabilityRuleRepository;
+	@Mock
+	private MentorAvailabilityExceptionRepository mentorAvailabilityExceptionRepository;
+	@Mock
+	private MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 	@Mock
 	private ProgramRepository programRepository;
 	@Mock
@@ -92,6 +111,8 @@ class PersonSummaryServiceTest {
 				programStartupRepository, programRepository, programCoordinatorRepository, domainLookupService);
 		service = new PersonSummaryService(domainLookupService, mentorProfileService, mentorProfileRepository,
 				programMentorRepository, programStartupRepository, teamMembershipRepository, teamMembershipService,
+				new MentorAvailabilitySummaryService(mentorAvailabilityRuleRepository,
+						mentorAvailabilityExceptionRepository, mentorAvailabilitySlotRepository, CLOCK),
 				programRepository, programCoordinatorRepository);
 		when(programStartupRepository.findByOrganizationIdIn(anyCollection())).thenAnswer(invocation -> {
 			Collection<UUID> ids = invocation.getArgument(0);
@@ -337,6 +358,62 @@ class PersonSummaryServiceTest {
 	void theSummaryHasNoPhoneOrContactPreferences() {
 		assertThat(Arrays.stream(PersonSummaryResponse.class.getRecordComponents()).map(c -> c.getName()))
 				.doesNotContain("phone", "contactPreferences");
+	}
+
+	@Test
+	void aMentorsSummaryCarriesTheirWeeklyWindowsUpcomingDaysOffAndExtraSlots() {
+		AppUser mentor = register(user(UUID.randomUUID(), UserRole.MENTOR));
+		pools(mentor, pool(OWN_PROGRAM, ProgramMentorStatus.ACCEPTED));
+		when(mentorProfileRepository.existsById(mentor.getId())).thenReturn(true);
+		when(mentorProfileService.findById(mentor.getId())).thenReturn(mentorProfile(mentor));
+		MentorAvailabilityRule tuesday = new MentorAvailabilityRule();
+		tuesday.setDayOfWeek((short) 2);
+		tuesday.setStartTime(LocalTime.of(10, 0));
+		tuesday.setEndTime(LocalTime.of(12, 0));
+		when(mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentor.getId()))
+				.thenReturn(List.of(tuesday));
+		MentorAvailabilityException holiday = new MentorAvailabilityException();
+		holiday.setStartsOn(LocalDate.of(2026, 11, 20));
+		holiday.setEndsOn(LocalDate.of(2026, 11, 22));
+		holiday.setReason("Özel bir sebep");
+		when(mentorAvailabilityExceptionRepository.findByMentorIdAndEndsOnGreaterThanEqualOrderByStartsOnAsc(
+				mentor.getId(), LocalDate.of(2026, 11, 13))).thenReturn(List.of(holiday));
+		MentorAvailabilitySlot extra = new MentorAvailabilitySlot();
+		extra.setStartsAt(Instant.parse("2026-11-14T09:00:00Z"));
+		extra.setDurationMinutes(45);
+		when(mentorAvailabilitySlotRepository.findTop10ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(
+				mentor.getId(), NOW)).thenReturn(List.of(extra));
+
+		PersonSummaryResponse.Availability availability =
+				service.summary(COORDINATOR_ID, mentor.getId()).mentor().availability();
+
+		assertThat(availability.weekly()).containsExactly(new PersonSummaryResponse.WeeklyWindow(
+				DayOfWeek.TUESDAY, LocalTime.of(10, 0), LocalTime.of(12, 0)));
+		assertThat(availability.daysOff()).containsExactly(new PersonSummaryResponse.DayOff(
+				LocalDate.of(2026, 11, 20), LocalDate.of(2026, 11, 22)));
+		assertThat(availability.extraSlots()).containsExactly(new PersonSummaryResponse.ExtraSlot(
+				Instant.parse("2026-11-14T09:00:00Z"), 45));
+	}
+
+	@Test
+	void aMentorWithNothingSetGetsEmptyAvailabilityLists() {
+		AppUser mentor = register(user(UUID.randomUUID(), UserRole.MENTOR));
+		pools(mentor);
+		when(mentorProfileRepository.existsById(mentor.getId())).thenReturn(true);
+		when(mentorProfileService.findById(mentor.getId())).thenReturn(mentorProfile(mentor));
+
+		PersonSummaryResponse.Availability availability =
+				service.summary(ADMIN_ID, mentor.getId()).mentor().availability();
+
+		assertThat(availability.weekly()).isEmpty();
+		assertThat(availability.daysOff()).isEmpty();
+		assertThat(availability.extraSlots()).isEmpty();
+	}
+
+	@Test
+	void aDayOffNeverCarriesTheMentorsReason() {
+		assertThat(Arrays.stream(PersonSummaryResponse.DayOff.class.getRecordComponents()).map(c -> c.getName()))
+				.containsExactly("startsOn", "endsOn");
 	}
 
 	private AppUser register(AppUser user) {

@@ -1,6 +1,9 @@
 package com.dps.teknokent.dto.responses;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,15 +51,32 @@ public record PersonSummaryResponse(
 			Integer menteeCapacity,
 			String meetingMode,
 			long activeMenteeCount,
-			long completedMentorshipCount) {
+			long completedMentorshipCount,
+			Availability availability) {
 
-		public static Mentor of(MentorProfileResponse profile) {
+		public static Mentor of(MentorProfileResponse profile, Availability availability) {
 			return new Mentor(profile.professionalTitle(), profile.company(), profile.about(),
 					profile.experienceLevel(), profile.sectorExperience(), profile.startupStages(),
 					profile.specialties(), profile.offerings(), profile.languages(), profile.experiences(),
 					profile.educations(), profile.menteeCapacity(), profile.meetingMode(),
-					profile.activeMenteeCount(), profile.completedMentorshipCount());
+					profile.activeMenteeCount(), profile.completedMentorshipCount(), availability);
 		}
+	}
+
+	/**
+	 * The times a mentor opened for meetings: weekly windows, upcoming days off (dates only, the mentor's reason
+	 * stays private) and the next one-off slots outside the weekly windows.
+	 */
+	public record Availability(List<WeeklyWindow> weekly, List<DayOff> daysOff, List<ExtraSlot> extraSlots) {
+	}
+
+	public record WeeklyWindow(DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime) {
+	}
+
+	public record DayOff(LocalDate startsOn, LocalDate endsOn) {
+	}
+
+	public record ExtraSlot(Instant startsAt, int durationMinutes) {
 	}
 
 	public record Startup(
