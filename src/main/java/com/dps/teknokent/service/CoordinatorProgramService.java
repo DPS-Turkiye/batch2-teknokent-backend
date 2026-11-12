@@ -212,21 +212,43 @@ public class CoordinatorProgramService {
 		return detailOf(program);
 	}
 
-	/** Replaces the program's phases with {@code inputs}, in that order. */
+	/**
+	 * Replaces the program's phases with {@code inputs}, in that order. A phase is kept, and updated in place, when
+	 * its id is sent back, so whatever points at it (Süreç assignments and rounds) stays linked; the rest are new,
+	 * and saved phases left out are deleted.
+	 */
 	public void writePhases(UUID programId, List<ReplaceProgramPhasesRequest.PhaseInput> inputs) {
 		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
 			requireOrderedDates(input.startDate(), input.endDate(), "A phase cannot end before it starts.");
 		}
-		programPhaseRepository.deleteByProgramId(programId);
-		// Hibernate runs inserts before deletes at flush; without this, reusing a position would hit
-		// uq_program_phase_position.
+		Map<UUID, ProgramPhase> saved = new HashMap<>();
+		programPhaseRepository.findByProgramIdOrderByPositionAsc(programId)
+				.forEach(phase -> saved.put(phase.getId(), phase));
+		Set<UUID> kept = new HashSet<>();
+		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
+			if (input.id() != null && saved.containsKey(input.id())) {
+				kept.add(input.id());
+			}
+		}
+		programPhaseRepository.deleteAll(saved.values().stream().filter(phase -> !kept.contains(phase.getId())).toList());
+		// Positions are unique per program and Hibernate runs inserts before updates; parking the kept phases on
+		// negative positions first lets every row take its new place without a collision.
+		int parked = -1;
+		for (UUID id : kept) {
+			saved.get(id).setPosition(parked--);
+		}
 		programPhaseRepository.flush();
 		List<ProgramPhase> phases = new ArrayList<>();
+		Set<UUID> placed = new HashSet<>();
 		int position = 0;
 		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
-			ProgramPhase phase = new ProgramPhase();
-			phase.setId(UUID.randomUUID());
-			phase.setProgramId(programId);
+			// The same id sent twice keeps the phase once; the second becomes a new phase.
+			boolean keeps = input.id() != null && kept.contains(input.id()) && placed.add(input.id());
+			ProgramPhase phase = keeps ? saved.get(input.id()) : new ProgramPhase();
+			if (!keeps) {
+				phase.setId(UUID.randomUUID());
+				phase.setProgramId(programId);
+			}
 			phase.setName(input.name().trim());
 			phase.setPosition(position++);
 			phase.setStartDate(input.startDate());

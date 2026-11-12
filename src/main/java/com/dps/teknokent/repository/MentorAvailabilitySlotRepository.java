@@ -37,4 +37,11 @@ public interface MentorAvailabilitySlotRepository extends JpaRepository<MentorAv
 			""")
 	List<UUID> findMentorIdsWithFreeSlotBetween(@Param("mentorIds") Collection<UUID> mentorIds,
 			@Param("from") Instant from, @Param("until") Instant until, @Param("booked") MeetingStatus booked);
+
+	/**
+	 * The next slots outside the weekly windows: ones the mentor added by hand, and booked ones kept after their
+	 * weekly window was removed. Callers drop the booked ones.
+	 */
+	List<MentorAvailabilitySlot> findTop20ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(
+			UUID mentorId, Instant startsAt);
 }

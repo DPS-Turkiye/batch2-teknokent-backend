@@ -72,6 +72,7 @@ public class MentorPoolService {
 	private final MailService mailService;
 	private final ProgramEligibilityService programEligibilityService;
 	private final BadgeService badgeService;
+	private final EditionService editionService;
 
 
 	@Transactional(readOnly = true)
@@ -231,7 +232,8 @@ public class MentorPoolService {
 		if (!added.isEmpty()) {
 			List<Program> programs = programRepository.findAllById(added);
 			if (programs.size() != added.size()
-					|| programs.stream().anyMatch(program -> program.getStatus() != ProgramStatus.ACTIVE)) {
+					|| programs.stream().anyMatch(program -> program.getStatus() != ProgramStatus.ACTIVE
+							|| !editionService.serves(program))) {
 				throw new InvalidRequestException(Texts.forRequest("error.programNotOpen"));
 			}
 			programs.forEach(program -> programEligibilityService.requirePerson(program, mentor.getEmail()));
