@@ -1,13 +1,21 @@
 package com.dps.teknokent.service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.MeetingMode;
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
@@ -28,7 +37,9 @@ import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
 import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
+import com.dps.teknokent.dto.responses.PeerCategoryCountResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
+import com.dps.teknokent.dto.responses.PeerMentorDetailResponse;
 import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -43,10 +54,12 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
+import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -63,6 +76,9 @@ public class PeerMentoringService {
 	private static final Set<MentorshipRequestStatus> OPEN = EnumSet.of(MentorshipRequestStatus.PENDING,
 			MentorshipRequestStatus.MORE_INFO_REQUESTED, MentorshipRequestStatus.COUNTER_PROPOSED);
 	private static final Locale TR = Locale.forLanguageTag("tr");
+	/** "Bu hafta müsait": a free slot within the next seven days. */
+	static final Duration THIS_WEEK = Duration.ofDays(7);
+	private static final Pattern WEB_LINK = Pattern.compile("^https?://\\S+$", Pattern.CASE_INSENSITIVE);
 
 	private final DomainLookupService domainLookupService;
 	private final InstitutionDirectoryService institutionDirectoryService;
@@ -78,10 +94,16 @@ public class PeerMentoringService {
 	private final ProgramPeerCategoryService programPeerCategoryService;
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramRepository programRepository;
+	private final MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
 
-	/** The peer mentors of the student's program, the student left out; empty for a student in no program. */
+	/**
+	 * The peer mentors of the student's program, the student left out; empty for a student in no program. A
+	 * sub-topic keeps the mentors who offer it; {@code availableThisWeek} keeps those with a free slot in {@link
+	 * #THIS_WEEK}.
+	 */
 	@Transactional(readOnly = true)
-	public List<PeerMentorCardResponse> mentors(UUID actorId, PeerTopicCategory category, String query) {
+	public List<PeerMentorCardResponse> mentors(UUID actorId, PeerTopicCategory category, String query,
+			String subTopic, boolean availableThisWeek) {
 		AppUser student = requireStudent(actorId);
 		Set<PeerTopicCategory> active = activeForStudent(student);
 		if (category != null && !active.contains(category)) {
@@ -89,11 +111,54 @@ public class PeerMentoringService {
 		}
 		String department = departmentOf(student.getId(), null);
 		String needle = query == null || query.isBlank() ? null : query.trim().toLowerCase(TR);
-		return peerMentorsFor(student).stream()
-				.map(profile -> toCard(profile, department, active))
+		String wantedSubTopic = blankToNull(subTopic);
+		List<MentorProfileResponse> mentors = peerMentorsFor(student, null).stream()
+				.filter(profile -> wantedSubTopic == null || offers(profile, wantedSubTopic))
+				.toList();
+		Set<UUID> free = freeThisWeek(mentors);
+		return mentors.stream()
+				.map(profile -> toCard(profile, department, active, free.contains(profile.id())))
 				.filter(card -> !card.categories().isEmpty())
 				.filter(card -> category == null || card.categories().contains(category))
+				.filter(card -> !availableThisWeek || card.availableThisWeek())
 				.filter(card -> needle == null || matches(card, needle))
+				.toList();
+	}
+
+	/**
+	 * One peer mentor's profile page, for a student of the same program: the same mentors the directory lists, so a
+	 * mentor outside the program, the student themselves, or one with no active category is not found.
+	 */
+	@Transactional(readOnly = true)
+	public PeerMentorDetailResponse mentor(UUID actorId, UUID mentorId) {
+		AppUser student = requireStudent(actorId);
+		Set<PeerTopicCategory> active = activeForStudent(student);
+		MentorProfileResponse profile = peerMentorsFor(student, mentorId).stream()
+				.findFirst()
+				.orElseThrow(() -> mentorNotFound(mentorId));
+		PeerMentorCardResponse card = toCard(profile, departmentOf(student.getId(), null), active,
+				!freeThisWeek(List.of(profile)).isEmpty());
+		if (card.categories().isEmpty()) {
+			throw mentorNotFound(mentorId);
+		}
+		return PeerMentorDetailResponse.of(card, profile,
+				webLinkOrNull(domainLookupService.requireUser(mentorId).getLinkedinUrl()),
+				mentorProfileService.findAvailabilityRules(mentorId));
+	}
+
+	/** For each category active in the student's program, how many of its peer mentors offer it. */
+	@Transactional(readOnly = true)
+	public List<PeerCategoryCountResponse> mentorCounts(UUID actorId) {
+		AppUser student = requireStudent(actorId);
+		Set<PeerTopicCategory> active = activeForStudent(student);
+		Map<PeerTopicCategory, Long> counts = peerMentorsFor(student, null).stream()
+				.flatMap(profile -> offeredCategories(profile.specialties(), active).stream())
+				.collect(Collectors.groupingBy(Function.identity(), () -> new EnumMap<>(PeerTopicCategory.class),
+						Collectors.counting()));
+		return active.stream()
+				.sorted()
+				.map(category -> new PeerCategoryCountResponse(category,
+						counts.getOrDefault(category, 0L).intValue()))
 				.toList();
 	}
 
@@ -135,8 +200,7 @@ public class PeerMentoringService {
 		if (student.getId().equals(request.mentorId())) {
 			throw new InvalidRequestException(Texts.forRequest("error.selfMentorshipRequest"));
 		}
-		MentorProfileResponse mentorProfile = peerMentorsFor(student).stream()
-				.filter(profile -> profile.id().equals(request.mentorId()))
+		MentorProfileResponse mentorProfile = peerMentorsFor(student, request.mentorId()).stream()
 				.findFirst()
 				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.peerMentorOutsideProgram")));
 		if (!offeredCategories(mentorProfile.specialties(), activeForStudent(student)).contains(request.category())) {
@@ -228,15 +292,57 @@ public class PeerMentoringService {
 		return value == null || value.isBlank() ? null : value.trim();
 	}
 
-	private List<MentorProfileResponse> peerMentorsFor(AppUser student) {
+	/**
+	 * The peer mentors of the student's program, the student left out; with {@code onlyMentorId}, at most that one, so a
+	 * single profile counts mentees and meetings for that mentor alone.
+	 */
+	private List<MentorProfileResponse> peerMentorsFor(AppUser student, UUID onlyMentorId) {
 		Optional<UUID> program = menteeProgramService.programOf(student);
 		if (program.isEmpty()) {
 			return List.of();
 		}
-		return mentorProfileService
-				.findAmongExcept(menteeProgramService.acceptedMentorIds(program.get()), student.getId()).stream()
+		Set<UUID> accepted = menteeProgramService.acceptedMentorIds(program.get());
+		Set<UUID> wanted = onlyMentorId == null ? accepted
+				: accepted.contains(onlyMentorId) ? Set.of(onlyMentorId) : Set.of();
+		if (wanted.isEmpty()) {
+			return List.of();
+		}
+		return mentorProfileService.findAmongExcept(wanted, student.getId()).stream()
 				.filter(profile -> isPeerMentor(domainLookupService.requireUser(profile.id())))
 				.toList();
+	}
+
+	/** Compared the way the text search is, with Turkish case rules ("İ" and "ı"). */
+	private static boolean offers(MentorProfileResponse profile, String subTopic) {
+		String wanted = subTopic.toLowerCase(TR);
+		return profile.offerings() != null
+				&& profile.offerings().stream().anyMatch(offered -> offered.trim().toLowerCase(TR).equals(wanted));
+	}
+
+	/**
+	 * The mentors among these with a free slot in the next {@link #THIS_WEEK} that can still be booked, i.e. no sooner
+	 * than the booking lead; one query for the whole list.
+	 */
+	private Set<UUID> freeThisWeek(Collection<MentorProfileResponse> mentors) {
+		if (mentors.isEmpty()) {
+			return Set.of();
+		}
+		Instant now = Instant.now();
+		return Set.copyOf(mentorAvailabilitySlotRepository.findMentorIdsWithFreeSlotBetween(
+				mentors.stream().map(MentorProfileResponse::id).toList(), now.plus(MeetingSlotTimes.MIN_BOOKING_LEAD),
+				now.plus(THIS_WEEK), MeetingStatus.SCHEDULED));
+	}
+
+	/**
+	 * Only the peer wizard checks that the LinkedIn address is a web link; sign-up and the profile form do not, so
+	 * anything else is held back rather than handed to another student's browser.
+	 */
+	private static String webLinkOrNull(String url) {
+		return url != null && WEB_LINK.matcher(url.trim()).matches() ? url.trim() : null;
+	}
+
+	private static ResourceNotFoundException mentorNotFound(UUID mentorId) {
+		return new ResourceNotFoundException("Peer mentor not found: " + mentorId);
 	}
 
 	/** Package-private for the student workspace's other services, so they share one notion of an ODTÜ student. */
@@ -303,7 +409,7 @@ public class PeerMentoringService {
 
 	/** Only the categories active in the student's program show on the card. */
 	private PeerMentorCardResponse toCard(MentorProfileResponse profile, String studentDepartment,
-			Set<PeerTopicCategory> active) {
+			Set<PeerTopicCategory> active, boolean availableThisWeek) {
 		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(profile.id());
 		String fallbackDepartment = profile.studentProfile() == null ? null : profile.studentProfile().department();
 		String department = person.map(InstitutionPerson::getDepartmentName).orElse(fallbackDepartment);
@@ -318,7 +424,7 @@ public class PeerMentoringService {
 				: List.of();
 		boolean full = profile.menteeCapacity() != null && profile.activeMenteeCount() >= profile.menteeCapacity();
 		return new PeerMentorCardResponse(profile.id(), profile.fullName(), department, classYear, categories, helpWith,
-				reasons, full, badgeService.publicOf(profile.id()));
+				reasons, full, badgeService.publicOf(profile.id()), availableThisWeek);
 	}
 
 	private PeerMentoringRequestResponse toResponse(MentorshipRequest request) {
