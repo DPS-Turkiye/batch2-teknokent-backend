@@ -13,7 +13,8 @@ public record CreateStartupRoundRequest(
 		@NotNull UUID actorId,
 		@NotBlank @Size(max = 255) String title,
 		@NotBlank @Size(max = 255) String name,
-		@NotNull StartupStage stage,
+		StartupStage stage,
 		@NotNull LocalDate startsOn,
-		@NotNull LocalDate endsOn) {
+		@NotNull LocalDate endsOn,
+		UUID phaseId) {
 }

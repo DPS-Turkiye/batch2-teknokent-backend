@@ -18,19 +18,27 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.dps.teknokent.domain.MeetingBotEndReason;
+import com.dps.teknokent.domain.MeetingBotState;
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
 import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
+import com.dps.teknokent.dto.provider.ProviderBotSummary;
 import com.dps.teknokent.dto.provider.ProviderRunningBot;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.requests.AddBotRequest;
+import com.dps.teknokent.dto.responses.AddBotResponse;
+import com.dps.teknokent.dto.responses.BotStateResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -57,6 +65,7 @@ class AssistantServiceTest {
 
   private static final String URL = "https://meet.google.com/abc-defg-hij";
   private static final UUID CALLER = UUID.randomUUID();
+  private static final java.time.Instant REQUESTED_AT = java.time.Instant.parse("2026-11-11T20:03:06Z");
 
   private void allowed() {
     when(accessService.requireAccess(CALLER, "google_meet", "abc-defg-hij"))
@@ -103,15 +112,139 @@ class AssistantServiceTest {
   }
 
   @Test
-  void addAdHocBotLetsTheSameMeetingThroughWhenItsBotIsAlreadyRunning() {
+  void addAdHocBotReturnsTheBotAlreadyInTheMeetingInsteadOfSendingAnother() {
     allowed();
     running("abc-defg-hij", "ddd-eeee-fff");
+    when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderBotSummary(49L, "google_meet", "abc-defg-hij", "awaiting_admission", null, null));
+
+    AddBotResponse response = assistantService.addAdHocBot(CALLER, new AddBotRequest(URL));
+
+    assertThat(response.id()).isEqualTo("49");
+    assertThat(response.status()).isEqualTo("awaiting_admission");
+    verify(providerClient, never()).sendBot(any(), any(), any());
+  }
+
+  @Test
+  void addAdHocBotSendsAgainWhenTheRunningBotIsNotFoundInTheList() {
+    allowed();
+    running("abc-defg-hij");
+    when(providerClient.findLatestBot("google_meet", "abc-defg-hij")).thenReturn(null);
     when(providerClient.sendBot("google_meet", "abc-defg-hij", URL))
         .thenReturn(new ProviderBotResponse("bot-1", "requested", "New meeting bot"));
 
-    assistantService.addAdHocBot(CALLER, new AddBotRequest(URL));
+    assertThat(assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)).id()).isEqualTo("bot-1");
+  }
 
-    verify(providerClient).sendBot("google_meet", "abc-defg-hij", URL);
+  @Test
+  void addAdHocBotReturnsTheExistingBotWhenTheProviderRefusesADuplicate() {
+    allowed();
+    running();
+    when(capacityService.capacity()).thenReturn(3);
+    when(providerClient.sendBot("google_meet", "abc-defg-hij", URL)).thenThrow(conflict());
+    when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "joining", null, null));
+
+    assertThat(assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)).id()).isEqualTo("51");
+  }
+
+  @Test
+  void addAdHocBotSaysTheBotIsBusyWhenTheProviderRefusesAndNoBotHoldsThisMeeting() {
+    allowed();
+    running();
+    when(capacityService.capacity()).thenReturn(3);
+    when(providerClient.sendBot("google_meet", "abc-defg-hij", URL)).thenThrow(conflict());
+    when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderBotSummary(50L, "google_meet", "abc-defg-hij", "failed", "stopped", null));
+
+    assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
+        .isInstanceOf(ConflictException.class)
+        .hasMessageContaining("başka bir görüşmede");
+  }
+
+  @Test
+  void addAdHocBotPassesOtherProviderErrorsOn() {
+    allowed();
+    running();
+    when(capacityService.capacity()).thenReturn(3);
+    when(providerClient.sendBot("google_meet", "abc-defg-hij", URL)).thenThrow(HttpServerErrorException.create(
+        HttpStatus.SERVICE_UNAVAILABLE, "Service Unavailable", HttpHeaders.EMPTY, new byte[0], null));
+
+    assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
+        .isInstanceOf(HttpServerErrorException.class);
+    verify(providerClient, never()).findLatestBot(any(), any());
+  }
+
+  @Test
+  void botStateIsNoneWhenTheProviderHasNoBotForTheMeeting() {
+    allowed();
+    when(providerClient.findLatestBot("google_meet", "abc-defg-hij")).thenReturn(null);
+
+    BotStateResponse state = assistantService.botState(CALLER, "google_meet", "abc-defg-hij");
+
+    assertThat(state.state()).isEqualTo(MeetingBotState.NONE);
+    assertThat(state.endReason()).isNull();
+  }
+
+  @Test
+  void botStateShowsABotWaitingInTheLobbyWithoutAnEndReason() {
+    allowed();
+    when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "awaiting_admission", "stale", REQUESTED_AT));
+
+    BotStateResponse state = assistantService.botState(CALLER, "google_meet", "abc-defg-hij");
+
+    assertThat(state.state()).isEqualTo(MeetingBotState.WAITING_FOR_ADMISSION);
+    assertThat(state.endReason()).isNull();
+    assertThat(state.requestedAt()).isEqualTo(REQUESTED_AT);
+  }
+
+  @Test
+  void botStateGivesTheReasonAFailedBotEnded() {
+    allowed();
+    when(providerClient.findLatestBot("google_meet", "abc-defg-hij"))
+        .thenReturn(new ProviderBotSummary(51L, "google_meet", "abc-defg-hij", "failed", "join_failure", null));
+
+    BotStateResponse state = assistantService.botState(CALLER, "google_meet", "abc-defg-hij");
+
+    assertThat(state.state()).isEqualTo(MeetingBotState.FAILED);
+    assertThat(state.endReason()).isEqualTo(MeetingBotEndReason.JOIN_FAILED);
+  }
+
+  @Test
+  void botStateOfAMeetingTheCallerIsNotInIsNotRead() {
+    doThrow(new ResourceNotFoundException("Meeting not found."))
+        .when(accessService).requireAccess(CALLER, "google_meet", "zzz-zzzz-zzz");
+
+    assertThatThrownBy(() -> assistantService.botState(CALLER, "google_meet", "zzz-zzzz-zzz"))
+        .isInstanceOf(ResourceNotFoundException.class);
+    verify(providerClient, never()).findLatestBot(any(), any());
+  }
+
+  @Test
+  void stopBotTreatsANotFoundBotAsAlreadyStopped() {
+    doThrow(HttpClientErrorException.create(
+        HttpStatus.NOT_FOUND, "Not Found", HttpHeaders.EMPTY, new byte[0], null))
+        .when(providerClient).stopBot("google_meet", "abc-defg-hij");
+
+    assistantService.stopBot("google_meet", "abc-defg-hij");
+
+    verify(providerClient).stopBot("google_meet", "abc-defg-hij");
+  }
+
+  @Test
+  void stopBotPassesOtherProviderErrorsOn() {
+    doThrow(HttpServerErrorException.create(
+        HttpStatus.BAD_GATEWAY, "Bad Gateway", HttpHeaders.EMPTY, new byte[0], null))
+        .when(providerClient).stopBot("google_meet", "abc-defg-hij");
+
+    assertThatThrownBy(() -> assistantService.stopBot("google_meet", "abc-defg-hij"))
+        .isInstanceOf(HttpServerErrorException.class);
+  }
+
+  private static HttpClientErrorException conflict() {
+    return HttpClientErrorException.create(
+        HttpStatus.CONFLICT, "Conflict", HttpHeaders.EMPTY, new byte[0], null);
   }
 
   @Test

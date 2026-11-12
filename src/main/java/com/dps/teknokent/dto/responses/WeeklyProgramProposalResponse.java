@@ -33,7 +33,10 @@ public record WeeklyProgramProposalResponse(
 	public record Warning(WeeklyProgramWarning code, List<Integer> weeks) {
 	}
 
-	/** {@code currentWeek} is null until the program starts; once set, saving can keep the past. */
+	/**
+	 * {@code currentWeek} is the first week a keep-past save replaces: the running week, or {@code totalWeeks + 1}
+	 * once the program has ended. It is null until the program starts; once set, saving can keep the past.
+	 */
 	public record Existing(int phaseCount, int weekCount, Integer currentWeek) {
 	}
 }

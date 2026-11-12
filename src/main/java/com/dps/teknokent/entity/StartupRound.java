@@ -45,9 +45,14 @@ public class StartupRound {
 	@Column(nullable = false)
 	private String name;
 
+	// No longer written; the column is dropped in a later release.
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 32)
+	@Column(length = 32)
 	private StartupStage stage;
+
+	/** The program phase the round belongs to; without one it is placed by its start. */
+	@Column(name = "program_phase_id")
+	private UUID programPhaseId;
 
 	@Column(name = "starts_on", nullable = false)
 	private LocalDate startsOn;
