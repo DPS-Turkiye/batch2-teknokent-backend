@@ -150,9 +150,10 @@ public class OfficeHoursBookingService {
 
 	/**
 	 * The request itself, once the caller may send it: in a course for Moodle, or with no course from Menton.
-	 * Same times, lead and student-limit rules either way.
+	 * Same times, lead and student-limit rules either way. Checks no access: the caller must have.
 	 */
-	OfficeHoursRequest createRequest(UUID studentId, UUID courseId, CreateOfficeHoursRequest submission) {
+	@Transactional
+	public OfficeHoursRequest createRequest(UUID studentId, UUID courseId, CreateOfficeHoursRequest submission) {
 		List<String> slots = submission.preferredSlots().stream().distinct().toList();
 		requireBookable(slots);
 		Instant now = clock.instant();
@@ -179,7 +180,9 @@ public class OfficeHoursBookingService {
 	}
 
 	/** The academic's answer to a request the caller has already found; only its own academic may answer. */
-	OfficeHoursRequest decide(OfficeHoursRequest request, UUID instructorId, DecideOfficeHoursRequest decision) {
+	@Transactional
+	public OfficeHoursRequest decide(OfficeHoursRequest request, UUID instructorId,
+			DecideOfficeHoursRequest decision) {
 		if (!request.getInstructorId().equals(instructorId)) {
 			throw forbidden("Only the academic the request was sent to can answer it.");
 		}
@@ -235,7 +238,9 @@ public class OfficeHoursBookingService {
 	}
 
 	/** The student takes one of the academic's other times, on a request already known to be theirs. */
-	OfficeHoursRequest acceptProposedSlot(OfficeHoursRequest request, AcceptOfficeHoursSlotRequest acceptance) {
+	@Transactional
+	public OfficeHoursRequest acceptProposedSlot(OfficeHoursRequest request,
+			AcceptOfficeHoursSlotRequest acceptance) {
 		if (request.getStatus() != OfficeHoursRequestStatus.COUNTER_PROPOSED) {
 			throw new InvalidRequestException("Only counter-proposed requests can accept a slot");
 		}
@@ -266,7 +271,8 @@ public class OfficeHoursBookingService {
 	}
 
 	/** The student takes back a request already known to be theirs, while it is still open. */
-	OfficeHoursRequest withdraw(OfficeHoursRequest request) {
+	@Transactional
+	public OfficeHoursRequest withdraw(OfficeHoursRequest request) {
 		if (!OPEN.contains(request.getStatus())) {
 			throw new InvalidRequestException("Only an unanswered request can be withdrawn");
 		}

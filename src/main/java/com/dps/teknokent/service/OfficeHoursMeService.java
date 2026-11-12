@@ -1,6 +1,10 @@
 package com.dps.teknokent.service;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -62,6 +66,9 @@ import com.dps.teknokent.util.TextUtils;
 @Service
 public class OfficeHoursMeService {
 
+	/** How far back the academician's calendar reaches. */
+	private static final Duration MEETING_HISTORY = Duration.ofDays(180);
+
 	private static final Set<OfficeHoursRequestStatus> ANSWERABLE = Set.of(OfficeHoursRequestStatus.PENDING,
 			OfficeHoursRequestStatus.MORE_INFO_REQUESTED);
 
@@ -117,7 +124,7 @@ public class OfficeHoursMeService {
 	public OfficeHoursAvailabilityResponse saveAvailability(UUID accountId,
 			UpdateOfficeHoursAvailabilityRequest request) {
 		InstitutionPerson record = requireAcademic(accountId);
-		return availabilityService.write(personFor(accountId, record).getId(), request);
+		return availabilityService.write(academicianFor(accountId, record), request);
 	}
 
 	@Transactional(readOnly = true)
@@ -130,15 +137,12 @@ public class OfficeHoursMeService {
 	@Transactional
 	public OfficeHoursProfileResponse saveProfile(UUID accountId, UpdateOfficeHoursProfileRequest request) {
 		InstitutionPerson record = requireAcademic(accountId);
-		UUID instructorId = personFor(accountId, record).getId();
-		OfficeHoursSettings settings = settingsRepository.findById(instructorId).orElseGet(() -> {
-			OfficeHoursSettings created = new OfficeHoursSettings();
-			created.setInstructorId(instructorId);
-			return created;
-		});
+		UUID instructorId = academicianFor(accountId, record);
+		OfficeHoursSettings settings = settingsRepository.findById(instructorId)
+				.orElseThrow(() -> new IllegalStateException("Office-hours settings missing"));
 		settings.setListed(request.listed());
 		settings.setDefaultPlace(TextUtils.normalizeOptional(request.defaultPlace()));
-		settings.setOnlineLink(TextUtils.normalizeOptional(request.onlineLink()));
+		settings.setOnlineLink(webLink(request.onlineLink()));
 		settings.setContactEmail(TextUtils.normalizeOptional(request.contactEmail()));
 		settings.setUpdatedAt(clock.instant());
 		return profileOf(settingsRepository.saveAndFlush(settings));
@@ -149,7 +153,7 @@ public class OfficeHoursMeService {
 	public List<OfficeHoursInboxRequestResponse> inbox(UUID accountId) {
 		requireAcademic(accountId);
 		return existing(accountId)
-				.map(person -> inboxItems(requestRepository.findByInstructorIdOrderByCreatedAtDesc(person.getId())))
+				.map(person -> inboxItems(requestRepository.findTop200ByInstructorIdOrderByCreatedAtDesc(person.getId())))
 				.orElse(List.of());
 	}
 
@@ -158,7 +162,7 @@ public class OfficeHoursMeService {
 		requireAcademic(accountId);
 		UUID instructorId = existing(accountId).map(OfficeHoursUser::getId)
 				.orElseThrow(OfficeHoursMeService::requestNotFound);
-		OfficeHoursRequest request = requestRepository.findById(requestId)
+		OfficeHoursRequest request = requestRepository.findForUpdate(requestId)
 				.filter(found -> found.getInstructorId().equals(instructorId))
 				.orElseThrow(OfficeHoursMeService::requestNotFound);
 		if (!allowedActions(request).contains(answer.action())) {
@@ -169,7 +173,7 @@ public class OfficeHoursMeService {
 		return inboxItems(List.of(bookingService.decide(request, instructorId, decision(answer)))).getFirst();
 	}
 
-	/** The academician's booked meetings, soonest first. */
+	/** The academician's booked meetings from the last half year on, soonest first. */
 	@Transactional(readOnly = true)
 	public List<OfficeHoursAcademicianMeetingResponse> meetings(UUID accountId) {
 		requireAcademic(accountId);
@@ -178,7 +182,9 @@ public class OfficeHoursMeService {
 			return List.of();
 		}
 		UUID instructorId = person.get().getId();
-		List<OfficeHoursMeeting> meetings = meetingRepository.findByInstructorIdOrderByScheduledAtAsc(instructorId);
+		List<OfficeHoursMeeting> meetings = meetingRepository
+				.findByInstructorIdAndScheduledAtAfterOrderByScheduledAtAsc(instructorId,
+						clock.instant().minus(MEETING_HISTORY));
 		if (meetings.isEmpty()) {
 			return List.of();
 		}
@@ -226,6 +232,38 @@ public class OfficeHoursMeService {
 			userRepository.save(person);
 		}
 		return person;
+	}
+
+	/** The academician's office-hours id, with their settings row in place for the save that follows. */
+	private UUID academicianFor(UUID accountId, InstitutionPerson record) {
+		UUID instructorId = personFor(accountId, record).getId();
+		OfficeHoursSettings defaults = new OfficeHoursSettings();
+		settingsRepository.insertIfAbsent(instructorId, defaults.getDefaultMeetingDurationMinutes(),
+				defaults.getMeetingBufferMinutes(), clock.instant());
+		return instructorId;
+	}
+
+	/**
+	 * The online meeting link students will open: a web address with a real host and no user name or password in
+	 * it, so it cannot pass for a different site.
+	 */
+	private static String webLink(String value) {
+		String link = TextUtils.normalizeOptional(value);
+		if (link == null) {
+			return null;
+		}
+		try {
+			URI uri = new URI(link);
+			String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+			String host = uri.getHost();
+			if ((scheme.equals("https") || scheme.equals("http")) && host != null && host.contains(".")
+					&& uri.getRawUserInfo() == null) {
+				return link;
+			}
+		} catch (URISyntaxException exception) {
+			// Falls through to the same answer as any other unusable link.
+		}
+		throw new InvalidRequestException("Online link must be a web address such as https://meet.example.com/abc");
 	}
 
 	private List<OfficeHoursInboxRequestResponse> inboxItems(List<OfficeHoursRequest> requests) {
