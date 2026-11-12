@@ -137,27 +137,6 @@ class AuthRegistrationControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
-    // A founder without a startup is refused with a code the sign-up screen can act on.
-    @Test
-    void founderRegisterWithoutAStartupAnswersWithItsCode() throws Exception {
-        when(registrationService.registerFounder(any(RegisterFounderRequest.class)))
-                .thenThrow(new InvalidRequestException("Startup adı gerekli.", RegistrationService.STARTUP_REQUIRED));
-
-        mockMvc.perform(post("/api/auth/register/founder")
-                        .with(authentication(registering("ayse@startup.com")))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "fullName": "Ayşe Demir",
-                                  "email": "ayse@startup.com",
-                                  "programId": "00000000-0000-0000-0000-0000000000aa"
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("STARTUP_REQUIRED"))
-                .andExpect(jsonPath("$.message").value("Startup adı gerekli."));
-    }
-
     @Test
     void registersFounder() throws Exception {
         UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
@@ -294,5 +273,26 @@ class AuthRegistrationControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Request validation failed"))
                 .andExpect(jsonPath("$.fieldErrors.phone").exists());
+    }
+
+    // A founder without a startup is refused with a code the sign-up screen can act on.
+    @Test
+    void founderRegisterWithoutAStartupAnswersWithItsCode() throws Exception {
+        when(registrationService.registerFounder(any(RegisterFounderRequest.class)))
+                .thenThrow(new InvalidRequestException("Startup adı gerekli.", RegistrationService.STARTUP_REQUIRED));
+
+        mockMvc.perform(post("/api/auth/register/founder")
+                        .with(authentication(registering("ayse@startup.com")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Ayşe Demir",
+                                  "email": "ayse@startup.com",
+                                  "programId": "00000000-0000-0000-0000-0000000000aa"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("STARTUP_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("Startup adı gerekli."));
     }
 }
