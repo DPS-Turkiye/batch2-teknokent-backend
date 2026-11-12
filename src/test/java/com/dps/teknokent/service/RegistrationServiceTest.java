@@ -287,7 +287,7 @@ class RegistrationServiceTest {
 
         var result = registrationService.registerFounder(new RegisterFounderRequest(
                 "Ali Veli", "e1@metu.edu.tr", null, null, null, null, PROGRAM_ID, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null));
 
         assertThat(result.individualMentee()).isTrue();
     }
@@ -301,7 +301,7 @@ class RegistrationServiceTest {
 
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ali Veli", "e1@metu.edu.tr", null, null, null, null, PROGRAM_ID, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("does not exist");
         verify(appUserRepository, never()).saveAndFlush(any());
@@ -315,7 +315,7 @@ class RegistrationServiceTest {
 
         assertThatThrownBy(() -> registrationService.registerFounder(new RegisterFounderRequest(
                 "Ayşe Demir", "ayse@startup.com", "GreenLoop", null, null, null, PROGRAM_ID, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("does not exist");
         verify(organizationRepository, never()).saveAndFlush(any());
