@@ -350,6 +350,20 @@ class PeerMentoringServiceTest {
 				.containsExactly(PeerTopicCategory.INTERNATIONAL);
 	}
 
+	@Test
+	void anAcceptedRequestCarriesWhenTheMentorshipBeganAndAnOpenOneDoesNot() {
+		Instant began = Instant.parse("2026-11-10T09:30:00Z");
+		MentorshipRequest accepted = request(UUID.randomUUID(), peerMentor, "CAREER_INTERNSHIP");
+		accepted.setStatus(MentorshipRequestStatus.ACCEPTED);
+		accepted.setAcceptedAt(began);
+		MentorshipRequest open = request(UUID.randomUUID(), peerMentor, "INTERNATIONAL");
+		when(requests.findByRequesterIdOrderByCreatedAtDesc(student.getId())).thenReturn(List.of(accepted, open));
+
+		assertThat(service.requests(student.getId(), UserRole.MENTEE))
+				.extracting(PeerMentoringRequestResponse::acceptedAt)
+				.containsExactly(began, null);
+	}
+
 	private AppUser user(String name, Set<IdentityKind> kinds, UserRole... roles) {
 		AppUser user = new AppUser();
 		user.setId(UUID.randomUUID());

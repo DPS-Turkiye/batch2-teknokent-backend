@@ -4,8 +4,11 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -103,10 +106,12 @@ public class WeeklyProgramService {
 		LocalDate today = today();
 		LocalDate start = program.getStartDate();
 		LocalDate end = program.getEndDate();
+		Map<String, UUID> savedIds = idsByName(savedPhases);
 		List<ReplaceProgramPhasesRequest.PhaseInput> phases = request.phases().stream()
 				.map(phase -> new ReplaceProgramPhasesRequest.PhaseInput(phase.name().trim(),
 						ProgramCalendar.weekStart(start, phase.firstWeek()),
-						ProgramCalendar.weekEnd(start, end, phase.lastWeek()), phase.expectedOutput()))
+						ProgramCalendar.weekEnd(start, end, phase.lastWeek()), phase.expectedOutput(),
+						savedIds.get(nameKey(phase.name()))))
 				.toList();
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = request.weeks();
 		Integer currentWeek = firstReplacedWeek(start, end, today);
@@ -122,6 +127,20 @@ public class WeeklyProgramService {
 		ProgramWeekPlanResponse plan = programWeekPlanService.writeWeeks(program, actorId, weeks);
 		coordinatorProgramService.attachSyllabus(program, actorId, request.documentId());
 		return new WeeklyProgramSavedResponse(coordinatorProgramService.detail(actorId, programId), plan);
+	}
+
+	/**
+	 * A saved phase whose name comes back keeps its id, so Süreç assignments linked to it stay linked when the plan
+	 * is read again from a file.
+	 */
+	private static Map<String, UUID> idsByName(List<ProgramPhase> saved) {
+		Map<String, UUID> ids = new HashMap<>();
+		saved.forEach(phase -> ids.putIfAbsent(nameKey(phase.getName()), phase.getId()));
+		return ids;
+	}
+
+	private static String nameKey(String name) {
+		return name.trim().toLowerCase(Locale.ROOT);
 	}
 
 	/** Weeks and phases are only placed on a calendar, so the program needs both dates first. */
@@ -166,7 +185,7 @@ public class WeeklyProgramService {
 		for (ProgramPhase phase : saved) {
 			if (phase.getEndDate() != null && phase.getEndDate().isBefore(today)) {
 				phases.add(new ReplaceProgramPhasesRequest.PhaseInput(phase.getName(), phase.getStartDate(),
-						phase.getEndDate(), phase.getExpectedOutput()));
+						phase.getEndDate(), phase.getExpectedOutput(), phase.getId()));
 				keptUntil = keptUntil == null || phase.getEndDate().isAfter(keptUntil) ? phase.getEndDate() : keptUntil;
 			}
 		}
@@ -181,7 +200,7 @@ public class WeeklyProgramService {
 				continue;
 			}
 			phases.add(new ReplaceProgramPhasesRequest.PhaseInput(phase.name(), start, phase.endDate(),
-					phase.expectedOutput()));
+					phase.expectedOutput(), phase.id()));
 		}
 		return phases;
 	}

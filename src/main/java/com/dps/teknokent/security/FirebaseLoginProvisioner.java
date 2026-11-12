@@ -1,6 +1,8 @@
 package com.dps.teknokent.security;
 
+import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -35,6 +37,8 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	private final FirebaseAuth firebaseAuth;
 
+	private static final SecureRandom RANDOM = new SecureRandom();
+
 	public FirebaseLoginProvisioner(FirebaseAuth firebaseAuth) {
 		this.firebaseAuth = firebaseAuth;
 	}
@@ -42,7 +46,9 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	@Override
 	public String loginFor(String email, String displayName) {
 		try {
-			return firebaseAuth.getUserByEmail(email).getUid();
+			UserRecord existing = firebaseAuth.getUserByEmail(email);
+			lockOutIfUnverified(existing);
+			return existing.getUid();
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() != AuthErrorCode.USER_NOT_FOUND) {
 				throw loginUnavailable(email, exception);
@@ -60,6 +66,23 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 			}
 			throw loginUnavailable(email, exception);
 		}
+	}
+
+	/**
+	 * Anyone can create an unverified Firebase login for any address, so a login that never proved the address may
+	 * belong to someone other than the person being made a coordinator. Its password is replaced with a random one
+	 * and its sessions are ended; the real owner sets a password through the setup link we mail.
+	 */
+	private void lockOutIfUnverified(UserRecord login) throws FirebaseAuthException {
+		if (login.isEmailVerified()) {
+			return;
+		}
+		byte[] secret = new byte[32];
+		RANDOM.nextBytes(secret);
+		firebaseAuth.updateUser(new UserRecord.UpdateRequest(login.getUid())
+				.setPassword(Base64.getUrlEncoder().withoutPadding().encodeToString(secret)));
+		firebaseAuth.revokeRefreshTokens(login.getUid());
+		log.warn("Locked out an unverified Firebase login before linking it to a coordinator: {}", login.getUid());
 	}
 
 	/**

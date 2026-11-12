@@ -58,6 +58,11 @@ import com.dps.teknokent.util.Texts;
 @RequiredArgsConstructor
 public class RegistrationService {
 
+	/** Sign-up met an address that already has an account; the client sends the person to sign in. */
+	public static final String EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED";
+	/** This Firebase login already belongs to an account. */
+	public static final String ACCOUNT_ALREADY_REGISTERED = "ACCOUNT_ALREADY_REGISTERED";
+
 	private final AppUserRepository appUserRepository;
 	private final OrganizationRepository organizationRepository;
 	private final MentorProfileRepository mentorProfileRepository;
@@ -72,21 +77,24 @@ public class RegistrationService {
 	private final InviteCodeGenerator inviteCodeGenerator;
 	private final TeamMembershipService teamMembershipService;
 	private final NotificationService notificationService;
+	private final EmailDomainPolicy emailDomainPolicy;
 	private final ProgramEligibilityService programEligibilityService;
+	private final EditionService editionService;
+
+	/** A founder signs up with a startup; there is no "create it later" any more. */
+	public static final String STARTUP_REQUIRED = "STARTUP_REQUIRED";
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
 		String email = requireUniqueEmail(request.email());
+		requireEditionProgram(request.programId());
 		programEligibilityService.requirePerson(request.programId(), email);
 		boolean individual = isIndividualProgram(request.programId());
-		if (!individual && Boolean.TRUE.equals(request.startupLater())) {
-			return registerWithoutStartup(request, email);
-		}
 		// In an individual-mentee program (İŞKUR) each student is a team of one, named after them, so requests,
 		// matching and meetings work unchanged without the student creating a startup.
 		String organizationName = individual ? request.fullName() : request.organizationName();
 		if (TextUtils.normalizeOptional(organizationName) == null) {
-			throw new InvalidRequestException("The startup name is required.");
+			throw new InvalidRequestException(Texts.forRequest("error.startupRequired"), STARTUP_REQUIRED);
 		}
 
 		Organization organization = new Organization();
@@ -117,22 +125,6 @@ public class RegistrationService {
 	private boolean isIndividualProgram(UUID programId) {
 		return programId != null
 				&& programRepository.findById(programId).map(Program::isIndividualMentees).orElse(false);
-	}
-
-	/**
-	 * "Startup'ı daha sonra oluşturacağım": the person waits for the program's coordinator like a founder does, then
-	 * joins or creates a startup from /startup.
-	 */
-	private UserResponse registerWithoutStartup(RegisterFounderRequest request, String email) {
-		requireProgram(request.programId());
-		AppUser person = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
-				UserAccountStatus.PENDING, null);
-		applyProfileFields(person, request);
-		person.setProgramId(request.programId());
-		applyFirebaseIdentity(person, email);
-		appUserRepository.saveAndFlush(person);
-		discardOnboardingDraft();
-		return UserResponse.fromEntity(person);
 	}
 
 	/** "Kodum var" on /startup: joins at once, but only a startup of the person's own program. */
@@ -199,6 +191,7 @@ public class RegistrationService {
 					"This code is for the team's lead; members can use it once the lead has joined.");
 		}
 		requireLaunched(invite.getProgramId());
+		requireEditionProgram(invite.getProgramId());
 		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		Organization organization = new Organization();
 		organization.setName(invite.getTeamName());
@@ -297,6 +290,16 @@ public class RegistrationService {
 		programRepository.findById(programId).ifPresent(ProgramDrafts::requireLaunched);
 	}
 
+	/** A program of the other edition's type reads as missing, as it would on that edition's own deployment. */
+	private void requireEditionProgram(UUID programId) {
+		boolean otherEdition = programId != null && programRepository.findById(programId)
+				.filter(program -> !editionService.serves(program))
+				.isPresent();
+		if (otherEdition) {
+			throw new InvalidRequestException("The selected program does not exist.");
+		}
+	}
+
 	private void requireProgram(UUID programId) {
 		if (programId == null) {
 			throw new InvalidRequestException("A program is required.");
@@ -337,6 +340,7 @@ public class RegistrationService {
 			throw new InvalidRequestException(Texts.forRequest("error.programInviteWrongEmail"));
 		}
 		requireLaunched(invite.getProgramId());
+		requireEditionProgram(invite.getProgramId());
 		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		return Optional.of(invite);
 	}
@@ -392,9 +396,17 @@ public class RegistrationService {
 	}
 
 	private void applyFirebaseIdentity(AppUser user, String email) {
+		requireOwnVerifiedLogin(email).ifPresent(identity -> user.setFirebaseUid(identity.uid()));
+	}
+
+	/**
+	 * The signed-in login must be this address's own, verified, and not yet registered. Runs before anything
+	 * answers about the address, so a login cannot ask whether someone else's address has an account.
+	 */
+	private Optional<FirebaseIdentity> requireOwnVerifiedLogin(String email) {
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication == null || !(authentication.getPrincipal() instanceof FirebaseIdentity identity)) {
-			return;
+			return Optional.empty();
 		}
 		if (!email.equalsIgnoreCase(identity.email())) {
 			throw new InvalidRequestException("Email does not match the signed-in account.");
@@ -404,9 +416,10 @@ public class RegistrationService {
 			throw new InvalidRequestException("Verify your email address before registering.");
 		}
 		if (appUserRepository.findByFirebaseUid(identity.uid()).isPresent()) {
-			throw new InvalidRequestException("This account is already registered.");
+			throw new InvalidRequestException(Texts.forRequest("error.accountAlreadyRegistered"),
+					ACCOUNT_ALREADY_REGISTERED);
 		}
-		user.setFirebaseUid(identity.uid());
+		return Optional.of(identity);
 	}
 
 	private void discardOnboardingDraft() {
@@ -419,8 +432,11 @@ public class RegistrationService {
 
 	private String requireUniqueEmail(String rawEmail) {
 		String email = TextUtils.trim(rawEmail);
+		requireOwnVerifiedLogin(email);
+		emailDomainPolicy.requireAllowed(email);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
-			throw new InvalidRequestException("A user with this email already exists.");
+			throw new InvalidRequestException(Texts.forRequest("error.emailAlreadyRegistered"),
+					EMAIL_ALREADY_REGISTERED);
 		}
 		return email;
 	}

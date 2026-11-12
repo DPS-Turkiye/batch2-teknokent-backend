@@ -249,8 +249,8 @@ class WeeklyProgramServiceTest {
 
 		verify(coordinatorProgramService).writePhases(PROGRAM_ID, List.of(
 				new ReplaceProgramPhasesRequest.PhaseInput("Problem", START, LocalDate.of(2026, 11, 16),
-						"Problem tanımı"),
-				new ReplaceProgramPhasesRequest.PhaseInput("Fikir", LocalDate.of(2026, 11, 17), END, null)));
+						"Problem tanımı", null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Fikir", LocalDate.of(2026, 11, 17), END, null, null)));
 		verify(programWeekPlanService).writeWeeks(program, COORDINATOR_ID, weeks);
 		verify(coordinatorProgramService).attachSyllabus(program, COORDINATOR_ID, DOCUMENT_ID);
 	}
@@ -368,19 +368,19 @@ class WeeklyProgramServiceTest {
 				List.of(phase("Keşif", START, LocalDate.of(2026, 11, 9)),
 						phase("Şimdiki", LocalDate.of(2026, 11, 10), LocalDate.of(2026, 11, 30))),
 				List.of(
-						new ReplaceProgramPhasesRequest.PhaseInput("Yeni geçmiş", START, LocalDate.of(2026, 11, 2), null),
+						new ReplaceProgramPhasesRequest.PhaseInput("Yeni geçmiş", START, LocalDate.of(2026, 11, 2), null, null),
 						new ReplaceProgramPhasesRequest.PhaseInput("Yeni şimdiki", LocalDate.of(2026, 11, 3),
-								LocalDate.of(2026, 11, 23), null),
+								LocalDate.of(2026, 11, 23), null, null),
 						new ReplaceProgramPhasesRequest.PhaseInput("Yeni sonraki", LocalDate.of(2026, 11, 24),
-								LocalDate.of(2026, 12, 7), null)),
+								LocalDate.of(2026, 12, 7), null, null)),
 				today);
 
 		assertThat(kept).containsExactly(
-				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", START, LocalDate.of(2026, 11, 9), null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", START, LocalDate.of(2026, 11, 9), null, null),
 				new ReplaceProgramPhasesRequest.PhaseInput("Yeni şimdiki", LocalDate.of(2026, 11, 10),
-						LocalDate.of(2026, 11, 23), null),
+						LocalDate.of(2026, 11, 23), null, null),
 				new ReplaceProgramPhasesRequest.PhaseInput("Yeni sonraki", LocalDate.of(2026, 11, 24),
-						LocalDate.of(2026, 12, 7), null));
+						LocalDate.of(2026, 12, 7), null, null));
 	}
 
 	private void editing() {
