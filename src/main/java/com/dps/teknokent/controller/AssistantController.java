@@ -75,6 +75,20 @@ public class AssistantController {
     }
   }
 
+  @GetMapping("/api/assistant/bots/{platform}/{nativeMeetingId}")
+  public ResponseEntity<?> getBotState(
+      @AuthenticationPrincipal AppUserPrincipal caller,
+      @PathVariable String platform,
+      @PathVariable String nativeMeetingId) {
+    try {
+      return ResponseEntity.ok(assistantService.botState(idOf(caller), platform, nativeMeetingId));
+    } catch (ResponseStatusException | ResourceNotFoundException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      return providerFailure("Failed to read bot state", ex);
+    }
+  }
+
   @DeleteMapping("/api/assistant/bots/{platform}/{nativeMeetingId}")
   public ResponseEntity<?> stopBot(
       @AuthenticationPrincipal AppUserPrincipal caller,
