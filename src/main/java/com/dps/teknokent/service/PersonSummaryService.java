@@ -54,6 +54,7 @@ public class PersonSummaryService {
 	private final ProgramStartupRepository programStartupRepository;
 	private final TeamMembershipRepository teamMembershipRepository;
 	private final TeamMembershipService teamMembershipService;
+	private final MentorAvailabilitySummaryService mentorAvailabilitySummaryService;
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 
@@ -106,7 +107,8 @@ public class PersonSummaryService {
 		rows.sort(Comparator.comparing(PersonSummaryResponse.Program::name, String.CASE_INSENSITIVE_ORDER));
 
 		PersonSummaryResponse.Mentor mentorProfile = mentor && mentorProfileRepository.existsById(personId)
-				? PersonSummaryResponse.Mentor.of(mentorProfileService.findById(personId))
+				? PersonSummaryResponse.Mentor.of(mentorProfileService.findById(personId),
+						mentorAvailabilitySummaryService.of(personId))
 				: null;
 		return PersonSummaryResponse.of(person, mentorProfile,
 				startup == null ? null : PersonSummaryResponse.Startup.of(startup), rows);
