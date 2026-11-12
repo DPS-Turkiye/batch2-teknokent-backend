@@ -4,6 +4,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import com.dps.teknokent.domain.Edition;
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -16,6 +19,8 @@ import com.dps.teknokent.entity.Organization;
  * {@code permissions}: every active permission, in {@link UserRole} order; {@code role} is the primary one.
  * {@code personalOrganization}: the organization is an ODTÜ student's hidden team of one; it has no name to show, and
  * it is no startup (the frontend opens no Girişim workspace for it).
+ * {@code edition}: which deployment answered; only /api/auth/me fills it, so the frontend can check that it is
+ * talking to the backend of its own edition.
  */
 public record UserResponse(
 		UUID id,
@@ -30,7 +35,16 @@ public record UserResponse(
 		boolean individualMentee,
 		List<UserRole> permissions,
 		List<IdentityKind> institutionKinds,
-		boolean personalOrganization) {
+		boolean personalOrganization,
+		@JsonInclude(JsonInclude.Include.NON_NULL) Edition edition) {
+
+	public UserResponse(UUID id, String email, String fullName, UserRole role, UserAccountStatus status,
+			UUID organizationId, String organizationName, String jobTitle, Instant signInsRevokedAt,
+			boolean individualMentee, List<UserRole> permissions, List<IdentityKind> institutionKinds,
+			boolean personalOrganization) {
+		this(id, email, fullName, role, status, organizationId, organizationName, jobTitle, signInsRevokedAt,
+				individualMentee, permissions, institutionKinds, personalOrganization, null);
+	}
 
 	public UserResponse(UUID id, String email, String fullName, UserRole role, UserAccountStatus status,
 			UUID organizationId, String organizationName, String jobTitle, Instant signInsRevokedAt,
@@ -56,7 +70,12 @@ public record UserResponse(
 	/** {@code institutionKinds}: what an institution (ODTÜ) says this person is; empty for everyone else. Filled by /me. */
 	public UserResponse withInstitutionKinds(List<IdentityKind> kinds) {
 		return new UserResponse(id, email, fullName, role, status, organizationId, organizationName, jobTitle,
-				signInsRevokedAt, individualMentee, permissions, List.copyOf(kinds), personalOrganization);
+				signInsRevokedAt, individualMentee, permissions, List.copyOf(kinds), personalOrganization, edition);
+	}
+
+	public UserResponse withEdition(Edition value) {
+		return new UserResponse(id, email, fullName, role, status, organizationId, organizationName, jobTitle,
+				signInsRevokedAt, individualMentee, permissions, institutionKinds, personalOrganization, value);
 	}
 
 	public static UserResponse fromEntity(AppUser user) {
