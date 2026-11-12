@@ -50,8 +50,11 @@ public record CoordinatorProgramResponse(
 			int pendingApprovalCount) {
 	}
 
-	/** The syllabus file the phases were taken from; null when there is none. */
-	public record Syllabus(UUID id, String filename, long sizeBytes, Instant uploadedAt) {
+	/**
+	 * The file the plan was read from: a weekly program, or an older syllabus ({@code kind} tells which); null when
+	 * there is none.
+	 */
+	public record Syllabus(UUID id, String filename, long sizeBytes, Instant uploadedAt, String kind) {
 	}
 
 	/** {@code owner} is the coordinator who created the program; the others were added to it. */

@@ -40,9 +40,16 @@ public class ProgramWeekPlanService {
 	@Transactional
 	public ProgramWeekPlanResponse replace(UUID actorId, UUID programId, ReplaceProgramWeeksRequest request) {
 		Program program = coordinatorProgramService.requireSettingsEditor(actorId, programId);
+		return writeWeeks(program, actorId, request.weeks());
+	}
+
+	/** Replaces the program's whole weekly plan with {@code inputs}; the caller has checked who may. */
+	ProgramWeekPlanResponse writeWeeks(
+			Program program, UUID actorId, List<ReplaceProgramWeeksRequest.WeekInput> inputs) {
+		UUID programId = program.getId();
 		Integer total = ProgramCalendar.totalWeeks(program.getStartDate(), program.getEndDate());
 		Set<Integer> seen = new HashSet<>();
-		for (ReplaceProgramWeeksRequest.WeekInput input : request.weeks()) {
+		for (ReplaceProgramWeeksRequest.WeekInput input : inputs) {
 			if (!seen.add(input.week())) {
 				throw new InvalidRequestException("Each week can appear only once in the plan.");
 			}
@@ -54,7 +61,7 @@ public class ProgramWeekPlanService {
 		// Inserts run before deletes at flush; without this a kept week number would hit uq_program_week.
 		programWeekRepository.flush();
 		Instant now = Instant.now();
-		List<ProgramWeek> weeks = request.weeks().stream()
+		List<ProgramWeek> weeks = inputs.stream()
 				.sorted((left, right) -> Integer.compare(left.week(), right.week()))
 				.map(input -> {
 					ProgramWeek week = new ProgramWeek();

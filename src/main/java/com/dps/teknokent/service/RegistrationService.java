@@ -74,10 +74,12 @@ public class RegistrationService {
 	private final NotificationService notificationService;
 	private final EmailDomainPolicy emailDomainPolicy;
 	private final ProgramEligibilityService programEligibilityService;
+	private final EditionService editionService;
 
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
 		String email = requireUniqueEmail(request.email());
+		requireEditionProgram(request.programId());
 		programEligibilityService.requirePerson(request.programId(), email);
 		boolean individual = isIndividualProgram(request.programId());
 		if (!individual && Boolean.TRUE.equals(request.startupLater())) {
@@ -200,6 +202,7 @@ public class RegistrationService {
 					"This code is for the team's lead; members can use it once the lead has joined.");
 		}
 		requireLaunched(invite.getProgramId());
+		requireEditionProgram(invite.getProgramId());
 		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		Organization organization = new Organization();
 		organization.setName(invite.getTeamName());
@@ -298,6 +301,16 @@ public class RegistrationService {
 		programRepository.findById(programId).ifPresent(ProgramDrafts::requireLaunched);
 	}
 
+	/** A program of the other edition's type reads as missing, as it would on that edition's own deployment. */
+	private void requireEditionProgram(UUID programId) {
+		boolean otherEdition = programId != null && programRepository.findById(programId)
+				.filter(program -> !editionService.serves(program))
+				.isPresent();
+		if (otherEdition) {
+			throw new InvalidRequestException("The selected program does not exist.");
+		}
+	}
+
 	private void requireProgram(UUID programId) {
 		if (programId == null) {
 			throw new InvalidRequestException("A program is required.");
@@ -338,6 +351,7 @@ public class RegistrationService {
 			throw new InvalidRequestException(Texts.forRequest("error.programInviteWrongEmail"));
 		}
 		requireLaunched(invite.getProgramId());
+		requireEditionProgram(invite.getProgramId());
 		programEligibilityService.requirePerson(invite.getProgramId(), email);
 		return Optional.of(invite);
 	}

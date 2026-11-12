@@ -61,6 +61,7 @@ public class ProgramService {
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
 	private final ProgramEligibilityService programEligibilityService;
+	private final EditionService editionService;
 
 
 	@Transactional
@@ -74,6 +75,7 @@ public class ProgramService {
 			throw new InvalidRequestException("A program name is required.");
 		}
 		Program program = new Program();
+		editionService.requireProgramType(program.getProgramType());
 		program.setId(UUID.randomUUID());
 		program.setName(trimmed);
 		program.setCreatedBy(actor.getId());
@@ -121,6 +123,7 @@ public class ProgramService {
 		return programRepository.findAllByOrderByCreatedAtDesc()
 				.stream()
 				.filter(program -> program.getStatus() == ProgramStatus.ACTIVE)
+				.filter(editionService::serves)
 				.map(program -> new ProgramNameResponse(program.getId(), program.getName(),
 						program.isIndividualMentees()))
 				.toList();
@@ -229,6 +232,9 @@ public class ProgramService {
 	public ProgramResponse requestToJoin(UUID actorId, UUID programId) {
 		AppUser mentor = requireMentor(actorId);
 		Program program = requireProgram(programId);
+		if (!editionService.serves(program)) {
+			throw new ResourceNotFoundException("Program not found: " + programId);
+		}
 		ProgramDrafts.requireLaunched(program);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.MENTOR);
 		for (AppUser runner : runnersOf(program)) {
