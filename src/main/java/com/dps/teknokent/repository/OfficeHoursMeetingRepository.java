@@ -30,4 +30,16 @@ public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursM
 	@Modifying
 	@Query("UPDATE OfficeHoursMeeting m SET m.reminderSentAt = :now WHERE m.id = :id AND m.reminderSentAt IS NULL")
 	int markReminded(@Param("id") UUID id, @Param("now") Instant now);
+
+	/**
+	 * Cancels the meeting unless someone already did; 1 means this call cancelled it. The student and the academic
+	 * may press cancel at the same moment, and only one of them may win and send the e-mail.
+	 */
+	@Modifying
+	@Query("""
+			UPDATE OfficeHoursMeeting m SET m.cancelledAt = :now, m.cancelledBy = :by, m.cancellationReason = :reason
+			WHERE m.id = :id AND m.cancelledAt IS NULL
+			""")
+	int cancelIfLive(@Param("id") UUID id, @Param("now") Instant now, @Param("by") UUID by,
+			@Param("reason") String reason);
 }

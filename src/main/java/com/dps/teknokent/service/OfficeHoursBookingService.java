@@ -295,12 +295,32 @@ public class OfficeHoursBookingService {
 		if (!student && reason == null && isLateCancel(meeting.getScheduledAt(), now)) {
 			throw new InvalidRequestException(Texts.forRequest("error.officeHoursLateCancelReason"));
 		}
+		if (meetingRepository.cancelIfLive(meeting.getId(), now, userId, reason) != 1) {
+			throw new ConflictException("This meeting has just been cancelled.");
+		}
+		// The row is already written; the entity only mirrors it for the answer below.
 		meeting.setCancelledAt(now);
 		meeting.setCancelledBy(userId);
 		meeting.setCancellationReason(reason);
-		meetingRepository.save(meeting);
 		request.setStatus(OfficeHoursRequestStatus.CANCELLED);
-		return saveAndTell(request, student ? Event.CANCELLED_BY_STUDENT : Event.CANCELLED_BY_INSTRUCTOR, reason);
+		return saveAndTell(request, cancelEvent(student), reason);
+	}
+
+	/** The other side hears about it: the academic when the student cancelled, and the other way round. */
+	private static Event cancelEvent(boolean byStudent) {
+		if (byStudent) {
+			return Event.CANCELLED_BY_STUDENT;
+		}
+		return Event.CANCELLED_BY_INSTRUCTOR;
+	}
+
+	/** How the meeting was called off, or null while it is still on. */
+	private static OfficeHoursRequestResponse.Cancellation cancellation(OfficeHoursMeeting meeting) {
+		if (meeting == null || meeting.getCancelledAt() == null) {
+			return null;
+		}
+		return new OfficeHoursRequestResponse.Cancellation(meeting.getCancelledBy(), meeting.getCancellationReason(),
+				meeting.getCancelledAt(), isLateCancel(meeting.getScheduledAt(), meeting.getCancelledAt()));
 	}
 
 	/** Called off less than 24 hours before the start. Worked out from the times, so nothing else is stored. */
@@ -454,10 +474,7 @@ public class OfficeHoursBookingService {
 					messages.getOrDefault(request.getId(), List.of()),
 					meeting == null ? null : new OfficeHoursSlotResponse(meeting.getScheduledAt(),
 							meeting.getDurationMinutes()),
-					meeting == null || meeting.getCancelledAt() == null ? null
-							: new OfficeHoursRequestResponse.Cancellation(meeting.getCancelledBy(),
-									meeting.getCancellationReason(), meeting.getCancelledAt(),
-									isLateCancel(meeting.getScheduledAt(), meeting.getCancelledAt())),
+					cancellation(meeting),
 					request.getCreatedAt());
 		}).toList();
 	}

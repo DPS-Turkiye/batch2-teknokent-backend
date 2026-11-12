@@ -131,7 +131,8 @@ public class OfficeHoursSlotService {
 	}
 
 	private List<OfficeHoursMeeting> upcomingMeetings(UUID instructorId, Instant now) {
-		return meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(instructorId, now.minus(LOOK_BACK));
+		return meetingRepository.findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfter(instructorId,
+				now.minus(LOOK_BACK));
 	}
 
 	private Duration buffer(UUID instructorId) {

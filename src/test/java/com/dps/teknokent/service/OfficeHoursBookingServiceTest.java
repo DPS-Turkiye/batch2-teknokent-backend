@@ -348,7 +348,18 @@ class OfficeHoursBookingServiceTest {
         meeting.setDurationMinutes(20);
         lenient().when(meetingRepository.findByRequestId(REQUEST)).thenReturn(Optional.of(meeting));
         lenient().when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of(meeting));
+        lenient().when(meetingRepository.cancelIfLive(any(), any(), any(), any())).thenReturn(1);
         return meeting;
+    }
+
+    @Test
+    void whenBothSidesCancelAtOnceOnlyOneWinsAndTellsTheOther() {
+        acceptedMeetingAt(NOW.plus(Duration.ofDays(2)));
+        when(meetingRepository.cancelIfLive(any(), any(), any(), any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.cancel(STUDENT, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null)))
+                .isInstanceOf(ConflictException.class);
+        verifyNoInteractions(mailService);
     }
 
     @Test
