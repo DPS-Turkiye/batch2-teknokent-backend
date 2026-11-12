@@ -23,6 +23,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -140,6 +142,10 @@ public class MentorshipRequest {
 	@Column(nullable = false)
 	private MentorshipRequestStatus status;
 
+	/** When the mentorship began: the first time the request was accepted, kept if it later changes. */
+	@Column(name = "accepted_at")
+	private Instant acceptedAt;
+
 	@Column(name = "requester_message", columnDefinition = "TEXT")
 	private String requesterMessage;
 
@@ -180,4 +186,17 @@ public class MentorshipRequest {
 	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
+
+	/**
+	 * A request reaches ACCEPTED along several paths (the mentor's answer, the mentee taking a proposed time, a
+	 * meeting made from the calendar, a coordinator's match), so the start is stamped on save rather than in each one.
+	 * A bulk JPQL or native UPDATE skips this, so one that accepts requests must set accepted_at itself.
+	 */
+	@PrePersist
+	@PreUpdate
+	void stampAcceptance() {
+		if (status == MentorshipRequestStatus.ACCEPTED && acceptedAt == null) {
+			acceptedAt = Instant.now();
+		}
+	}
 }

@@ -164,7 +164,10 @@ public class CoordinatorProgramController {
 	public List<CoordinatorProgramResponse.CoordinatorRef> addCoordinator(
 			@PathVariable UUID id,
 			@Valid @RequestBody AddProgramCoordinatorRequest request) {
-		return programCoordinatorService.add(CurrentActor.resolve(request.actorId()), id, request.userId());
+		UUID actorId = CurrentActor.resolve(request.actorId());
+		return request.userId() != null
+				? programCoordinatorService.add(actorId, id, request.userId())
+				: programCoordinatorService.invite(actorId, id, request.invite());
 	}
 
 	@DeleteMapping("/{id}/coordinators/{userId}")

@@ -44,6 +44,7 @@ import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorProgramResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
+import com.dps.teknokent.entity.MentorExperience;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.util.TextUtils;
@@ -255,6 +256,19 @@ public class MentorProfileService {
 		mentorAvailabilityRuleRepository.delete(rule);
 	}
 
+	/**
+	 * This form has no kind or months, so a peer mentor's card sent back through it unchanged keeps its own instead of
+	 * losing them; a line with another title is a new line.
+	 */
+	private static MentorExperience keepCardFields(MentorExperience line, MentorExperience previous) {
+		if (previous.getKind() != null && previous.getTitle().equals(line.getTitle())) {
+			line.setKind(previous.getKind());
+			line.setStartedOn(previous.getStartedOn());
+			line.setEndedOn(previous.getEndedOn());
+		}
+		return line;
+	}
+
 	private boolean isBooked(MentorAvailabilitySlot slot) {
 		return meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 				slot.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED);
@@ -391,8 +405,12 @@ public class MentorProfileService {
 			profile.setMenteeCapacity(request.menteeCapacity());
 		}
 		if (request.experiences() != null) {
+			List<MentorExperience> before = List.copyOf(profile.getExperiences());
 			profile.getExperiences().clear();
-			request.experiences().forEach(experience -> profile.getExperiences().add(experience.toEntity()));
+			for (int index = 0; index < request.experiences().size(); index++) {
+				MentorExperience line = request.experiences().get(index).toEntity();
+				profile.getExperiences().add(index < before.size() ? keepCardFields(line, before.get(index)) : line);
+			}
 		}
 		if (request.educations() != null) {
 			profile.getEducations().clear();

@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.NewCoordinatorInput;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse.CoordinatorRef;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
@@ -30,6 +31,7 @@ import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.service.AdminCoordinatorService.CheckedInvite;
 
 @ExtendWith(MockitoExtension.class)
 class ProgramCoordinatorServiceTest {
@@ -42,6 +44,8 @@ class ProgramCoordinatorServiceTest {
 	private AppUserRepository appUserRepository;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private AdminCoordinatorService adminCoordinatorService;
 	@InjectMocks
 	private ProgramCoordinatorService service;
 
@@ -69,6 +73,42 @@ class ProgramCoordinatorServiceTest {
 		assertThat(saved.getValue().getAddedBy()).isEqualTo(ADMIN);
 		assertThat(result).extracting(CoordinatorRef::fullName).containsExactly("Elif Demir", "Burcu Şen");
 		verify(notificationService).create(any(), anyString(), anyString(), eq("/coordinator/programs/" + PROGRAM_ID));
+	}
+
+	@Test
+	void anInvitedEmailIsAddedThroughTheSameInviteAsANewProgram() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
+		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(program);
+		UUID invited = UUID.randomUUID();
+		CheckedInvite checked = new CheckedInvite("yeni@x.org", "Yeni Kişi", null);
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@x.org", "Yeni Kişi")).thenReturn(checked);
+		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, checked, program.getName()))
+				.thenReturn(user(invited, "Yeni Kişi", UserRole.COORDINATOR));
+
+		service.invite(ADMIN, PROGRAM_ID, new NewCoordinatorInput("Yeni Kişi", "yeni@x.org"));
+
+		ArgumentCaptor<ProgramCoordinator> saved = ArgumentCaptor.forClass(ProgramCoordinator.class);
+		verify(programCoordinatorRepository).save(saved.capture());
+		assertThat(saved.getValue().getUserId()).isEqualTo(invited);
+		assertThat(saved.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
+	}
+
+	@Test
+	void onlyAnAdminInvitesAndAnEmailAlreadyRunningTheProgramIsRefused() {
+		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, "Elif", UserRole.COORDINATOR));
+		assertThatThrownBy(() -> service.invite(ELIF, PROGRAM_ID, new NewCoordinatorInput("Yeni", "yeni@x.org")))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(adminCoordinatorService, never()).checkNewProgramCoordinator(any(), any(), any());
+
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, "Admin", UserRole.ADMIN));
+		when(programService.requireManagedProgram(ADMIN, PROGRAM_ID)).thenReturn(program);
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "burcu@x.org", "Burcu"))
+				.thenReturn(new CheckedInvite("burcu@x.org", "Burcu Şen", user(BURCU, "Burcu Şen", UserRole.COORDINATOR)));
+		when(programCoordinatorRepository.existsByProgramIdAndUserId(PROGRAM_ID, BURCU)).thenReturn(true);
+		assertThatThrownBy(() -> service.invite(ADMIN, PROGRAM_ID, new NewCoordinatorInput("Burcu", "burcu@x.org")))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(adminCoordinatorService, never()).coordinatorForNewProgram(any(), any(), any());
+		verify(programCoordinatorRepository, never()).save(any());
 	}
 
 	@Test
