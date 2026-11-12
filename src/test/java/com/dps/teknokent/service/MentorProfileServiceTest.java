@@ -13,6 +13,7 @@ import com.dps.teknokent.repository.MentorCount;
 import com.dps.teknokent.entity.MentorExperience;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.requests.MentorExperienceRequest;
+import com.dps.teknokent.domain.PeerExperienceKind;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.MeetingFrequency;
@@ -304,6 +305,40 @@ class MentorProfileServiceTest {
 		assertThat(profile.getMenteeCapacity()).isEqualTo(6);
 		assertThat(profile.getExperiences()).extracting(MentorExperience::getTitle)
 				.containsExactly("METU Stars Mentoru");
+	}
+
+	@Test
+	void aPeerMentorsCardSentBackThroughTheMentorFormKeepsItsKindAndMonths() {
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		profile.getExperiences().add(new MentorExperience("Head of Product", "Looply", null, null,
+				PeerExperienceKind.JOB, LocalDate.of(2022, 1, 1), null));
+		profile.getExperiences().add(new MentorExperience("Kulüp başkanı", null, null, null,
+				PeerExperienceKind.CLUB, LocalDate.of(2023, 9, 1), LocalDate.of(2024, 6, 1)));
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profile));
+		when(mentorProfileRepository.saveAndFlush(profile)).thenReturn(profile);
+
+		UpdateMentorProfileRequest request = updateRequest();
+		mentorProfileService.updateProfile(mentorId, new UpdateMentorProfileRequest(
+				request.professionalTitle(), request.company(), request.availabilityLabel(),
+				request.responseTimeLabel(), request.meetingMode(), request.communicationPreference(),
+				request.mentoringStyle(), request.fitLabel(), request.experienceLevel(), request.sectorExperience(),
+				request.startupStages(), request.specialties(), null, List.of(
+						new MentorExperienceRequest(" Head of Product ", "Looply", null, null),
+						new MentorExperienceRequest("Gönüllü", null, null, null))));
+
+		assertThat(profile.getExperiences()).satisfiesExactly(
+				kept -> {
+					assertThat(kept.getKind()).isEqualTo(PeerExperienceKind.JOB);
+					assertThat(kept.getStartedOn()).isEqualTo(LocalDate.of(2022, 1, 1));
+				},
+				replaced -> {
+					assertThat(replaced.getTitle()).isEqualTo("Gönüllü");
+					assertThat(replaced.getKind()).isNull();
+					assertThat(replaced.getStartedOn()).isNull();
+				});
 	}
 
 	@Test
