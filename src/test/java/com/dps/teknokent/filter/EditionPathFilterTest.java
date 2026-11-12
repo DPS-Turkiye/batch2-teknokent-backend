@@ -47,6 +47,7 @@ class EditionPathFilterTest {
 	/** Served only by the Teknokent deployment. */
 	static Stream<String> teknokentPaths() {
 		return Stream.of(
+				"/api/admin/users/" + ID + "/delete",
 				"/api/assistant/bots",
 				"/api/assistant/transcripts/google_meet/abc-defg-hij",
 				"/api/auth/institution/otg/start",

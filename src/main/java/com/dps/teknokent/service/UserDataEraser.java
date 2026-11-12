@@ -371,7 +371,8 @@ class UserDataEraser {
 	}
 
 	private void deleteOwnData(UUID id, String email, List<UUID> archived, Set<String> firebaseUids) {
-		// Sign-in links first: with these gone no institution login can be matched to the row again.
+		// Sign-in links first: with these gone no institution login can be matched to the row again. Only OTG links
+		// reach this point; UserDeletionService refuses accounts with an ODTÜ roster record or login.
 		update("delete from AppUserIdentity i where i.user.id = :id", "id", id);
 		if (!firebaseUids.isEmpty()) {
 			update("delete from OnboardingDraft d where d.firebaseUid in :uids", "uids", firebaseUids);
@@ -450,7 +451,6 @@ class UserDataEraser {
 				.setParameter("placeholder", AppUser.deletedEmailFor(id))
 				.setParameter("email", email)
 				.executeUpdate();
-		update("update InstitutionPerson p set p.user = null where p.user.id = :id", "id", id);
 
 		String name = fullName.trim();
 		if (name.length() < MIN_NAME_LENGTH_TO_REPLACE || nameIsShared(id, name)) {

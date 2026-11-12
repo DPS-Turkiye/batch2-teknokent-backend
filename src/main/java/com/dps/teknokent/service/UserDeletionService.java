@@ -17,8 +17,11 @@ import com.dps.teknokent.dto.responses.UserDeletionResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.AppUserIdentityRepository;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.InstitutionPersonRepository;
 import com.dps.teknokent.security.LoginProvisioner;
+import com.dps.teknokent.security.institution.OtgLoginProvider;
 import com.dps.teknokent.util.Texts;
 
 import lombok.extern.slf4j.Slf4j;
@@ -41,8 +44,11 @@ public class UserDeletionService {
 	public static final String CODE_ADMIN = "USER_DELETE_ADMIN";
 	public static final String CODE_EMAIL_MISMATCH = "USER_DELETE_EMAIL_MISMATCH";
 	public static final String CODE_ALREADY_DELETED = "USER_ALREADY_DELETED";
+	public static final String CODE_INSTITUTION_LINKED = "USER_DELETE_INSTITUTION_LINKED";
 
 	private final AppUserRepository appUserRepository;
+	private final AppUserIdentityRepository identityRepository;
+	private final InstitutionPersonRepository institutionPersonRepository;
 	private final UserDataEraser eraser;
 	private final LoginProvisioner loginProvisioner;
 	private final UserDeletionCleanupService cleanupService;
@@ -51,11 +57,15 @@ public class UserDeletionService {
 
 	public UserDeletionService(
 			AppUserRepository appUserRepository,
+			AppUserIdentityRepository identityRepository,
+			InstitutionPersonRepository institutionPersonRepository,
 			UserDataEraser eraser,
 			LoginProvisioner loginProvisioner,
 			UserDeletionCleanupService cleanupService,
 			PlatformTransactionManager transactionManager) {
 		this.appUserRepository = appUserRepository;
+		this.identityRepository = identityRepository;
+		this.institutionPersonRepository = institutionPersonRepository;
 		this.eraser = eraser;
 		this.loginProvisioner = loginProvisioner;
 		this.cleanupService = cleanupService;
@@ -123,6 +133,14 @@ public class UserDeletionService {
 		// The primary role is checked next to the grants, so an admin whose grant row lapsed is still refused.
 		if (target.getRole() == UserRole.ADMIN || target.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException(Texts.forRequest("error.userDeleteAdmin"), CODE_ADMIN);
+		}
+		// Deletion is built for Teknokent accounts only. An account tied to an ODTÜ roster record or ODTÜ login is
+		// refused rather than erased, so the institution's data stays exactly as it is; OTG, Teknokent's own
+		// institution sign-in, writes no roster record and its link goes with the account.
+		if (institutionPersonRepository.existsByUserId(target.getId())
+				|| identityRepository.existsByUserIdAndProviderNot(target.getId(), OtgLoginProvider.ID)) {
+			throw new InvalidRequestException(Texts.forRequest("error.userDeleteInstitutionLinked"),
+					CODE_INSTITUTION_LINKED);
 		}
 		if (confirmEmail == null || !confirmEmail.trim().equalsIgnoreCase(target.getEmail())) {
 			throw new InvalidRequestException(Texts.forRequest("error.userDeleteEmailMismatch"), CODE_EMAIL_MISMATCH);

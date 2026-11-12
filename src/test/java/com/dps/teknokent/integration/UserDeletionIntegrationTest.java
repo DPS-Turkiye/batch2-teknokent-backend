@@ -39,6 +39,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.DocumentKind;
+import com.dps.teknokent.domain.InstitutionDataSource;
 import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
@@ -53,6 +54,7 @@ import com.dps.teknokent.domain.UserDeletionCleanupKind;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.AppUserIdentity;
+import com.dps.teknokent.entity.InstitutionPerson;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
@@ -72,6 +74,8 @@ import com.dps.teknokent.repository.UserDeletionAuditRepository;
 import com.dps.teknokent.repository.UserDeletionCleanupRepository;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.security.LoginProvisioner;
+import com.dps.teknokent.security.institution.DevInstitutionLoginProvider;
+import com.dps.teknokent.security.institution.OtgLoginProvider;
 import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.NotificationService;
 import com.dps.teknokent.service.ObjectStorage;
@@ -129,7 +133,7 @@ class UserDeletionIntegrationTest {
 		target.setLinkedinUrl("https://linkedin.com/in/deniz");
 		target.setJobTitle("Founder");
 		target.getExpertise().add("Fintech");
-		identity(target);
+		identity(target, OtgLoginProvider.ID);
 		draft(UID);
 		notificationService.create(target, "For the person", "Only they read this", null);
 		feedback(target);
@@ -413,7 +417,7 @@ class UserDeletionIntegrationTest {
 	void nothingIsLeftForANewSignInWithTheSameAddressToLinkTo() throws Exception {
 		AppUser target = user(UserRole.MENTEE, "Deniz Kaya", UID);
 		String email = target.getEmail();
-		identity(target);
+		identity(target, OtgLoginProvider.ID);
 		flushAndClear();
 
 		delete(admin, target.getId(), email).andExpect(status().isOk());
@@ -433,6 +437,48 @@ class UserDeletionIntegrationTest {
 		AppUser saved = userRepository.saveAndFlush(again);
 		assertThat(saved.getId()).isNotEqualTo(target.getId());
 		assertThat(saved.getOrganization()).isNull();
+	}
+
+	// ---------------------------------------------------------------- ODTÜ links stay out of scope
+
+	@Test
+	void anAccountWithAnOdtuLoginIsRefusedAndItsLinkStays() throws Exception {
+		AppUser target = user(UserRole.MENTEE, "Deniz Kaya", UID);
+		identity(target, DevInstitutionLoginProvider.ID);
+		flushAndClear();
+
+		delete(admin, target.getId(), target.getEmail())
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(UserDeletionService.CODE_INSTITUTION_LINKED));
+
+		assertUntouched(target);
+		assertThat(count("select count(i) from AppUserIdentity i where i.user.id = :id", target.getId())).isOne();
+		verify(loginProvisioner, never()).uidForEmail(anyString());
+		verify(loginProvisioner, never()).deleteLogin(anyString());
+	}
+
+	@Test
+	void anAccountOnTheOdtuRosterIsRefusedAndTheRosterRecordStays() throws Exception {
+		AppUser target = user(UserRole.MENTEE, "Deniz Kaya", UID);
+		InstitutionPerson person = new InstitutionPerson(DevInstitutionLoginProvider.ID, "roster-" + target.getId());
+		person.setFullName("Deniz Kaya");
+		person.setEmail(target.getEmail());
+		person.setSource(InstitutionDataSource.IMPORT);
+		person.setSyncedAt(Instant.now());
+		person.setUser(target);
+		entityManager.persist(person);
+		flushAndClear();
+
+		delete(admin, target.getId(), target.getEmail())
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(UserDeletionService.CODE_INSTITUTION_LINKED));
+
+		assertUntouched(target);
+		InstitutionPerson roster = entityManager.find(InstitutionPerson.class, person.getId());
+		assertThat(roster.getUser().getId()).isEqualTo(target.getId());
+		assertThat(roster.getFullName()).isEqualTo("Deniz Kaya");
+		assertThat(roster.getEmail()).isEqualTo(target.getEmail());
+		verify(loginProvisioner, never()).deleteLogin(anyString());
 	}
 
 	@Test
@@ -705,10 +751,10 @@ class UserDeletionIntegrationTest {
 		entityManager.persist(membership);
 	}
 
-	private void identity(AppUser user) {
+	private void identity(AppUser user, String provider) {
 		AppUserIdentity identity = new AppUserIdentity();
 		identity.setUser(user);
-		identity.setProvider("odtu");
+		identity.setProvider(provider);
 		identity.setPersistentId("persistent-" + user.getId());
 		identity.setLinkedAt(Instant.now());
 		identity.setLastLoginAt(Instant.now());
