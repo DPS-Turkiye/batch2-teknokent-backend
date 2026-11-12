@@ -145,6 +145,14 @@ public class OfficeHoursBookingService {
 	public OfficeHoursRequestResponse create(UUID studentId, UUID courseId, CreateOfficeHoursRequest submission) {
 		requireRole(studentId, courseId, OfficeHoursRole.STUDENT);
 		requireRole(submission.instructorId(), courseId, OfficeHoursRole.INSTRUCTOR);
+		return responses(List.of(createRequest(studentId, courseId, submission))).getFirst();
+	}
+
+	/**
+	 * The request itself, once the caller may send it: in a course for Moodle, or with no course from Menton.
+	 * Same times, lead and student-limit rules either way.
+	 */
+	OfficeHoursRequest createRequest(UUID studentId, UUID courseId, CreateOfficeHoursRequest submission) {
 		List<String> slots = submission.preferredSlots().stream().distinct().toList();
 		requireBookable(slots);
 		Instant now = clock.instant();
@@ -161,13 +169,17 @@ public class OfficeHoursBookingService {
 		request.setPreferredSlots(String.join(",", slots));
 		request.setCreatedAt(now);
 		request.setUpdatedAt(now);
-		return responses(List.of(requestRepository.saveAndFlush(request))).getFirst();
+		return requestRepository.saveAndFlush(request);
 	}
 
 	@Transactional
 	public OfficeHoursRequestResponse decide(UUID instructorId, UUID courseId, UUID requestId,
 			DecideOfficeHoursRequest decision) {
-		OfficeHoursRequest request = requireRequest(requestId, courseId);
+		return responses(List.of(decide(requireRequest(requestId, courseId), instructorId, decision))).getFirst();
+	}
+
+	/** The academic's answer to a request the caller has already found; only its own academic may answer. */
+	OfficeHoursRequest decide(OfficeHoursRequest request, UUID instructorId, DecideOfficeHoursRequest decision) {
 		if (!request.getInstructorId().equals(instructorId)) {
 			throw forbidden("Only the academic the request was sent to can answer it.");
 		}
@@ -212,13 +224,18 @@ public class OfficeHoursBookingService {
 			default -> throw new InvalidRequestException(
 					"Decision status must be ACCEPTED, DECLINED, MORE_INFO_REQUESTED, or COUNTER_PROPOSED");
 		}
-		return save(request);
+		return saveEntity(request);
 	}
 
 	@Transactional
 	public OfficeHoursRequestResponse acceptProposedSlot(UUID studentId, UUID courseId, UUID requestId,
 			AcceptOfficeHoursSlotRequest acceptance) {
-		OfficeHoursRequest request = requireOwnRequest(studentId, courseId, requestId);
+		return responses(List.of(acceptProposedSlot(requireOwnRequest(studentId, courseId, requestId), acceptance)))
+				.getFirst();
+	}
+
+	/** The student takes one of the academic's other times, on a request already known to be theirs. */
+	OfficeHoursRequest acceptProposedSlot(OfficeHoursRequest request, AcceptOfficeHoursSlotRequest acceptance) {
 		if (request.getStatus() != OfficeHoursRequestStatus.COUNTER_PROPOSED) {
 			throw new InvalidRequestException("Only counter-proposed requests can accept a slot");
 		}
@@ -228,7 +245,7 @@ public class OfficeHoursBookingService {
 		requireBookable(List.of(acceptance.slot()));
 		request.setStatus(OfficeHoursRequestStatus.ACCEPTED);
 		book(request, acceptance.slot());
-		return save(request);
+		return saveEntity(request);
 	}
 
 	@Transactional
@@ -245,12 +262,16 @@ public class OfficeHoursBookingService {
 
 	@Transactional
 	public OfficeHoursRequestResponse withdraw(UUID studentId, UUID courseId, UUID requestId) {
-		OfficeHoursRequest request = requireOwnRequest(studentId, courseId, requestId);
+		return responses(List.of(withdraw(requireOwnRequest(studentId, courseId, requestId)))).getFirst();
+	}
+
+	/** The student takes back a request already known to be theirs, while it is still open. */
+	OfficeHoursRequest withdraw(OfficeHoursRequest request) {
 		if (!OPEN.contains(request.getStatus())) {
 			throw new InvalidRequestException("Only an unanswered request can be withdrawn");
 		}
 		request.setStatus(OfficeHoursRequestStatus.WITHDRAWN);
-		return save(request);
+		return saveEntity(request);
 	}
 
 	/**
@@ -337,8 +358,9 @@ public class OfficeHoursBookingService {
 	}
 
 	private OfficeHoursRequest requireRequest(UUID requestId, UUID courseId) {
+		// A Menton request has no course, so it never matches a course's route.
 		return requestRepository.findById(requestId)
-				.filter(request -> request.getCourseId().equals(courseId))
+				.filter(request -> courseId.equals(request.getCourseId()))
 				.orElseThrow(() -> new ResourceNotFoundException("Request not found."));
 	}
 
@@ -369,8 +391,12 @@ public class OfficeHoursBookingService {
 	}
 
 	private OfficeHoursRequestResponse save(OfficeHoursRequest request) {
+		return responses(List.of(saveEntity(request))).getFirst();
+	}
+
+	private OfficeHoursRequest saveEntity(OfficeHoursRequest request) {
 		request.setUpdatedAt(clock.instant());
-		return responses(List.of(requestRepository.saveAndFlush(request))).getFirst();
+		return requestRepository.saveAndFlush(request);
 	}
 
 	private List<OfficeHoursRequestResponse> responses(List<OfficeHoursRequest> requests) {

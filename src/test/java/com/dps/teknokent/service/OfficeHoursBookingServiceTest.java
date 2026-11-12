@@ -40,6 +40,7 @@ import com.dps.teknokent.entity.OfficeHoursRequestMessage;
 import com.dps.teknokent.entity.OfficeHoursSettings;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.OfficeHoursEnrollmentRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestMessageRepository;
@@ -337,5 +338,18 @@ class OfficeHoursBookingServiceTest {
 
         verify(requestRepository).findByCourseIdAndStudentIdOrderByCreatedAtDesc(COURSE, STUDENT);
         verify(requestRepository).findByCourseIdAndInstructorIdOrderByCreatedAtDesc(COURSE, ACADEMIC);
+    }
+
+    @Test
+    void aCoursesRoutesNeverReachARequestMadeFromMenton() {
+        OfficeHoursRequest fromMenton = existing(OfficeHoursRequestStatus.PENDING);
+        fromMenton.setCourseId(null);
+
+        assertThatThrownBy(() -> service.decide(ACADEMIC, COURSE, REQUEST,
+                new DecideOfficeHoursRequest(OfficeHoursRequestStatus.DECLINED, null, null, null)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.withdraw(STUDENT, COURSE, REQUEST))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(requestRepository, never()).saveAndFlush(any());
     }
 }

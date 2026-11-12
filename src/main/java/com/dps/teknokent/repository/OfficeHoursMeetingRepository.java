@@ -17,4 +17,6 @@ public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursM
 	List<OfficeHoursMeeting> findByRequestIdIn(Collection<UUID> requestIds);
 
 	Optional<OfficeHoursMeeting> findByRequestId(UUID requestId);
+
+	List<OfficeHoursMeeting> findByInstructorIdOrderByScheduledAtAsc(UUID instructorId);
 }
