@@ -76,20 +76,20 @@ public class RegistrationService {
 	private final ProgramEligibilityService programEligibilityService;
 	private final EditionService editionService;
 
+	/** A founder signs up with a startup; there is no "create it later" any more. */
+	public static final String STARTUP_REQUIRED = "STARTUP_REQUIRED";
+
 	@Transactional
 	public UserResponse registerFounder(RegisterFounderRequest request) {
 		String email = requireUniqueEmail(request.email());
 		requireEditionProgram(request.programId());
 		programEligibilityService.requirePerson(request.programId(), email);
 		boolean individual = isIndividualProgram(request.programId());
-		if (!individual && Boolean.TRUE.equals(request.startupLater())) {
-			return registerWithoutStartup(request, email);
-		}
 		// In an individual-mentee program (İŞKUR) each student is a team of one, named after them, so requests,
 		// matching and meetings work unchanged without the student creating a startup.
 		String organizationName = individual ? request.fullName() : request.organizationName();
 		if (TextUtils.normalizeOptional(organizationName) == null) {
-			throw new InvalidRequestException("The startup name is required.");
+			throw new InvalidRequestException(Texts.forRequest("error.startupRequired"), STARTUP_REQUIRED);
 		}
 
 		Organization organization = new Organization();
@@ -120,22 +120,6 @@ public class RegistrationService {
 	private boolean isIndividualProgram(UUID programId) {
 		return programId != null
 				&& programRepository.findById(programId).map(Program::isIndividualMentees).orElse(false);
-	}
-
-	/**
-	 * "Startup'ı daha sonra oluşturacağım": the person waits for the program's coordinator like a founder does, then
-	 * joins or creates a startup from /startup.
-	 */
-	private UserResponse registerWithoutStartup(RegisterFounderRequest request, String email) {
-		requireProgram(request.programId());
-		AppUser person = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
-				UserAccountStatus.PENDING, null);
-		applyProfileFields(person, request);
-		person.setProgramId(request.programId());
-		applyFirebaseIdentity(person, email);
-		appUserRepository.saveAndFlush(person);
-		discardOnboardingDraft();
-		return UserResponse.fromEntity(person);
 	}
 
 	/** "Kodum var" on /startup: joins at once, but only a startup of the person's own program. */
