@@ -289,7 +289,7 @@ public class PeerMentoringService {
 		person.map(InstitutionPerson::getClassYear).map(String::valueOf).ifPresent(profile::setStudyYear);
 		mentor.setLinkedinUrl(blankToNull(request.linkedinUrl()));
 		appUserRepository.save(mentor);
-		peerMentorDraftRepository.deleteById(mentor.getId());
+		peerMentorDraftRepository.deleteByUserId(mentor.getId());
 		return toProfileResponse(mentor, mentorProfileRepository.save(profile));
 	}
 

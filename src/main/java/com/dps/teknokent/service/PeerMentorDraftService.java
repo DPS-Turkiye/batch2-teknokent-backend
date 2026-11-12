@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -43,15 +44,20 @@ public class PeerMentorDraftService {
 	@Transactional
 	public PeerMentorProfileDraftResponse save(UUID actorId, PeerMentorProfileDraft draft) {
 		AppUser mentor = peerMentoringService.requirePeerMentor(actorId);
-		PeerMentorDraft stored = drafts.findById(mentor.getId()).orElseGet(() -> new PeerMentorDraft(mentor.getId()));
+		Instant now = Instant.now();
+		drafts.insertIfAbsent(mentor.getId(), now);
+		PeerMentorDraft stored = drafts.findById(mentor.getId())
+				.orElseThrow(() -> new IllegalStateException("The peer-mentor draft was not saved."));
 		stored.setPayload(jsonMapper.writeValueAsString(draft));
-		PeerMentorDraft saved = drafts.saveAndFlush(stored);
-		return new PeerMentorProfileDraftResponse(draft, saved.getUpdatedAt());
+		// Set here rather than on change, so saving the same answers again still moves "Taslak kaydedildi".
+		stored.setUpdatedAt(now);
+		drafts.saveAndFlush(stored);
+		return new PeerMentorProfileDraftResponse(draft, now);
 	}
 
 	@Transactional
 	public void delete(UUID actorId) {
-		drafts.deleteById(peerMentoringService.requirePeerMentor(actorId).getId());
+		drafts.deleteByUserId(peerMentoringService.requirePeerMentor(actorId).getId());
 	}
 
 	private Optional<PeerMentorProfileDraftResponse> read(PeerMentorDraft stored) {

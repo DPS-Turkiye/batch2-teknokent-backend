@@ -169,7 +169,7 @@ class PeerMentoringServiceTest {
 
 		ArgumentCaptor<MentorProfile> profile = ArgumentCaptor.forClass(MentorProfile.class);
 		verify(profileRepository).save(profile.capture());
-		verify(drafts).deleteById(peerMentor.getId());
+		verify(drafts).deleteByUserId(peerMentor.getId());
 		assertThat(profile.getValue().getUser()).isSameAs(peerMentor);
 		assertThat(profile.getValue().getSortOrder()).isEqualTo(5);
 		assertThat(profile.getValue().getSpecialties()).containsExactly("CAREER_INTERNSHIP", "INTERNATIONAL");
@@ -582,7 +582,7 @@ class PeerMentoringServiceTest {
 		assertThat(published.getExperiences()).extracting(MentorExperience::getTitle).containsExactly("Asistan");
 		assertThat(published.getSpecialties()).isEmpty();
 		verify(profileRepository, never()).save(any());
-		verify(drafts, never()).deleteById(any());
+		verify(drafts, never()).deleteByUserId(any());
 	}
 
 	@Test

@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
@@ -31,7 +30,6 @@ public class PeerMentorDraft {
 	@Column(nullable = false)
 	private String payload;
 
-	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 

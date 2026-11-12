@@ -47,11 +47,8 @@ class PeerMentorDraftServiceTest {
 	void setUp() {
 		mentor.setId(UUID.randomUUID());
 		when(peerMentoring.requirePeerMentor(actorId)).thenReturn(mentor);
-		when(drafts.saveAndFlush(any())).thenAnswer(invocation -> {
-			PeerMentorDraft saved = invocation.getArgument(0);
-			saved.setUpdatedAt(Instant.parse("2026-11-12T11:05:00Z"));
-			return saved;
-		});
+		when(drafts.findById(mentor.getId())).thenReturn(Optional.of(new PeerMentorDraft(mentor.getId())));
+		when(drafts.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 	}
 
 	@Test
@@ -62,13 +59,15 @@ class PeerMentorDraftServiceTest {
 				List.of(new PeerMentorProfileDraft.Card(PeerExperienceKind.INTERNSHIP, "Staj", null,
 						YearMonth.of(2025, 6), null, null)));
 
+		Instant before = Instant.now();
 		PeerMentorProfileDraftResponse saved = service.save(actorId, draft);
 
+		verify(drafts).insertIfAbsent(org.mockito.ArgumentMatchers.eq(mentor.getId()), any());
 		ArgumentCaptor<PeerMentorDraft> stored = ArgumentCaptor.forClass(PeerMentorDraft.class);
 		verify(drafts).saveAndFlush(stored.capture());
 		assertThat(stored.getValue().getUserId()).isEqualTo(mentor.getId());
 		assertThat(stored.getValue().getPayload()).contains("\"startedOn\":\"2025-06\"").doesNotContain(actorId.toString());
-		assertThat(saved.updatedAt()).isEqualTo(Instant.parse("2026-11-12T11:05:00Z"));
+		assertThat(saved.updatedAt()).isAfterOrEqualTo(before).isEqualTo(stored.getValue().getUpdatedAt());
 
 		when(drafts.findById(mentor.getId())).thenReturn(Optional.of(stored.getValue()));
 		assertThat(service.find(actorId).draft()).isEqualTo(draft);
@@ -104,13 +103,13 @@ class PeerMentorDraftServiceTest {
 		assertThatThrownBy(() -> service.find(outsider)).isInstanceOf(ResponseStatusException.class);
 		assertThatThrownBy(() -> service.delete(outsider)).isInstanceOf(ResponseStatusException.class);
 		verify(drafts, never()).saveAndFlush(any());
-		verify(drafts, never()).deleteById(any());
+		verify(drafts, never()).deleteByUserId(any());
 	}
 
 	@Test
 	void deletingRemovesOnlyTheMentorsOwnDraft() {
 		service.delete(actorId);
 
-		verify(drafts).deleteById(mentor.getId());
+		verify(drafts).deleteByUserId(mentor.getId());
 	}
 }
