@@ -30,8 +30,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Office-hours people have no Menton account and so no in-app notifications: each step of a request reaches the
- * other side by e-mail, in the language Moodle launched them in. Mail goes out after the change commits, and not at
- * all for someone Moodle shared no e-mail address for. Links go to the Moodle course, since office hours open only
+ * other side by e-mail, in the language Moodle launched them in. Mail is queued with the change and sent once it
+ * commits ({@link OfficeHoursMailOutboxService}), and not at all for someone Moodle shared no e-mail address for. Links go to the Moodle course, since office hours open only
  * from there.
  */
 @Service
@@ -65,6 +65,7 @@ public class OfficeHoursMailService {
 	}
 
 	private final MailService mailService;
+	private final OfficeHoursMailOutboxService outbox;
 	private final OfficeHoursUserRepository userRepository;
 	private final OfficeHoursCourseRepository courseRepository;
 	private final OfficeHoursRequestRepository requestRepository;
@@ -87,7 +88,7 @@ public class OfficeHoursMailService {
 					.map(meeting -> List.of(meeting.getScheduledAt())).orElse(List.of());
 		};
 		compose(people.get(to), people.get(from), course(request), request.getTopic(), event.key, times, note)
-				.ifPresent(mail -> mailService.sendAfterCommit(mail.to(), mail.subject(), mail.body()));
+				.ifPresent(mail -> outbox.enqueue(mail.to(), mail.subject(), mail.body()));
 	}
 
 	/** Which side of a meeting a reminder is for. */

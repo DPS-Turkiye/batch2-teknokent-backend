@@ -52,6 +52,8 @@ class OfficeHoursMailServiceTest {
     private OfficeHoursRequestRepository requestRepository;
     @Mock
     private OfficeHoursMeetingRepository meetingRepository;
+    @Mock
+    private OfficeHoursMailOutboxService outbox;
     @InjectMocks
     private OfficeHoursMailService service;
 
@@ -88,7 +90,7 @@ class OfficeHoursMailServiceTest {
     private String[] sentTo(String address) {
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(mailService).sendAfterCommit(eq(address), subject.capture(), body.capture());
+        verify(outbox).enqueue(eq(address), subject.capture(), body.capture());
         return new String[] { subject.getValue(), body.getValue() };
     }
 
@@ -134,7 +136,7 @@ class OfficeHoursMailServiceTest {
 
         service.requestChanged(request, Event.DECLINED, null);
 
-        verifyNoInteractions(mailService);
+        verifyNoInteractions(mailService, outbox);
     }
 
     private OfficeHoursMeeting meeting() {

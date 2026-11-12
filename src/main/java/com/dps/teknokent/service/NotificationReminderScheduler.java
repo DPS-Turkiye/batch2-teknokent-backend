@@ -19,6 +19,7 @@ public class NotificationReminderScheduler {
 
 	private final NotificationReminderService reminderService;
 	private final OfficeHoursReminderService officeHoursReminderService;
+	private final OfficeHoursMailOutboxService officeHoursMailOutbox;
 
 	@Scheduled(fixedDelayString = "${app.notifications.reminders.interval-ms:60000}")
 	public void sendDueReminders() {
@@ -26,5 +27,6 @@ public class NotificationReminderScheduler {
 		reminderService.remindUpcomingMeetings(now);
 		reminderService.remindTaskDeadlines(now);
 		officeHoursReminderService.remindUpcomingMeetings(now);
+		officeHoursMailOutbox.deliverDue(now);
 	}
 }
