@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -30,13 +31,16 @@ import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.PeerExperienceKind;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.PeerTopicLevel;
+import com.dps.teknokent.dto.requests.PeerMentorProfileDraft;
 import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
 import com.dps.teknokent.dto.responses.PeerCategoryCountResponse;
 import com.dps.teknokent.dto.responses.PeerExperienceCardResponse;
 import com.dps.teknokent.dto.responses.PeerMentorDetailResponse;
+import com.dps.teknokent.dto.responses.PeerMentorProfileDraftResponse;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.service.PeerAppointmentService;
+import com.dps.teknokent.service.PeerMentorDraftService;
 import com.dps.teknokent.service.PeerMentoringService;
 
 @WebMvcTest(PeerMentoringController.class)
@@ -54,6 +58,9 @@ class PeerMentoringControllerTest {
 
 	@MockitoBean
 	private PeerAppointmentService peerAppointmentService;
+
+	@MockitoBean
+	private PeerMentorDraftService peerMentorDraftService;
 
 	@Test
 	void theNewReadsNeedTheServiceCredential() throws Exception {
@@ -168,6 +175,47 @@ class PeerMentoringControllerTest {
 		}
 
 		verifyNoInteractions(peerMentoringService);
+	}
+
+	@Test
+	void aDraftIsReadSavedAndRemovedForTheActor() throws Exception {
+		PeerMentorProfileDraft draft = new PeerMentorProfileDraft("topics", List.of(PeerTopicCategory.CAREER_INTERNSHIP),
+				null, null, null, null, "Sta", null, null, null);
+		when(peerMentorDraftService.find(ACTOR)).thenReturn(new PeerMentorProfileDraftResponse(draft,
+				java.time.Instant.parse("2026-11-12T11:05:00Z")));
+
+		mockMvc.perform(get("/api/peer-mentoring/profile/draft").param("actorId", ACTOR.toString())
+				.with(user("proxy")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.draft.step").value("topics"))
+				.andExpect(jsonPath("$.draft.helpWith").value("Sta"))
+				.andExpect(jsonPath("$.updatedAt").value("2026-11-12T11:05:00Z"));
+
+		mockMvc.perform(put("/api/peer-mentoring/profile/draft").with(user("proxy"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\": \"%s\", \"draft\": {\"step\": \"topics\", \"helpWith\": \"Sta\"}}"
+						.formatted(ACTOR)))
+				.andExpect(status().isOk());
+		verify(peerMentorDraftService).save(org.mockito.ArgumentMatchers.eq(ACTOR),
+				org.mockito.ArgumentMatchers.argThat(saved -> "Sta".equals(saved.helpWith())));
+
+		mockMvc.perform(delete("/api/peer-mentoring/profile/draft").param("actorId", ACTOR.toString())
+				.with(user("proxy")))
+				.andExpect(status().isNoContent());
+		verify(peerMentorDraftService).delete(ACTOR);
+	}
+
+	@Test
+	void aDraftNeedsItsBodyAndKeepsThePublishLimits() throws Exception {
+		for (String body : List.of("{\"actorId\": \"%s\"}",
+				"{\"actorId\": \"%s\", \"draft\": {\"helpWith\": \"" + "a".repeat(2001) + "\"}}",
+				"{\"actorId\": \"%s\", \"draft\": {\"experiences\": [{\"title\": \"" + "b".repeat(201) + "\"}]}}")) {
+			mockMvc.perform(put("/api/peer-mentoring/profile/draft").with(user("proxy"))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(body.formatted(ACTOR)))
+					.andExpect(status().isBadRequest());
+		}
+		verifyNoInteractions(peerMentorDraftService);
 	}
 
 	@Test

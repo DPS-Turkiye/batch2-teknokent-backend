@@ -61,6 +61,7 @@ import com.dps.teknokent.repository.InstitutionPersonRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
+import com.dps.teknokent.repository.PeerMentorDraftRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
@@ -99,6 +100,7 @@ public class PeerMentoringService {
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramRepository programRepository;
 	private final MentorAvailabilitySlotRepository mentorAvailabilitySlotRepository;
+	private final PeerMentorDraftRepository peerMentorDraftRepository;
 
 	/**
 	 * The peer mentors of the student's program, the student left out; empty for a student in no program. A
@@ -287,6 +289,7 @@ public class PeerMentoringService {
 		person.map(InstitutionPerson::getClassYear).map(String::valueOf).ifPresent(profile::setStudyYear);
 		mentor.setLinkedinUrl(blankToNull(request.linkedinUrl()));
 		appUserRepository.save(mentor);
+		peerMentorDraftRepository.deleteById(mentor.getId());
 		return toProfileResponse(mentor, mentorProfileRepository.save(profile));
 	}
 
@@ -411,7 +414,7 @@ public class PeerMentoringService {
 	 * requests or mentorships they already have; what should happen to those is the parked decision D4, and this is
 	 * the one check to change when it is made.
 	 */
-	private AppUser requirePeerMentor(UUID actorId) {
+	AppUser requirePeerMentor(UUID actorId) {
 		AppUser user = domainLookupService.requireUser(actorId);
 		if (!isPeerMentor(user)) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.peerMentoringStudentsOnly"));

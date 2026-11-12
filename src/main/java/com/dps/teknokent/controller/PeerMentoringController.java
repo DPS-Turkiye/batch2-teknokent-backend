@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,15 +18,18 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
+import com.dps.teknokent.dto.requests.SavePeerMentorProfileDraftRequest;
 import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
 import com.dps.teknokent.dto.responses.AppointmentResponse;
 import com.dps.teknokent.dto.responses.PeerCategoryCountResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
 import com.dps.teknokent.dto.responses.PeerMentorDetailResponse;
+import com.dps.teknokent.dto.responses.PeerMentorProfileDraftResponse;
 import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.PeerAppointmentService;
+import com.dps.teknokent.service.PeerMentorDraftService;
 import com.dps.teknokent.service.PeerMentoringService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -41,6 +45,7 @@ public class PeerMentoringController {
 
 	private final PeerMentoringService peerMentoringService;
 	private final PeerAppointmentService peerAppointmentService;
+	private final PeerMentorDraftService peerMentorDraftService;
 
 	/** {@code subTopic} keeps the mentors offering it; {@code availableThisWeek} those with a free slot this week. */
 	@GetMapping("/mentors")
@@ -98,6 +103,23 @@ public class PeerMentoringController {
 	@PutMapping("/profile")
 	public PeerMentorProfileResponse saveProfile(@Valid @RequestBody SavePeerMentorProfileRequest request) {
 		return peerMentoringService.saveProfile(CurrentActor.resolve(request.actorId()), request);
+	}
+
+	/** The peer mentor's unfinished wizard ("Taslak kaydet"); 404 when there is none. */
+	@GetMapping("/profile/draft")
+	public PeerMentorProfileDraftResponse draft(@RequestParam(required = false) UUID actorId) {
+		return peerMentorDraftService.find(CurrentActor.resolve(actorId));
+	}
+
+	@PutMapping("/profile/draft")
+	public PeerMentorProfileDraftResponse saveDraft(@Valid @RequestBody SavePeerMentorProfileDraftRequest request) {
+		return peerMentorDraftService.save(CurrentActor.resolve(request.actorId()), request.draft());
+	}
+
+	@DeleteMapping("/profile/draft")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteDraft(@RequestParam(required = false) UUID actorId) {
+		peerMentorDraftService.delete(CurrentActor.resolve(actorId));
 	}
 
 	@PostMapping("/requests")
