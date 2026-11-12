@@ -17,6 +17,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.WeeklyProgramWarning;
 import com.dps.teknokent.dto.requests.ReadWeeklyProgramRequest;
@@ -72,9 +73,12 @@ public class WeeklyProgramService {
 	private final LocalPiiRedactionService piiRedactionService;
 	private final AiProviderClient aiProviderClient;
 	private final JsonUtils jsonUtils;
+	private final AiFeatures aiFeatures;
 
 	public WeeklyProgramProposalResponse read(UUID actorId, UUID programId, ReadWeeklyProgramRequest request) {
 		Program program = coordinatorProgramService.requireSettingsEditor(actorId, programId);
+		// The same switch as the syllabus read: no file is read and nothing reaches the AI while it is off.
+		aiFeatures.require(AiFeature.SYLLABUS);
 		int totalWeeks = requireDates(program);
 		StoredDocument document = requireReadable(actorId, program, request.documentId());
 		ExtractionResult extraction = textExtractor.extract(objectStorage.get(document.getS3Key()), "auto");
