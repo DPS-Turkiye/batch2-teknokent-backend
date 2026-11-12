@@ -16,5 +16,7 @@ public record PeerMentorCardResponse(
 		List<String> recommendationReasons,
 		boolean capacityFull,
 		/** Active badges, as anyone may see them; a card shows the achievements. */
-		List<PublicBadgeResponse> badges) {
+		List<PublicBadgeResponse> badges,
+		/** A free slot in the coming week ("Bu hafta müsait"). */
+		boolean availableThisWeek) {
 }

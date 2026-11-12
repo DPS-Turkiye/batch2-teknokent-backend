@@ -3,12 +3,17 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
@@ -24,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.dps.teknokent.domain.BadgeCode;
 import com.dps.teknokent.domain.BadgeKind;
 import com.dps.teknokent.domain.IdentityKind;
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.ProgramMentorStatus;
@@ -33,12 +39,16 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
 import com.dps.teknokent.dto.requests.SavePeerMentorProfileRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
+import com.dps.teknokent.dto.responses.PeerCategoryCountResponse;
 import com.dps.teknokent.dto.responses.PeerMentorCardResponse;
+import com.dps.teknokent.dto.responses.PeerMentorDetailResponse;
 import com.dps.teknokent.dto.responses.PeerMentorProfileResponse;
 import com.dps.teknokent.dto.responses.PeerMentoringRequestResponse;
 import com.dps.teknokent.dto.responses.PublicBadgeResponse;
+import com.dps.teknokent.dto.responses.StudentProfileResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.InstitutionPerson;
 import com.dps.teknokent.entity.MentorProfile;
@@ -51,10 +61,12 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
+import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.util.MeetingSlotTimes;
 
 class PeerMentoringServiceTest {
 
@@ -74,7 +86,9 @@ class PeerMentoringServiceTest {
 	private final ProgramPeerCategoryService peerCategories = mock(ProgramPeerCategoryService.class);
 	private final ProgramMentorRepository programMentors = mock(ProgramMentorRepository.class);
 	private final ProgramRepository programRepository = mock(ProgramRepository.class);
+	private final MentorAvailabilitySlotRepository slots = mock(MentorAvailabilitySlotRepository.class);
 	private PeerMentoringService service;
+	private List<MentorProfileResponse> programProfiles;
 
 	private AppUser student;
 	private AppUser peerMentor;
@@ -83,7 +97,7 @@ class PeerMentoringServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new PeerMentoringService(lookup, directory, people, programs, profiles, requestService, requests,
-				personalTeams, profileRepository, users, badges, peerCategories, programMentors, programRepository);
+				personalTeams, profileRepository, users, badges, peerCategories, programMentors, programRepository, slots);
 		student = user("Ayşe Yılmaz", Set.of(IdentityKind.STUDENT), UserRole.MENTEE);
 		student.setProgramId(PROGRAM_ID);
 		peerMentor = user("Zeynep Demir", Set.of(IdentityKind.STUDENT), UserRole.MENTEE, UserRole.MENTOR);
@@ -91,9 +105,15 @@ class PeerMentoringServiceTest {
 		when(programs.programOf(student)).thenReturn(Optional.of(PROGRAM_ID));
 		Set<UUID> accepted = Set.of(peerMentor.getId(), teknokentMentor.getId());
 		when(programs.acceptedMentorIds(PROGRAM_ID)).thenReturn(accepted);
-		when(profiles.findAmongExcept(accepted, student.getId())).thenReturn(List.of(
-				profile(peerMentor, List.of("Kariyer ve Staj", "TECHNICAL_DIGITAL", "Bambaşka"), "CV ve staj", 3, 1),
-				profile(teknokentMentor, List.of("Fintech"), "Startup büyütme", null, 0)));
+		programProfiles = List.of(
+				profile(peerMentor, List.of("Kariyer ve Staj", "TECHNICAL_DIGITAL", "Bambaşka"), "CV ve staj", 3, 1,
+						List.of("cv", "interview"), new StudentProfileResponse("Bilgisayar Mühendisliği", "4",
+								List.of("CENG 315"), List.of("Kampüs uygulaması"), "TU Delft")),
+				profile(teknokentMentor, List.of("Fintech"), "Startup büyütme", null, 0));
+		when(profiles.findAmongExcept(any(), eq(student.getId()))).thenAnswer(invocation -> {
+			Set<UUID> among = invocation.getArgument(0);
+			return programProfiles.stream().filter(profile -> among.contains(profile.id())).toList();
+		});
 		when(people.findFirstByUserIdOrderBySyncedAtDesc(peerMentor.getId()))
 				.thenReturn(Optional.of(person("Bilgisayar Mühendisliği", 4)));
 		when(people.findFirstByUserIdOrderBySyncedAtDesc(student.getId()))
@@ -165,7 +185,7 @@ class PeerMentoringServiceTest {
 
 	@Test
 	void aStudentSeesTheirProgramsPeerMentorsButNeverTeknokentMentors() {
-		List<PeerMentorCardResponse> cards = service.mentors(student.getId(), null, null);
+		List<PeerMentorCardResponse> cards = service.mentors(student.getId(), null, null, null, false);
 
 		assertThat(cards).singleElement().satisfies(card -> {
 			assertThat(card.mentorId()).isEqualTo(peerMentor.getId());
@@ -183,24 +203,24 @@ class PeerMentoringServiceTest {
 
 	@Test
 	void theDirectoryFiltersByCategoryAndText() {
-		assertThat(service.mentors(student.getId(), PeerTopicCategory.INTERNATIONAL, null)).isEmpty();
-		assertThat(service.mentors(student.getId(), PeerTopicCategory.CAREER_INTERNSHIP, null)).hasSize(1);
-		assertThat(service.mentors(student.getId(), null, "zeynep")).hasSize(1);
-		assertThat(service.mentors(student.getId(), null, "erasmus")).isEmpty();
+		assertThat(service.mentors(student.getId(), PeerTopicCategory.INTERNATIONAL, null, null, false)).isEmpty();
+		assertThat(service.mentors(student.getId(), PeerTopicCategory.CAREER_INTERNSHIP, null, null, false)).hasSize(1);
+		assertThat(service.mentors(student.getId(), null, "zeynep", null, false)).hasSize(1);
+		assertThat(service.mentors(student.getId(), null, "erasmus", null, false)).isEmpty();
 	}
 
 	@Test
 	void onlyTheProgramsActiveCategoriesShowAndAMentorWithNoneOfThemIsLeftOut() {
 		activate(EnumSet.of(PeerTopicCategory.TECHNICAL_DIGITAL));
 
-		assertThat(service.mentors(student.getId(), null, null)).singleElement()
+		assertThat(service.mentors(student.getId(), null, null, null, false)).singleElement()
 				.satisfies(card -> assertThat(card.categories()).containsExactly(PeerTopicCategory.TECHNICAL_DIGITAL));
-		assertThat(service.mentors(student.getId(), PeerTopicCategory.CAREER_INTERNSHIP, null)).isEmpty();
+		assertThat(service.mentors(student.getId(), PeerTopicCategory.CAREER_INTERNSHIP, null, null, false)).isEmpty();
 		assertThat(service.categories(student.getId(), UserRole.MENTEE))
 				.containsExactly(PeerTopicCategory.TECHNICAL_DIGITAL);
 
 		activate(EnumSet.of(PeerTopicCategory.INTERNATIONAL));
-		assertThat(service.mentors(student.getId(), null, null)).isEmpty();
+		assertThat(service.mentors(student.getId(), null, null, null, false)).isEmpty();
 	}
 
 	@Test
@@ -208,7 +228,7 @@ class PeerMentoringServiceTest {
 		activate(EnumSet.noneOf(PeerTopicCategory.class));
 
 		assertThat(service.categories(student.getId(), UserRole.MENTEE)).isEmpty();
-		assertThat(service.mentors(student.getId(), null, null)).isEmpty();
+		assertThat(service.mentors(student.getId(), null, null, null, false)).isEmpty();
 	}
 
 	@Test
@@ -278,14 +298,14 @@ class PeerMentoringServiceTest {
 	void aStudentInNoProgramSeesNobody() {
 		when(programs.programOf(student)).thenReturn(Optional.empty());
 
-		assertThat(service.mentors(student.getId(), null, null)).isEmpty();
+		assertThat(service.mentors(student.getId(), null, null, null, false)).isEmpty();
 	}
 
 	@Test
 	void aTeknokentMenteeCannotUsePeerMentoring() {
 		AppUser founder = user("Kurucu", Set.of(), UserRole.MENTEE);
 
-		assertThatThrownBy(() -> service.mentors(founder.getId(), null, null))
+		assertThatThrownBy(() -> service.mentors(founder.getId(), null, null, null, false))
 				.isInstanceOfSatisfying(ResponseStatusException.class,
 						error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 	}
@@ -350,6 +370,119 @@ class PeerMentoringServiceTest {
 				.containsExactly(PeerTopicCategory.INTERNATIONAL);
 	}
 
+	@Test
+	void aStudentOpensAProgramMentorsProfileWithWhatTheWizardPublishedAndTheWeeklyHours() {
+		peerMentor.setLinkedinUrl("https://linkedin.com/in/zeynep");
+		MentorAvailabilityRuleResponse tuesday = new MentorAvailabilityRuleResponse(UUID.randomUUID(),
+				DayOfWeek.TUESDAY, LocalTime.of(18, 0), LocalTime.of(20, 0), 60);
+		when(profiles.findAvailabilityRules(peerMentor.getId())).thenReturn(List.of(tuesday));
+
+		PeerMentorDetailResponse detail = service.mentor(student.getId(), peerMentor.getId());
+
+		assertThat(detail.mentorId()).isEqualTo(peerMentor.getId());
+		assertThat(detail.fullName()).isEqualTo("Zeynep Demir");
+		assertThat(detail.department()).isEqualTo("Bilgisayar Mühendisliği");
+		assertThat(detail.classYear()).isEqualTo(4);
+		assertThat(detail.categories())
+				.containsExactly(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.TECHNICAL_DIGITAL);
+		assertThat(detail.helpWith()).isEqualTo("CV ve staj");
+		assertThat(detail.recommendationReasons()).hasSize(1);
+		assertThat(detail.badges()).extracting(PublicBadgeResponse::code).containsExactly(BadgeCode.SESSIONS_10);
+		assertThat(detail.subTopics()).containsExactly("cv", "interview");
+		assertThat(detail.strongCourses()).containsExactly("CENG 315");
+		assertThat(detail.projects()).containsExactly("Kampüs uygulaması");
+		assertThat(detail.erasmus()).isEqualTo("TU Delft");
+		assertThat(detail.linkedinUrl()).isEqualTo("https://linkedin.com/in/zeynep");
+		assertThat(detail.weeklyHours()).containsExactly(tuesday);
+		assertThat(detail.availableThisWeek()).isFalse();
+	}
+
+	@Test
+	void aProfileIsFoundOnlyForAPeerMentorTheDirectoryLists() {
+		assertThatThrownBy(() -> service.mentor(student.getId(), teknokentMentor.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		assertThatThrownBy(() -> service.mentor(student.getId(), UUID.randomUUID()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		assertThatThrownBy(() -> service.mentor(student.getId(), student.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+
+		activate(EnumSet.of(PeerTopicCategory.INTERNATIONAL));
+		assertThatThrownBy(() -> service.mentor(student.getId(), peerMentor.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		verify(profiles, never()).findAvailabilityRules(any());
+	}
+
+	@Test
+	void aTeknokentMenteeCannotOpenAPeerProfileOrTheCounts() {
+		AppUser founder = user("Startup Founder", Set.of(), UserRole.MENTEE);
+
+		assertThatThrownBy(() -> service.mentor(founder.getId(), peerMentor.getId()))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+		assertThatThrownBy(() -> service.mentorCounts(founder.getId()))
+				.isInstanceOf(ResponseStatusException.class);
+	}
+
+	@Test
+	void countsListEveryActiveCategoryWithHowManyOfTheProgramsPeerMentorsOfferIt() {
+		activate(EnumSet.of(PeerTopicCategory.INTERNATIONAL, PeerTopicCategory.TECHNICAL_DIGITAL,
+				PeerTopicCategory.CAREER_INTERNSHIP));
+
+		assertThat(service.mentorCounts(student.getId())).containsExactly(
+				new PeerCategoryCountResponse(PeerTopicCategory.CAREER_INTERNSHIP, 1),
+				new PeerCategoryCountResponse(PeerTopicCategory.TECHNICAL_DIGITAL, 1),
+				new PeerCategoryCountResponse(PeerTopicCategory.INTERNATIONAL, 0));
+	}
+
+	@Test
+	void theDirectoryFiltersBySubTopicIgnoringCaseAndSpaces() {
+		assertThat(service.mentors(student.getId(), null, null, "CV", false)).hasSize(1);
+		assertThat(service.mentors(student.getId(), null, null, "  interview ", false)).hasSize(1);
+		assertThat(service.mentors(student.getId(), null, null, "erasmus", false)).isEmpty();
+		assertThat(service.mentors(student.getId(), null, null, " ", false)).hasSize(1);
+	}
+
+	@Test
+	void aMentorWithAFreeSlotThisWeekIsMarkedAndTheFilterKeepsOnlyThem() {
+		when(slots.findMentorIdsWithFreeSlotBetween(any(), any(), any(), eq(MeetingStatus.SCHEDULED)))
+				.thenReturn(List.of(peerMentor.getId()));
+
+		assertThat(service.mentors(student.getId(), null, null, null, true)).singleElement()
+				.satisfies(card -> assertThat(card.availableThisWeek()).isTrue());
+		assertThat(service.mentor(student.getId(), peerMentor.getId()).availableThisWeek()).isTrue();
+
+		when(slots.findMentorIdsWithFreeSlotBetween(any(), any(), any(), eq(MeetingStatus.SCHEDULED)))
+				.thenReturn(List.of());
+		assertThat(service.mentors(student.getId(), null, null, null, true)).isEmpty();
+		assertThat(service.mentors(student.getId(), null, null, null, false)).singleElement()
+				.satisfies(card -> assertThat(card.availableThisWeek()).isFalse());
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void thisWeekStartsAfterTheBookingLeadAndRunsSevenDaysForTheListedMentorsOnly() {
+		Instant before = Instant.now();
+
+		service.mentors(student.getId(), null, null, null, true);
+
+		ArgumentCaptor<Collection<UUID>> ids = ArgumentCaptor.forClass(Collection.class);
+		ArgumentCaptor<Instant> from = ArgumentCaptor.forClass(Instant.class);
+		ArgumentCaptor<Instant> until = ArgumentCaptor.forClass(Instant.class);
+		verify(slots).findMentorIdsWithFreeSlotBetween(ids.capture(), from.capture(), until.capture(),
+				eq(MeetingStatus.SCHEDULED));
+		assertThat(ids.getValue()).containsExactly(peerMentor.getId());
+		assertThat(from.getValue()).isAfterOrEqualTo(before.plus(MeetingSlotTimes.MIN_BOOKING_LEAD));
+		assertThat(Duration.between(from.getValue(), until.getValue())).isEqualTo(Duration.ofDays(7));
+	}
+
+	@Test
+	void anEmptyDirectoryAsksNothingAboutSlots() {
+		when(programs.programOf(student)).thenReturn(Optional.empty());
+
+		assertThat(service.mentors(student.getId(), null, null, null, true)).isEmpty();
+		verify(slots, never()).findMentorIdsWithFreeSlotBetween(any(), any(), any(), any());
+	}
+
 	private AppUser user(String name, Set<IdentityKind> kinds, UserRole... roles) {
 		AppUser user = new AppUser();
 		user.setId(UUID.randomUUID());
@@ -389,8 +522,13 @@ class PeerMentoringServiceTest {
 
 	private static MentorProfileResponse profile(AppUser mentor, List<String> specialties, String about,
 			Integer capacity, long active) {
+		return profile(mentor, specialties, about, capacity, active, List.of(), null);
+	}
+
+	private static MentorProfileResponse profile(AppUser mentor, List<String> specialties, String about,
+			Integer capacity, long active, List<String> offerings, StudentProfileResponse studies) {
 		return new MentorProfileResponse(mentor.getId(), mentor.getFullName(), mentor.getEmail(), "ZD", "", "", "", "",
 				"", "", "", "", "", "", "", specialties, List.of(), List.of(), capacity, about, 30, 0, null, null,
-				List.of(), active, 0, List.of(), List.of(), List.of(), List.of(), null, List.of());
+				List.of(), active, 0, List.of(), List.of(), List.of(), offerings, studies, List.of());
 	}
 }
