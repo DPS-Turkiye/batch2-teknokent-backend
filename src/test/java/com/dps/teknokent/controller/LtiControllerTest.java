@@ -27,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
@@ -43,6 +44,8 @@ import com.dps.teknokent.service.OfficeHoursCourseService;
 
 @WebMvcTest({ LtiController.class, OfficeHoursController.class })
 @Import(SecurityConfig.class)
+// These endpoints belong to the ODTÜ deployment; the Teknokent default answers them with a 404.
+@TestPropertySource(properties = "app.edition=ODTU")
 class LtiControllerTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-00000000c001");
