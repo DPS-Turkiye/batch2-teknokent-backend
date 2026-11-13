@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
@@ -51,6 +53,8 @@ class AdminOverviewServiceTest {
 	private AppUserRepository appUserRepository;
 	@Mock
 	private MentorshipService mentorshipService;
+	@Mock
+	private MentorshipRepository mentorshipRepository;
 	@Mock
 	private MentorshipRequestRepository mentorshipRequestRepository;
 	@Mock
@@ -231,6 +235,46 @@ class AdminOverviewServiceTest {
 				.containsExactly("Kemal Arslan:" + stars.getId(), "Selin Ak:null");
 	}
 
+	// An admin moved Vega from Stars to Growth: what Vega did in Stars stays in Stars' report, and only that.
+	@Test
+	void programReportKeepsWhatATeamThatLeftDidInTheProgramAndLeavesItOutOfTheNewOne() {
+		AppUser elif = person("Elif Demir", UserRole.COORDINATOR);
+		AppUser kemal = person("Kemal Arslan", UserRole.MENTOR);
+		AppUser deniz = person("Deniz Kaya", UserRole.MENTOR);
+		Program stars = program("METU Stars 2026", elif.getId());
+		Program growth = program("Growth Circuit 2026", elif.getId());
+		Organization vega = organization("Vega");
+		Mentorship inStars = mentorshipEntity(kemal, vega, stars);
+		Mentorship inGrowth = mentorshipEntity(deniz, vega, growth);
+		ProgramStartup nowInGrowth = new ProgramStartup();
+		nowInGrowth.setProgramId(growth.getId());
+		nowInGrowth.setOrganizationId(vega.getId());
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(elif, kemal, deniz));
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(stars.getId())).thenReturn(List.of());
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(growth.getId())).thenReturn(List.of(nowInGrowth));
+		when(mentorshipRepository.findTeamsWithMentorshipIn(List.of(stars.getId())))
+				.thenReturn(List.of(programTeam(stars, vega)));
+		when(mentorshipRepository.findTeamsWithMentorshipIn(List.of(growth.getId())))
+				.thenReturn(List.of(programTeam(growth, vega)));
+		when(mentorshipRepository.findByOrganizationIdIn(Set.of(vega.getId()))).thenReturn(List.of(inStars, inGrowth));
+		when(mentorshipService.findAll()).thenReturn(List.of(
+				MentorshipResponse.fromEntity(inStars), MentorshipResponse.fromEntity(inGrowth),
+				mentorship(deniz, vega, null)));
+		// Follow-up meetings carry no program of their own; the mentor's mentorship says where they were held.
+		when(meetingRepository.findAllByOrderByScheduledAtDesc()).thenReturn(List.of(
+				meeting(kemal, vega), meeting(deniz, vega)));
+
+		var oldReport = service.programReport(stars);
+		var newReport = service.programReport(growth);
+
+		assertThat(oldReport.mentorships()).extracting(row -> row.mentorName()).containsExactly("Kemal Arslan");
+		assertThat(oldReport.meetings()).extracting(mark -> mark.mentorId()).containsExactly(kemal.getId());
+		assertThat(oldReport.meetingsLast8Weeks()).isEqualTo(1);
+		assertThat(newReport.mentorships()).extracting(row -> row.mentorName() + ":" + row.programId())
+				.containsExactly("Deniz Kaya:" + growth.getId(), "Deniz Kaya:null");
+		assertThat(newReport.meetings()).extracting(mark -> mark.mentorId()).containsExactly(deniz.getId());
+	}
+
 	@Test
 	void overviewTellsWhichProgramEachMentorshipWasMadeIn() {
 		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
@@ -251,6 +295,24 @@ class AdminOverviewServiceTest {
 	}
 
 	private static MentorshipResponse mentorship(AppUser mentor, Organization organization, Program program) {
+		return MentorshipResponse.fromEntity(mentorshipEntity(mentor, organization, program));
+	}
+
+	private static MentorshipRepository.ProgramTeam programTeam(Program program, Organization organization) {
+		return new MentorshipRepository.ProgramTeam() {
+			@Override
+			public UUID getProgramId() {
+				return program.getId();
+			}
+
+			@Override
+			public UUID getOrganizationId() {
+				return organization.getId();
+			}
+		};
+	}
+
+	private static Mentorship mentorshipEntity(AppUser mentor, Organization organization, Program program) {
 		Mentorship mentorship = new Mentorship();
 		mentorship.setId(UUID.randomUUID());
 		mentorship.setMentor(mentor);
@@ -258,7 +320,7 @@ class AdminOverviewServiceTest {
 		mentorship.setProgram(program);
 		mentorship.setStatus(MentorshipStatus.ACTIVE);
 		mentorship.setStartDate(java.time.LocalDate.now().minusDays(3));
-		return MentorshipResponse.fromEntity(mentorship);
+		return mentorship;
 	}
 
 	private static Organization organization(String name) {
