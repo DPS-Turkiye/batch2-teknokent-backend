@@ -144,11 +144,13 @@ public class DocumentService {
 		}
 	}
 
+	/** The person's own files, newest first; peer mentor evidence is listed by the peer mentoring profile instead. */
 	public List<StoredDocumentResponse> listForUser(UUID userId) {
 		if (userId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
 		return storedDocumentRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+				.filter(document -> !DocumentKind.PEER_EVIDENCE.value().equals(document.getKind()))
 				.map(StoredDocumentResponse::fromEntity)
 				.toList();
 	}

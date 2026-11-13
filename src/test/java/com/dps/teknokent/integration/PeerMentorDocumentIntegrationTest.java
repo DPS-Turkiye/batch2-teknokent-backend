@@ -215,6 +215,10 @@ class PeerMentorDocumentIntegrationTest {
 						.with(authentication(signedIn(mentor))))
 				.andExpect(status().isBadRequest());
 		assertThat(storedDocumentRepository.findByUserIdAndKind(mentor.getId(), "peer-evidence")).hasSize(1);
+		// Not even the owner's general file list carries it; the peer mentoring profile lists it.
+		mockMvc.perform(get("/api/documents").with(authentication(signedIn(mentor))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(0));
 	}
 
 	@Test
