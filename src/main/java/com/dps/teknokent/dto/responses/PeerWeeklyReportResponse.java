@@ -9,8 +9,8 @@ import com.dps.teknokent.domain.PeerReportStatus;
 
 /**
  * The weekly summary: computed while a draft, the frozen snapshot once sent. It can be sent from Friday evening
- * ({@code opensAt}), when every held meeting has a sent report, every active day a sent daily report, and the three
- * answers are filled in.
+ * ({@code opensAt}) to Monday night ({@code deadline}), when every held meeting has a sent report and the three answers
+ * are filled in. {@code dailyRequired}/{@code dailySent} are shown, not required.
  */
 public record PeerWeeklyReportResponse(
 		LocalDate weekStart,

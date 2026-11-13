@@ -60,6 +60,7 @@ public class PeerDailyReportService {
 	private final PeerDailyReportRepository dailyRepository;
 	private final PeerActivityRepository activityRepository;
 	private final PeerWeeklyReportRepository weeklyRepository;
+	private final PeerReportStatuses statuses;
 	private final AppUserRepository userRepository;
 
 	/** The five day cards of the week starting on {@code weekStart} (a Monday). */
@@ -82,7 +83,7 @@ public class PeerDailyReportService {
 	@Transactional
 	public PeerDailyReportResponse save(UUID actorId, LocalDate date, SavePeerDailyReportRequest request) {
 		AppUser mentor = access.requireMentor(actorId);
-		requireReportableDay(date);
+		requireReportableDay(mentor, date);
 		requireWeekOpen(mentor, date);
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseGet(() -> newReport(mentor, date));
@@ -103,7 +104,7 @@ public class PeerDailyReportService {
 	@Transactional
 	public PeerDailyReportResponse submit(UUID actorId, LocalDate date) {
 		AppUser mentor = access.requireMentor(actorId);
-		requireReportableDay(date);
+		requireReportableDay(mentor, date);
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseThrow(() -> new ConflictException(Texts.forRequest("error.peerReportNotStarted")));
 		requireEditable(report.getStatus());
@@ -157,23 +158,31 @@ public class PeerDailyReportService {
 
 	/** The day cards of a week, Monday to Friday. Shared with the weekly summary. */
 	List<PeerReportWeekResponse.Day> days(AppUser mentor, LocalDate weekStart) {
+		return days(mentor, weekStart, PeerReportScope.MENTOR);
+	}
+
+	/** As above, as the scope sees it: a reviewer sees no draft day and only the report's program. */
+	List<PeerReportWeekResponse.Day> days(AppUser mentor, LocalDate weekStart, PeerReportScope scope) {
 		LocalDate friday = weekStart.plusDays(WORKING_DAYS - 1L);
 		Map<LocalDate, PeerDailyReport> reports = dailyRepository
 				.findByMentorIdAndReportDateBetween(mentor.getId(), weekStart, friday).stream()
 				.collect(Collectors.toMap(PeerDailyReport::getReportDate, Function.identity()));
-		Map<LocalDate, Long> activityCounts = activities(mentor, weekStart, friday).stream()
+		Map<LocalDate, Long> activityCounts = activities(mentor, weekStart, friday, scope).stream()
 				.collect(Collectors.groupingBy(PeerActivity::getActivityDate, Collectors.counting()));
-		List<Meeting> meetings = access.heldMeetings(mentor, calendar.startOf(weekStart),
-				calendar.startOf(friday.plusDays(1)));
-		Map<UUID, PeerMeetingReport> meetingReportsById = meetingReports.reportsFor(mentor, meetings);
+		List<Meeting> meetings = access.inScope(mentor, access.heldMeetings(mentor, calendar.startOf(weekStart),
+				calendar.startOf(friday.plusDays(1))), scope);
+		Map<UUID, PeerMeetingReport> meetingReportsById = meetingReports.reportsFor(mentor, meetings, scope);
+		PeerReportStatuses.Lookup shown = statuses.lookup();
 		List<PeerReportWeekResponse.Day> days = new ArrayList<>();
 		for (int offset = 0; offset < WORKING_DAYS; offset++) {
 			LocalDate date = weekStart.plusDays(offset);
 			List<Meeting> ofDay = meetings.stream()
 					.filter(meeting -> calendar.dateOf(meeting.getScheduledAt()).equals(date))
 					.toList();
-			PeerDailyReport report = reports.get(date);
-			days.add(new PeerReportWeekResponse.Day(date, report == null ? null : report.getStatus(), ofDay.size(),
+			PeerDailyReport report = visible(reports.get(date), scope);
+			days.add(new PeerReportWeekResponse.Day(date,
+					report == null ? null : shown.of(report.getStatus(), mentor.getId(), date, report.getProgramId()),
+					ofDay.size(),
 					activityCounts.getOrDefault(date, 0L).intValue(), unsent(ofDay, meetingReportsById)));
 		}
 		return days;
@@ -181,8 +190,23 @@ public class PeerDailyReportService {
 
 	/** Activities of the mentor from {@code from} to {@code to}, both included. Shared with the weekly summary. */
 	List<PeerActivity> activities(AppUser mentor, LocalDate from, LocalDate to) {
+		return activities(mentor, from, to, PeerReportScope.MENTOR);
+	}
+
+	List<PeerActivity> activities(AppUser mentor, LocalDate from, LocalDate to, PeerReportScope scope) {
 		return activityRepository.findByMentorIdAndActivityDateBetweenOrderByActivityDateAscCreatedAtAsc(
-				mentor.getId(), from, to);
+				mentor.getId(), from, to).stream()
+				.filter(activity -> scope.inProgram(activity.getProgramId()))
+				.toList();
+	}
+
+	/** A day report as the scope may see it: a reviewer sees neither a draft nor another program's day. */
+	private static PeerDailyReport visible(PeerDailyReport report, PeerReportScope scope) {
+		if (report == null || (scope.sentOnly() && report.getStatus() == PeerReportStatus.DRAFT)
+				|| !scope.inProgram(report.getProgramId())) {
+			return null;
+		}
+		return report;
 	}
 
 	static void requireMonday(LocalDate weekStart) {
@@ -193,16 +217,21 @@ public class PeerDailyReportService {
 	}
 
 	private PeerDailyReportResponse response(AppUser mentor, LocalDate date, PeerDailyReport report) {
-		List<Meeting> meetings = meetingsOf(mentor, date);
-		Map<UUID, PeerMeetingReport> reports = meetingReports.reportsFor(mentor, meetings);
-		List<PeerReportMeetingResponse> rows = meetingReports.rows(mentor, meetings);
-		List<PeerActivity> activities = activities(mentor, date, date);
+		return response(mentor, date, report, PeerReportScope.MENTOR);
+	}
+
+	PeerDailyReportResponse response(AppUser mentor, LocalDate date, PeerDailyReport report, PeerReportScope scope) {
+		List<Meeting> meetings = access.inScope(mentor, meetingsOf(mentor, date), scope);
+		Map<UUID, PeerMeetingReport> reports = meetingReports.reportsFor(mentor, meetings, scope);
+		List<PeerReportMeetingResponse> rows = meetingReports.rows(mentor, meetings, scope);
+		List<PeerActivity> activities = activities(mentor, date, date, scope);
 		Map<UUID, String> names = menteeNames(activities);
 		Set<PeerMentorSkill> suggested = EnumSet.noneOf(PeerMentorSkill.class);
 		reports.values().forEach(meetingReport -> suggested.addAll(meetingReport.getSkills()));
 		int recorded = rows.stream().mapToInt(PeerReportMeetingResponse::durationMinutes).sum()
 				+ activities.stream().mapToInt(PeerActivity::getDurationMinutes).sum();
-		PeerReportStatus status = report == null ? null : report.getStatus();
+		PeerReportStatus status = report == null ? null
+				: statuses.lookup().of(report.getStatus(), mentor.getId(), date, report.getProgramId());
 		boolean open = status == null || status.editable();
 		boolean late = report != null && report.getSubmittedAt() != null
 				? report.getSubmittedAt().isAfter(calendar.dailyDeadline(date))
@@ -245,7 +274,7 @@ public class PeerDailyReportService {
 	}
 
 	private void apply(AppUser mentor, PeerActivity activity, SavePeerActivityRequest request) {
-		requireReportableDay(request.activityDate());
+		requireReportableDay(mentor, request.activityDate());
 		requireDayEditable(mentor, request.activityDate());
 		if (request.menteeId() != null && !access.isMenteeOf(mentor, request.menteeId())) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerActivityMenteeUnknown"));
@@ -271,7 +300,10 @@ public class PeerDailyReportService {
 		requireWeekOpen(mentor, date);
 	}
 
-	/** Once the week's summary is sent, its days are fixed too: the coordinator reviews what the snapshot froze. */
+	/**
+	 * Once the week's summary is sent, its days are fixed too: the coordinator reviews what the snapshot froze, and
+	 * approves the days with it.
+	 */
 	private void requireWeekOpen(AppUser mentor, LocalDate date) {
 		weeklyRepository.findByMentorIdAndWeekStart(mentor.getId(), calendar.weekStartOf(date))
 				.filter(week -> !week.getStatus().editable())
@@ -329,11 +361,14 @@ public class PeerDailyReportService {
 		}
 	}
 
-	/** A working day that has begun: nobody reports on tomorrow. */
-	private void requireReportableDay(LocalDate date) {
+	/** A working day that has begun (nobody reports on tomorrow), and for a former mentor one before the badge went. */
+	private void requireReportableDay(AppUser mentor, LocalDate date) {
 		requireWorkingDay(date);
 		if (date.isAfter(calendar.today())) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerReportFutureDay"));
+		}
+		if (date.isAfter(access.lastReportableDay(mentor))) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerReportAfterBadge"));
 		}
 	}
 }
