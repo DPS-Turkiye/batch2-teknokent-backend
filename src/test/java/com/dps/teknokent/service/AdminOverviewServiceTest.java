@@ -88,7 +88,7 @@ class AdminOverviewServiceTest {
 		AppUser admin = person("Dual permission", UserRole.ADMIN);
 		org.springframework.test.util.ReflectionTestUtils.setField(admin, "role", UserRole.MENTEE);
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
-		when(appUserRepository.findAll()).thenReturn(List.of(admin));
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin));
 
 		assertThat(service.overview(admin.getId()).users()).hasSize(1);
 	}
@@ -102,7 +102,7 @@ class AdminOverviewServiceTest {
 		Program byCoordinator = program("METU Stars 2026", elif.getId());
 		Program unassigned = program("Boş program", admin.getId());
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
-		when(appUserRepository.findAll()).thenReturn(List.of(admin, elif, burcu));
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, elif, burcu));
 		when(programRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(byAdmin, byCoordinator, unassigned));
 		when(programCoordinatorRepository.findByProgramIdOrderByCreatedAtAsc(byAdmin.getId()))
 				.thenReturn(List.of(assignment(byAdmin, elif), assignment(byAdmin, burcu)));
@@ -127,7 +127,7 @@ class AdminOverviewServiceTest {
 			user.setFirebaseUid("uid-" + user.getFullName());
 		}
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
-		when(appUserRepository.findAll()).thenReturn(List.of(admin, waiting, ready, mentor));
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, waiting, ready, mentor));
 		when(loginProvisioner.passwordsSet(List.of(waiting.getFirebaseUid(), ready.getFirebaseUid())))
 				.thenReturn(Map.of(waiting.getFirebaseUid(), false, ready.getFirebaseUid(), true));
 
@@ -148,7 +148,7 @@ class AdminOverviewServiceTest {
 		open.setSupportArea("Finans");
 		open.setStatus(MentorshipRequestStatus.MORE_INFO_REQUESTED);
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
-		when(appUserRepository.findAll()).thenReturn(List.of(admin, mentor));
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, mentor));
 		when(mentorshipRequestRepository.findByStatusInOrderByCreatedAtDesc(List.of(
 				MentorshipRequestStatus.PENDING,
 				MentorshipRequestStatus.MORE_INFO_REQUESTED,
@@ -172,7 +172,7 @@ class AdminOverviewServiceTest {
 		ProgramStartup startup = new ProgramStartup();
 		startup.setProgramId(stars.getId());
 		startup.setOrganizationId(inProgram.getId());
-		when(appUserRepository.findAll()).thenReturn(List.of(elif, mentor));
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(elif, mentor));
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(stars.getId())).thenReturn(List.of(startup));
 		when(organizationRepository.findAll()).thenReturn(List.of(inProgram, elsewhere));
 		when(meetingRepository.findAllByOrderByScheduledAtDesc()).thenReturn(List.of(
@@ -199,7 +199,7 @@ class AdminOverviewServiceTest {
 		ProgramStartup startup = new ProgramStartup();
 		startup.setProgramId(stars.getId());
 		startup.setOrganizationId(vega.getId());
-		when(appUserRepository.findAll()).thenReturn(List.of(elif, kemal, deniz, selin));
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(elif, kemal, deniz, selin));
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(stars.getId())).thenReturn(List.of(startup));
 		when(mentorshipService.findAll()).thenReturn(List.of(
 				mentorship(kemal, vega, stars), mentorship(deniz, vega, growth), mentorship(selin, vega, null)));
@@ -219,7 +219,7 @@ class AdminOverviewServiceTest {
 		Program growth = program("Growth Circuit 2026", admin.getId());
 		Organization vega = organization("Vega");
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
-		when(appUserRepository.findAll()).thenReturn(List.of(admin, kemal, deniz));
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, kemal, deniz));
 		when(mentorshipService.findAll()).thenReturn(List.of(
 				mentorship(kemal, vega, stars), mentorship(deniz, vega, growth)));
 
