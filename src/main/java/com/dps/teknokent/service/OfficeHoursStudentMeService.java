@@ -105,12 +105,13 @@ public class OfficeHoursStudentMeService {
 	public OfficeHoursStudentRequestResponse request(UUID accountId, CreateMentonOfficeHoursRequest submission) {
 		InstitutionPerson record = people.require(accountId, IdentityKind.STUDENT);
 		UUID instructorId = listedAcademician(accountId, submission.academicianId()).person().getId();
+		// One request to this academician at a time: their open slots, held times and student limit are all theirs.
+		userRepository.findForUpdate(instructorId);
 		if (slotService.openSlotAt(instructorId, submission.startsAt()).isEmpty()) {
 			throw new ConflictException("That time is no longer free. Please choose another one.");
 		}
 		String slot = MeetingSlotTimes.formatMachineSlot(submission.startsAt());
 		UUID studentId = people.personFor(accountId, record).getId();
-		userRepository.findForUpdate(studentId);
 		List<OfficeHoursRequest> openWithThem = requestRepository.findTop200ByStudentIdOrderByCreatedAtDesc(studentId)
 				.stream()
 				.filter(open -> OPEN.contains(open.getStatus()) && open.getInstructorId().equals(instructorId))
@@ -210,11 +211,11 @@ public class OfficeHoursStudentMeService {
 			InstitutionPerson record = instructor == null || instructor.getAppUserId() == null ? null
 					: records.get(instructor.getAppUserId());
 			OfficeHoursSettings where = settings.getOrDefault(request.getInstructorId(), new OfficeHoursSettings());
-			int length = where.getDefaultMeetingDurationMinutes();
 			OfficeHoursMeeting meeting = meetings.get(request.getId());
 			OfficeHoursTimeResponse time = meeting != null
 					? OfficeHoursTimeResponse.of(meeting.getScheduledAt(), meeting.getDurationMinutes())
-					: times(request.getPreferredSlots(), length).stream().findFirst().orElse(null);
+					: bookingService.timesOf(request.getInstructorId(), request.getPreferredSlots()).stream()
+							.findFirst().orElse(null);
 			return new OfficeHoursStudentRequestResponse(request.getId(), request.getStatus(),
 					new OfficeHoursStudentRequestResponse.Academician(request.getInstructorId(),
 							record != null ? record.getFullName() : instructor == null ? null : instructor.getFullName(),
@@ -222,7 +223,8 @@ public class OfficeHoursStudentMeService {
 							record == null ? null : record.getDepartmentName()),
 					request.getTopic(), request.getExpectedOutcome(),
 					request.getCourseId() == null ? null : courses.get(request.getCourseId()), time,
-					times(request.getProposedSlots(), length), request.getInstructorMessage(),
+					bookingService.timesOf(request.getInstructorId(), request.getProposedSlots()),
+					request.getInstructorMessage(),
 					request.getRejectionReason(), meeting == null ? null : where.getDefaultPlace(),
 					meeting == null ? null : where.getOnlineLink(),
 					request.getCreatedAt(), OfficeHoursRequestAction.allowedFor(OfficeHoursRole.STUDENT,
@@ -235,13 +237,6 @@ public class OfficeHoursStudentMeService {
 				: Arrays.stream(joined.split(",")).map(String::trim).filter(slot -> !slot.isEmpty()).toList();
 	}
 
-	private static List<OfficeHoursTimeResponse> times(String joined, int minutes) {
-		return slots(joined).stream()
-				.map(MeetingSlotTimes::parseMachineSlot)
-				.filter(Objects::nonNull)
-				.map(startsAt -> OfficeHoursTimeResponse.of(startsAt, minutes))
-				.toList();
-	}
 
 	private static ResourceNotFoundException requestNotFound() {
 		return new ResourceNotFoundException("Request not found.");
@@ -257,8 +252,8 @@ public class OfficeHoursStudentMeService {
 		OfficeHoursAcademicianResponse response() {
 			return new OfficeHoursAcademicianResponse(person.getId(), person.getAppUserId(), record.getFullName(),
 					record.getAcademicTitle(),
-					record.getDepartmentName(), record.getFaculty(), settings.getDefaultPlace(),
-					settings.getOnlineLink(), settings.getContactEmail(), settings.getDefaultMeetingDurationMinutes());
+					record.getDepartmentName(), record.getFaculty(), settings.getContactEmail(),
+					settings.getDefaultMeetingDurationMinutes());
 		}
 	}
 }

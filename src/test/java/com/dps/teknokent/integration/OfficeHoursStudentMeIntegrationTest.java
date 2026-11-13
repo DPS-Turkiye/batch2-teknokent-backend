@@ -122,7 +122,8 @@ class OfficeHoursStudentMeIntegrationTest {
 				.andExpect(jsonPath("$[0].accountId").value(academician.getId().toString()))
 				.andExpect(jsonPath("$[0].fullName").value("Elif Şahin"))
 				.andExpect(jsonPath("$[0].academicTitle").value("Doç. Dr."))
-				.andExpect(jsonPath("$[0].place").value("A-204"))
+				.andExpect(jsonPath("$[0].place").doesNotExist())
+				.andExpect(jsonPath("$[0].onlineLink").doesNotExist())
 				.andExpect(jsonPath("$[0].meetingMinutes").value(30));
 
 		String slots = getAs(student, "/api/office-hours/me/academicians/" + listedId + "/slots");
@@ -174,6 +175,40 @@ class OfficeHoursStudentMeIntegrationTest {
 			postAs(student, "/api/office-hours/me/requests", ask)
 					.andExpect(index < 3 ? status().isCreated() : status().isConflict());
 		}
+	}
+
+	private String sendRequest(AppUser who) throws Exception {
+		String listedId = officeHoursUsers.findByAppUserId(academician.getId()).orElseThrow().getId().toString();
+		String slots = getAs(who, "/api/office-hours/me/academicians/" + listedId + "/slots");
+		String created = postAs(who, "/api/office-hours/me/requests", "{\"academicianId\":\"" + listedId
+				+ "\",\"startsAt\":\"" + JsonPath.read(slots, "$[0].startsAt") + "\",\"title\":\"Staj\"}")
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		return JsonPath.read(created, "$.id");
+	}
+
+	@Test
+	void anotherStudentsRequestIsNotFoundWhenAnsweringItsTimes() throws Exception {
+		AppUser other = account(UserRole.MENTEE, "Can Demir", IdentityKind.STUDENT);
+		String mine = sendRequest(student);
+		sendRequest(other);
+
+		postAs(other, "/api/office-hours/me/requests/" + mine + "/alternative", "{\"accept\":false}")
+				.andExpect(status().isNotFound());
+		String still = getAs(student, "/api/office-hours/me/appointments");
+		assertThat(JsonPath.<String>read(still, "$[0].status")).isEqualTo("PENDING");
+	}
+
+	@Test
+	void aStudentWithdrawsAnOpenRequestAndItHoldsNothingAnyMore() throws Exception {
+		String requestId = sendRequest(student);
+
+		postAs(student, "/api/office-hours/me/requests/" + requestId + "/alternative", "{\"accept\":false}")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("WITHDRAWN"))
+				.andExpect(jsonPath("$.allowedActions.length()").value(0));
+		postAs(student, "/api/office-hours/me/requests/" + requestId + "/alternative", "{\"accept\":false}")
+				.andExpect(status().isBadRequest());
 	}
 
 	@Test
