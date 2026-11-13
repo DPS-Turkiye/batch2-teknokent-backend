@@ -5,9 +5,11 @@ import java.net.URISyntaxException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Locale;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -276,13 +278,16 @@ public class OfficeHoursMeService {
 		Map<UUID, OfficeHoursStudentResponse> students = students(
 				requests.stream().map(OfficeHoursRequest::getStudentId).toList());
 		Map<UUID, String> courses = courseNames(requests.stream().map(OfficeHoursRequest::getCourseId).toList());
+		Map<UUID, Function<Instant, Integer>> lengths = new HashMap<>();
 		return requests.stream().map(request -> {
+			Function<Instant, Integer> lengthOf = lengths.computeIfAbsent(request.getInstructorId(),
+					bookingService::meetingLengths);
 			OfficeHoursMeeting meeting = meetings.get(request.getId());
 			return new OfficeHoursInboxRequestResponse(request.getId(), request.getStatus(),
 					students.get(request.getStudentId()), request.getTopic(), request.getExpectedOutcome(),
 					courseName(courses, request.getCourseId()),
-					bookingService.timesOf(request.getInstructorId(), request.getPreferredSlots()),
-					bookingService.timesOf(request.getInstructorId(), request.getProposedSlots()),
+					OfficeHoursBookingService.timesOf(request.getPreferredSlots(), lengthOf),
+					OfficeHoursBookingService.timesOf(request.getProposedSlots(), lengthOf),
 					messages.getOrDefault(request.getId(), List.of()),
 					meeting == null ? null
 							: OfficeHoursTimeResponse.of(meeting.getScheduledAt(), meeting.getDurationMinutes()),

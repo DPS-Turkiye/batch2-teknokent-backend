@@ -98,11 +98,7 @@ class OfficeHoursMeServiceTest {
         lenient().when(messageRepository.findByRequestIdInOrderByCreatedAtAsc(any())).thenReturn(List.of());
         lenient().when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of());
         // The booking rules give each stored time its own slot's length; here a 30-minute slot.
-        lenient().when(bookingService.timesOf(eq(PERSON), any())).thenAnswer(invocation -> {
-            String joined = invocation.getArgument(1);
-            return joined == null || joined.isBlank() ? List.of()
-                    : List.of(OfficeHoursTimeResponse.of(MeetingSlotTimes.parseMachineSlot(joined), 30));
-        });
+        lenient().when(bookingService.meetingLengths(PERSON)).thenReturn(startsAt -> 30);
     }
 
     private static InstitutionPerson record(UUID accountId, String name, IdentityKind... kinds) {

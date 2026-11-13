@@ -379,9 +379,9 @@ class OfficeHoursBookingServiceTest {
                 .thenReturn(List.of(request));
         when(requestRepository.findByCourseIdAndInstructorIdOrderByCreatedAtDesc(COURSE, ACADEMIC))
                 .thenReturn(List.of(request));
-        when(slotService.openSlotAt(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z")))
-                .thenReturn(Optional.of(new OfficeHoursSlotService.Slot(Instant.parse("2026-11-10T11:00:00Z"), 20)));
-        when(slotService.openSlotAt(ACADEMIC, Instant.parse("2026-11-10T12:00:00Z"))).thenReturn(Optional.empty());
+        // One look at the calendar per academic: the 14:00 slot is 20 minutes; 15:00 is no slot, so the default.
+        when(slotService.openSlots(ACADEMIC)).thenReturn(
+                List.of(new OfficeHoursSlotService.Slot(Instant.parse("2026-11-10T11:00:00Z"), 20)));
         when(slotService.defaultMeetingMinutes(ACADEMIC)).thenReturn(45);
 
         OfficeHoursRequestResponse asStudent = service.requests(STUDENT, COURSE).getFirst();
