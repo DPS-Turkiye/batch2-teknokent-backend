@@ -29,6 +29,7 @@ class EditionPathFilterTest {
 				"/api/badges/mine",
 				"/api/badges/",
 				"/api/institution/me/advisees",
+				"/api/institution/me/advisees/" + ID + "/profile",
 				"/api/auth/institution/odtu/start",
 				"/api/auth/institution/odtu/dev-personas",
 				"/api/admin/academics",

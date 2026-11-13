@@ -13,9 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.SaveStudentProfileCompletionRequest;
+import com.dps.teknokent.dto.responses.AdviseeProfileResponse;
 import com.dps.teknokent.dto.responses.StudentProfileCompletionResponse;
 import com.dps.teknokent.entity.StudentInterest;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.StudentInterestRepository;
 import com.dps.teknokent.util.Texts;
 
@@ -31,6 +33,7 @@ public class StudentProfileCompletionService {
 
 	private final PeerMentoringService peerMentoringService;
 	private final StudentInterestRepository studentInterestRepository;
+	private final InstitutionDirectoryService institutionDirectoryService;
 
 	@Transactional(readOnly = true)
 	public StudentProfileCompletionResponse get(UUID actorId) {
@@ -55,6 +58,25 @@ public class StudentProfileCompletionService {
 		interest.setSkipped(!request.completed() && request.skipped());
 		interest.setUpdatedAt(Instant.now());
 		return toResponse(studentInterestRepository.save(interest), active);
+	}
+
+	/**
+	 * An advisee's interests and goal, only for their academic advisor on record. Everyone else gets the same 404,
+	 * whether the student exists, is someone else's advisee, or the caller is no academician.
+	 */
+	@Transactional(readOnly = true)
+	public AdviseeProfileResponse forAdvisor(UUID academicianId, UUID studentId) {
+		if (!institutionDirectoryService.advises(academicianId, studentId)) {
+			throw new ResourceNotFoundException("Advisee not found.");
+		}
+		Set<PeerTopicCategory> active = peerMentoringService.activeForStudent(studentId);
+		return studentInterestRepository.findById(studentId)
+				.map(saved -> new AdviseeProfileResponse(
+						new AdviseeProfileResponse.Interests(
+								saved.getTopics().stream().filter(active::contains).toList(),
+								List.copyOf(saved.getSubtopics())),
+						saved.getGoal()))
+				.orElse(AdviseeProfileResponse.EMPTY);
 	}
 
 	/** Also the gate: only an ODTÜ student gets past {@link PeerMentoringService#categories}. */

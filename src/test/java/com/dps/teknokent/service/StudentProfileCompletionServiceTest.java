@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,22 +22,26 @@ import org.springframework.web.server.ResponseStatusException;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.SaveStudentProfileCompletionRequest;
+import com.dps.teknokent.dto.responses.AdviseeProfileResponse;
 import com.dps.teknokent.dto.responses.StudentProfileCompletionResponse;
 import com.dps.teknokent.entity.StudentInterest;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.StudentInterestRepository;
 
 class StudentProfileCompletionServiceTest {
 
 	private static final UUID STUDENT = UUID.randomUUID();
+	private static final UUID ADVISOR = UUID.randomUUID();
 
 	private final PeerMentoringService peerMentoring = mock(PeerMentoringService.class);
 	private final StudentInterestRepository interests = mock(StudentInterestRepository.class);
+	private final InstitutionDirectoryService directory = mock(InstitutionDirectoryService.class);
 	private StudentProfileCompletionService service;
 
 	@BeforeEach
 	void setUp() {
-		service = new StudentProfileCompletionService(peerMentoring, interests);
+		service = new StudentProfileCompletionService(peerMentoring, interests, directory);
 		when(peerMentoring.categories(STUDENT, UserRole.MENTEE)).thenReturn(
 				List.of(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.TECHNICAL_DIGITAL));
 		when(interests.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -100,6 +105,42 @@ class StudentProfileCompletionServiceTest {
 		assertThatThrownBy(() -> service.save(mentor, request(List.of(), true, false)))
 				.isInstanceOf(ResponseStatusException.class);
 		verify(interests, never()).save(any());
+	}
+
+	@Test
+	void theAdvisorSeesTheAdviseesInterestsAndGoalAsTheirProfilimShowsThem() {
+		StudentInterest saved = new StudentInterest(STUDENT);
+		saved.setTopics(new ArrayList<>(List.of(PeerTopicCategory.INTERNATIONAL, PeerTopicCategory.CAREER_INTERNSHIP)));
+		saved.setSubtopics(new ArrayList<>(List.of("fixture-cv")));
+		saved.setGoal("Yaz stajı bulmak");
+		when(directory.advises(ADVISOR, STUDENT)).thenReturn(true);
+		when(peerMentoring.activeForStudent(STUDENT)).thenReturn(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP));
+		when(interests.findById(STUDENT)).thenReturn(Optional.of(saved));
+
+		assertThat(service.forAdvisor(ADVISOR, STUDENT)).isEqualTo(new AdviseeProfileResponse(
+				new AdviseeProfileResponse.Interests(List.of(PeerTopicCategory.CAREER_INTERNSHIP), List.of("fixture-cv")),
+				"Yaz stajı bulmak"));
+	}
+
+	@Test
+	void anAdviseeWhoNeverSavedShowsNothingYet() {
+		when(directory.advises(ADVISOR, STUDENT)).thenReturn(true);
+		when(peerMentoring.activeForStudent(STUDENT)).thenReturn(EnumSet.noneOf(PeerTopicCategory.class));
+		when(interests.findById(STUDENT)).thenReturn(Optional.empty());
+
+		assertThat(service.forAdvisor(ADVISOR, STUDENT)).isEqualTo(AdviseeProfileResponse.EMPTY);
+	}
+
+	@Test
+	void anyoneButTheAdvisorGetsNotFoundAndNothingIsRead() {
+		UUID stranger = UUID.randomUUID();
+		when(directory.advises(stranger, STUDENT)).thenReturn(false);
+
+		assertThatThrownBy(() -> service.forAdvisor(stranger, STUDENT))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessage("Advisee not found.");
+		verify(interests, never()).findById(any());
+		verify(peerMentoring, never()).activeForStudent(any());
 	}
 
 	private static SaveStudentProfileCompletionRequest request(List<PeerTopicCategory> topics, boolean completed,

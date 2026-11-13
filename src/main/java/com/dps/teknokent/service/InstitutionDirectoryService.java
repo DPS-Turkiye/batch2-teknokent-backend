@@ -57,6 +57,21 @@ public class InstitutionDirectoryService {
 				.toList();
 	}
 
+	/**
+	 * Whether the institution's record names {@code academicianId} as an advisor of {@code studentId}. Both must have
+	 * signed in, the first as an academic, and the advising must be on the same institution's record.
+	 */
+	public boolean advises(UUID academicianId, UUID studentId) {
+		Optional<InstitutionPerson> academician = people.findFirstByUserIdOrderBySyncedAtDesc(academicianId)
+				.filter(InstitutionPerson::isAcademic);
+		Optional<InstitutionPerson> student = people.findFirstByUserIdOrderBySyncedAtDesc(studentId);
+		return academician.isPresent() && student.isPresent()
+				&& academician.get().getInstitution().equals(student.get().getInstitution())
+				&& advising.existsByInstitutionAndStudentPersistentIdAndAdvisorPersistentId(
+						student.get().getInstitution(), student.get().getPersistentId(),
+						academician.get().getPersistentId());
+	}
+
 	/** A student can have more than one advisor on record; the first by name is shown. */
 	private Optional<InstitutionPerson> advisorOf(InstitutionPerson student) {
 		List<String> advisorIds = advising
