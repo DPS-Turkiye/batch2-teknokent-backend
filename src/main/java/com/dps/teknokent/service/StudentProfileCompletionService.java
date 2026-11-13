@@ -13,9 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.SaveStudentProfileCompletionRequest;
+import com.dps.teknokent.dto.responses.AdviseeProfileResponse;
 import com.dps.teknokent.dto.responses.StudentProfileCompletionResponse;
 import com.dps.teknokent.entity.StudentInterest;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.StudentInterestRepository;
 import com.dps.teknokent.util.Texts;
 
@@ -31,6 +33,7 @@ public class StudentProfileCompletionService {
 
 	private final PeerMentoringService peerMentoringService;
 	private final StudentInterestRepository studentInterestRepository;
+	private final InstitutionDirectoryService institutionDirectoryService;
 
 	@Transactional(readOnly = true)
 	public StudentProfileCompletionResponse get(UUID actorId) {
@@ -57,6 +60,24 @@ public class StudentProfileCompletionService {
 		return toResponse(studentInterestRepository.save(interest), active);
 	}
 
+	/**
+	 * An advisee's interests and goal, only for their academic advisor on record. Everyone else gets the same 404,
+	 * whether the student exists, is someone else's advisee, or the caller is no academician.
+	 */
+	@Transactional(readOnly = true)
+	public AdviseeProfileResponse forAdvisor(UUID academicianId, UUID studentId) {
+		if (!institutionDirectoryService.advises(academicianId, studentId)) {
+			throw new ResourceNotFoundException("Advisee not found.");
+		}
+		Set<PeerTopicCategory> active = peerMentoringService.activeForStudent(studentId);
+		return studentInterestRepository.findById(studentId)
+				.map(saved -> new AdviseeProfileResponse(
+						new AdviseeProfileResponse.Interests(visibleTopics(saved, active),
+								List.copyOf(saved.getSubtopics())),
+						saved.getGoal()))
+				.orElse(AdviseeProfileResponse.EMPTY);
+	}
+
 	/** Also the gate: only an ODTÜ student gets past {@link PeerMentoringService#categories}. */
 	private Set<PeerTopicCategory> activeFor(UUID actorId) {
 		List<PeerTopicCategory> categories = peerMentoringService.categories(actorId, UserRole.MENTEE);
@@ -65,10 +86,15 @@ public class StudentProfileCompletionService {
 
 	private static StudentProfileCompletionResponse toResponse(StudentInterest interest, Set<PeerTopicCategory> active) {
 		return new StudentProfileCompletionResponse(
-				interest.getTopics().stream().filter(active::contains).toList(),
+				visibleTopics(interest, active),
 				List.copyOf(interest.getSubtopics()),
 				interest.getGoal(),
 				interest.isCompleted(),
 				interest.isSkipped());
+	}
+
+	/** What Profilim shows, to the student and their advisor alike: only topics still active in their program. */
+	private static List<PeerTopicCategory> visibleTopics(StudentInterest interest, Set<PeerTopicCategory> active) {
+		return interest.getTopics().stream().filter(active::contains).toList();
 	}
 }

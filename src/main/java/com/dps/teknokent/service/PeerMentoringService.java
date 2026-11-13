@@ -430,6 +430,11 @@ public class PeerMentoringService {
 		return institutionDirectoryService.kindsOf(user.getId()).contains(IdentityKind.STUDENT);
 	}
 
+	/** The categories open in a student's program, read for their advisor: no check on who asks. */
+	Set<PeerTopicCategory> activeForStudent(UUID studentId) {
+		return activeForStudent(domainLookupService.requireUser(studentId));
+	}
+
 	private Set<PeerTopicCategory> activeForStudent(AppUser student) {
 		return menteeProgramService.programOf(student)
 				.map(programPeerCategoryService::activeIn)
