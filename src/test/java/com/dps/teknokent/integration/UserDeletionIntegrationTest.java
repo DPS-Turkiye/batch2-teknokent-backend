@@ -38,6 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.AppLanguage;
+import com.dps.teknokent.domain.ProcessingConsentPurpose;
+import com.dps.teknokent.domain.ProcessingConsentSource;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.InstitutionDataSource;
 import com.dps.teknokent.domain.MeetingMode;
@@ -62,6 +64,7 @@ import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationItem;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationRun;
 import com.dps.teknokent.entity.Notification;
+import com.dps.teknokent.entity.DataProcessingConsent;
 import com.dps.teknokent.entity.OnboardingDraft;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.PlatformFeedback;
@@ -138,6 +141,11 @@ class UserDeletionIntegrationTest {
 		notificationService.create(target, "For the person", "Only they read this", null);
 		feedback(target);
 		StoredDocument cv = document(target.getId(), null, DocumentKind.CV, null);
+		// Their own consent, one given at signup before the account existed, and one a founder gave for them.
+		consent(target.getId(), UID, target.getId());
+		consent(null, UID, null);
+		consent(admin.getId(), "uid-admin", target.getId());
+		DataProcessingConsent someoneElses = consent(admin.getId(), "uid-admin", admin.getId());
 		flushAndClear();
 
 		delete(admin, target.getId(), email)
@@ -162,6 +170,9 @@ class UserDeletionIntegrationTest {
 		assertThat(count("select count(n) from Notification n where n.recipient.id = :id", target.getId())).isZero();
 		assertThat(count("select count(f) from PlatformFeedback f where f.author.id = :id", target.getId())).isZero();
 		assertThat(entityManager.find(OnboardingDraft.class, UID)).isNull();
+		assertThat(entityManager.createQuery("select count(c) from DataProcessingConsent c", Long.class)
+				.getSingleResult()).isEqualTo(1L);
+		assertThat(entityManager.find(DataProcessingConsent.class, someoneElses.getId())).isNotNull();
 		assertThat(entityManager.find(StoredDocument.class, cv.getId())).isNull();
 		verify(objectStorage).delete(cv.getS3Key());
 		verify(loginProvisioner).deleteLogin(UID);
@@ -768,6 +779,19 @@ class UserDeletionIntegrationTest {
 		draft.setStep("profile");
 		draft.setPayload("{}");
 		entityManager.persist(draft);
+	}
+
+	private DataProcessingConsent consent(UUID consenterUserId, String consenterFirebaseUid, UUID subjectUserId) {
+		DataProcessingConsent consent = DataProcessingConsent.of(
+				consenterUserId,
+				consenterFirebaseUid,
+				subjectUserId,
+				ProcessingConsentPurpose.CV_PARSING,
+				ProcessingConsentSource.PREVIEW_UPLOAD,
+				"cv-parsing-2026-11-13",
+				Instant.parse("2026-11-13T12:00:00Z"));
+		entityManager.persist(consent);
+		return consent;
 	}
 
 	private void feedback(AppUser author) {

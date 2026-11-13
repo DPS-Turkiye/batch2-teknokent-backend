@@ -2,7 +2,6 @@ package com.dps.teknokent.filter;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -61,7 +60,7 @@ class CvParseRateLimitTest {
 
 	@BeforeEach
 	void stubParse() {
-		when(profileAnalysisService.parseStoredCvPreview(any(), any(), anyString(), anyBoolean(), anyString()))
+		when(profileAnalysisService.parseStoredCvPreview(any(), any(), anyString(), any(), anyString()))
 				.thenReturn(Map.of());
 	}
 
