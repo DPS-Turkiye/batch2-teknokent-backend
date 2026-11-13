@@ -160,6 +160,7 @@ public class OfficeHoursBookingService {
 		requireRole(submission.instructorId(), courseId, OfficeHoursRole.INSTRUCTOR);
 		List<String> slots = submission.preferredSlots().stream().distinct().toList();
 		requireBookable(slots);
+		requireNotHeld(submission.instructorId(), slots, null);
 		Instant now = clock.instant();
 		requireRoomFor(studentId, submission.instructorId(), now);
 
@@ -218,6 +219,7 @@ public class OfficeHoursBookingService {
 					throw new InvalidRequestException("At least one proposed slot is required");
 				}
 				requireBookable(proposed);
+				requireNotHeld(request.getInstructorId(), proposed, request.getId());
 				request.setProposedSlots(String.join(",", proposed));
 				request.setInstructorMessage(message);
 				request.setStatus(OfficeHoursRequestStatus.COUNTER_PROPOSED);
@@ -326,6 +328,14 @@ public class OfficeHoursBookingService {
 				})
 				.findFirst()
 				.orElse(null);
+	}
+
+	/** A time another open request holds is not offered twice (FR-OH-16). */
+	private void requireNotHeld(UUID instructorId, List<String> slots, UUID exceptRequestId) {
+		Set<Instant> held = slotService.heldTimes(instructorId, exceptRequestId);
+		if (slots.stream().map(MeetingSlotTimes::parseMachineSlot).anyMatch(held::contains)) {
+			throw new ConflictException("Another request is waiting on one of these times. Please choose another time");
+		}
 	}
 
 	private void requireBookable(List<String> slots) {
