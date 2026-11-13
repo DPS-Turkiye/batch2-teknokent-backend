@@ -109,7 +109,8 @@ public class OfficeHoursSlotService {
 				.filter(Objects::nonNull);
 	}
 
-	private List<Slot> calendarSlots(UUID instructorId) {
+	/** The academic's hours as slots, minus booked meetings; times other requests hold are still in. */
+	public List<Slot> calendarSlots(UUID instructorId) {
 		Instant now = clock.instant();
 		Instant earliest = now.plus(MeetingSlotTimes.MIN_BOOKING_LEAD);
 		ZonedDateTime start = now.atZone(MeetingSlotTimes.APP_ZONE);

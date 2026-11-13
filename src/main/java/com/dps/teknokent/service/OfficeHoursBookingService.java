@@ -489,11 +489,11 @@ public class OfficeHoursBookingService {
 	}
 
 	/**
-	 * The academic's meeting length by start: an open slot's own length, the default for anything else. The open
-	 * slots are worked out once, so many stored times cost one look at the calendar.
+	 * The academic's meeting length by start: a calendar slot's own length (held or not, as {@code openSlotAt} reads
+	 * it), the default for anything else. The slots are worked out once, so many stored times cost one look.
 	 */
 	public Function<Instant, Integer> meetingLengths(UUID instructorId) {
-		Map<Instant, Integer> open = slotService.openSlots(instructorId).stream()
+		Map<Instant, Integer> open = slotService.calendarSlots(instructorId).stream()
 				.collect(Collectors.toMap(OfficeHoursSlotService.Slot::startsAt, OfficeHoursSlotService.Slot::durationMinutes,
 						(first, second) -> first));
 		int fallback = slotService.defaultMeetingMinutes(instructorId);
