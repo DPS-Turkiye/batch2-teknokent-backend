@@ -12,9 +12,11 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.MoveStartupProgramRequest;
+import com.dps.teknokent.dto.responses.ProgramMentorRemovalResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamMoveResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.AdminProgramMembershipService;
+import com.dps.teknokent.service.ProgramMentorRemovalService;
 import com.dps.teknokent.service.ProgramTeamMoveService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +31,7 @@ public class AdminProgramMembershipController {
 
 	private final AdminProgramMembershipService adminProgramMembershipService;
 	private final ProgramTeamMoveService programTeamMoveService;
+	private final ProgramMentorRemovalService programMentorRemovalService;
 
 	@PostMapping("/mentors/{mentorId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
@@ -37,6 +40,15 @@ public class AdminProgramMembershipController {
 			@PathVariable UUID mentorId,
 			@RequestParam(required = false) UUID actorId) {
 		adminProgramMembershipService.assignMentor(CurrentActor.resolve(actorId), programId, mentorId);
+	}
+
+	/** Takes an accepted mentor out of this program's pool; Teknokent edition only. */
+	@PostMapping("/mentors/{mentorId}/remove")
+	public ProgramMentorRemovalResponse removeMentor(
+			@PathVariable UUID programId,
+			@PathVariable UUID mentorId,
+			@RequestParam(required = false) UUID actorId) {
+		return programMentorRemovalService.remove(CurrentActor.resolve(actorId), programId, mentorId);
 	}
 
 	@PostMapping("/startups/{organizationId}")
