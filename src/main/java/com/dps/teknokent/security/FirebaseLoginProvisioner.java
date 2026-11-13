@@ -232,6 +232,35 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
+	public Optional<String> uidForEmail(String email) {
+		try {
+			return Optional.of(firebaseAuth.getUserByEmail(email).getUid());
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				return Optional.empty();
+			}
+			log.error("Could not look up a Firebase login before deleting its account: {} {}",
+					exception.getErrorCode(), exception.getMessage());
+			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+					Texts.forRequest("error.userDeleteLoginLookupFailed", exception.getErrorCode()), exception);
+		}
+	}
+
+	@Override
+	public void deleteLogin(String uid) {
+		try {
+			firebaseAuth.revokeRefreshTokens(uid);
+			firebaseAuth.deleteUser(uid);
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				return;
+			}
+			throw new IllegalStateException("Firebase could not delete the login: " + exception.getErrorCode(),
+					exception);
+		}
+	}
+
+	@Override
 	public void revokeSignIns(String email) {
 		try {
 			String uid = firebaseAuth.getUserByEmail(email).getUid();
