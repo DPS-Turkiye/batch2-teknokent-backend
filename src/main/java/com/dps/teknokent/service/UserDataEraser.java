@@ -411,6 +411,8 @@ class UserDataEraser {
 		update("delete from TrainingAttempt a where a.userId = :id", "id", id);
 		update("delete from UserBadge b where b.userId = :id", "id", id);
 		update("delete from ProgramAttendance a where a.userId = :id", "id", id);
+		// The account row stays as a tombstone, so its ON DELETE CASCADE never fires: a link has no file to go with.
+		update("delete from PeerMentorDocument d where d.userId = :id", "id", id);
 		update("delete from PeerMentorDraft d where d.userId = :id", "id", id);
 		update("delete from PlatformFeedback f where f.author.id = :id", "id", id);
 

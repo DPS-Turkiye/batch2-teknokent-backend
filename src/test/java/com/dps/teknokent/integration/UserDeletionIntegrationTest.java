@@ -49,6 +49,8 @@ import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.PeerDocumentVisibility;
+import com.dps.teknokent.domain.PeerEvidenceType;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.PlatformFeedbackKind;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -67,6 +69,7 @@ import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.entity.DataProcessingConsent;
 import com.dps.teknokent.entity.OnboardingDraft;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.PeerMentorDocument;
 import com.dps.teknokent.entity.PlatformFeedback;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.TeamMembership;
@@ -687,7 +690,36 @@ class UserDeletionIntegrationTest {
 		assertThat(userRepository.findByFirebaseUid(UID)).isPresent();
 	}
 
+	@Test
+	void aPeerMentorsEvidenceGoesWithThemFilesAndLinks() throws Exception {
+		AppUser target = user(UserRole.MENTEE, "Mert Demir", null);
+		StoredDocument transcript = document(target.getId(), null, DocumentKind.PEER_EVIDENCE, null);
+		PeerMentorDocument file = peerEvidence(target, PeerEvidenceType.TRANSCRIPT);
+		file.setDocumentId(transcript.getId());
+		PeerMentorDocument link = peerEvidence(target, PeerEvidenceType.PORTFOLIO);
+		link.setUrl("https://github.com/mertdemir");
+		entityManager.persist(file);
+		entityManager.persist(link);
+		flushAndClear();
+
+		delete(admin, target.getId(), target.getEmail()).andExpect(status().isOk());
+
+		assertThat(count("select count(d) from PeerMentorDocument d where d.userId = :id", target.getId())).isZero();
+		assertThat(entityManager.find(StoredDocument.class, transcript.getId())).isNull();
+		verify(objectStorage).delete(transcript.getS3Key());
+	}
+
 	// ---------------------------------------------------------------- helpers
+
+	private static PeerMentorDocument peerEvidence(AppUser owner, PeerEvidenceType type) {
+		PeerMentorDocument row = new PeerMentorDocument();
+		row.setId(UUID.randomUUID());
+		row.setUserId(owner.getId());
+		row.setEvidenceType(type);
+		row.setVisibility(PeerDocumentVisibility.PROFILE);
+		row.setCreatedAt(Instant.now());
+		return row;
+	}
 
 	private ResultActions delete(AppUser actor, UUID targetId, String confirmEmail) throws Exception {
 		return mockMvc.perform(post("/api/admin/users/{id}/delete", targetId)
