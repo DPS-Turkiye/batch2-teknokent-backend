@@ -461,8 +461,10 @@ public class OfficeHoursBookingService {
 				.toList();
 	}
 
+	/** Course-free requests (booked from Menton, without a Moodle course) have no name and are skipped. */
 	private Map<UUID, String> courseNames(Collection<UUID> ids) {
-		return courseRepository.findAllById(Set.copyOf(ids)).stream()
+		Set<UUID> courseIds = ids.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+		return courseRepository.findAllById(courseIds).stream()
 				.collect(Collectors.toMap(OfficeHoursCourse::getId, OfficeHoursCourse::getTitle));
 	}
 
