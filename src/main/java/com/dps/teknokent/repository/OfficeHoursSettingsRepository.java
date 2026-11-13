@@ -1,6 +1,7 @@
 package com.dps.teknokent.repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,6 +12,9 @@ import org.springframework.data.repository.query.Param;
 import com.dps.teknokent.entity.OfficeHoursSettings;
 
 public interface OfficeHoursSettingsRepository extends JpaRepository<OfficeHoursSettings, UUID> {
+
+	/** The academicians who chose to show up in the Menton students' list. */
+	List<OfficeHoursSettings> findByListedTrue();
 
 	/**
 	 * Adds the academic's settings row unless it is there, so two first saves at once (profile and hours) both

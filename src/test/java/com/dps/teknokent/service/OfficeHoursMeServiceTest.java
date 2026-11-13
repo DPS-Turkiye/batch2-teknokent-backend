@@ -92,9 +92,10 @@ class OfficeHoursMeServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OfficeHoursMeService(institutionPeople, userRepository, settingsRepository, requestRepository,
-                messageRepository, meetingRepository, courseRepository, availabilityService, bookingService,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        service = new OfficeHoursMeService(new OfficeHoursPeople(institutionPeople, userRepository, clock),
+                userRepository, settingsRepository, requestRepository, messageRepository, meetingRepository,
+                courseRepository, availabilityService, bookingService, clock);
         lenient().when(messageRepository.findByRequestIdInOrderByCreatedAtAsc(any())).thenReturn(List.of());
         lenient().when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of());
         // The booking rules give each stored time its own slot's length; here a 30-minute slot.

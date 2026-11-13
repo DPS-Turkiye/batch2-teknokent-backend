@@ -8,7 +8,6 @@ import java.util.Locale;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +15,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -24,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.OfficeHoursMessageType;
 import com.dps.teknokent.domain.OfficeHoursRequestAction;
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
@@ -47,7 +46,6 @@ import com.dps.teknokent.entity.OfficeHoursSettings;
 import com.dps.teknokent.entity.OfficeHoursUser;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
-import com.dps.teknokent.repository.InstitutionPersonRepository;
 import com.dps.teknokent.repository.OfficeHoursCourseRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestMessageRepository;
@@ -70,7 +68,7 @@ public class OfficeHoursMeService {
 	/** How far back the academician's calendar reaches. */
 	private static final Duration MEETING_HISTORY = Duration.ofDays(180);
 
-	private final InstitutionPersonRepository institutionPeople;
+	private final OfficeHoursPeople people;
 	private final OfficeHoursUserRepository userRepository;
 	private final OfficeHoursSettingsRepository settingsRepository;
 	private final OfficeHoursRequestRepository requestRepository;
@@ -82,21 +80,21 @@ public class OfficeHoursMeService {
 	private final Clock clock;
 
 	@Autowired
-	public OfficeHoursMeService(InstitutionPersonRepository institutionPeople, OfficeHoursUserRepository userRepository,
+	public OfficeHoursMeService(OfficeHoursPeople people, OfficeHoursUserRepository userRepository,
 			OfficeHoursSettingsRepository settingsRepository, OfficeHoursRequestRepository requestRepository,
 			OfficeHoursRequestMessageRepository messageRepository, OfficeHoursMeetingRepository meetingRepository,
 			OfficeHoursCourseRepository courseRepository, OfficeHoursAvailabilityService availabilityService,
 			OfficeHoursBookingService bookingService) {
-		this(institutionPeople, userRepository, settingsRepository, requestRepository, messageRepository,
+		this(people, userRepository, settingsRepository, requestRepository, messageRepository,
 				meetingRepository, courseRepository, availabilityService, bookingService, Clock.systemUTC());
 	}
 
-	OfficeHoursMeService(InstitutionPersonRepository institutionPeople, OfficeHoursUserRepository userRepository,
+	OfficeHoursMeService(OfficeHoursPeople people, OfficeHoursUserRepository userRepository,
 			OfficeHoursSettingsRepository settingsRepository, OfficeHoursRequestRepository requestRepository,
 			OfficeHoursRequestMessageRepository messageRepository, OfficeHoursMeetingRepository meetingRepository,
 			OfficeHoursCourseRepository courseRepository, OfficeHoursAvailabilityService availabilityService,
 			OfficeHoursBookingService bookingService, Clock clock) {
-		this.institutionPeople = institutionPeople;
+		this.people = people;
 		this.userRepository = userRepository;
 		this.settingsRepository = settingsRepository;
 		this.requestRepository = requestRepository;
@@ -204,37 +202,17 @@ public class OfficeHoursMeService {
 				.toList();
 	}
 
-	/** ODTÜ's record for the account, which must say they are an academic; otherwise there is nothing here. */
 	private InstitutionPerson requireAcademic(UUID accountId) {
-		return institutionPeople.findFirstByUserIdOrderBySyncedAtDesc(accountId)
-				.filter(InstitutionPerson::isActive)
-				.filter(InstitutionPerson::isAcademic)
-				.orElseThrow(() -> new ResourceNotFoundException("Office hours not found."));
+		return people.require(accountId, IdentityKind.ACADEMIC);
 	}
 
 	private Optional<OfficeHoursUser> existing(UUID accountId) {
-		return userRepository.findByAppUserId(accountId);
-	}
-
-	/** The account's office-hours person, made on first use under the name ODTÜ's record gives. */
-	private OfficeHoursUser personFor(UUID accountId, InstitutionPerson record) {
-		Optional<OfficeHoursUser> found = existing(accountId);
-		if (found.isEmpty()) {
-			userRepository.insertForAccountIfAbsent(UUID.randomUUID(), accountId, record.getFullName(),
-					clock.instant());
-			found = existing(accountId);
-		}
-		OfficeHoursUser person = found.orElseThrow(() -> new IllegalStateException("Office-hours person missing"));
-		if (!Objects.equals(person.getFullName(), record.getFullName())) {
-			person.setFullName(record.getFullName());
-			userRepository.save(person);
-		}
-		return person;
+		return people.existing(accountId);
 	}
 
 	/** The academician's office-hours id, with their settings row in place for the save that follows. */
 	private UUID academicianFor(UUID accountId, InstitutionPerson record) {
-		UUID instructorId = personFor(accountId, record).getId();
+		UUID instructorId = people.personFor(accountId, record).getId();
 		OfficeHoursSettings defaults = new OfficeHoursSettings();
 		settingsRepository.insertIfAbsent(instructorId, defaults.getDefaultMeetingDurationMinutes(),
 				defaults.getMeetingBufferMinutes(), clock.instant());
@@ -332,13 +310,10 @@ public class OfficeHoursMeService {
 	 * student; only the Moodle name for someone who came in through a course.
 	 */
 	private Map<UUID, OfficeHoursStudentResponse> students(Collection<UUID> officeHoursIds) {
-		List<OfficeHoursUser> people = userRepository.findAllById(Set.copyOf(officeHoursIds));
-		List<UUID> accounts = people.stream().map(OfficeHoursUser::getAppUserId).filter(Objects::nonNull).toList();
-		Map<UUID, InstitutionPerson> records = accounts.isEmpty() ? Map.of()
-				: institutionPeople.findByUserIdIn(accounts).stream()
-						.collect(Collectors.toMap(record -> record.getUser().getId(), Function.identity(),
-								BinaryOperator.maxBy(Comparator.comparing(InstitutionPerson::getSyncedAt))));
-		return people.stream().collect(Collectors.toMap(OfficeHoursUser::getId, person -> {
+		List<OfficeHoursUser> askers = userRepository.findAllById(Set.copyOf(officeHoursIds));
+		Map<UUID, InstitutionPerson> records = people
+				.recordsOf(askers.stream().map(OfficeHoursUser::getAppUserId).toList());
+		return askers.stream().collect(Collectors.toMap(OfficeHoursUser::getId, person -> {
 			InstitutionPerson record = person.getAppUserId() == null ? null : records.get(person.getAppUserId());
 			if (record == null) {
 				return new OfficeHoursStudentResponse(person.getId(), person.getAppUserId(), person.getFullName(),
