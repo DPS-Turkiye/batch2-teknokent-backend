@@ -181,7 +181,8 @@ public class PeerDailyReportService {
 					.toList();
 			PeerDailyReport report = visible(reports.get(date), scope);
 			days.add(new PeerReportWeekResponse.Day(date,
-					report == null ? null : shown.of(report.getStatus(), mentor.getId(), date), ofDay.size(),
+					report == null ? null : shown.of(report.getStatus(), mentor.getId(), date, report.getProgramId()),
+					ofDay.size(),
 					activityCounts.getOrDefault(date, 0L).intValue(), unsent(ofDay, meetingReportsById)));
 		}
 		return days;
@@ -230,7 +231,7 @@ public class PeerDailyReportService {
 		int recorded = rows.stream().mapToInt(PeerReportMeetingResponse::durationMinutes).sum()
 				+ activities.stream().mapToInt(PeerActivity::getDurationMinutes).sum();
 		PeerReportStatus status = report == null ? null
-				: statuses.lookup().of(report.getStatus(), mentor.getId(), date);
+				: statuses.lookup().of(report.getStatus(), mentor.getId(), date, report.getProgramId());
 		boolean open = status == null || status.editable();
 		boolean late = report != null && report.getSubmittedAt() != null
 				? report.getSubmittedAt().isAfter(calendar.dailyDeadline(date))

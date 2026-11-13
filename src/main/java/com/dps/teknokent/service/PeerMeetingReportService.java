@@ -82,6 +82,8 @@ public class PeerMeetingReportService {
 		Meeting meeting = access.requireHeldMeeting(mentor, meetingId);
 		PeerMeetingReport report = reportOf(meeting).orElseGet(() -> {
 			PeerMeetingReport created = prefill(mentor, meeting);
+			// Saving pins the program: an ambiguous mentor is told so here, not on a mere read.
+			created.setProgramId(access.programOf(mentor, meeting));
 			created.setId(UUID.randomUUID());
 			created.setCreatedAt(calendar.now());
 			return created;
@@ -151,7 +153,8 @@ public class PeerMeetingReportService {
 					report != null && report.getMeetingFormat() != null ? report.getMeetingFormat()
 							: defaultFormat(meeting),
 					report == null ? null
-							: shown.of(report.getStatus(), mentor.getId(), calendar.dateOf(meeting.getScheduledAt())));
+							: shown.of(report.getStatus(), mentor.getId(), calendar.dateOf(meeting.getScheduledAt()),
+									report.getProgramId()));
 		}).toList();
 	}
 
@@ -217,7 +220,7 @@ public class PeerMeetingReportService {
 		report.setMeetingId(meeting.getId());
 		report.setMentorId(mentor.getId());
 		report.setMenteeId(meeting.getMentorshipRequest().getRequester().getId());
-		report.setProgramId(access.programOf(mentor, meeting));
+		report.setProgramId(access.programOrNull(mentor, meeting));
 		report.setMeetingType(defaultType(mentor, meeting));
 		report.setMeetingFormat(defaultFormat(meeting));
 		report.setActualDurationMinutes(meeting.getDurationMinutes());
@@ -332,7 +335,8 @@ public class PeerMeetingReportService {
 			PeerReportScope scope) {
 		AppUser mentee = meeting.getMentorshipRequest().getRequester();
 		PeerReportStatus status = report.getStatus() == null ? null
-				: statuses.lookup().of(report.getStatus(), mentor.getId(), calendar.dateOf(meeting.getScheduledAt()));
+				: statuses.lookup().of(report.getStatus(), mentor.getId(), calendar.dateOf(meeting.getScheduledAt()),
+						report.getProgramId());
 		return new PeerMeetingReportResponse(
 				report.getId(),
 				meeting.getId(),

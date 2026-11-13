@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -89,10 +90,14 @@ public class PeerReportReviewService {
 		if (!SENT.contains(shown) || (programId != null && !reviewer.mayReview(programId))) {
 			return List.of();
 		}
+		// A week shows APPROVED when stored so or after seven days in review; the other states are stored as shown.
+		Set<PeerReportStatus> stored = shown == PeerReportStatus.APPROVED
+				? EnumSet.of(PeerReportStatus.IN_REVIEW, PeerReportStatus.APPROVED)
+				: EnumSet.of(shown);
 		List<PeerWeeklyReport> weeks = reviewer.admin() && programId == null
-				? weeklyReportRepository.findByStatusInOrderBySubmittedAtAsc(SENT)
+				? weeklyReportRepository.findByStatusInOrderBySubmittedAtAsc(stored)
 				: weeklyReportRepository.findByProgramIdInAndStatusInOrderBySubmittedAtAsc(
-						programId != null ? Set.of(programId) : reviewer.programIds(), SENT);
+						programId != null ? Set.of(programId) : reviewer.programIds(), stored);
 		List<PeerWeeklyReport> listed = weeks.stream()
 				.filter(week -> statuses.ofWeek(week) == shown)
 				// Nobody reviews their own reports, even when they also coordinate the program they mentor in.
@@ -109,17 +114,38 @@ public class PeerReportReviewService {
 				.toList();
 	}
 
+	/** A meeting report of a week the reviewer may see (sent and not back with its mentor). */
 	@Transactional(readOnly = true)
 	public PeerReviewedReportResponse meetingReport(UUID actorId, UUID reportId) {
 		PeerMeetingReport report = reviewableMeetingReport(requireReviewer(actorId), reportId);
+		Meeting meeting = meetingRepository.findById(report.getMeetingId()).orElse(null);
+		requireWeekReadable(report.getMentorId(), report.getProgramId(),
+				meeting == null ? null : calendar.dateOf(meeting.getScheduledAt()), reportId);
 		return meetingResponse(report);
 	}
 
+	/** A day report of a week the reviewer may see (sent and not back with its mentor). */
 	@Transactional(readOnly = true)
 	public PeerReviewedReportResponse dailyReport(UUID actorId, UUID reportId) {
 		PeerDailyReport report = reviewable(requireReviewer(actorId),
 				dailyReportRepository.findById(reportId).orElse(null), reportId);
+		requireWeekReadable(report.getMentorId(), report.getProgramId(), report.getReportDate(), reportId);
 		return dailyResponse(report);
+	}
+
+	/**
+	 * Only the week is reviewed, so its days and meeting reports open with it: while the week is still the mentor's
+	 * (not sent, or sent back) they stay closed.
+	 */
+	private void requireWeekReadable(UUID mentorId, UUID programId, LocalDate day, UUID reportId) {
+		boolean readable = day != null && weeklyReportRepository
+				.findByMentorIdAndWeekStart(mentorId, calendar.weekStartOf(day))
+				.filter(week -> Objects.equals(week.getProgramId(), programId))
+				.filter(week -> READABLE.contains(week.getStatus()))
+				.isPresent();
+		if (!readable) {
+			throw new ResourceNotFoundException("Peer report not found: " + reportId);
+		}
 	}
 
 	@Transactional(readOnly = true)

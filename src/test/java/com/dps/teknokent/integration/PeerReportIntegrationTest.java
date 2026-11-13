@@ -293,6 +293,17 @@ class PeerReportIntegrationTest {
 	}
 
 	@Test
+	void aStudentWhoLostAMentorRoleButNeverMentoredPeersGetsNoReportRoutes() throws Exception {
+		AppUser student = userRepository.findById(otherMentee.getId()).orElseThrow();
+		student.grant(UserRole.MENTOR, PermissionSource.ADMIN, Instant.parse("2026-11-01T09:00:00Z"));
+		student.withdraw(PermissionSource.ADMIN, Set.of(), Instant.parse("2026-11-10T09:00:00Z"));
+		userRepository.saveAndFlush(student);
+
+		mockMvc.perform(get(DAY, "2026-11-09").with(as(student))).andExpect(status().isForbidden());
+		saveDay(student, "2026-11-09").andExpect(status().isForbidden());
+	}
+
+	@Test
 	void aDayNeedsItsFourAnswersAndMustBeAWorkingDayThatHasBegun() throws Exception {
 		mockMvc.perform(put(DAY, "2026-11-11").with(as(mentor))
 				.contentType(MediaType.APPLICATION_JSON).content("{\"didToday\":\"Sadece bu\"}"))
@@ -435,6 +446,12 @@ class PeerReportIntegrationTest {
 
 		saveDay(mentor, TODAY).andExpect(status().isConflict());
 		addActivity(mentor, TODAY, null).andExpect(status().isConflict());
+
+		// Reading never trips on it; only saving a new report pins (and so asks for) the program.
+		MentorshipRequest withoutProgram = request(mentee, mentor, null, "CAREER_INTERNSHIP");
+		Meeting unpinned = meeting(withoutProgram, Instant.parse("2026-11-12T10:00:00Z"), MeetingStatus.COMPLETED);
+		mockMvc.perform(get(MEETING, unpinned.getId()).with(as(mentor))).andExpect(status().isOk());
+		saveReport(mentor, unpinned, FULL_REPORT).andExpect(status().isConflict());
 	}
 
 	@Test

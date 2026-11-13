@@ -9,6 +9,7 @@ import java.util.function.Supplier;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -53,9 +54,13 @@ class PeerReportAccess {
 		try {
 			return peerMentoringService.requirePeerMentor(actorId);
 		} catch (ResponseStatusException refused) {
-			// A mentor whose badge was taken away may still finish the reports of what they did before (Arya, 14 Nov).
+			if (refused.getStatusCode() != HttpStatus.FORBIDDEN) {
+				throw refused;
+			}
+			// A peer mentor whose badge was taken away may still finish the reports of what they did before (Arya,
+			// 14 Nov). Only someone who really mentored peers: a lost mentor role from anywhere else is not enough.
 			AppUser student = peerMentoringService.requireStudent(actorId);
-			if (revokedAt(student) == null) {
+			if (revokedAt(student) == null || !mentoredPeers(student)) {
 				throw refused;
 			}
 			return student;
@@ -110,6 +115,10 @@ class PeerReportAccess {
 
 	/** Whether one of the mentor's peer meetings is still to come before {@code to}. */
 	boolean meetingsAhead(AppUser mentor, Instant to) {
+		if (!mentor.has(UserRole.MENTOR)) {
+			// A former mentor's later meetings are not theirs to report on, so they hold nothing back.
+			return false;
+		}
 		Instant now = calendar.now();
 		return now.isBefore(to) && meetingRepository
 				.findByMentorshipRequest_Mentor_IdAndScheduledAtGreaterThanEqualAndScheduledAtLessThanOrderByScheduledAtAsc(
@@ -150,11 +159,14 @@ class PeerReportAccess {
 
 	/** The meetings of the scope's program (all of them in the mentor's own view). */
 	List<Meeting> inScope(AppUser mentor, List<Meeting> meetings, PeerReportScope scope) {
-		if (scope.programId() == null) {
+		if (!scope.bound()) {
 			return meetings;
 		}
+		UUID mentorsProgram = programOrNull(mentor);
 		return meetings.stream()
-				.filter(meeting -> scope.inProgram(programOf(mentor, meeting)))
+				.filter(meeting -> scope.inProgram(Optional.ofNullable(meeting.getMentorshipRequest().getProgram())
+						.map(Program::getId)
+						.orElse(mentorsProgram)))
 				.toList();
 	}
 
@@ -184,6 +196,28 @@ class PeerReportAccess {
 		return Optional.ofNullable(meeting.getMentorshipRequest().getProgram())
 				.map(Program::getId)
 				.orElseGet(() -> programOf(mentor));
+	}
+
+	/** As {@link #programOf(AppUser)}, for reading: an ambiguous mentor gives null instead of a 409. */
+	UUID programOrNull(AppUser mentor) {
+		try {
+			return programOf(mentor);
+		} catch (ConflictException ambiguous) {
+			return null;
+		}
+	}
+
+	/** As {@link #programOf(AppUser, Meeting)}, for reading (a prefill, a list): never a 409. */
+	UUID programOrNull(AppUser mentor, Meeting meeting) {
+		return Optional.ofNullable(meeting.getMentorshipRequest().getProgram())
+				.map(Program::getId)
+				.orElseGet(() -> programOrNull(mentor));
+	}
+
+	/** Whether the user ever mentored on a peer request: the evidence a former peer mentor needs. */
+	private boolean mentoredPeers(AppUser user) {
+		return mentorshipRequestRepository.findByMentorIdOrderByCreatedAtDesc(user.getId()).stream()
+				.anyMatch(request -> PeerTopicCategory.fromText(request.getSupportArea()) != null);
 	}
 
 	/** Started before now, and for a former mentor before the badge was taken away. */

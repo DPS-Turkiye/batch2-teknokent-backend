@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -52,14 +53,18 @@ class PeerReportStatuses {
 
 		private final Map<String, Boolean> approvedWeeks = new HashMap<>();
 
-		/** A daily or meeting report's status: a sent one reads as approved once its week is. */
-		PeerReportStatus of(PeerReportStatus stored, UUID mentorId, LocalDate day) {
+		/**
+		 * A daily or meeting report's status: a sent one reads as approved once its week (of the same program) is,
+		 * the same set a coordinator's approval stores.
+		 */
+		PeerReportStatus of(PeerReportStatus stored, UUID mentorId, LocalDate day, UUID programId) {
 			if (stored != PeerReportStatus.IN_REVIEW) {
 				return stored;
 			}
 			LocalDate weekStart = calendar.weekStartOf(day);
-			boolean approved = approvedWeeks.computeIfAbsent(mentorId + "/" + weekStart,
+			boolean approved = approvedWeeks.computeIfAbsent(mentorId + "/" + weekStart + "/" + programId,
 					key -> weeklyRepository.findByMentorIdAndWeekStart(mentorId, weekStart)
+							.filter(week -> Objects.equals(week.getProgramId(), programId))
 							.map(week -> ofWeek(week) == PeerReportStatus.APPROVED)
 							.orElse(false));
 			return approved ? PeerReportStatus.APPROVED : stored;

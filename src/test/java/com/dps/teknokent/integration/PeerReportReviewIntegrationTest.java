@@ -310,8 +310,11 @@ class PeerReportReviewIntegrationTest {
 				.andExpect(jsonPath("$.weekly.status").value("REVISION_REQUESTED"))
 				.andExpect(jsonPath("$.weekly.revisionNote").value("Gelecek hafta planını netleştir."));
 
-		// Back with its mentor: listed, but closed to the reviewer until it is sent again.
+		// Back with its mentor: listed, but closed to the reviewer until it is sent again, and its days with it.
 		mockMvc.perform(get(WEEK, sentWeek.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(get(DAY, sentDay.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(get(MEETING, sentMeetingReport.getId()).with(as(coordinator)))
+				.andExpect(status().isNotFound());
 		mockMvc.perform(get(QUEUE).param("status", "REVISION_REQUESTED").with(as(coordinator)))
 				.andExpect(jsonPath("$.length()").value(1));
 		mockMvc.perform(get("/api/peer-mentoring/reports/weeks/{week}", "2026-11-09").with(as(mentor)))
@@ -327,6 +330,14 @@ class PeerReportReviewIntegrationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.weekly.status").value("APPROVED"))
 				.andExpect(jsonPath("$.weekly.revisionNote").doesNotExist());
+	}
+
+	@Test
+	void aSentDayOfAWeekTheMentorHasNotSentStaysClosed() throws Exception {
+		PeerDailyReport earlier = day(mentor, program, LocalDate.of(2026, 11, 4), true);
+
+		mockMvc.perform(get(DAY, earlier.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(get(DAY, sentDay.getId()).with(as(coordinator))).andExpect(status().isOk());
 	}
 
 	@Test
