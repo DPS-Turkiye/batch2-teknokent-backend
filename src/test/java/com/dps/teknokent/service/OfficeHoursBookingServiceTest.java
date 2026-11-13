@@ -46,6 +46,7 @@ import com.dps.teknokent.entity.OfficeHoursRequestMessage;
 import com.dps.teknokent.entity.OfficeHoursSettings;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.OfficeHoursCourseRepository;
 import com.dps.teknokent.repository.OfficeHoursEnrollmentRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
@@ -145,7 +146,8 @@ class OfficeHoursBookingServiceTest {
         assertThat(response.status()).isEqualTo(OfficeHoursRequestStatus.PENDING);
         assertThat(response.topic()).isEqualTo("Ödev 2 hakkında");
         assertThat(response.expectedOutcome()).isNull();
-        assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);
+        assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);        // The Moodle path takes the academic's lock too: one request to them at a time, whichever way it comes.
+        verify(userRepository).findForUpdate(ACADEMIC);
     }
 
     @Test
@@ -358,6 +360,18 @@ class OfficeHoursBookingServiceTest {
     }
 
     @Test
+    void aCoursesRoutesNeverReachARequestMadeFromMenton() {
+        OfficeHoursRequest fromMenton = existing(OfficeHoursRequestStatus.PENDING);
+        fromMenton.setCourseId(null);
+
+        assertThatThrownBy(() -> service.decide(ACADEMIC, COURSE, REQUEST,
+                new DecideOfficeHoursRequest(OfficeHoursRequestStatus.DECLINED, null, null, null)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.withdraw(STUDENT, COURSE, REQUEST))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
     void aTimeAnotherOpenRequestHoldsIsNotAskedForOrOfferedAgain() {
         enrolled(STUDENT, OfficeHoursRole.STUDENT);
         enrolled(ACADEMIC, OfficeHoursRole.INSTRUCTOR);
@@ -384,9 +398,9 @@ class OfficeHoursBookingServiceTest {
                 .thenReturn(List.of(request));
         when(requestRepository.findByCourseIdAndInstructorIdOrderByCreatedAtDesc(COURSE, ACADEMIC))
                 .thenReturn(List.of(request));
-        when(slotService.openSlotAt(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z")))
-                .thenReturn(Optional.of(new OfficeHoursSlotService.Slot(Instant.parse("2026-11-10T11:00:00Z"), 20)));
-        when(slotService.openSlotAt(ACADEMIC, Instant.parse("2026-11-10T12:00:00Z"))).thenReturn(Optional.empty());
+        // One look at the calendar per academic: the 14:00 slot is 20 minutes; 15:00 is no slot, so the default.
+        when(slotService.calendarSlots(ACADEMIC)).thenReturn(
+                List.of(new OfficeHoursSlotService.Slot(Instant.parse("2026-11-10T11:00:00Z"), 20)));
         when(slotService.defaultMeetingMinutes(ACADEMIC)).thenReturn(45);
 
         OfficeHoursRequestResponse asStudent = service.requests(STUDENT, COURSE).getFirst();

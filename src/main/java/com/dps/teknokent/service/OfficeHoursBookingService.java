@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -158,6 +159,18 @@ public class OfficeHoursBookingService {
 	public OfficeHoursRequestResponse create(UUID studentId, UUID courseId, CreateOfficeHoursRequest submission) {
 		requireRole(studentId, courseId, OfficeHoursRole.STUDENT);
 		requireRole(submission.instructorId(), courseId, OfficeHoursRole.INSTRUCTOR);
+		return responses(List.of(createRequest(studentId, courseId, submission)), OfficeHoursRole.STUDENT).getFirst();
+	}
+
+	/**
+	 * The request itself, once the caller may send it: in a course for Moodle, or with no course from Menton.
+	 * Same times, lead and student-limit rules either way. Checks no access: the caller must have.
+	 */
+	@Transactional
+	public OfficeHoursRequest createRequest(UUID studentId, UUID courseId, CreateOfficeHoursRequest submission) {
+		// One request to an academic at a time, from a course or from Menton: their open slots and student limit are
+		// read and taken under this lock.
+		userRepository.findForUpdate(submission.instructorId());
 		List<String> slots = submission.preferredSlots().stream().distinct().toList();
 		requireBookable(slots);
 		requireNotHeld(submission.instructorId(), slots, null);
@@ -175,13 +188,20 @@ public class OfficeHoursBookingService {
 		request.setPreferredSlots(String.join(",", slots));
 		request.setCreatedAt(now);
 		request.setUpdatedAt(now);
-		return responses(List.of(requestRepository.saveAndFlush(request)), OfficeHoursRole.STUDENT).getFirst();
+		return requestRepository.saveAndFlush(request);
 	}
 
 	@Transactional
 	public OfficeHoursRequestResponse decide(UUID instructorId, UUID courseId, UUID requestId,
 			DecideOfficeHoursRequest decision) {
-		OfficeHoursRequest request = requireRequest(requestId, courseId);
+		return responses(List.of(decide(requireRequest(requestId, courseId), instructorId, decision)),
+				OfficeHoursRole.INSTRUCTOR).getFirst();
+	}
+
+	/** The academic's answer to a request the caller has already found; only its own academic may answer. */
+	@Transactional
+	public OfficeHoursRequest decide(OfficeHoursRequest request, UUID instructorId,
+			DecideOfficeHoursRequest decision) {
 		if (!request.getInstructorId().equals(instructorId)) {
 			throw forbidden("Only the academic the request was sent to can answer it.");
 		}
@@ -227,13 +247,20 @@ public class OfficeHoursBookingService {
 			default -> throw new InvalidRequestException(
 					"Decision status must be ACCEPTED, DECLINED, MORE_INFO_REQUESTED, or COUNTER_PROPOSED");
 		}
-		return save(request, OfficeHoursRole.INSTRUCTOR);
+		return saveEntity(request);
 	}
 
 	@Transactional
 	public OfficeHoursRequestResponse acceptProposedSlot(UUID studentId, UUID courseId, UUID requestId,
 			AcceptOfficeHoursSlotRequest acceptance) {
-		OfficeHoursRequest request = requireOwnRequest(studentId, courseId, requestId);
+		return responses(List.of(acceptProposedSlot(requireOwnRequest(studentId, courseId, requestId), acceptance)),
+				OfficeHoursRole.STUDENT).getFirst();
+	}
+
+	/** The student takes one of the academic's other times, on a request already known to be theirs. */
+	@Transactional
+	public OfficeHoursRequest acceptProposedSlot(OfficeHoursRequest request,
+			AcceptOfficeHoursSlotRequest acceptance) {
 		if (request.getStatus() != OfficeHoursRequestStatus.COUNTER_PROPOSED) {
 			throw new InvalidRequestException("Only counter-proposed requests can accept a slot");
 		}
@@ -243,7 +270,7 @@ public class OfficeHoursBookingService {
 		requireBookable(List.of(acceptance.slot()));
 		request.setStatus(OfficeHoursRequestStatus.ACCEPTED);
 		book(request, acceptance.slot());
-		return save(request, OfficeHoursRole.STUDENT);
+		return saveEntity(request);
 	}
 
 	@Transactional
@@ -260,12 +287,18 @@ public class OfficeHoursBookingService {
 
 	@Transactional
 	public OfficeHoursRequestResponse withdraw(UUID studentId, UUID courseId, UUID requestId) {
-		OfficeHoursRequest request = requireOwnRequest(studentId, courseId, requestId);
+		return responses(List.of(withdraw(requireOwnRequest(studentId, courseId, requestId))), OfficeHoursRole.STUDENT)
+				.getFirst();
+	}
+
+	/** The student takes back a request already known to be theirs, while it is still open. */
+	@Transactional
+	public OfficeHoursRequest withdraw(OfficeHoursRequest request) {
 		if (!OPEN.contains(request.getStatus())) {
 			throw new InvalidRequestException("Only an unanswered request can be withdrawn");
 		}
 		request.setStatus(OfficeHoursRequestStatus.WITHDRAWN);
-		return save(request, OfficeHoursRole.STUDENT);
+		return saveEntity(request);
 	}
 
 	/**
@@ -360,8 +393,9 @@ public class OfficeHoursBookingService {
 	}
 
 	private OfficeHoursRequest requireRequest(UUID requestId, UUID courseId) {
+		// A Menton request has no course, so it never matches a course's route.
 		return requestRepository.findById(requestId)
-				.filter(request -> request.getCourseId().equals(courseId))
+				.filter(request -> courseId.equals(request.getCourseId()))
 				.orElseThrow(() -> new ResourceNotFoundException("Request not found."));
 	}
 
@@ -391,8 +425,12 @@ public class OfficeHoursBookingService {
 	}
 
 	private OfficeHoursRequestResponse save(OfficeHoursRequest request, OfficeHoursRole viewer) {
+		return responses(List.of(saveEntity(request)), viewer).getFirst();
+	}
+
+	private OfficeHoursRequest saveEntity(OfficeHoursRequest request) {
 		request.setUpdatedAt(clock.instant());
-		return responses(List.of(requestRepository.saveAndFlush(request)), viewer).getFirst();
+		return requestRepository.saveAndFlush(request);
 	}
 
 	/** {@code viewer} is the caller's role in the course; it decides the allowed actions. */
@@ -412,8 +450,11 @@ public class OfficeHoursBookingService {
 		Map<UUID, OfficeHoursUser> people = people(requests.stream()
 				.flatMap(request -> Stream.of(request.getStudentId(), request.getInstructorId())).toList());
 		Map<UUID, String> courseNames = courseNames(requests.stream().map(OfficeHoursRequest::getCourseId).toList());
+		Map<UUID, Function<Instant, Integer>> lengths = new HashMap<>();
 		return requests.stream().map(request -> {
 			OfficeHoursMeeting meeting = meetings.get(request.getId());
+			Function<Instant, Integer> lengthOf = lengths.computeIfAbsent(request.getInstructorId(),
+					this::meetingLengths);
 			return new OfficeHoursRequestResponse(request.getId(), request.getCourseId(), request.getStatus(),
 					person(people.get(request.getStudentId())), person(people.get(request.getInstructorId())),
 					request.getTopic(), request.getExpectedOutcome(), slots(request.getPreferredSlots()),
@@ -422,19 +463,41 @@ public class OfficeHoursBookingService {
 					meeting == null ? null : new OfficeHoursSlotResponse(meeting.getScheduledAt(),
 							meeting.getDurationMinutes()),
 					request.getCreatedAt(), courseNames.get(request.getCourseId()),
-					times(request.getInstructorId(), request.getPreferredSlots()),
-					times(request.getInstructorId(), request.getProposedSlots()),
+					timesOf(request.getPreferredSlots(), lengthOf),
+					timesOf(request.getProposedSlots(), lengthOf),
 					OfficeHoursRequestAction.allowedFor(viewer, request.getStatus()));
 		}).toList();
 	}
 
 	/** Each slot with the length booking it would get, as {@link #book} gives it. */
-	private List<OfficeHoursTimeResponse> times(UUID instructorId, String joined) {
+	/**
+	 * Stored times ("yyyy-MM-ddTHH:mm" in Turkey time, comma-separated) as ranges, each as long as the meeting it
+	 * would book: its open slot's own length, or the academic's default for a time typed by hand. The Menton routes
+	 * show times the same way.
+	 */
+	public List<OfficeHoursTimeResponse> timesOf(UUID instructorId, String joined) {
+		return timesOf(joined, meetingLengths(instructorId));
+	}
+
+	/** Each stored time as a range of the length {@code lengthOf} gives its start. */
+	public static List<OfficeHoursTimeResponse> timesOf(String joined, Function<Instant, Integer> lengthOf) {
 		return slots(joined).stream()
 				.map(MeetingSlotTimes::parseMachineSlot)
 				.filter(Objects::nonNull)
-				.map(startsAt -> OfficeHoursTimeResponse.of(startsAt, meetingMinutes(instructorId, startsAt)))
+				.map(startsAt -> OfficeHoursTimeResponse.of(startsAt, lengthOf.apply(startsAt)))
 				.toList();
+	}
+
+	/**
+	 * The academic's meeting length by start: a calendar slot's own length (held or not, as {@code openSlotAt} reads
+	 * it), the default for anything else. The slots are worked out once, so many stored times cost one look.
+	 */
+	public Function<Instant, Integer> meetingLengths(UUID instructorId) {
+		Map<Instant, Integer> open = slotService.calendarSlots(instructorId).stream()
+				.collect(Collectors.toMap(OfficeHoursSlotService.Slot::startsAt, OfficeHoursSlotService.Slot::durationMinutes,
+						(first, second) -> first));
+		int fallback = slotService.defaultMeetingMinutes(instructorId);
+		return startsAt -> open.getOrDefault(startsAt, fallback);
 	}
 
 	/** Course-free requests (booked from Menton, without a Moodle course) have no name and are skipped. */
