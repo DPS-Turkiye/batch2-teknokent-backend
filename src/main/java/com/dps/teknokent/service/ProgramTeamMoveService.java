@@ -4,7 +4,9 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,7 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.ProgramTeamMoveResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.DocumentRequestItem;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
@@ -26,6 +29,8 @@ import com.dps.teknokent.entity.TeamChangeRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.DocumentRequestItemRepository;
+import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -42,8 +47,8 @@ import lombok.RequiredArgsConstructor;
  * An admin moves a team from one program to another. The team, its members and everything they entered go along
  * untouched, because none of it is kept per program. What happened in the old program stays there: its requests,
  * mentorships, meetings, attendance and documents keep the old program's id, and a mentorship that is running
- * keeps running under it. Only the team's unanswered requests are closed, since their mentors belong to the old
- * program's pool.
+ * keeps running under it. Only what nobody answered yet is closed: the team's open requests to the old program's
+ * mentors, and the old program's document requests the team has uploaded nothing for.
  */
 @Service
 @RequiredArgsConstructor
@@ -64,6 +69,8 @@ public class ProgramTeamMoveService {
 	private final ProgramTeamMoveRepository programTeamMoveRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 	private final TeamChangeRequestRepository teamChangeRequestRepository;
+	private final DocumentRequestItemRepository documentRequestItemRepository;
+	private final DocumentRequestUploadRepository documentRequestUploadRepository;
 
 	@Transactional
 	public ProgramTeamMoveResponse move(UUID actorId, UUID targetProgramId, UUID organizationId, UUID fromProgramId) {
@@ -95,11 +102,12 @@ public class ProgramTeamMoveService {
 
 		Instant now = Instant.now();
 		List<AppUser> members = appUserRepository.findByOrganizationIdOrderByFullNameAsc(organizationId);
-		moveMembership(team, left, target, now);
+		moveMembership(team, left, from, target, now);
 		approve(team);
 		moveMembers(members, from, target);
 		moveWaitingTeamChanges(team, from, target);
 		List<MentorshipRequest> withdrawn = withdrawOpenRequests(team, from);
+		dropUnansweredDocumentRequests(team, from);
 		ProgramTeamMove move = programTeamMoveRepository.save(new ProgramTeamMove(
 				organizationId, from.getId(), target.getId(), admin.getId(), now, left.getCreatedAt()));
 
@@ -109,7 +117,7 @@ public class ProgramTeamMoveService {
 		return ProgramTeamMoveResponse.of(move, from, target, withdrawn.size());
 	}
 
-	private void moveMembership(Organization team, ProgramStartup left, Program target, Instant now) {
+	private void moveMembership(Organization team, ProgramStartup left, Program from, Program target, Instant now) {
 		programStartupRepository.delete(left);
 		// A team that "Programa ata" had already listed in the target keeps that row.
 		if (programStartupRepository.findByProgramIdAndOrganizationId(target.getId(), team.getId()).isEmpty()) {
@@ -120,7 +128,10 @@ public class ProgramTeamMoveService {
 			joined.setCreatedAt(now);
 			programStartupRepository.save(joined);
 		}
-		team.setActiveProgramId(target.getId());
+		// A team listed in several programs that chose a third one as active keeps its choice.
+		if (team.getActiveProgramId() == null || from.getId().equals(team.getActiveProgramId())) {
+			team.setActiveProgramId(target.getId());
+		}
 	}
 
 	/** The admin's word is final, as when the admin adds a startup to a program. */
@@ -168,6 +179,28 @@ public class ProgramTeamMoveService {
 				.toList();
 		open.forEach(MentorshipRequest::withdraw);
 		return mentorshipRequestRepository.saveAll(open);
+	}
+
+	/**
+	 * The team no longer owes the old program the documents it has not sent. Whatever it did upload stays with
+	 * the old program, and {@link DocumentRequestService#replaceOnProgram} leaves it there.
+	 */
+	private void dropUnansweredDocumentRequests(Organization team, Program from) {
+		List<DocumentRequestItem> asked = documentRequestItemRepository
+				.findByOrganizationIdOrderByCreatedAtDescSortOrderAsc(team.getId())
+				.stream()
+				.filter(item -> from.getId().equals(item.getProgramId()))
+				.toList();
+		if (asked.isEmpty()) {
+			return;
+		}
+		Set<UUID> answered = documentRequestUploadRepository
+				.findByItemIdInOrderByCreatedAtAsc(asked.stream().map(DocumentRequestItem::getId).toList())
+				.stream()
+				.map(upload -> upload.getItem().getId())
+				.collect(Collectors.toSet());
+		documentRequestItemRepository.deleteAll(
+				asked.stream().filter(item -> !answered.contains(item.getId())).toList());
 	}
 
 	private void notifyTeam(Organization team, List<AppUser> members, Program from, Program target) {

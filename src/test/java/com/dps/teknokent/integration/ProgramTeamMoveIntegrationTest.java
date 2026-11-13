@@ -33,14 +33,19 @@ import com.dps.teknokent.domain.TeamChangeStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.DocumentRequestItem;
+import com.dps.teknokent.entity.DocumentRequestUpload;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.TeamChangeRequest;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.DocumentRequestItemRepository;
+import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.NotificationRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
@@ -48,8 +53,10 @@ import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramTeamMoveRepository;
+import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.security.AppUserPrincipal;
+import com.dps.teknokent.service.DocumentRequestService;
 
 /** An admin moves a team from one program to another: the membership moves, the old program's activity stays. */
 @SpringBootTest
@@ -79,6 +86,14 @@ class ProgramTeamMoveIntegrationTest {
 	private TeamChangeRequestRepository teamChangeRequestRepository;
 	@Autowired
 	private NotificationRepository notificationRepository;
+	@Autowired
+	private DocumentRequestItemRepository documentRequestItemRepository;
+	@Autowired
+	private DocumentRequestUploadRepository documentRequestUploadRepository;
+	@Autowired
+	private StoredDocumentRepository storedDocumentRepository;
+	@Autowired
+	private DocumentRequestService documentRequestService;
 
 	private AppUser admin;
 	private AppUser oldCoordinator;
@@ -235,6 +250,43 @@ class ProgramTeamMoveIntegrationTest {
 				.containsExactly(newProgram.getId());
 		assertThat(organizationRepository.findById(team.getId()).orElseThrow().getActiveProgramId())
 				.isEqualTo(newProgram.getId());
+	}
+
+	@Test
+	void aTeamThatChoseAThirdProgramKeepsItsChoice() throws Exception {
+		Program third = program("Üçüncü Program");
+		join(team, third);
+		team.setActiveProgramId(third.getId());
+		organizationRepository.saveAndFlush(team);
+
+		move(admin, newProgram, team, oldProgram).andExpect(status().isOk());
+
+		assertThat(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(team.getId()))
+				.extracting(ProgramStartup::getProgramId)
+				.containsExactlyInAnyOrder(third.getId(), newProgram.getId());
+		assertThat(organizationRepository.findById(team.getId()).orElseThrow().getActiveProgramId())
+				.isEqualTo(third.getId());
+	}
+
+	@Test
+	void keepsWhatTheTeamUploadedForTheOldProgramAndDropsWhatItStillOwed() throws Exception {
+		DocumentRequestItem uploaded = documentRequest(oldProgram, "Pitch deck");
+		upload(uploaded);
+		DocumentRequestItem owed = documentRequest(oldProgram, "Finansal tablolar");
+		DocumentRequestItem ofAMentor = documentRequest(null, "Müşteri listesi");
+
+		move(admin, newProgram, team, oldProgram).andExpect(status().isOk());
+
+		assertThat(documentRequestItemRepository.findById(owed.getId())).isEmpty();
+		assertThat(documentRequestItemRepository.findById(ofAMentor.getId())).isPresent();
+		assertThat(documentRequestItemRepository.findById(uploaded.getId())).isPresent();
+
+		// The old coordinator changing the program's checklist later does not delete it either.
+		documentRequestService.replaceOnProgram(
+				oldProgram.getId(), oldCoordinator.getId(), List.of("Yeni belge"), null);
+
+		assertThat(documentRequestItemRepository.findById(uploaded.getId())).isPresent();
+		assertThat(documentRequestUploadRepository.findByItemIdOrderByCreatedAtAsc(uploaded.getId())).hasSize(1);
 	}
 
 	@Test
@@ -422,6 +474,35 @@ class ProgramTeamMoveIntegrationTest {
 		request.setMeetingMode(MeetingMode.ONLINE);
 		request.setStatus(status);
 		return mentorshipRequestRepository.saveAndFlush(request);
+	}
+
+	private DocumentRequestItem documentRequest(Program program, String title) {
+		DocumentRequestItem item = new DocumentRequestItem();
+		item.setId(UUID.randomUUID());
+		item.setTitle(title);
+		item.setCreatedBy(oldCoordinator);
+		item.setOrganization(team);
+		item.setProgramId(program == null ? null : program.getId());
+		return documentRequestItemRepository.saveAndFlush(item);
+	}
+
+	private void upload(DocumentRequestItem item) {
+		StoredDocument file = new StoredDocument();
+		file.setId(UUID.randomUUID());
+		file.setOrganizationId(team.getId());
+		file.setKind("PITCH_DECK");
+		file.setOriginalFilename("pitch.pdf");
+		file.setContentType("application/pdf");
+		file.setSizeBytes(1024);
+		file.setS3Key("move-test/" + file.getId());
+		file.setCreatedAt(Instant.now());
+		storedDocumentRepository.saveAndFlush(file);
+		DocumentRequestUpload upload = new DocumentRequestUpload();
+		upload.setId(UUID.randomUUID());
+		upload.setItem(item);
+		upload.setStoredDocument(file);
+		upload.setUploadedBy(founder);
+		documentRequestUploadRepository.saveAndFlush(upload);
 	}
 
 	private TeamChangeRequest teamChange(TeamChangeStatus status) {

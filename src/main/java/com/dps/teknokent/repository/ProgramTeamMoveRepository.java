@@ -9,4 +9,6 @@ import com.dps.teknokent.entity.ProgramTeamMove;
 
 public interface ProgramTeamMoveRepository extends JpaRepository<ProgramTeamMove, UUID> {
 	List<ProgramTeamMove> findByOrganizationIdOrderByMovedAtDesc(UUID organizationId);
+
+	List<ProgramTeamMove> findByFromProgramId(UUID fromProgramId);
 }
