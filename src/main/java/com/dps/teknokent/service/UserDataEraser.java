@@ -25,6 +25,7 @@ import com.dps.teknokent.domain.TeamExitReason;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserDeletionCleanupKind;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.PeerWeeklySummary;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingProposal;
@@ -34,6 +35,9 @@ import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationItem;
 import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.PeerDailyReport;
+import com.dps.teknokent.entity.PeerMeetingReport;
+import com.dps.teknokent.entity.PeerWeeklyReport;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.StudentInterest;
 import com.dps.teknokent.entity.UserDeletionAudit;
@@ -46,6 +50,7 @@ import com.dps.teknokent.util.Texts;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The database half of an admin's user deletion; the caller holds the transaction and the lock on the account.
@@ -90,6 +95,7 @@ class UserDataEraser {
 	private final NotificationService notificationService;
 	private final UserDeletionAuditRepository auditRepository;
 	private final UserDeletionCleanupRepository cleanupRepository;
+	private final JsonMapper jsonMapper;
 
 	/**
 	 * Erases {@code target} and returns the audit row's id. {@code firebaseUids} are the logins to remove once this
@@ -394,6 +400,7 @@ class UserDataEraser {
 		if (interest != null) {
 			entityManager.remove(interest);
 		}
+		erasePeerReports(id);
 		entityManager.flush();
 
 		update("delete from ProfileAnalysis a where a.appUserId = :id", "id", id);
@@ -496,6 +503,63 @@ class UserDataEraser {
 
 	private static String fit(String text, int length) {
 		return text.length() <= length ? text : text.substring(0, length);
+	}
+
+	/**
+	 * Peer-mentor reports: everything the person wrote as a mentor, and every meeting report about them as a mentee
+	 * (free text about a person goes with that person). Through the entities, so action steps and chip collections go
+	 * with them. An activity that only named them as its mentee stays the mentor's, without the name.
+	 */
+	private void erasePeerReports(UUID id) {
+		redactFromWeeklySnapshots(id);
+		entityManager.createQuery(
+				"select r from PeerMeetingReport r where r.mentorId = :id or r.menteeId = :id", PeerMeetingReport.class)
+				.setParameter("id", id)
+				.getResultList()
+				.forEach(entityManager::remove);
+		entityManager.createQuery("select r from PeerDailyReport r where r.mentorId = :id", PeerDailyReport.class)
+				.setParameter("id", id)
+				.getResultList()
+				.forEach(entityManager::remove);
+		entityManager.flush();
+		update("delete from PeerWeeklyReport r where r.mentorId = :id", "id", id);
+		update("delete from PeerActivity a where a.mentorId = :id", "id", id);
+		update("update PeerActivity a set a.menteeId = null where a.menteeId = :id", "id", id);
+		update("update PeerMeetingReport r set r.reviewedBy = null where r.reviewedBy = :id", "id", id);
+		update("update PeerDailyReport r set r.reviewedBy = null where r.reviewedBy = :id", "id", id);
+		update("update PeerWeeklyReport r set r.reviewedBy = null where r.reviewedBy = :id", "id", id);
+	}
+
+	/**
+	 * A sent weekly summary froze the names and meeting outcomes of the mentor's mentees. A deleted mentee leaves those
+	 * lists; the week's counts stay, since they name nobody.
+	 */
+	private void redactFromWeeklySnapshots(UUID menteeId) {
+		List<UUID> mentorIds = entityManager.createQuery(
+				"select distinct r.mentor.id from MentorshipRequest r where r.requester.id = :id and r.mentor is not null",
+				UUID.class)
+				.setParameter("id", menteeId)
+				.getResultList();
+		if (mentorIds.isEmpty()) {
+			return;
+		}
+		entityManager.createQuery(
+				"select w from PeerWeeklyReport w where w.mentorId in :mentors and w.summarySnapshot is not null",
+				PeerWeeklyReport.class)
+				.setParameter("mentors", mentorIds)
+				.getResultList()
+				.forEach(week -> {
+					PeerWeeklySummary summary = jsonMapper.readValue(week.getSummarySnapshot(), PeerWeeklySummary.class);
+					PeerWeeklySummary redacted = new PeerWeeklySummary(summary.meetings(), summary.firstMeetings(),
+							summary.followUpMeetings(),
+							summary.mentees().stream().filter(mentee -> !menteeId.equals(mentee.id())).toList(),
+							summary.meetingReportsSent(), summary.meetingReportsTotal(), summary.activities(),
+							summary.activityTypes(), summary.recordedMinutes(), summary.skills(),
+							summary.outcomes().stream().filter(outcome -> !menteeId.equals(outcome.menteeId())).toList());
+					if (!redacted.equals(summary)) {
+						week.setSummarySnapshot(jsonMapper.writeValueAsString(redacted));
+					}
+				});
 	}
 
 	private void update(String jpql, String parameter, Object value) {
