@@ -71,7 +71,8 @@ class UserDataEraser {
 			MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
 	/** Files about the person, deleted wherever they hang. */
 	private static final Set<String> PERSONAL_KINDS = Set.of(
-			DocumentKind.CV.value(), DocumentKind.AVATAR.value(), DocumentKind.PROFILE_PDF.value());
+			DocumentKind.CV.value(), DocumentKind.AVATAR.value(), DocumentKind.PROFILE_PDF.value(),
+			DocumentKind.PEER_EVIDENCE.value());
 	/** Files that belong to a program, whoever uploaded them. */
 	private static final Set<String> PROGRAM_KINDS = Set.of(
 			DocumentKind.SYLLABUS.value(), DocumentKind.WEEKLY_PROGRAM.value());
@@ -410,6 +411,8 @@ class UserDataEraser {
 		update("delete from TrainingAttempt a where a.userId = :id", "id", id);
 		update("delete from UserBadge b where b.userId = :id", "id", id);
 		update("delete from ProgramAttendance a where a.userId = :id", "id", id);
+		// The account row stays as a tombstone, so its ON DELETE CASCADE never fires: a link has no file to go with.
+		update("delete from PeerMentorDocument d where d.userId = :id", "id", id);
 		update("delete from PeerMentorDraft d where d.userId = :id", "id", id);
 		update("delete from PlatformFeedback f where f.author.id = :id", "id", id);
 

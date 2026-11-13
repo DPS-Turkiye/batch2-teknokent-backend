@@ -27,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
@@ -242,6 +243,19 @@ class DocumentServiceTest {
 		assertThat(documents).hasSize(1);
 		assertThat(documents.get(0).kind()).isEqualTo("cv");
 		assertThat(documents.get(0).originalFilename()).isEqualTo("cv.pdf");
+	}
+
+	@Test
+	void leavesPeerMentorEvidenceOutOfTheGeneralList() {
+		UUID userId = UUID.randomUUID();
+		StoredDocument cv = storedCv(userId, "cv");
+		StoredDocument evidence = storedCv(userId, DocumentKind.PEER_EVIDENCE.value());
+		when(storedDocumentRepository.findByUserIdOrderByCreatedAtDesc(userId))
+				.thenReturn(java.util.List.of(evidence, cv));
+
+		var documents = documentService.listForUser(userId);
+
+		assertThat(documents).extracting(document -> document.kind()).containsExactly("cv");
 	}
 
 	@Test

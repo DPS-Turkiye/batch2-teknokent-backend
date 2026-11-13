@@ -70,6 +70,10 @@ public class DocumentService {
 		if (userId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
+		if (DocumentKind.PEER_EVIDENCE.value().equals(kindValue)) {
+			// Only the peer-mentoring profile stores these, with who may see them.
+			throw new InvalidRequestException("Peer mentor evidence is uploaded from the peer mentor profile.");
+		}
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 		boolean avatar = DocumentKind.AVATAR.value().equals(kindValue);
@@ -140,11 +144,13 @@ public class DocumentService {
 		}
 	}
 
+	/** The person's own files, newest first; peer mentor evidence is listed by the peer mentoring profile instead. */
 	public List<StoredDocumentResponse> listForUser(UUID userId) {
 		if (userId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
 		return storedDocumentRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+				.filter(document -> !DocumentKind.PEER_EVIDENCE.value().equals(document.getKind()))
 				.map(StoredDocumentResponse::fromEntity)
 				.toList();
 	}

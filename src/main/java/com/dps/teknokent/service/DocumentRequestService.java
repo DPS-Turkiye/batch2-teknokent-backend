@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AttachDocumentRequestUploadRequest;
@@ -334,6 +335,7 @@ public class DocumentRequestService {
 		AppUser actor = domainLookupService.requireUser(request.actorId());
 		assertCanAttach(actor, item);
 		StoredDocument document = storedDocumentRepository.findById(request.storedDocumentId())
+				.filter(found -> !DocumentKind.PEER_EVIDENCE.value().equals(found.getKind()))
 				.orElseThrow(() -> new ResourceNotFoundException(
 						"Stored document not found: " + request.storedDocumentId()));
 		if (document.getUserId() != null && !document.getUserId().equals(actor.getId())) {
