@@ -180,6 +180,7 @@ public class AdminOverviewService {
 				user.getEmail(),
 				user.getFullName(),
 				user.getRole(),
+				List.copyOf(user.activePermissions()),
 				user.getStatus() == null ? UserAccountStatus.APPROVED : user.getStatus(),
 				user.getOrganization() == null ? null : user.getOrganization().getId(),
 				Organization.visibleName(user.getOrganization()),
@@ -245,6 +246,7 @@ public class AdminOverviewService {
 				coordinators.isEmpty()
 						? null
 						: coordinators.stream().map(AppUser::getFullName).collect(Collectors.joining(", ")),
+				coordinators.stream().map(AppUser::getId).toList(),
 				startups.size(),
 				accepted,
 				pending,

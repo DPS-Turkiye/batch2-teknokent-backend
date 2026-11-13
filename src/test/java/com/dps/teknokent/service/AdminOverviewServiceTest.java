@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -17,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -112,8 +114,27 @@ class AdminOverviewServiceTest {
 		assertThat(programs).extracting(row -> row.coordinatorName())
 				.containsExactly("Elif Demir, Burcu Şen", "Elif Demir", null);
 		assertThat(programs.get(0).coordinatorId()).isEqualTo(elif.getId());
+		assertThat(programs.get(0).coordinatorIds()).containsExactly(elif.getId(), burcu.getId());
+		assertThat(programs.get(1).coordinatorIds()).containsExactly(elif.getId());
+		assertThat(programs.get(2).coordinatorIds()).isEmpty();
 		assertThat(programs.get(2).coordinatorId()).isNull();
 		assertThat(programs).extracting(row -> row.type()).containsOnly("STARTUP_MENTORING");
+	}
+
+	@Test
+	void listsEveryActivePermissionOfAUserNotOnlyThePrimaryRole() {
+		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
+		AppUser academic = person("Deniz Hoca", UserRole.ACADEMICIAN);
+		academic.grant(UserRole.MENTOR, PermissionSource.INSTITUTION, Instant.now());
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, academic));
+
+		var users = service.overview(admin.getId()).users();
+
+		assertThat(users).filteredOn(row -> row.id().equals(academic.getId())).singleElement().satisfies(row -> {
+			assertThat(row.role()).isEqualTo(UserRole.ACADEMICIAN);
+			assertThat(row.roles()).containsExactlyInAnyOrder(UserRole.ACADEMICIAN, UserRole.MENTOR);
+		});
 	}
 
 	@Test
