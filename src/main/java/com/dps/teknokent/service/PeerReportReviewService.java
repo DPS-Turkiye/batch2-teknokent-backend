@@ -23,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.dps.teknokent.domain.PeerReportKind;
 import com.dps.teknokent.domain.PeerReportStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.PeerReviewQueueItemResponse;
 import com.dps.teknokent.dto.responses.PeerReviewedReportResponse;
@@ -56,9 +57,16 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PeerReportReviewService {
 
-	/** What a reviewer sees: everything the mentor has sent, never a draft. */
+	/** What a reviewer may list: everything the mentor has sent, never a draft. */
 	private static final Set<PeerReportStatus> SENT = EnumSet.of(PeerReportStatus.IN_REVIEW,
 			PeerReportStatus.APPROVED, PeerReportStatus.REVISION_REQUESTED);
+
+	/**
+	 * What a reviewer may open: a report sent back for revision is the mentor's to edit again, so its half-changed text
+	 * stays closed until they send it once more; it still shows in the list.
+	 */
+	private static final Set<PeerReportStatus> READABLE = EnumSet.of(PeerReportStatus.IN_REVIEW,
+			PeerReportStatus.APPROVED);
 
 	private final DomainLookupService domainLookupService;
 	private final ProgramRepository programRepository;
@@ -108,8 +116,11 @@ public class PeerReportReviewService {
 					PeerWeeklyReport::getWeekStart));
 		}
 		items.sort(Comparator.comparing(PeerReviewQueueItemResponse::submittedAt,
-				Comparator.nullsLast(Comparator.naturalOrder())));
-		return items;
+				Comparator.nullsLast(Comparator.<Instant>naturalOrder()))
+				.thenComparing(PeerReviewQueueItemResponse::kind)
+				.thenComparing(PeerReviewQueueItemResponse::id));
+		// Nobody reviews their own reports, even when they also coordinate the program they mentor in.
+		return items.stream().filter(item -> !item.mentorId().equals(reviewer.user().getId())).toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -179,18 +190,21 @@ public class PeerReportReviewService {
 		report.setReviewedAt(now);
 		report.setReviewedBy(reviewer.user().getId());
 		report.setUpdatedAt(now);
-		if (note != null) {
-			report.setRevisionNote(note);
-		}
+		// An approval closes the revision round: the earlier "please change" note no longer applies.
+		report.setRevisionNote(note);
 	}
 
 	private PeerMeetingReport reviewableMeetingReport(Reviewer reviewer, UUID reportId) {
 		return reviewable(reviewer, meetingReportRepository.findById(reportId).orElse(null), reportId);
 	}
 
-	/** A sent report of a program the reviewer runs; a draft, a stranger's report or a missing id is not found. */
+	/**
+	 * A sent report of a program the reviewer runs, not their own; a draft, one back with its mentor, a stranger's
+	 * report or a missing id is not found.
+	 */
 	private <R extends PeerReportReview> R reviewable(Reviewer reviewer, R report, UUID reportId) {
-		if (report == null || !SENT.contains(report.getStatus()) || !reviewer.mayReview(programOf(report))) {
+		if (report == null || !READABLE.contains(report.getStatus()) || !reviewer.mayReview(programOf(report))
+				|| reviewer.user().getId().equals(mentorOf(report))) {
 			throw new ResourceNotFoundException("Peer report not found: " + reportId);
 		}
 		return report;
@@ -201,7 +215,16 @@ public class PeerReportReviewService {
 			case PeerMeetingReport meeting -> meeting.getProgramId();
 			case PeerDailyReport daily -> daily.getProgramId();
 			case PeerWeeklyReport weekly -> weekly.getProgramId();
-			default -> null;
+			default -> throw new IllegalStateException("Unknown report level: " + report.getClass());
+		};
+	}
+
+	private static UUID mentorOf(PeerReportReview report) {
+		return switch (report) {
+			case PeerMeetingReport meeting -> meeting.getMentorId();
+			case PeerDailyReport daily -> daily.getMentorId();
+			case PeerWeeklyReport weekly -> weekly.getMentorId();
+			default -> throw new IllegalStateException("Unknown report level: " + report.getClass());
 		};
 	}
 
@@ -210,19 +233,26 @@ public class PeerReportReviewService {
 		Meeting meeting = meetingRepository.findById(report.getMeetingId())
 				.orElseThrow(() -> new ResourceNotFoundException("Peer report not found: " + report.getId()));
 		return new PeerReviewedReportResponse(PeerReportKind.MEETING, report.getId(), report.getProgramId(),
-				mentorOf(mentor), meetingReports.response(mentor, meeting, report), null, null);
+				mentorOf(mentor), meetingReports.response(mentor, meeting, report, scopeOf(report.getProgramId())), null,
+				null);
 	}
 
 	private PeerReviewedReportResponse dailyResponse(PeerDailyReport report) {
 		AppUser mentor = domainLookupService.requireUser(report.getMentorId());
 		return new PeerReviewedReportResponse(PeerReportKind.DAILY, report.getId(), report.getProgramId(),
-				mentorOf(mentor), null, dailyReports.response(mentor, report.getReportDate(), report), null);
+				mentorOf(mentor), null,
+				dailyReports.response(mentor, report.getReportDate(), report, scopeOf(report.getProgramId())), null);
 	}
 
 	private PeerReviewedReportResponse weeklyResponse(PeerWeeklyReport report) {
 		AppUser mentor = domainLookupService.requireUser(report.getMentorId());
 		return new PeerReviewedReportResponse(PeerReportKind.WEEKLY, report.getId(), report.getProgramId(),
-				mentorOf(mentor), null, null, weeklyReports.response(mentor, report.getWeekStart(), report));
+				mentorOf(mentor), null, null,
+				weeklyReports.response(mentor, report.getWeekStart(), report, scopeOf(report.getProgramId())));
+	}
+
+	private static PeerReportScope scopeOf(UUID programId) {
+		return PeerReportScope.reviewer(programId);
 	}
 
 	private static PeerReviewedReportResponse.Mentor mentorOf(AppUser mentor) {
@@ -269,6 +299,9 @@ public class PeerReportReviewService {
 	/** An admin, or a coordinator who runs at least one peer program; anyone else is refused. */
 	private Reviewer requireReviewer(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
+		if (actor.getStatus() != UserAccountStatus.APPROVED) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.peerReportReviewersOnly"));
+		}
 		if (actor.has(UserRole.ADMIN)) {
 			return new Reviewer(actor, true, Set.of());
 		}

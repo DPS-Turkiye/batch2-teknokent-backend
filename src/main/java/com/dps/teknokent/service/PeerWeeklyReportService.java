@@ -113,11 +113,15 @@ public class PeerWeeklyReportService {
 
 	/** The week's numbers, Monday to Sunday, from the held meetings, their reports and the activities. */
 	PeerWeeklySummary summary(AppUser mentor, LocalDate weekStart) {
-		List<Meeting> meetings = access.heldMeetings(mentor, calendar.startOf(weekStart),
-				calendar.startOf(weekStart.plusDays(7)));
-		Map<UUID, PeerMeetingReport> reports = meetingReports.reportsFor(mentor, meetings);
+		return summary(mentor, weekStart, PeerReportScope.MENTOR);
+	}
+
+	PeerWeeklySummary summary(AppUser mentor, LocalDate weekStart, PeerReportScope scope) {
+		List<Meeting> meetings = access.inScope(mentor, access.heldMeetings(mentor, calendar.startOf(weekStart),
+				calendar.startOf(weekStart.plusDays(7))), scope);
+		Map<UUID, PeerMeetingReport> reports = meetingReports.reportsFor(mentor, meetings, scope);
 		Map<UUID, PeerMeetingType> types = meetingReports.types(mentor, meetings, reports);
-		List<PeerActivity> activities = dailyReports.activities(mentor, weekStart, weekStart.plusDays(6));
+		List<PeerActivity> activities = dailyReports.activities(mentor, weekStart, weekStart.plusDays(6), scope);
 
 		int first = 0;
 		int recorded = activities.stream().mapToInt(PeerActivity::getDurationMinutes).sum();
@@ -161,13 +165,18 @@ public class PeerWeeklyReportService {
 				byMentee.values().stream().map(MenteeTally::outcome).toList());
 	}
 
-	PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report) {
+	private PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report) {
+		return response(mentor, weekStart, report, PeerReportScope.MENTOR);
+	}
+
+	PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report,
+			PeerReportScope scope) {
 		PeerReportStatus status = report == null ? null : report.getStatus();
 		boolean open = status == null || status.editable();
 		PeerWeeklySummary summary = !open && report.getSummarySnapshot() != null
 				? jsonMapper.readValue(report.getSummarySnapshot(), PeerWeeklySummary.class)
-				: summary(mentor, weekStart);
-		List<PeerReportWeekResponse.Day> days = dailyReports.days(mentor, weekStart);
+				: summary(mentor, weekStart, scope);
+		List<PeerReportWeekResponse.Day> days = dailyReports.days(mentor, weekStart, scope);
 		return new PeerWeeklyReportResponse(
 				weekStart,
 				report == null ? null : report.getId(),

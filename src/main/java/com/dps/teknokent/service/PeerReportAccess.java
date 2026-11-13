@@ -114,6 +114,16 @@ class PeerReportAccess {
 				.anyMatch(request -> request.getRequester().getId().equals(menteeId));
 	}
 
+	/** The meetings of the scope's program (all of them in the mentor's own view). */
+	List<Meeting> inScope(AppUser mentor, List<Meeting> meetings, PeerReportScope scope) {
+		if (scope.programId() == null) {
+			return meetings;
+		}
+		return meetings.stream()
+				.filter(meeting -> scope.inProgram(programOf(mentor, meeting)))
+				.toList();
+	}
+
 	/** The newest running peer program the mentor is accepted in; null when there is none. */
 	UUID programOf(AppUser mentor) {
 		List<UUID> ids = programMentorRepository

@@ -39,6 +39,7 @@ import com.dps.teknokent.domain.PeerMeetingFormat;
 import com.dps.teknokent.domain.PeerMeetingTopic;
 import com.dps.teknokent.domain.PeerMeetingType;
 import com.dps.teknokent.domain.PeerMentorSkill;
+import com.dps.teknokent.domain.PeerReportStatus;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
@@ -282,6 +283,97 @@ class PeerReportReviewIntegrationTest {
 				.andExpect(jsonPath("$.status").value("IN_REVIEW"));
 		mockMvc.perform(get(QUEUE).param("kind", "MEETING").with(as(coordinator)))
 				.andExpect(jsonPath("$.length()").value(1));
+	}
+
+	@Test
+	void nobodyReviewsTheirOwnReport() throws Exception {
+		PeerDailyReport own = day(coordinator, program, LocalDate.of(2026, 11, 10), true);
+
+		mockMvc.perform(get(DAY, own.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(post(DAY + "/approve", own.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(get(QUEUE).param("kind", "DAILY").with(as(coordinator)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].id").value(sentDay.getId().toString()));
+	}
+
+	@Test
+	void aReportBackWithItsMentorIsListedButClosedAndItsApprovalClearsTheNote() throws Exception {
+		mockMvc.perform(revision(DAY, sentDay.getId(), "Yarın planını netleştir.").with(as(coordinator)))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get(DAY, sentDay.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(revision(DAY, sentDay.getId(), "Tekrar.").with(as(coordinator)))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(get(QUEUE).param("status", "REVISION_REQUESTED").with(as(coordinator)))
+				.andExpect(jsonPath("$.length()").value(1));
+
+		mockMvc.perform(post("/api/peer-mentoring/reports/days/{date}/submit", "2026-11-12").with(as(mentor)))
+				.andExpect(status().isOk());
+		mockMvc.perform(post(DAY + "/approve", sentDay.getId()).with(as(coordinator)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.daily.status").value("APPROVED"))
+				.andExpect(jsonPath("$.daily.revisionNote").doesNotExist());
+		mockMvc.perform(get(QUEUE).param("status", "APPROVED").with(as(coordinator)))
+				.andExpect(jsonPath("$.length()").value(1));
+	}
+
+	@Test
+	void aCoordinatorOfAProgramThatIsNotPeerMentoringIsNoReviewer() throws Exception {
+		AppUser startupCoordinator = user("Girişim Koordinatörü", UserRole.COORDINATOR, null);
+		Program startups = new Program();
+		startups.setId(UUID.randomUUID());
+		startups.setName("Girişim Programı");
+		startups.setCreatedBy(admin.getId());
+		startups.setCreatedAt(Instant.now());
+		startups.setStatus(ProgramStatus.ACTIVE);
+		startups.setProgramType(ProgramType.STARTUP_MENTORING);
+		coordinatorOf(programRepository.saveAndFlush(startups), startupCoordinator);
+
+		mockMvc.perform(get(QUEUE).with(as(startupCoordinator))).andExpect(status().isForbidden());
+		mockMvc.perform(get(DAY, sentDay.getId()).with(as(startupCoordinator))).andExpect(status().isForbidden());
+	}
+
+	@Test
+	void theReviewersDayShowsNeitherTheMentorsDraftsNorAnotherProgramsMeetings() throws Exception {
+		Meeting draftMeeting = meeting(held.getMentorshipRequest(), Instant.parse("2026-11-12T10:00:00Z"),
+				MeetingStatus.COMPLETED);
+		PeerMeetingReport draft = new PeerMeetingReport();
+		draft.setId(UUID.randomUUID());
+		draft.setMeetingId(draftMeeting.getId());
+		draft.setMentorId(mentor.getId());
+		draft.setMenteeId(mentee.getId());
+		draft.setProgramId(program.getId());
+		draft.setStatus(PeerReportStatus.DRAFT);
+		draft.getSkills().add(PeerMentorSkill.EMPATHY);
+		draft.setMeetingFormat(PeerMeetingFormat.ONLINE);
+		draft.setCreatedAt(NOW);
+		draft.setUpdatedAt(NOW);
+		meetingReportRepository.saveAndFlush(draft);
+		ProgramMentor alsoThere = new ProgramMentor();
+		alsoThere.setId(UUID.randomUUID());
+		alsoThere.setProgramId(otherProgram.getId());
+		alsoThere.setMentorId(mentor.getId());
+		alsoThere.setStatus(ProgramMentorStatus.ACCEPTED);
+		alsoThere.setInvitedBy(ProgramMentorInvitedBy.COORDINATOR);
+		alsoThere.setCreatedAt(Instant.now());
+		alsoThere.setDecidedAt(Instant.now());
+		programMentorRepository.saveAndFlush(alsoThere);
+		AppUser otherMentee = student("Ece Yılmaz", otherProgram);
+		meeting(request(otherMentee, mentor, otherProgram, "ACADEMIC_DEVELOPMENT"),
+				Instant.parse("2026-11-12T09:00:00Z"), MeetingStatus.COMPLETED);
+
+		mockMvc.perform(get(DAY, sentDay.getId()).with(as(coordinator)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.daily.meetings.length()").value(2))
+				.andExpect(jsonPath("$.daily.meetings[?(@.menteeName == 'Ece Yılmaz')]").isEmpty())
+				.andExpect(jsonPath("$.daily.meetings[1].reportStatus").doesNotExist())
+				.andExpect(jsonPath("$.daily.meetings[1].meetingFormat").value("IN_PERSON"))
+				.andExpect(jsonPath("$.daily.suggestedSkills.length()").value(1))
+				.andExpect(jsonPath("$.daily.suggestedSkills[0]").value("ACTIVE_LISTENING"));
+		// The mentor's own view still has everything.
+		mockMvc.perform(get("/api/peer-mentoring/reports/days/{date}", "2026-11-12").with(as(mentor)))
+				.andExpect(jsonPath("$.meetings.length()").value(3))
+				.andExpect(jsonPath("$.suggestedSkills.length()").value(2));
 	}
 
 	// ---------------------------------------------------------------- helpers

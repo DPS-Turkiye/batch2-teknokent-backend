@@ -130,7 +130,11 @@ public class PeerMeetingReportService {
 
 	/** The list rows for these meetings: the report's own type, format and duration once it has them. */
 	List<PeerReportMeetingResponse> rows(AppUser mentor, List<Meeting> meetings) {
-		Map<UUID, PeerMeetingReport> reports = reportsFor(mentor, meetings);
+		return rows(mentor, meetings, PeerReportScope.MENTOR);
+	}
+
+	List<PeerReportMeetingResponse> rows(AppUser mentor, List<Meeting> meetings, PeerReportScope scope) {
+		Map<UUID, PeerMeetingReport> reports = reportsFor(mentor, meetings, scope);
 		Map<UUID, PeerMeetingType> types = types(mentor, meetings, reports);
 		return meetings.stream().map(meeting -> {
 			PeerMeetingReport report = reports.get(meeting.getId());
@@ -150,6 +154,11 @@ public class PeerMeetingReportService {
 
 	/** The reports of these meetings by meeting id. A peer meeting has one mentee: the request's requester. */
 	Map<UUID, PeerMeetingReport> reportsFor(AppUser mentor, Collection<Meeting> meetings) {
+		return reportsFor(mentor, meetings, PeerReportScope.MENTOR);
+	}
+
+	/** As above, keeping only what the scope may see (a reviewer: sent reports only). */
+	Map<UUID, PeerMeetingReport> reportsFor(AppUser mentor, Collection<Meeting> meetings, PeerReportScope scope) {
 		if (meetings.isEmpty()) {
 			return Map.of();
 		}
@@ -157,6 +166,7 @@ public class PeerMeetingReportService {
 				meeting -> meeting.getMentorshipRequest().getRequester().getId(), (first, second) -> first));
 		return reportRepository.findByMentorIdAndMeetingIdIn(mentor.getId(), menteeOf.keySet()).stream()
 				.filter(report -> report.getMenteeId().equals(menteeOf.get(report.getMeetingId())))
+				.filter(scope::shows)
 				.collect(Collectors.toMap(PeerMeetingReport::getMeetingId, Function.identity()));
 	}
 
@@ -311,7 +321,12 @@ public class PeerMeetingReportService {
 		return missing;
 	}
 
-	PeerMeetingReportResponse response(AppUser mentor, Meeting meeting, PeerMeetingReport report) {
+	private PeerMeetingReportResponse response(AppUser mentor, Meeting meeting, PeerMeetingReport report) {
+		return response(mentor, meeting, report, PeerReportScope.MENTOR);
+	}
+
+	PeerMeetingReportResponse response(AppUser mentor, Meeting meeting, PeerMeetingReport report,
+			PeerReportScope scope) {
 		AppUser mentee = meeting.getMentorshipRequest().getRequester();
 		PeerReportStatus status = report.getStatus();
 		return new PeerMeetingReportResponse(
@@ -323,7 +338,7 @@ public class PeerMeetingReportService {
 						peerMentoringService.departmentOf(mentee.getId(), null)),
 				meeting.getScheduledAt(),
 				meeting.getDurationMinutes(),
-				context(mentor, meeting),
+				context(mentor, meeting, scope),
 				report.getMeetingType(),
 				report.getMeetingFormat(),
 				report.getActualDurationMinutes(),
@@ -346,15 +361,15 @@ public class PeerMeetingReportService {
 	}
 
 	/** The side card: this meeting's number with the mentee, the meeting before it, and steps still open from before. */
-	private PeerMeetingReportResponse.Context context(AppUser mentor, Meeting meeting) {
+	private PeerMeetingReportResponse.Context context(AppUser mentor, Meeting meeting, PeerReportScope scope) {
 		UUID menteeId = meeting.getMentorshipRequest().getRequester().getId();
-		List<Meeting> earlier = access.meetingsWith(mentor, menteeId).stream()
+		List<Meeting> earlier = access.inScope(mentor, access.meetingsWith(mentor, menteeId).stream()
 				.filter(other -> other.getScheduledAt().isBefore(meeting.getScheduledAt()))
-				.toList();
+				.toList(), scope);
 		if (earlier.isEmpty()) {
 			return new PeerMeetingReportResponse.Context(1, null, 0);
 		}
-		Map<UUID, PeerMeetingReport> reports = reportsFor(mentor, earlier);
+		Map<UUID, PeerMeetingReport> reports = reportsFor(mentor, earlier, scope);
 		Meeting previous = earlier.getLast();
 		PeerMeetingReport previousReport = reports.get(previous.getId());
 		int openActions = (int) reports.values().stream()
