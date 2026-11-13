@@ -71,7 +71,8 @@ class UserDataEraser {
 			MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
 	/** Files about the person, deleted wherever they hang. */
 	private static final Set<String> PERSONAL_KINDS = Set.of(
-			DocumentKind.CV.value(), DocumentKind.AVATAR.value(), DocumentKind.PROFILE_PDF.value());
+			DocumentKind.CV.value(), DocumentKind.AVATAR.value(), DocumentKind.PROFILE_PDF.value(),
+			DocumentKind.PEER_EVIDENCE.value());
 	/** Files that belong to a program, whoever uploaded them. */
 	private static final Set<String> PROGRAM_KINDS = Set.of(
 			DocumentKind.SYLLABUS.value(), DocumentKind.WEEKLY_PROGRAM.value());

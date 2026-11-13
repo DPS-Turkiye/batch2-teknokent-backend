@@ -1,6 +1,7 @@
 package com.dps.teknokent.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -157,7 +158,10 @@ class PeerMentorDocumentIntegrationTest {
 	void aPortfolioIsALinkThatListsAndDeletesLikeAFile() throws Exception {
 		upload(mentor, PeerEvidenceType.PORTFOLIO, PeerDocumentVisibility.PROFILE)
 				.andExpect(status().isBadRequest());
-		addLink(mentor, "javascript:alert(1)").andExpect(status().isBadRequest());
+		for (String bad : List.of("javascript:alert(1)", "data:text/html,hi", "https://", "https://user:pw@evil.test",
+				"https://evil.test/\u00a0x", " https://ok.test", "ftp://files.test")) {
+			addLink(mentor, bad).andExpect(status().isBadRequest());
+		}
 		String body = addLink(mentor, "https://github.com/leyla")
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.evidenceType").value("PORTFOLIO"))
@@ -195,6 +199,22 @@ class PeerMentorDocumentIntegrationTest {
 						.with(authentication(signedIn(mentor))))
 				.andExpect(status().isBadRequest());
 		assertThat(peerMentorDocumentRepository.findByUserIdOrderByCreatedAtAsc(mentor.getId())).isEmpty();
+	}
+
+	@Test
+	void theOtherDocumentPathsNeitherTakeNorHandOutPeerEvidence() throws Exception {
+		UUID documentId = uploaded(mentor, PeerDocumentVisibility.VERIFICATION_ONLY);
+		UUID fileId = peerMentorDocumentRepository.findById(documentId).orElseThrow().getDocumentId();
+
+		for (AppUser actor : List.of(otherCoordinator, admin, mentor)) {
+			mockMvc.perform(get("/api/documents/{id}/download-url", fileId).with(authentication(signedIn(actor))))
+					.andExpect(status().isNotFound());
+		}
+		MockMultipartFile file = new MockMultipartFile("file", "cv.pdf", "application/pdf", PDF);
+		mockMvc.perform(multipart("/api/documents").file(file).param("kind", "peer-evidence")
+						.with(authentication(signedIn(mentor))))
+				.andExpect(status().isBadRequest());
+		assertThat(storedDocumentRepository.findByUserIdAndKind(mentor.getId(), "peer-evidence")).hasSize(1);
 	}
 
 	@Test
@@ -244,6 +264,7 @@ class PeerMentorDocumentIntegrationTest {
 				.andExpect(content().contentType(MediaType.APPLICATION_PDF))
 				.andExpect(header().string("Content-Disposition", startsWith("attachment")))
 				.andExpect(header().string("X-Content-Type-Options", "nosniff"))
+				.andExpect(header().string("Cache-Control", containsString("no-store")))
 				.andExpect(content().bytes(PDF));
 		mockMvc.perform(get(CONTENT, hidden).with(authentication(signedIn(mentee))))
 				.andExpect(status().isNotFound());

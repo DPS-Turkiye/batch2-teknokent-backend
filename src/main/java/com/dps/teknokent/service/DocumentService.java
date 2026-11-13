@@ -70,6 +70,10 @@ public class DocumentService {
 		if (userId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
+		if (DocumentKind.PEER_EVIDENCE.value().equals(kindValue)) {
+			// Only the peer-mentoring profile stores these, with who may see them.
+			throw new InvalidRequestException("Peer mentor evidence is uploaded from the peer mentor profile.");
+		}
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 		boolean avatar = DocumentKind.AVATAR.value().equals(kindValue);

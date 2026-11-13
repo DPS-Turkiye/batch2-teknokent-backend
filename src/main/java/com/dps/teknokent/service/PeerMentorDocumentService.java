@@ -1,18 +1,26 @@
 package com.dps.teknokent.service;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -41,6 +49,7 @@ import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The evidence a peer mentor attaches in the wizard's "Belgeler ve kanıtlar" step: files, which go through the one
@@ -52,12 +61,14 @@ import lombok.RequiredArgsConstructor;
  * <li>anyone else: none, answered as not found so an id says nothing about whether it exists.</li>
  * </ul>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PeerMentorDocumentService {
 
 	/** Enough for every card several times over; a cap so one account cannot fill the bucket. */
 	static final int MAX_EVIDENCE = 30;
+	private static final Pattern INVISIBLE = Pattern.compile("[\\p{Cntrl}\\p{Z}\\s]");
 
 	private final DocumentService documentService;
 	private final ObjectStorage objectStorage;
@@ -69,6 +80,7 @@ public class PeerMentorDocumentService {
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
+	private final PlatformTransactionManager transactionManager;
 
 	/** The file of one piece of evidence: what the download endpoint streams. */
 	public record DocumentContent(String filename, String contentType, byte[] bytes) {
@@ -106,16 +118,17 @@ public class PeerMentorDocumentService {
 		PeerMentorDocument row = newRow(mentor.getId(), evidenceType, visibility);
 		row.setDocumentId(stored.id());
 		PeerMentorDocument saved = peerMentorDocumentRepository.save(row);
-		return PeerMentorDocumentResponse.ofFile(saved, requireFile(saved));
+		StoredDocument storedFile = requireFile(saved);
+		removeObjectIfRolledBack(storedFile.getS3Key());
+		return PeerMentorDocumentResponse.ofFile(saved, storedFile);
 	}
 
-	/** {@code url} arrives checked as an http(s) link by the request's validation. */
 	@Transactional
 	public PeerMentorDocumentResponse addLink(UUID actorId, String url, PeerDocumentVisibility visibility) {
 		AppUser mentor = requirePeerMentor(actorId);
 		requireRoom(mentor.getId());
 		PeerMentorDocument row = newRow(mentor.getId(), PeerEvidenceType.PORTFOLIO, visibility);
-		row.setUrl(url.trim());
+		row.setUrl(requireWebLink(url));
 		return PeerMentorDocumentResponse.ofLink(peerMentorDocumentRepository.save(row));
 	}
 
@@ -128,17 +141,25 @@ public class PeerMentorDocumentService {
 		return response(peerMentorDocumentRepository.save(row));
 	}
 
-	/** A file goes with it: the stored document row and the stored object. */
-	@Transactional
+	/**
+	 * A file goes with it. As with team files, the stored object goes only once the rows' deletion has committed: a
+	 * storage hiccup leaves an orphaned object rather than a record pointing at nothing.
+	 */
 	public void delete(UUID actorId, UUID documentId) {
-		AppUser mentor = requirePeerMentor(actorId);
-		PeerMentorDocument row = ownRow(mentor.getId(), documentId);
-		peerMentorDocumentRepository.delete(row);
-		if (row.getDocumentId() != null) {
-			storedDocumentRepository.findById(row.getDocumentId()).ifPresent(file -> {
+		String s3Key = new TransactionTemplate(transactionManager).execute(status -> {
+			AppUser mentor = requirePeerMentor(actorId);
+			PeerMentorDocument row = ownRow(mentor.getId(), documentId);
+			peerMentorDocumentRepository.delete(row);
+			if (row.getDocumentId() == null) {
+				return null;
+			}
+			return storedDocumentRepository.findById(row.getDocumentId()).map(file -> {
 				storedDocumentRepository.delete(file);
-				objectStorage.delete(file.getS3Key());
-			});
+				return file.getS3Key();
+			}).orElse(null);
+		});
+		if (s3Key != null) {
+			deleteObject(s3Key);
 		}
 	}
 
@@ -239,6 +260,52 @@ public class PeerMentorDocumentService {
 		row.setVisibility(visibility);
 		row.setCreatedAt(Instant.now());
 		return row;
+	}
+
+	/**
+	 * Students open these links from the mentor's profile: an http(s) address with a host, no credentials in it and
+	 * nothing invisible (control or space characters) that could disguise where it goes.
+	 */
+	static String requireWebLink(String url) {
+		InvalidRequestException invalid = new InvalidRequestException("Please enter a web address (https://…).");
+		if (url == null || url.length() > 500 || !url.equals(url.strip()) || INVISIBLE.matcher(url).find()) {
+			throw invalid;
+		}
+		URI uri;
+		try {
+			uri = new URI(url);
+		} catch (URISyntaxException error) {
+			throw invalid;
+		}
+		String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+		if (!(scheme.equals("http") || scheme.equals("https")) || uri.getHost() == null || uri.getHost().isBlank()
+				|| uri.getRawUserInfo() != null) {
+			throw invalid;
+		}
+		return url;
+	}
+
+	/** An upload whose transaction rolls back takes its stored object with it. */
+	private void removeObjectIfRolledBack(String s3Key) {
+		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+			return;
+		}
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCompletion(int status) {
+				if (status == STATUS_ROLLED_BACK) {
+					deleteObject(s3Key);
+				}
+			}
+		});
+	}
+
+	private void deleteObject(String s3Key) {
+		try {
+			objectStorage.delete(s3Key);
+		} catch (RuntimeException error) {
+			log.warn("Peer mentor evidence object {} remains in storage: {}", s3Key, error.getMessage());
+		}
 	}
 
 	private void requireRoom(UUID mentorId) {

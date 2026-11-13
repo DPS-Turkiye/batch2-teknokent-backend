@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -99,6 +100,7 @@ public class PeerMentorDocumentController {
 						.build()
 						.toString())
 				.header("X-Content-Type-Options", "nosniff")
+				.cacheControl(CacheControl.noStore().cachePrivate())
 				.body(content.bytes());
 	}
 }
