@@ -1,18 +1,14 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
-import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
@@ -49,24 +45,22 @@ import com.dps.teknokent.util.Texts;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The coordinator's side of the peer-mentor reports: the sent reports of the peer programs they run (an admin: all),
- * read in full and approved or sent back for revision. A mentor's draft is theirs alone, so it is never listed or
- * shown here; a report outside the reviewer's programs is not found.
+ * The coordinator's side of the peer-mentor reports (Arya, 14 Nov): only the weekly summary is reviewed. Its approval
+ * covers the week's daily and meeting reports; a summary nobody decided on within seven days counts as approved
+ * ({@link PeerReportStatuses}). Coordinators of a peer program (and admins) read its sent reports, never a draft and
+ * never their own; a report outside the reviewer's programs is not found.
  */
 @Service
 @RequiredArgsConstructor
 public class PeerReportReviewService {
 
-	/** What a reviewer may list: everything the mentor has sent, never a draft. */
-	private static final Set<PeerReportStatus> SENT = EnumSet.of(PeerReportStatus.IN_REVIEW,
-			PeerReportStatus.APPROVED, PeerReportStatus.REVISION_REQUESTED);
-
-	/**
-	 * What a reviewer may open: a report sent back for revision is the mentor's to edit again, so its half-changed text
-	 * stays closed until they send it once more; it still shows in the list.
-	 */
+	/** What a reviewer may open: sent and not back with its mentor. */
 	private static final Set<PeerReportStatus> READABLE = EnumSet.of(PeerReportStatus.IN_REVIEW,
 			PeerReportStatus.APPROVED);
+
+	/** What a weekly summary can be stored as once sent (a list's candidates). */
+	private static final Set<PeerReportStatus> SENT = EnumSet.of(PeerReportStatus.IN_REVIEW,
+			PeerReportStatus.APPROVED, PeerReportStatus.REVISION_REQUESTED);
 
 	private final DomainLookupService domainLookupService;
 	private final ProgramRepository programRepository;
@@ -80,47 +74,39 @@ public class PeerReportReviewService {
 	private final PeerDailyReportService dailyReports;
 	private final PeerWeeklyReportService weeklyReports;
 	private final PeerReportCalendar calendar;
+	private final PeerReportStatuses statuses;
+	private final PeerReportAccess access;
 
 	/**
-	 * The reviewer's list, oldest sent first: by default what waits for them (IN_REVIEW). {@code programId} narrows
-	 * it to one of their programs; a program they don't run gives an empty list, never someone else's reports.
+	 * The reviewer's list of weekly summaries, oldest sent first: by default those waiting for them (in review and not
+	 * yet past the seven days). {@code status} filters by the status they show. {@code programId} narrows it to one of
+	 * their programs; one they don't run gives an empty list, never someone else's reports.
 	 */
 	@Transactional(readOnly = true)
-	public List<PeerReviewQueueItemResponse> queue(UUID actorId, UUID programId, PeerReportKind kind,
-			PeerReportStatus status) {
+	public List<PeerReviewQueueItemResponse> queue(UUID actorId, UUID programId, PeerReportStatus status) {
 		Reviewer reviewer = requireReviewer(actorId);
-		Set<PeerReportStatus> statuses = status == null ? EnumSet.of(PeerReportStatus.IN_REVIEW)
-				: SENT.contains(status) ? EnumSet.of(status) : EnumSet.noneOf(PeerReportStatus.class);
-		if (statuses.isEmpty() || (programId != null && !reviewer.mayReview(programId))) {
+		PeerReportStatus shown = status == null ? PeerReportStatus.IN_REVIEW : status;
+		if (!SENT.contains(shown) || (programId != null && !reviewer.mayReview(programId))) {
 			return List.of();
 		}
-		Set<UUID> programs = programId != null ? Set.of(programId) : reviewer.programIds();
-		List<PeerReviewQueueItemResponse> items = new ArrayList<>();
-		if (kind == null || kind == PeerReportKind.MEETING) {
-			items.addAll(meetingItems(reviewer.admin() && programId == null
-					? meetingReportRepository.findByStatusInOrderBySubmittedAtAsc(statuses)
-					: meetingReportRepository.findByProgramIdInAndStatusInOrderBySubmittedAtAsc(programs, statuses)));
-		}
-		if (kind == null || kind == PeerReportKind.DAILY) {
-			items.addAll(simpleItems(PeerReportKind.DAILY, reviewer.admin() && programId == null
-					? dailyReportRepository.findByStatusInOrderBySubmittedAtAsc(statuses)
-					: dailyReportRepository.findByProgramIdInAndStatusInOrderBySubmittedAtAsc(programs, statuses),
-					PeerDailyReport::getId, PeerDailyReport::getProgramId, PeerDailyReport::getMentorId,
-					PeerDailyReport::getReportDate));
-		}
-		if (kind == null || kind == PeerReportKind.WEEKLY) {
-			items.addAll(simpleItems(PeerReportKind.WEEKLY, reviewer.admin() && programId == null
-					? weeklyReportRepository.findByStatusInOrderBySubmittedAtAsc(statuses)
-					: weeklyReportRepository.findByProgramIdInAndStatusInOrderBySubmittedAtAsc(programs, statuses),
-					PeerWeeklyReport::getId, PeerWeeklyReport::getProgramId, PeerWeeklyReport::getMentorId,
-					PeerWeeklyReport::getWeekStart));
-		}
-		items.sort(Comparator.comparing(PeerReviewQueueItemResponse::submittedAt,
-				Comparator.nullsLast(Comparator.<Instant>naturalOrder()))
-				.thenComparing(PeerReviewQueueItemResponse::kind)
-				.thenComparing(PeerReviewQueueItemResponse::id));
-		// Nobody reviews their own reports, even when they also coordinate the program they mentor in.
-		return items.stream().filter(item -> !item.mentorId().equals(reviewer.user().getId())).toList();
+		List<PeerWeeklyReport> weeks = reviewer.admin() && programId == null
+				? weeklyReportRepository.findByStatusInOrderBySubmittedAtAsc(SENT)
+				: weeklyReportRepository.findByProgramIdInAndStatusInOrderBySubmittedAtAsc(
+						programId != null ? Set.of(programId) : reviewer.programIds(), SENT);
+		List<PeerWeeklyReport> listed = weeks.stream()
+				.filter(week -> statuses.ofWeek(week) == shown)
+				// Nobody reviews their own reports, even when they also coordinate the program they mentor in.
+				.filter(week -> !week.getMentorId().equals(reviewer.user().getId()))
+				.toList();
+		Map<UUID, String> names = names(listed.stream().map(PeerWeeklyReport::getMentorId).collect(Collectors.toSet()));
+		return listed.stream()
+				.map(week -> new PeerReviewQueueItemResponse(PeerReportKind.WEEKLY, week.getId(), week.getProgramId(),
+						week.getMentorId(), names.get(week.getMentorId()), week.getWeekStart(), null, null, null,
+						statuses.ofWeek(week), week.getSubmittedAt()))
+				.sorted(Comparator.comparing(PeerReviewQueueItemResponse::submittedAt,
+						Comparator.nullsLast(Comparator.<Instant>naturalOrder()))
+						.thenComparing(PeerReviewQueueItemResponse::id))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -143,48 +129,55 @@ public class PeerReportReviewService {
 		return weeklyResponse(report);
 	}
 
-	/** Approves a report waiting for review; any other state is a conflict, not a silent no-op. */
+	/**
+	 * Approves a weekly summary waiting for review, and with it the week's sent daily and meeting reports of its
+	 * program. Any other state (already decided, past the seven days, back with the mentor) is a conflict.
+	 */
 	@Transactional
-	public PeerReviewedReportResponse approve(UUID actorId, PeerReportKind kind, UUID reportId) {
-		return decide(actorId, kind, reportId, PeerReportStatus.APPROVED, null);
-	}
-
-	/** Sends a report back to its mentor with a note; it reopens for editing ("Revizyon Gerekli"). */
-	@Transactional
-	public PeerReviewedReportResponse requestRevision(UUID actorId, PeerReportKind kind, UUID reportId,
-			String note) {
-		return decide(actorId, kind, reportId, PeerReportStatus.REVISION_REQUESTED, note.trim());
-	}
-
-	private PeerReviewedReportResponse decide(UUID actorId, PeerReportKind kind, UUID reportId,
-			PeerReportStatus outcome, String note) {
+	public PeerReviewedReportResponse approveWeek(UUID actorId, UUID reportId) {
 		Reviewer reviewer = requireReviewer(actorId);
-		return switch (kind) {
-			case MEETING -> {
-				PeerMeetingReport report = reviewableMeetingReport(reviewer, reportId);
-				record(report, reviewer, outcome, note);
-				yield meetingResponse(PeerReportAccess.savedOrConflict(() -> meetingReportRepository.saveAndFlush(report)));
-			}
-			case DAILY -> {
-				PeerDailyReport report = reviewable(reviewer, dailyReportRepository.findById(reportId).orElse(null),
-						reportId);
-				record(report, reviewer, outcome, note);
-				yield dailyResponse(PeerReportAccess.savedOrConflict(() -> dailyReportRepository.saveAndFlush(report)));
-			}
-			case WEEKLY -> {
-				PeerWeeklyReport report = reviewable(reviewer, weeklyReportRepository.findById(reportId).orElse(null),
-						reportId);
-				record(report, reviewer, outcome, note);
-				yield weeklyResponse(
-						PeerReportAccess.savedOrConflict(() -> weeklyReportRepository.saveAndFlush(report)));
-			}
-		};
+		PeerWeeklyReport week = reviewable(reviewer, weeklyReportRepository.findById(reportId).orElse(null), reportId);
+		decide(week, reviewer, PeerReportStatus.APPROVED, null);
+		approveTheWeeksReports(week, reviewer);
+		return weeklyResponse(PeerReportAccess.savedOrConflict(() -> weeklyReportRepository.saveAndFlush(week)));
+	}
+
+	/**
+	 * Sends a weekly summary back with a note: it reopens for its mentor ("Revizyon Gerekli"); the week's daily and
+	 * meeting reports stay as sent.
+	 */
+	@Transactional
+	public PeerReviewedReportResponse requestWeekRevision(UUID actorId, UUID reportId, String note) {
+		Reviewer reviewer = requireReviewer(actorId);
+		PeerWeeklyReport week = reviewable(reviewer, weeklyReportRepository.findById(reportId).orElse(null), reportId);
+		decide(week, reviewer, PeerReportStatus.REVISION_REQUESTED, note.trim());
+		return weeklyResponse(PeerReportAccess.savedOrConflict(() -> weeklyReportRepository.saveAndFlush(week)));
+	}
+
+	private void decide(PeerWeeklyReport week, Reviewer reviewer, PeerReportStatus outcome, String note) {
+		if (statuses.ofWeek(week) != PeerReportStatus.IN_REVIEW) {
+			throw new ConflictException(Texts.forRequest("error.peerReportNotInReview"));
+		}
+		record(week, reviewer, outcome, note);
+	}
+
+	/** The cascade: the week's sent day reports and meeting reports (of the week's program) are approved with it. */
+	private void approveTheWeeksReports(PeerWeeklyReport week, Reviewer reviewer) {
+		AppUser mentor = domainLookupService.requireUser(week.getMentorId());
+		PeerReportScope scope = PeerReportScope.reviewer(week.getProgramId());
+		dailyReportRepository.findByMentorIdAndReportDateBetween(mentor.getId(), week.getWeekStart(),
+				week.getWeekStart().plusDays(6)).stream()
+				.filter(day -> day.getStatus() == PeerReportStatus.IN_REVIEW)
+				.filter(day -> scope.inProgram(day.getProgramId()))
+				.forEach(day -> record(day, reviewer, PeerReportStatus.APPROVED, null));
+		List<Meeting> meetings = access.inScope(mentor, access.heldMeetings(mentor,
+				calendar.startOf(week.getWeekStart()), calendar.startOf(week.getWeekStart().plusDays(7))), scope);
+		meetingReports.reportsFor(mentor, meetings, scope).values().stream()
+				.filter(report -> report.getStatus() == PeerReportStatus.IN_REVIEW)
+				.forEach(report -> record(report, reviewer, PeerReportStatus.APPROVED, null));
 	}
 
 	private void record(PeerReportReview report, Reviewer reviewer, PeerReportStatus outcome, String note) {
-		if (report.getStatus() != PeerReportStatus.IN_REVIEW) {
-			throw new ConflictException(Texts.forRequest("error.peerReportNotInReview"));
-		}
 		Instant now = calendar.now();
 		report.setStatus(outcome);
 		report.setReviewedAt(now);
@@ -257,35 +250,6 @@ public class PeerReportReviewService {
 
 	private static PeerReviewedReportResponse.Mentor mentorOf(AppUser mentor) {
 		return new PeerReviewedReportResponse.Mentor(mentor.getId(), mentor.getFullName());
-	}
-
-	private List<PeerReviewQueueItemResponse> meetingItems(List<PeerMeetingReport> reports) {
-		Set<UUID> people = new HashSet<>();
-		reports.forEach(report -> {
-			people.add(report.getMentorId());
-			people.add(report.getMenteeId());
-		});
-		Map<UUID, String> names = names(people);
-		Map<UUID, LocalDate> days = meetingRepository
-				.findAllById(reports.stream().map(PeerMeetingReport::getMeetingId).toList()).stream()
-				.collect(Collectors.toMap(Meeting::getId, meeting -> calendar.dateOf(meeting.getScheduledAt())));
-		return reports.stream()
-				.map(report -> new PeerReviewQueueItemResponse(PeerReportKind.MEETING, report.getId(),
-						report.getProgramId(), report.getMentorId(), names.get(report.getMentorId()),
-						days.get(report.getMeetingId()), report.getMenteeId(), names.get(report.getMenteeId()),
-						report.getCoordinatorSupportNeeded(), report.getStatus(), report.getSubmittedAt()))
-				.toList();
-	}
-
-	private <R extends PeerReportReview> List<PeerReviewQueueItemResponse> simpleItems(PeerReportKind kind,
-			List<R> reports, Function<R, UUID> id, Function<R, UUID> program, Function<R, UUID> mentor,
-			Function<R, LocalDate> day) {
-		Map<UUID, String> names = names(reports.stream().map(mentor).collect(Collectors.toSet()));
-		return reports.stream()
-				.map(report -> new PeerReviewQueueItemResponse(kind, id.apply(report), program.apply(report),
-						mentor.apply(report), names.get(mentor.apply(report)), day.apply(report), null, null, null,
-						report.getStatus(), report.getSubmittedAt()))
-				.toList();
 	}
 
 	private Map<UUID, String> names(Collection<UUID> ids) {

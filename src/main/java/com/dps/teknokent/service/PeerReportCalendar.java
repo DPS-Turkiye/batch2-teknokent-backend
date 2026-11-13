@@ -62,9 +62,9 @@ public class PeerReportCalendar {
 		return startOf(date.plusDays(1));
 	}
 
-	/** The Sunday-night close of the week starting {@code weekStart}. */
+	/** Due by the next Monday, 23:59 (Arya, 14 Nov): the first instant of that Tuesday. */
 	public Instant weeklyDeadline(LocalDate weekStart) {
-		return startOf(weekStart.plusDays(7));
+		return startOf(weekStart.plusDays(8));
 	}
 
 	public Instant weeklyOpensAt(LocalDate weekStart) {

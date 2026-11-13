@@ -2,8 +2,11 @@ package com.dps.teknokent.entity;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -177,6 +180,18 @@ public class AppUser {
 
 	public boolean has(UserRole permission) {
 		return activePermissions().contains(permission);
+	}
+
+	/** When the permission was last taken away; empty while it is held, or if it never was. */
+	public Optional<Instant> lastRevoked(UserRole permission) {
+		if (has(permission)) {
+			return Optional.empty();
+		}
+		return permissions.stream()
+				.filter(grant -> grant.getPermission() == permission)
+				.map(AppUserPermission::getRevokedAt)
+				.filter(Objects::nonNull)
+				.max(Comparator.naturalOrder());
 	}
 
 	/**

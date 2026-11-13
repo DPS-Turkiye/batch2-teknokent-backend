@@ -60,6 +60,7 @@ public class PeerDailyReportService {
 	private final PeerDailyReportRepository dailyRepository;
 	private final PeerActivityRepository activityRepository;
 	private final PeerWeeklyReportRepository weeklyRepository;
+	private final PeerReportStatuses statuses;
 	private final AppUserRepository userRepository;
 
 	/** The five day cards of the week starting on {@code weekStart} (a Monday). */
@@ -82,7 +83,7 @@ public class PeerDailyReportService {
 	@Transactional
 	public PeerDailyReportResponse save(UUID actorId, LocalDate date, SavePeerDailyReportRequest request) {
 		AppUser mentor = access.requireMentor(actorId);
-		requireReportableDay(date);
+		requireReportableDay(mentor, date);
 		requireWeekOpen(mentor, date);
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseGet(() -> newReport(mentor, date));
@@ -103,7 +104,7 @@ public class PeerDailyReportService {
 	@Transactional
 	public PeerDailyReportResponse submit(UUID actorId, LocalDate date) {
 		AppUser mentor = access.requireMentor(actorId);
-		requireReportableDay(date);
+		requireReportableDay(mentor, date);
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseThrow(() -> new ConflictException(Texts.forRequest("error.peerReportNotStarted")));
 		requireEditable(report.getStatus());
@@ -171,6 +172,7 @@ public class PeerDailyReportService {
 		List<Meeting> meetings = access.inScope(mentor, access.heldMeetings(mentor, calendar.startOf(weekStart),
 				calendar.startOf(friday.plusDays(1))), scope);
 		Map<UUID, PeerMeetingReport> meetingReportsById = meetingReports.reportsFor(mentor, meetings, scope);
+		PeerReportStatuses.Lookup shown = statuses.lookup();
 		List<PeerReportWeekResponse.Day> days = new ArrayList<>();
 		for (int offset = 0; offset < WORKING_DAYS; offset++) {
 			LocalDate date = weekStart.plusDays(offset);
@@ -178,7 +180,8 @@ public class PeerDailyReportService {
 					.filter(meeting -> calendar.dateOf(meeting.getScheduledAt()).equals(date))
 					.toList();
 			PeerDailyReport report = visible(reports.get(date), scope);
-			days.add(new PeerReportWeekResponse.Day(date, report == null ? null : report.getStatus(), ofDay.size(),
+			days.add(new PeerReportWeekResponse.Day(date,
+					report == null ? null : shown.of(report.getStatus(), mentor.getId(), date), ofDay.size(),
 					activityCounts.getOrDefault(date, 0L).intValue(), unsent(ofDay, meetingReportsById)));
 		}
 		return days;
@@ -226,7 +229,8 @@ public class PeerDailyReportService {
 		reports.values().forEach(meetingReport -> suggested.addAll(meetingReport.getSkills()));
 		int recorded = rows.stream().mapToInt(PeerReportMeetingResponse::durationMinutes).sum()
 				+ activities.stream().mapToInt(PeerActivity::getDurationMinutes).sum();
-		PeerReportStatus status = report == null ? null : report.getStatus();
+		PeerReportStatus status = report == null ? null
+				: statuses.lookup().of(report.getStatus(), mentor.getId(), date);
 		boolean open = status == null || status.editable();
 		boolean late = report != null && report.getSubmittedAt() != null
 				? report.getSubmittedAt().isAfter(calendar.dailyDeadline(date))
@@ -269,7 +273,7 @@ public class PeerDailyReportService {
 	}
 
 	private void apply(AppUser mentor, PeerActivity activity, SavePeerActivityRequest request) {
-		requireReportableDay(request.activityDate());
+		requireReportableDay(mentor, request.activityDate());
 		requireDayEditable(mentor, request.activityDate());
 		if (request.menteeId() != null && !access.isMenteeOf(mentor, request.menteeId())) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerActivityMenteeUnknown"));
@@ -296,17 +300,10 @@ public class PeerDailyReportService {
 	}
 
 	/**
-	 * Once the week's summary is sent, its days are fixed too: the coordinator reviews what the snapshot froze. A day
-	 * the coordinator sent back for revision is the one exception.
+	 * Once the week's summary is sent, its days are fixed too: the coordinator reviews what the snapshot froze, and
+	 * approves the days with it.
 	 */
 	private void requireWeekOpen(AppUser mentor, LocalDate date) {
-		// A day its coordinator sent back must be fixable even though the week around it was already sent.
-		boolean sentBack = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
-				.map(day -> day.getStatus() == PeerReportStatus.REVISION_REQUESTED)
-				.orElse(false);
-		if (sentBack) {
-			return;
-		}
 		weeklyRepository.findByMentorIdAndWeekStart(mentor.getId(), calendar.weekStartOf(date))
 				.filter(week -> !week.getStatus().editable())
 				.ifPresent(week -> {
@@ -363,11 +360,14 @@ public class PeerDailyReportService {
 		}
 	}
 
-	/** A working day that has begun: nobody reports on tomorrow. */
-	private void requireReportableDay(LocalDate date) {
+	/** A working day that has begun (nobody reports on tomorrow), and for a former mentor one before the badge went. */
+	private void requireReportableDay(AppUser mentor, LocalDate date) {
 		requireWorkingDay(date);
 		if (date.isAfter(calendar.today())) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerReportFutureDay"));
+		}
+		if (date.isAfter(access.lastReportableDay(mentor))) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerReportAfterBadge"));
 		}
 	}
 }

@@ -47,6 +47,7 @@ public class PeerWeeklyReportService {
 	private final PeerDailyReportService dailyReports;
 	private final PeerWeeklyReportRepository weeklyRepository;
 	private final JsonMapper jsonMapper;
+	private final PeerReportStatuses statuses;
 
 	@Transactional(readOnly = true)
 	public PeerWeeklyReportResponse get(UUID actorId, LocalDate weekStart) {
@@ -63,6 +64,9 @@ public class PeerWeeklyReportService {
 		if (weekStart.isAfter(calendar.today())) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerReportFutureDay"));
 		}
+		if (weekStart.isAfter(access.lastReportableDay(mentor))) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerReportAfterBadge"));
+		}
 		PeerWeeklyReport report = weeklyRepository.findByMentorIdAndWeekStart(mentor.getId(), weekStart)
 				.orElseGet(() -> newReport(mentor, weekStart));
 		requireEditable(report);
@@ -76,7 +80,8 @@ public class PeerWeeklyReportService {
 
 	/**
 	 * Sends the week to the coordinator. Refused before Friday evening, while a held meeting lacks a sent report or a
-	 * day with mentoring work lacks a sent daily report, and while one of the three answers is empty.
+	 * meeting of the week is still ahead, and while one of the three answers is empty. Daily reports are not required:
+	 * a day without mentoring simply has none (Arya, 14 Nov).
 	 */
 	@Transactional
 	public PeerWeeklyReportResponse submit(UUID actorId, LocalDate weekStart) {
@@ -94,10 +99,6 @@ public class PeerWeeklyReportService {
 		PeerWeeklySummary summary = summary(mentor, weekStart);
 		if (summary.meetingReportsSent() < summary.meetingReportsTotal()) {
 			throw new ConflictException(Texts.forRequest("error.peerWeeklyMissingMeetingReports"));
-		}
-		List<PeerReportWeekResponse.Day> days = dailyReports.days(mentor, weekStart);
-		if (dailySent(days) < dailyRequired(days)) {
-			throw new ConflictException(Texts.forRequest("error.peerWeeklyMissingDailyReports"));
 		}
 		if (PeerMeetingReportService.blank(report.getNeedsObserved())
 				|| PeerMeetingReportService.blank(report.getGrowth())
@@ -171,7 +172,7 @@ public class PeerWeeklyReportService {
 
 	PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report,
 			PeerReportScope scope) {
-		PeerReportStatus status = report == null ? null : report.getStatus();
+		PeerReportStatus status = report == null ? null : statuses.ofWeek(report);
 		boolean open = status == null || status.editable();
 		PeerWeeklySummary summary = !open && report.getSummarySnapshot() != null
 				? jsonMapper.readValue(report.getSummarySnapshot(), PeerWeeklySummary.class)

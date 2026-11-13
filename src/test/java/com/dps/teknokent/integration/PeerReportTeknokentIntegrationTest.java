@@ -56,10 +56,10 @@ class PeerReportTeknokentIntegrationTest {
 				get(base + "/review/meetings/{id}", id).param("actorId", actorId),
 				get(base + "/review/days/{id}", id).param("actorId", actorId),
 				get(base + "/review/weeks/{id}", id).param("actorId", actorId),
-				post(base + "/review/meetings/{id}/approve", id).contentType(MediaType.APPLICATION_JSON).content(actor),
-				post(base + "/review/days/{id}/revision", id).contentType(MediaType.APPLICATION_JSON)
+				post(base + "/review/weeks/{id}/approve", id).contentType(MediaType.APPLICATION_JSON).content(actor),
+				post(base + "/review/weeks/{id}/revision", id).contentType(MediaType.APPLICATION_JSON)
 						.content("{\"actorId\":\"" + actorId + "\",\"note\":\"x\"}"),
-				post(base + "/review/weeks/{id}/approve", id).contentType(MediaType.APPLICATION_JSON).content(actor));
+				get(base + "/review").param("status", "APPROVED").param("actorId", actorId));
 		for (AbstractMockHttpServletRequestBuilder<?> request : requests) {
 			mockMvc.perform(request).andExpect(status().isNotFound());
 			mockMvc.perform(request.with(httpBasic("test", "test"))).andExpect(status().isNotFound());

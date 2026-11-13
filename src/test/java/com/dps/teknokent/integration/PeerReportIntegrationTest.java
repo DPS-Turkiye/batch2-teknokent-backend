@@ -369,10 +369,8 @@ class PeerReportIntegrationTest {
 		meetingRepository.saveAndFlush(upcoming);
 		doReturn(FRIDAY_EVENING).when(calendar).now();
 		mockMvc.perform(post(WEEKLY_SUBMIT, WEEK).with(as(mentor))).andExpect(status().isConflict());
+		// Only the meeting reports gate the week (Arya, 14 Nov): no daily report is needed.
 		mockMvc.perform(post(MEETING_SUBMIT, held.getId()).with(as(mentor))).andExpect(status().isOk());
-		mockMvc.perform(post(WEEKLY_SUBMIT, WEEK).with(as(mentor))).andExpect(status().isConflict());
-		saveDay(mentor, TODAY).andExpect(status().isOk());
-		mockMvc.perform(post(DAY_SUBMIT, TODAY).with(as(mentor))).andExpect(status().isOk());
 
 		// A meeting still ahead this week keeps the summary open until it is held (or called off).
 		Meeting saturday = meeting(held.getMentorshipRequest(), Instant.parse("2026-11-14T09:00:00Z"),
@@ -385,7 +383,9 @@ class PeerReportIntegrationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("IN_REVIEW"))
 				.andExpect(jsonPath("$.summary.meetingReportsSent").value(1))
-				.andExpect(jsonPath("$.dailySent").value(1));
+				.andExpect(jsonPath("$.dailyRequired").value(1))
+				.andExpect(jsonPath("$.dailySent").value(0))
+				.andExpect(jsonPath("$.deadline").value("2026-11-16T21:00:00Z"));
 		PeerWeeklyReport stored = weeklyRepository.findAll().getFirst();
 		assertThat(stored.getSummarySnapshot()).contains("\"meetingReportsSent\":1");
 		saveWeek(mentor).andExpect(status().isConflict());
@@ -397,6 +397,44 @@ class PeerReportIntegrationTest {
 				.andExpect(jsonPath("$.status").doesNotExist())
 				.andExpect(jsonPath("$.summary.meetings").value(1))
 				.andExpect(jsonPath("$.summary.mentees[0].fullName").value("Ece Yılmaz"));
+	}
+
+	@Test
+	void aMentorWhoLostTheBadgeFinishesTheReportsOfBeforeButNothingAfter() throws Exception {
+		Meeting tuesday = meeting(held.getMentorshipRequest(), Instant.parse("2026-11-10T08:00:00Z"),
+				MeetingStatus.COMPLETED);
+		AppUser former = userRepository.findById(mentor.getId()).orElseThrow();
+		former.withdraw(PermissionSource.BADGE, Set.of(), Instant.parse("2026-11-11T12:00:00Z"));
+		userRepository.saveAndFlush(former);
+
+		saveReport(mentor, tuesday, FULL_REPORT).andExpect(status().isOk());
+		mockMvc.perform(post(MEETING_SUBMIT, tuesday.getId()).with(as(mentor))).andExpect(status().isOk());
+		saveDay(mentor, "2026-11-10").andExpect(status().isOk());
+		addActivity(mentor, "2026-11-10", null).andExpect(status().isCreated());
+
+		mockMvc.perform(get(MEETING, held.getId()).with(as(mentor))).andExpect(status().isNotFound());
+		saveDay(mentor, TODAY).andExpect(status().isBadRequest());
+		addActivity(mentor, TODAY, null).andExpect(status().isBadRequest());
+		mockMvc.perform(get(MEETINGS).param("from", WEEK).param("to", TODAY).with(as(mentor)))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].meetingId").value(tuesday.getId().toString()));
+	}
+
+	@Test
+	void aMentorInTwoRunningPeerProgramsIsAskedToSortItOut() throws Exception {
+		Program second = peerProgram("İkinci Akran Programı");
+		ProgramMentor alsoThere = new ProgramMentor();
+		alsoThere.setId(UUID.randomUUID());
+		alsoThere.setProgramId(second.getId());
+		alsoThere.setMentorId(mentor.getId());
+		alsoThere.setStatus(ProgramMentorStatus.ACCEPTED);
+		alsoThere.setInvitedBy(ProgramMentorInvitedBy.COORDINATOR);
+		alsoThere.setCreatedAt(Instant.now());
+		alsoThere.setDecidedAt(Instant.now());
+		programMentorRepository.saveAndFlush(alsoThere);
+
+		saveDay(mentor, TODAY).andExpect(status().isConflict());
+		addActivity(mentor, TODAY, null).andExpect(status().isConflict());
 	}
 
 	@Test

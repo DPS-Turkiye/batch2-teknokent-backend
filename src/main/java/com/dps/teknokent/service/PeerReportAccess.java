@@ -1,7 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
-import java.util.Comparator;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -17,6 +18,7 @@ import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
@@ -48,20 +50,53 @@ class PeerReportAccess {
 	private final PeerReportCalendar calendar;
 
 	AppUser requireMentor(UUID actorId) {
-		return peerMentoringService.requirePeerMentor(actorId);
+		try {
+			return peerMentoringService.requirePeerMentor(actorId);
+		} catch (ResponseStatusException refused) {
+			// A mentor whose badge was taken away may still finish the reports of what they did before (Arya, 14 Nov).
+			AppUser student = peerMentoringService.requireStudent(actorId);
+			if (revokedAt(student) == null) {
+				throw refused;
+			}
+			return student;
+		}
+	}
+
+	/**
+	 * How far the mentor's reports reach: now for a mentor, the moment the badge was taken away for a former one.
+	 * Meetings, days and weeks after it are not theirs to report on.
+	 */
+	Instant until(AppUser mentor) {
+		Instant now = calendar.now();
+		if (mentor.has(UserRole.MENTOR)) {
+			return now;
+		}
+		Instant revoked = revokedAt(mentor);
+		return revoked == null || revoked.isAfter(now) ? now : revoked;
+	}
+
+	/** The last day the mentor may report on (today, or the day the badge was taken away). */
+	LocalDate lastReportableDay(AppUser mentor) {
+		return calendar.dateOf(until(mentor));
+	}
+
+	/** When the mentor role was last withdrawn; null for someone who holds it, or never had it. */
+	private static Instant revokedAt(AppUser user) {
+		return user.lastRevoked(UserRole.MENTOR).orElse(null);
 	}
 
 	/** One of the mentor's own peer meetings that has started; cancelled, foreign and future meetings are not found. */
 	Meeting requireHeldMeeting(AppUser mentor, UUID meetingId) {
 		return meetingRepository.findById(meetingId)
 				.filter(meeting -> isOwnPeerMeeting(mentor, meeting))
-				.filter(this::held)
+				.filter(meeting -> heldBy(mentor, meeting))
 				.orElseThrow(() -> new ResourceNotFoundException("Peer meeting not found: " + meetingId));
 	}
 
 	/** The mentor's peer meetings starting in [from, to) that have already started, oldest first. */
 	List<Meeting> heldMeetings(AppUser mentor, Instant from, Instant to) {
-		Instant until = to.isBefore(calendar.now()) ? to : calendar.now();
+		Instant reach = until(mentor);
+		Instant until = to.isBefore(reach) ? to : reach;
 		if (!from.isBefore(until)) {
 			return List.of();
 		}
@@ -70,7 +105,6 @@ class PeerReportAccess {
 						mentor.getId(), from, until)
 				.stream()
 				.filter(meeting -> isOwnPeerMeeting(mentor, meeting))
-				.filter(this::held)
 				.toList();
 	}
 
@@ -124,18 +158,25 @@ class PeerReportAccess {
 				.toList();
 	}
 
-	/** The newest running peer program the mentor is accepted in; null when there is none. */
+	/**
+	 * The one running peer program the mentor is accepted in; null when there is none. A mentor in two at once cannot
+	 * say which program a day's or week's report belongs to, so that is refused (Arya, 14 Nov).
+	 */
 	UUID programOf(AppUser mentor) {
 		List<UUID> ids = programMentorRepository
 				.findByMentorIdAndStatusOrderByCreatedAtDesc(mentor.getId(), ProgramMentorStatus.ACCEPTED).stream()
 				.map(ProgramMentor::getProgramId)
 				.toList();
-		return programRepository.findAllById(ids).stream()
+		List<UUID> running = programRepository.findAllById(ids).stream()
 				.filter(program -> program.getProgramType() == ProgramType.PEER_MENTORING)
 				.filter(program -> program.getStatus() == ProgramStatus.ACTIVE)
-				.max(Comparator.comparing(Program::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
 				.map(Program::getId)
-				.orElse(null);
+				.distinct()
+				.toList();
+		if (running.size() > 1) {
+			throw new ConflictException(Texts.forRequest("error.peerReportProgramAmbiguous"));
+		}
+		return running.isEmpty() ? null : running.getFirst();
 	}
 
 	/** The program a meeting report belongs to: the request's, else the mentor's running one. */
@@ -145,8 +186,9 @@ class PeerReportAccess {
 				.orElseGet(() -> programOf(mentor));
 	}
 
-	private boolean held(Meeting meeting) {
-		return meeting.getScheduledAt().isBefore(calendar.now());
+	/** Started before now, and for a former mentor before the badge was taken away. */
+	private boolean heldBy(AppUser mentor, Meeting meeting) {
+		return meeting.getScheduledAt().isBefore(until(mentor));
 	}
 
 	private static boolean isOwnPeerMeeting(AppUser mentor, Meeting meeting) {

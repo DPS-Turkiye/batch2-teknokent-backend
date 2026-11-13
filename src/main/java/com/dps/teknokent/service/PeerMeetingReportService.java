@@ -53,6 +53,7 @@ public class PeerMeetingReportService {
 	private final PeerReportCalendar calendar;
 	private final PeerMeetingReportRepository reportRepository;
 	private final PeerMentoringService peerMentoringService;
+	private final PeerReportStatuses statuses;
 
 	/** The mentor's held peer meetings from {@code from} to {@code to} (both days included), oldest first. */
 	@Transactional(readOnly = true)
@@ -136,6 +137,7 @@ public class PeerMeetingReportService {
 	List<PeerReportMeetingResponse> rows(AppUser mentor, List<Meeting> meetings, PeerReportScope scope) {
 		Map<UUID, PeerMeetingReport> reports = reportsFor(mentor, meetings, scope);
 		Map<UUID, PeerMeetingType> types = types(mentor, meetings, reports);
+		PeerReportStatuses.Lookup shown = statuses.lookup();
 		return meetings.stream().map(meeting -> {
 			PeerMeetingReport report = reports.get(meeting.getId());
 			AppUser mentee = meeting.getMentorshipRequest().getRequester();
@@ -148,7 +150,8 @@ public class PeerMeetingReportService {
 					types.get(meeting.getId()),
 					report != null && report.getMeetingFormat() != null ? report.getMeetingFormat()
 							: defaultFormat(meeting),
-					report == null ? null : report.getStatus());
+					report == null ? null
+							: shown.of(report.getStatus(), mentor.getId(), calendar.dateOf(meeting.getScheduledAt())));
 		}).toList();
 	}
 
@@ -328,7 +331,8 @@ public class PeerMeetingReportService {
 	PeerMeetingReportResponse response(AppUser mentor, Meeting meeting, PeerMeetingReport report,
 			PeerReportScope scope) {
 		AppUser mentee = meeting.getMentorshipRequest().getRequester();
-		PeerReportStatus status = report.getStatus();
+		PeerReportStatus status = report.getStatus() == null ? null
+				: statuses.lookup().of(report.getStatus(), mentor.getId(), calendar.dateOf(meeting.getScheduledAt()));
 		return new PeerMeetingReportResponse(
 				report.getId(),
 				meeting.getId(),

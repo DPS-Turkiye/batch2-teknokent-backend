@@ -185,25 +185,26 @@ class PeerReportReviewIntegrationTest {
 	}
 
 	@Test
-	void theCoordinatorListsTheSentReportsOfTheirOwnProgramOnly() throws Exception {
+	void theCoordinatorListsTheWeeksWaitingInTheirOwnProgramOnly() throws Exception {
 		mockMvc.perform(get(QUEUE).with(as(coordinator)))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(3))
-				.andExpect(jsonPath("$[?(@.kind == 'MEETING')].menteeName").value("Ayşe Yıldız"))
-				.andExpect(jsonPath("$[?(@.kind == 'MEETING')].coordinatorSupportNeeded").value(true))
-				.andExpect(jsonPath("$[?(@.kind == 'DAILY')].id").value(sentDay.getId().toString()))
-				.andExpect(jsonPath("$[?(@.kind == 'WEEKLY')].mentorName").value("Mert Demir"));
-		mockMvc.perform(get(QUEUE).param("kind", "DAILY").with(as(coordinator)))
-				.andExpect(jsonPath("$.length()").value(1));
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].kind").value("WEEKLY"))
+				.andExpect(jsonPath("$[0].id").value(sentWeek.getId().toString()))
+				.andExpect(jsonPath("$[0].mentorName").value("Mert Demir"))
+				.andExpect(jsonPath("$[0].day").value("2026-11-09"));
 		mockMvc.perform(get(QUEUE).param("programId", otherProgram.getId().toString()).with(as(coordinator)))
 				.andExpect(jsonPath("$.length()").value(0));
 		mockMvc.perform(get(QUEUE).param("status", "DRAFT").with(as(coordinator)))
 				.andExpect(jsonPath("$.length()").value(0));
+		mockMvc.perform(get(QUEUE).with(as(otherCoordinator))).andExpect(jsonPath("$.length()").value(0));
 	}
 
 	@Test
 	void anAdminListsEveryProgram() throws Exception {
-		mockMvc.perform(get(QUEUE).param("kind", "DAILY").with(as(admin)))
+		week(peerMentorOf(otherProgram), otherProgram);
+
+		mockMvc.perform(get(QUEUE).with(as(admin)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(2));
 	}
@@ -229,13 +230,13 @@ class PeerReportReviewIntegrationTest {
 	void anotherProgramsReportADraftAndAnUnknownIdAreNotFound() throws Exception {
 		mockMvc.perform(get(MEETING, sentMeetingReport.getId()).with(as(otherCoordinator)))
 				.andExpect(status().isNotFound());
-		mockMvc.perform(post(MEETING + "/approve", sentMeetingReport.getId()).with(as(otherCoordinator)))
+		mockMvc.perform(post(WEEK + "/approve", sentWeek.getId()).with(as(otherCoordinator)))
 				.andExpect(status().isNotFound());
 		mockMvc.perform(get(DAY, otherProgramsDay.getId()).with(as(coordinator))).andExpect(status().isNotFound());
 		mockMvc.perform(get(DAY, draftDay.getId()).with(as(coordinator))).andExpect(status().isNotFound());
-		mockMvc.perform(post(DAY + "/approve", draftDay.getId()).with(as(coordinator)))
-				.andExpect(status().isNotFound());
 		mockMvc.perform(get(WEEK, UUID.randomUUID()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(post(WEEK + "/approve", UUID.randomUUID()).with(as(coordinator)))
+				.andExpect(status().isNotFound());
 		// A day report id is not a meeting report id, even for its own coordinator.
 		mockMvc.perform(get(MEETING, sentDay.getId()).with(as(coordinator))).andExpect(status().isNotFound());
 	}
@@ -246,75 +247,97 @@ class PeerReportReviewIntegrationTest {
 			mockMvc.perform(get(QUEUE).with(as(outsider))).andExpect(status().isForbidden());
 			mockMvc.perform(get(MEETING, sentMeetingReport.getId()).with(as(outsider)))
 					.andExpect(status().isForbidden());
-			mockMvc.perform(post(MEETING + "/approve", sentMeetingReport.getId()).with(as(outsider)))
+			mockMvc.perform(post(WEEK + "/approve", sentWeek.getId()).with(as(outsider)))
 					.andExpect(status().isForbidden());
 		}
 	}
 
 	@Test
-	void approvingOnceLocksTheDecision() throws Exception {
-		mockMvc.perform(post(DAY + "/approve", sentDay.getId()).with(as(coordinator)))
+	void approvingTheWeekApprovesItsSentDaysAndMeetingReportsOnce() throws Exception {
+		mockMvc.perform(post(WEEK + "/approve", sentWeek.getId()).with(as(coordinator)))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.daily.status").value("APPROVED"));
-		assertThat(dailyReportRepository.findById(sentDay.getId()).orElseThrow().getReviewedBy())
+				.andExpect(jsonPath("$.weekly.status").value("APPROVED"));
+
+		assertThat(weeklyReportRepository.findById(sentWeek.getId()).orElseThrow().getReviewedBy())
 				.isEqualTo(coordinator.getId());
+		assertThat(dailyReportRepository.findById(sentDay.getId()).orElseThrow().getStatus())
+				.isEqualTo(PeerReportStatus.APPROVED);
+		assertThat(meetingReportRepository.findById(sentMeetingReport.getId()).orElseThrow().getStatus())
+				.isEqualTo(PeerReportStatus.APPROVED);
+		assertThat(dailyReportRepository.findById(draftDay.getId()).orElseThrow().getStatus())
+				.isEqualTo(PeerReportStatus.DRAFT);
+		assertThat(dailyReportRepository.findById(otherProgramsDay.getId()).orElseThrow().getStatus())
+				.isEqualTo(PeerReportStatus.IN_REVIEW);
+
+		mockMvc.perform(post(WEEK + "/approve", sentWeek.getId()).with(as(coordinator)))
+				.andExpect(status().isConflict());
+		mockMvc.perform(revision(WEEK, sentWeek.getId(), "Biraz daha detay.").with(as(coordinator)))
+				.andExpect(status().isConflict());
+		// Days and meeting reports have no decision of their own.
 		mockMvc.perform(post(DAY + "/approve", sentDay.getId()).with(as(coordinator)))
-				.andExpect(status().isConflict());
-		mockMvc.perform(revision(DAY, sentDay.getId(), "Biraz daha detay.").with(as(coordinator)))
-				.andExpect(status().isConflict());
+				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void aRevisionReopensTheReportForItsMentorWhoSendsItAgain() throws Exception {
-		mockMvc.perform(revision(MEETING, sentMeetingReport.getId(), " ").with(as(coordinator)))
-				.andExpect(status().isBadRequest());
-		mockMvc.perform(revision(MEETING, sentMeetingReport.getId(), "Eylem adımlarına tarih ekle.")
-				.with(as(coordinator)))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.meeting.status").value("REVISION_REQUESTED"))
-				.andExpect(jsonPath("$.meeting.revisionNote").value("Eylem adımlarına tarih ekle."));
+	void aWeekNobodyDecidedOnWithinSevenDaysReadsAsApprovedAndCoversItsDays() throws Exception {
+		doReturn(NOW.plus(Duration.ofDays(7))).when(calendar).now();
 
-		mockMvc.perform(get("/api/peer-mentoring/reports/meetings/{id}", held.getId()).with(as(mentor)))
+		mockMvc.perform(get(WEEK, sentWeek.getId()).with(as(coordinator)))
+				.andExpect(jsonPath("$.weekly.status").value("APPROVED"));
+		mockMvc.perform(get(QUEUE).with(as(coordinator))).andExpect(jsonPath("$.length()").value(0));
+		mockMvc.perform(get(QUEUE).param("status", "APPROVED").with(as(coordinator)))
+				.andExpect(jsonPath("$.length()").value(1));
+		mockMvc.perform(post(WEEK + "/approve", sentWeek.getId()).with(as(coordinator)))
+				.andExpect(status().isConflict());
+		mockMvc.perform(get("/api/peer-mentoring/reports/days/{date}", "2026-11-12").with(as(mentor)))
+				.andExpect(jsonPath("$.status").value("APPROVED"))
+				.andExpect(jsonPath("$.meetings[0].reportStatus").value("APPROVED"));
+		// Nothing was written: the stored rows still say in review.
+		assertThat(weeklyReportRepository.findById(sentWeek.getId()).orElseThrow().getStatus())
+				.isEqualTo(PeerReportStatus.IN_REVIEW);
+
+		doReturn(NOW.plus(Duration.ofDays(7)).minusSeconds(1)).when(calendar).now();
+		mockMvc.perform(get(WEEK, sentWeek.getId()).with(as(coordinator)))
+				.andExpect(jsonPath("$.weekly.status").value("IN_REVIEW"));
+	}
+
+	@Test
+	void aRevisionReopensTheWeekForItsMentorWhoSendsItAgain() throws Exception {
+		mockMvc.perform(revision(WEEK, sentWeek.getId(), " ").with(as(coordinator)))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(revision(WEEK, sentWeek.getId(), "Gelecek hafta planını netleştir.").with(as(coordinator)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.weekly.status").value("REVISION_REQUESTED"))
+				.andExpect(jsonPath("$.weekly.revisionNote").value("Gelecek hafta planını netleştir."));
+
+		// Back with its mentor: listed, but closed to the reviewer until it is sent again.
+		mockMvc.perform(get(WEEK, sentWeek.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(get(QUEUE).param("status", "REVISION_REQUESTED").with(as(coordinator)))
+				.andExpect(jsonPath("$.length()").value(1));
+		mockMvc.perform(get("/api/peer-mentoring/reports/weeks/{week}", "2026-11-09").with(as(mentor)))
 				.andExpect(jsonPath("$.status").value("REVISION_REQUESTED"))
 				.andExpect(jsonPath("$.editable").value(true))
-				.andExpect(jsonPath("$.revisionNote").value("Eylem adımlarına tarih ekle."));
-		mockMvc.perform(post("/api/peer-mentoring/reports/meetings/{id}/submit", held.getId()).with(as(mentor)))
+				.andExpect(jsonPath("$.revisionNote").value("Gelecek hafta planını netleştir."));
+
+		doReturn(Instant.parse("2026-11-13T16:00:00Z")).when(calendar).now();
+		mockMvc.perform(post("/api/peer-mentoring/reports/weeks/{week}/submit", "2026-11-09").with(as(mentor)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("IN_REVIEW"));
-		mockMvc.perform(get(QUEUE).param("kind", "MEETING").with(as(coordinator)))
-				.andExpect(jsonPath("$.length()").value(1));
+		mockMvc.perform(post(WEEK + "/approve", sentWeek.getId()).with(as(coordinator)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.weekly.status").value("APPROVED"))
+				.andExpect(jsonPath("$.weekly.revisionNote").doesNotExist());
 	}
 
 	@Test
 	void nobodyReviewsTheirOwnReport() throws Exception {
-		PeerDailyReport own = day(coordinator, program, LocalDate.of(2026, 11, 10), true);
+		PeerWeeklyReport own = week(coordinator, program);
 
-		mockMvc.perform(get(DAY, own.getId()).with(as(coordinator))).andExpect(status().isNotFound());
-		mockMvc.perform(post(DAY + "/approve", own.getId()).with(as(coordinator))).andExpect(status().isNotFound());
-		mockMvc.perform(get(QUEUE).param("kind", "DAILY").with(as(coordinator)))
+		mockMvc.perform(get(WEEK, own.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(post(WEEK + "/approve", own.getId()).with(as(coordinator))).andExpect(status().isNotFound());
+		mockMvc.perform(get(QUEUE).with(as(coordinator)))
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].id").value(sentDay.getId().toString()));
-	}
-
-	@Test
-	void aReportBackWithItsMentorIsListedButClosedAndItsApprovalClearsTheNote() throws Exception {
-		mockMvc.perform(revision(DAY, sentDay.getId(), "Yarın planını netleştir.").with(as(coordinator)))
-				.andExpect(status().isOk());
-
-		mockMvc.perform(get(DAY, sentDay.getId()).with(as(coordinator))).andExpect(status().isNotFound());
-		mockMvc.perform(revision(DAY, sentDay.getId(), "Tekrar.").with(as(coordinator)))
-				.andExpect(status().isNotFound());
-		mockMvc.perform(get(QUEUE).param("status", "REVISION_REQUESTED").with(as(coordinator)))
-				.andExpect(jsonPath("$.length()").value(1));
-
-		mockMvc.perform(post("/api/peer-mentoring/reports/days/{date}/submit", "2026-11-12").with(as(mentor)))
-				.andExpect(status().isOk());
-		mockMvc.perform(post(DAY + "/approve", sentDay.getId()).with(as(coordinator)))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.daily.status").value("APPROVED"))
-				.andExpect(jsonPath("$.daily.revisionNote").doesNotExist());
-		mockMvc.perform(get(QUEUE).param("status", "APPROVED").with(as(coordinator)))
-				.andExpect(jsonPath("$.length()").value(1));
+				.andExpect(jsonPath("$[0].id").value(sentWeek.getId().toString()));
 	}
 
 	@Test
@@ -399,6 +422,24 @@ class PeerReportReviewIntegrationTest {
 			report.submit(NOW);
 		}
 		return dailyReportRepository.saveAndFlush(report);
+	}
+
+	private PeerWeeklyReport week(AppUser peerMentor, Program in) {
+		PeerWeeklyReport week = new PeerWeeklyReport();
+		week.setId(UUID.randomUUID());
+		week.setMentorId(peerMentor.getId());
+		week.setProgramId(in.getId());
+		week.setWeekStart(LocalDate.of(2026, 11, 2));
+		week.setNeedsObserved("CV desteği.");
+		week.setGrowth("Sorular.");
+		week.setNextWeekPlan("Grup görüşmesi.");
+		week.setCreatedAt(NOW);
+		week.submit(NOW);
+		return weeklyReportRepository.saveAndFlush(week);
+	}
+
+	private AppUser peerMentorOf(Program in) {
+		return peerMentor("Başka Mentor " + UUID.randomUUID().toString().substring(0, 4), in);
 	}
 
 	private void coordinatorOf(Program coordinated, AppUser user) {
