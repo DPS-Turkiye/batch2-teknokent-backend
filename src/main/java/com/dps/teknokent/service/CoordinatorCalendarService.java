@@ -6,7 +6,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,7 +25,6 @@ import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramEvent;
-import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.ProgramEventRepository;
 import com.dps.teknokent.service.CoordinatorProgramService.Snapshot;
@@ -64,12 +62,6 @@ public class CoordinatorCalendarService {
 		Instant rangeStart = from.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant();
 		Instant rangeEnd = to.plusDays(1).atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant();
 
-		Map<UUID, Program> programOf = new LinkedHashMap<>();
-		for (Program program : scope) {
-			for (ProgramStartup startup : snapshot.startups().getOrDefault(program.getId(), List.of())) {
-				programOf.putIfAbsent(startup.getOrganizationId(), program);
-			}
-		}
 		List<CoordinatorMentorshipResponse> mentorships = mentorshipService.list(actorId, programId);
 		Map<String, CoordinatorMentorshipResponse> mentorshipOfPair = mentorships.stream()
 				.collect(Collectors.toMap(
@@ -77,13 +69,20 @@ public class CoordinatorCalendarService {
 						Function.identity(),
 						(first, second) -> first));
 
+		// A meeting is shown under the program it was held in, also after its team moved to another one.
 		List<Meeting> meetings = new ArrayList<>();
-		for (UUID organizationId : programOf.keySet()) {
-			for (Meeting meeting : snapshot.meetingsByOrganization().getOrDefault(organizationId, List.of())) {
-				Instant at = meeting.getScheduledAt();
-				if (meeting.getStatus() != MeetingStatus.CANCELLED && at != null
-						&& !at.isBefore(rangeStart) && at.isBefore(rangeEnd)) {
-					meetings.add(meeting);
+		Map<UUID, Program> programOf = new HashMap<>();
+		for (Program program : scope) {
+			for (UUID organizationId : CoordinatorProgramService.activityTeams(snapshot, program)) {
+				for (Meeting meeting : snapshot.meetingsByOrganization().getOrDefault(organizationId, List.of())) {
+					Instant at = meeting.getScheduledAt();
+					if (meeting.getStatus() != MeetingStatus.CANCELLED && at != null
+							&& !at.isBefore(rangeStart) && at.isBefore(rangeEnd)
+							&& !programOf.containsKey(meeting.getId())
+							&& CoordinatorProgramService.countsIn(meeting, program, snapshot)) {
+						programOf.put(meeting.getId(), program);
+						meetings.add(meeting);
+					}
 				}
 			}
 		}
@@ -95,7 +94,7 @@ public class CoordinatorCalendarService {
 		List<Meeting> recorded = transcriptBotCapacity.recordedAround(rangeStart, rangeEnd);
 		List<CoordinatorCalendarResponse.Item> items = new ArrayList<>();
 		for (Meeting meeting : meetings) {
-			Program program = programOf.get(meeting.getOrganization().getId());
+			Program program = programOf.get(meeting.getId());
 			UUID mentorId = meeting.getMentor() == null ? null : meeting.getMentor().getId();
 			CoordinatorMentorshipResponse mentorship = mentorId == null
 					? null
