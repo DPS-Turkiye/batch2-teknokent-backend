@@ -656,7 +656,7 @@ public class CoordinatorProgramService {
 				awaitingTeams,
 				upcoming,
 				new CoordinatorProgramResponse.TeamDistribution(startups.size() - awaiting.size(), awaiting.size()),
-				mentorDistribution(snapshot.mentors().getOrDefault(program.getId(), List.of())),
+				mentorDistribution(program, snapshot.mentors().getOrDefault(program.getId(), List.of())),
 				coordinatorsOf(program),
 				missingNotes(
 						startups.stream()
@@ -786,7 +786,9 @@ public class CoordinatorProgramService {
 		return new CoordinatorProgramResponse.Health(healthy, followUp, risky, topics);
 	}
 
-	private CoordinatorProgramResponse.MentorDistribution mentorDistribution(List<ProgramMentor> memberships) {
+	private CoordinatorProgramResponse.MentorDistribution mentorDistribution(
+			Program program,
+			List<ProgramMentor> memberships) {
 		int pending = (int) memberships.stream().filter(m -> m.getStatus() == ProgramMentorStatus.PENDING).count();
 		List<UUID> accepted = memberships.stream()
 				.filter(m -> m.getStatus() == ProgramMentorStatus.ACCEPTED)
@@ -809,8 +811,9 @@ public class CoordinatorProgramService {
 		int idle = 0;
 		for (UUID mentorId : accepted) {
 			long teams = load.getOrDefault(mentorId, 0L);
-			Integer limit = capacity.get(mentorId);
-			if (limit != null && teams >= limit) {
+			// Same rule as the Mentor Havuzu: the mentor's own limit, otherwise the program's default.
+			int limit = capacity.getOrDefault(mentorId, program.getDefaultMentorCapacity());
+			if (teams >= limit) {
 				full++;
 			} else if (teams == 0) {
 				idle++;

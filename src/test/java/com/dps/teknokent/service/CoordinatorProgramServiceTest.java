@@ -270,6 +270,24 @@ class CoordinatorProgramServiceTest {
 	}
 
 	@Test
+	void aMentorWithoutAnOwnLimitIsFullAtTheProgramsDefaultCapacity() {
+		Program program = program(COORDINATOR_ID);
+		program.setDefaultMentorCapacity(2);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(), List.of(membership(MENTOR_ID, ProgramMentorStatus.ACCEPTED)), List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+		when(mentorshipRepository.countOrganizationsByMentor(anyCollection(), anyCollection()))
+				.thenReturn(List.of(count(MENTOR_ID, 2)));
+		when(mentorProfileRepository.findAllById(any())).thenReturn(List.of());
+
+		var mentors = service.detail(COORDINATOR_ID, PROGRAM_ID).mentors();
+
+		assertThat(mentors.full()).isEqualTo(1);
+		assertThat(mentors.withCapacity()).isZero();
+	}
+
+	@Test
 	void replacingPhasesDeletesTheLeftOutOnesAndFlushesBeforeSavingInOrder() {
 		stubManagedProgram(program(COORDINATOR_ID));
 		stubProgramRows(List.of(), List.of(), List.of());
