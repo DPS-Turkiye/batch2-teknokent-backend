@@ -8,10 +8,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.entity.ProgramMentor;
+
+import jakarta.persistence.LockModeType;
 
 public interface ProgramMentorRepository extends JpaRepository<ProgramMentor, UUID> {
 	List<ProgramMentor> findByProgramIdOrderByCreatedAtAsc(UUID programId);
@@ -22,6 +25,13 @@ public interface ProgramMentorRepository extends JpaRepository<ProgramMentor, UU
 			ProgramMentorInvitedBy invitedBy);
 
 	Optional<ProgramMentor> findByProgramIdAndMentorId(UUID programId, UUID mentorId);
+
+	/** The row locked until the transaction ends, so two admins cannot remove the same mentor at once. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select pm from ProgramMentor pm where pm.programId = :programId and pm.mentorId = :mentorId")
+	Optional<ProgramMentor> findByProgramIdAndMentorIdForUpdate(
+			@Param("programId") UUID programId,
+			@Param("mentorId") UUID mentorId);
 
 	List<ProgramMentor> findByMentorIdAndStatusAndInvitedByOrderByCreatedAtDesc(
 			UUID mentorId,
