@@ -146,7 +146,8 @@ class OfficeHoursBookingServiceTest {
         assertThat(response.status()).isEqualTo(OfficeHoursRequestStatus.PENDING);
         assertThat(response.topic()).isEqualTo("Ödev 2 hakkında");
         assertThat(response.expectedOutcome()).isNull();
-        assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);
+        assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);        // The Moodle path takes the academic's lock too: one request to them at a time, whichever way it comes.
+        verify(userRepository).findForUpdate(ACADEMIC);
     }
 
     @Test
