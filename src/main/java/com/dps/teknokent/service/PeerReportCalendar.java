@@ -12,6 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.Texts;
+
 /**
  * The reporting calendar of the peer-mentor reports: days, deadlines and the week's opening are in the program's zone
  * (Europe/Istanbul), whatever zone the server runs in.
@@ -21,6 +24,9 @@ public class PeerReportCalendar {
 
 	/** The weekly summary is "ready on Friday evening": it can be sent from then on. */
 	static final LocalTime WEEKLY_OPENS_AT = LocalTime.of(18, 0);
+
+	private static final int FIRST_YEAR = 2026;
+	private static final int LAST_YEAR = 2100;
 
 	private final ZoneId zone;
 	private final Clock clock;
@@ -67,6 +73,14 @@ public class PeerReportCalendar {
 
 	public LocalDate weekStartOf(LocalDate date) {
 		return date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+	}
+
+	/** Refuses a date no report can be about, before any date arithmetic can overflow on it. */
+	public static LocalDate requirePlausible(LocalDate date) {
+		if (date.getYear() < FIRST_YEAR || date.getYear() > LAST_YEAR) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerReportDateInvalid"));
+		}
+		return date;
 	}
 
 	public static boolean isWorkingDay(LocalDate date) {

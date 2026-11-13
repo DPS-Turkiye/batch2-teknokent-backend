@@ -14,5 +14,7 @@ public interface PeerActivityRepository extends JpaRepository<PeerActivity, UUID
 	List<PeerActivity> findByMentorIdAndActivityDateBetweenOrderByActivityDateAscCreatedAtAsc(UUID mentorId,
 			LocalDate from, LocalDate to);
 
+	long countByMentorIdAndActivityDate(UUID mentorId, LocalDate activityDate);
+
 	Optional<PeerActivity> findByIdAndMentorId(UUID id, UUID mentorId);
 }

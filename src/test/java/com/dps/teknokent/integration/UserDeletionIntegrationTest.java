@@ -55,6 +55,7 @@ import com.dps.teknokent.domain.PeerDocumentVisibility;
 import com.dps.teknokent.domain.PeerEvidenceType;
 import com.dps.teknokent.domain.PeerMeetingTopic;
 import com.dps.teknokent.domain.PeerMentorSkill;
+import com.dps.teknokent.domain.PeerReportStatus;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.PlatformFeedbackKind;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -761,16 +762,38 @@ class UserDeletionIntegrationTest {
 	}
 
 	@Test
-	void theMeetingReportsAboutADeletedMenteeGoWithThem() throws Exception {
+	void theMeetingReportsAboutADeletedMenteeGoWithThemAndSentWeeksForgetThem() throws Exception {
 		AppUser target = user(UserRole.MENTEE, "Ayşe Yıldız", null);
 		AppUser peerMentor = user(UserRole.MENTEE, "Mert Demir", null);
+		request(target, organization("Ayşe Yıldız", target), peerMentor, MentorshipRequestStatus.ACCEPTED);
 		PeerMeetingReport about = meetingReport(peerMentor, target);
+		PeerWeeklyReport sentWeek = new PeerWeeklyReport();
+		sentWeek.setId(UUID.randomUUID());
+		sentWeek.setMentorId(peerMentor.getId());
+		sentWeek.setWeekStart(LocalDate.of(2026, 11, 9));
+		sentWeek.setStatus(PeerReportStatus.IN_REVIEW);
+		UUID otherMentee = UUID.randomUUID();
+		sentWeek.setSummarySnapshot("""
+				{"meetings":2,"firstMeetings":2,"followUpMeetings":0,
+				 "mentees":[{"id":"%1$s","fullName":"Ayşe Yıldız"},{"id":"%2$s","fullName":"Deniz Arslan"}],
+				 "meetingReportsSent":2,"meetingReportsTotal":2,"activities":0,"activityTypes":[],"recordedMinutes":60,
+				 "skills":[],
+				 "outcomes":[{"menteeId":"%1$s","fullName":"Ayşe Yıldız","meetings":1,
+				   "reports":[{"meetingId":"%2$s","scheduledAt":"2026-11-12T08:00:00Z","outcome":"Hedef listesi"}],
+				   "actionsDone":0,"actionsTotal":0}]}
+				""".formatted(target.getId(), otherMentee));
+		sentWeek.setCreatedAt(Instant.now());
+		sentWeek.setUpdatedAt(Instant.now());
 		entityManager.persist(about);
+		entityManager.persist(sentWeek);
 		flushAndClear();
 
 		delete(admin, target.getId(), target.getEmail()).andExpect(status().isOk());
 
 		assertThat(entityManager.find(PeerMeetingReport.class, about.getId())).isNull();
+		String snapshot = entityManager.find(PeerWeeklyReport.class, sentWeek.getId()).getSummarySnapshot();
+		assertThat(snapshot).doesNotContain(target.getId().toString(), "Ayşe", "Hedef listesi")
+				.contains("Deniz Arslan", "\"meetings\":2");
 	}
 
 	// ---------------------------------------------------------------- helpers

@@ -41,9 +41,10 @@ public abstract class PeerReportReview {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
+	/** Boxed so a new report (null) is persisted, not merged; Hibernate starts it at 0. */
 	@Version
 	@Column(nullable = false)
-	private long version;
+	private Long version;
 
 	/** Sends the report for review; a revision note from an earlier round stays until the coordinator decides again. */
 	public void submit(Instant at) {

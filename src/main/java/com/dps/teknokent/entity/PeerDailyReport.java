@@ -5,6 +5,8 @@ import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
 
+import org.hibernate.annotations.BatchSize;
+
 import com.dps.teknokent.domain.PeerMentorSkill;
 
 import jakarta.persistence.CollectionTable;
@@ -48,6 +50,7 @@ public class PeerDailyReport extends PeerReportReview {
 	private String challenge;
 
 	@ElementCollection(fetch = FetchType.LAZY)
+	@BatchSize(size = 50)
 	@CollectionTable(name = "peer_daily_report_skill", joinColumns = @JoinColumn(name = "report_id"))
 	@Enumerated(EnumType.STRING)
 	@Column(name = "skill", length = 40, nullable = false)

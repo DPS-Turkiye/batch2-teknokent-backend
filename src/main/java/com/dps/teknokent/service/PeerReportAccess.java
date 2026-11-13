@@ -5,7 +5,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 import com.dps.teknokent.domain.MeetingStatus;
@@ -19,11 +22,13 @@ import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -69,6 +74,28 @@ class PeerReportAccess {
 				.toList();
 	}
 
+	/** Whether one of the mentor's peer meetings is still to come before {@code to}. */
+	boolean meetingsAhead(AppUser mentor, Instant to) {
+		Instant now = calendar.now();
+		return now.isBefore(to) && meetingRepository
+				.findByMentorshipRequest_Mentor_IdAndScheduledAtGreaterThanEqualAndScheduledAtLessThanOrderByScheduledAtAsc(
+						mentor.getId(), now, to)
+				.stream()
+				.anyMatch(meeting -> isOwnPeerMeeting(mentor, meeting));
+	}
+
+	/**
+	 * Saves, turning a lost race into a 409: two first saves of the same report (two tabs, an autosave) hit the
+	 * unique key, and two concurrent edits the version check.
+	 */
+	static <T> T savedOrConflict(Supplier<T> save) {
+		try {
+			return save.get();
+		} catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException exception) {
+			throw new ConflictException(Texts.forRequest("error.peerReportConcurrent"));
+		}
+	}
+
 	/** Every non-cancelled meeting between the mentor and this mentee, oldest first. */
 	List<Meeting> meetingsWith(AppUser mentor, UUID menteeId) {
 		return meetingRepository
@@ -109,7 +136,7 @@ class PeerReportAccess {
 	}
 
 	private boolean held(Meeting meeting) {
-		return !meeting.getScheduledAt().isAfter(calendar.now());
+		return meeting.getScheduledAt().isBefore(calendar.now());
 	}
 
 	private static boolean isOwnPeerMeeting(AppUser mentor, Meeting meeting) {

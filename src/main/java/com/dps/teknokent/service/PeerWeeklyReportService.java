@@ -70,7 +70,8 @@ public class PeerWeeklyReportService {
 		report.setGrowth(PeerMeetingReportService.trimmed(request.growth()));
 		report.setNextWeekPlan(PeerMeetingReportService.trimmed(request.nextWeekPlan()));
 		report.setUpdatedAt(calendar.now());
-		return response(mentor, weekStart, weeklyRepository.saveAndFlush(report));
+		return response(mentor, weekStart,
+				PeerReportAccess.savedOrConflict(() -> weeklyRepository.saveAndFlush(report)));
 	}
 
 	/**
@@ -86,6 +87,9 @@ public class PeerWeeklyReportService {
 		requireEditable(report);
 		if (calendar.now().isBefore(calendar.weeklyOpensAt(weekStart))) {
 			throw new ConflictException(Texts.forRequest("error.peerWeeklyNotOpen"));
+		}
+		if (access.meetingsAhead(mentor, calendar.startOf(weekStart.plusDays(7)))) {
+			throw new ConflictException(Texts.forRequest("error.peerWeeklyMeetingsAhead"));
 		}
 		PeerWeeklySummary summary = summary(mentor, weekStart);
 		if (summary.meetingReportsSent() < summary.meetingReportsTotal()) {
@@ -103,7 +107,8 @@ public class PeerWeeklyReportService {
 		}
 		report.setSummarySnapshot(jsonMapper.writeValueAsString(summary));
 		report.submit(calendar.now());
-		return response(mentor, weekStart, weeklyRepository.saveAndFlush(report));
+		return response(mentor, weekStart,
+				PeerReportAccess.savedOrConflict(() -> weeklyRepository.saveAndFlush(report)));
 	}
 
 	/** The week's numbers, Monday to Sunday, from the held meetings, their reports and the activities. */
@@ -111,6 +116,7 @@ public class PeerWeeklyReportService {
 		List<Meeting> meetings = access.heldMeetings(mentor, calendar.startOf(weekStart),
 				calendar.startOf(weekStart.plusDays(7)));
 		Map<UUID, PeerMeetingReport> reports = meetingReports.reportsFor(mentor, meetings);
+		Map<UUID, PeerMeetingType> types = meetingReports.types(mentor, meetings, reports);
 		List<PeerActivity> activities = dailyReports.activities(mentor, weekStart, weekStart.plusDays(6));
 
 		int first = 0;
@@ -119,7 +125,7 @@ public class PeerWeeklyReportService {
 		Map<UUID, MenteeTally> byMentee = new LinkedHashMap<>();
 		for (Meeting meeting : meetings) {
 			PeerMeetingReport report = reports.get(meeting.getId());
-			if (meetingReports.typeOf(mentor, meeting, report) == PeerMeetingType.FIRST) {
+			if (types.get(meeting.getId()) == PeerMeetingType.FIRST) {
 				first++;
 			}
 			recorded += PeerMeetingReportService.durationOf(meeting, report);

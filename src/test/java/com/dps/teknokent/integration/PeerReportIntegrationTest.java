@@ -374,6 +374,13 @@ class PeerReportIntegrationTest {
 		saveDay(mentor, TODAY).andExpect(status().isOk());
 		mockMvc.perform(post(DAY_SUBMIT, TODAY).with(as(mentor))).andExpect(status().isOk());
 
+		// A meeting still ahead this week keeps the summary open until it is held (or called off).
+		Meeting saturday = meeting(held.getMentorshipRequest(), Instant.parse("2026-11-14T09:00:00Z"),
+				MeetingStatus.SCHEDULED);
+		mockMvc.perform(post(WEEKLY_SUBMIT, WEEK).with(as(mentor))).andExpect(status().isConflict());
+		saturday.setStatus(MeetingStatus.CANCELLED);
+		meetingRepository.saveAndFlush(saturday);
+
 		mockMvc.perform(post(WEEKLY_SUBMIT, WEEK).with(as(mentor)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("IN_REVIEW"))
@@ -382,6 +389,9 @@ class PeerReportIntegrationTest {
 		PeerWeeklyReport stored = weeklyRepository.findAll().getFirst();
 		assertThat(stored.getSummarySnapshot()).contains("\"meetingReportsSent\":1");
 		saveWeek(mentor).andExpect(status().isConflict());
+		// The sent week fixes its days: no new day report and no new activity in it.
+		saveDay(mentor, "2026-11-11").andExpect(status().isConflict());
+		addActivity(mentor, "2026-11-11", null).andExpect(status().isConflict());
 
 		mockMvc.perform(get(WEEKLY, WEEK).with(as(otherMentor)))
 				.andExpect(jsonPath("$.status").doesNotExist())
@@ -390,8 +400,20 @@ class PeerReportIntegrationTest {
 	}
 
 	@Test
-	void aWeekStartsOnAMonday() throws Exception {
+	void aWeekStartsOnAMondayAndDatesStayInTheProgramsYears() throws Exception {
 		mockMvc.perform(get(WEEKLY, TODAY).with(as(mentor))).andExpect(status().isBadRequest());
+		mockMvc.perform(get(DAY, "1999-11-12").with(as(mentor))).andExpect(status().isBadRequest());
+		mockMvc.perform(get(WEEKLY, "+999999999-12-27").with(as(mentor))).andExpect(status().isBadRequest());
+		mockMvc.perform(get(MEETINGS).param("from", "1999-11-09").param("to", TODAY).with(as(mentor)))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void aDayHoldsAtMostFiftyActivities() throws Exception {
+		for (int i = 0; i < 50; i++) {
+			addActivity(mentor, "2026-11-10", null).andExpect(status().isCreated());
+		}
+		addActivity(mentor, "2026-11-10", null).andExpect(status().isBadRequest());
 	}
 
 	// ---------------------------------------------------------------- helpers

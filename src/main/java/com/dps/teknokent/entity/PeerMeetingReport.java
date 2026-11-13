@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.hibernate.annotations.BatchSize;
+
 import com.dps.teknokent.domain.PeerMeetingFormat;
 import com.dps.teknokent.domain.PeerMeetingTopic;
 import com.dps.teknokent.domain.PeerMeetingType;
@@ -64,6 +66,7 @@ public class PeerMeetingReport extends PeerReportReview {
 	private Integer actualDurationMinutes;
 
 	@ElementCollection(fetch = FetchType.LAZY)
+	@BatchSize(size = 50)
 	@CollectionTable(name = "peer_meeting_report_topic", joinColumns = @JoinColumn(name = "report_id"))
 	@Enumerated(EnumType.STRING)
 	@Column(name = "topic", length = 40, nullable = false)
@@ -79,6 +82,7 @@ public class PeerMeetingReport extends PeerReportReview {
 	private String approach;
 
 	@ElementCollection(fetch = FetchType.LAZY)
+	@BatchSize(size = 50)
 	@CollectionTable(name = "peer_meeting_report_skill", joinColumns = @JoinColumn(name = "report_id"))
 	@Enumerated(EnumType.STRING)
 	@Column(name = "skill", length = 40, nullable = false)
@@ -91,6 +95,7 @@ public class PeerMeetingReport extends PeerReportReview {
 	private String outcome;
 
 	@OneToMany(mappedBy = "report", cascade = CascadeType.ALL, orphanRemoval = true)
+	@BatchSize(size = 50)
 	@OrderBy("position ASC")
 	private List<PeerMeetingReportAction> actions = new ArrayList<>();
 

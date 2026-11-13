@@ -20,7 +20,7 @@ CREATE TABLE peer_meeting_report (
     outcome                     TEXT,
     follow_up_needed            BOOLEAN      NOT NULL DEFAULT FALSE,
     follow_up_at                TIMESTAMPTZ,
-    productivity                SMALLINT,
+    productivity                INTEGER,
     next_time                   TEXT,
     coordinator_support_needed  BOOLEAN,
     status                      VARCHAR(24)  NOT NULL,

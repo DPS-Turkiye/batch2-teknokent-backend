@@ -35,6 +35,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.PeerActivityRepository;
 import com.dps.teknokent.repository.PeerDailyReportRepository;
+import com.dps.teknokent.repository.PeerWeeklyReportRepository;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -50,11 +51,15 @@ public class PeerDailyReportService {
 
 	static final int WORKING_DAYS = 5;
 
+	/** Enough for any real day; stops a client from filling a day (and the week's numbers) without end. */
+	private static final int MAX_ACTIVITIES_PER_DAY = 50;
+
 	private final PeerReportAccess access;
 	private final PeerReportCalendar calendar;
 	private final PeerMeetingReportService meetingReports;
 	private final PeerDailyReportRepository dailyRepository;
 	private final PeerActivityRepository activityRepository;
+	private final PeerWeeklyReportRepository weeklyRepository;
 	private final AppUserRepository userRepository;
 
 	/** The five day cards of the week starting on {@code weekStart} (a Monday). */
@@ -78,6 +83,7 @@ public class PeerDailyReportService {
 	public PeerDailyReportResponse save(UUID actorId, LocalDate date, SavePeerDailyReportRequest request) {
 		AppUser mentor = access.requireMentor(actorId);
 		requireReportableDay(date);
+		requireWeekOpen(mentor, date);
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseGet(() -> newReport(mentor, date));
 		requireEditable(report.getStatus());
@@ -90,7 +96,7 @@ public class PeerDailyReportService {
 		report.setLearned(PeerMeetingReportService.trimmed(request.learned()));
 		report.setTomorrowPlan(PeerMeetingReportService.trimmed(request.tomorrowPlan()));
 		report.setUpdatedAt(calendar.now());
-		return response(mentor, date, dailyRepository.saveAndFlush(report));
+		return response(mentor, date, PeerReportAccess.savedOrConflict(() -> dailyRepository.saveAndFlush(report)));
 	}
 
 	/** Sends the day for review: every held meeting of the day needs a sent report, and the four questions an answer. */
@@ -101,6 +107,7 @@ public class PeerDailyReportService {
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseThrow(() -> new ConflictException(Texts.forRequest("error.peerReportNotStarted")));
 		requireEditable(report.getStatus());
+		requireWeekOpen(mentor, date);
 		if (missingMeetingReports(mentor, date) > 0) {
 			throw new ConflictException(Texts.forRequest("error.peerDailyMissingMeetingReports"));
 		}
@@ -112,7 +119,7 @@ public class PeerDailyReportService {
 					"PEER_REPORT_INCOMPLETE");
 		}
 		report.submit(calendar.now());
-		return response(mentor, date, dailyRepository.saveAndFlush(report));
+		return response(mentor, date, PeerReportAccess.savedOrConflict(() -> dailyRepository.saveAndFlush(report)));
 	}
 
 	@Transactional
@@ -124,6 +131,10 @@ public class PeerDailyReportService {
 		activity.setProgramId(access.programOf(mentor));
 		activity.setCreatedAt(calendar.now());
 		apply(mentor, activity, request);
+		if (activityRepository.countByMentorIdAndActivityDate(mentor.getId(), request.activityDate())
+				>= MAX_ACTIVITIES_PER_DAY) {
+			throw new InvalidRequestException(Texts.forRequest("error.peerActivityLimit"));
+		}
 		return activityResponse(activityRepository.saveAndFlush(activity), menteeNames(List.of(activity)));
 	}
 
@@ -175,6 +186,7 @@ public class PeerDailyReportService {
 	}
 
 	static void requireMonday(LocalDate weekStart) {
+		PeerReportCalendar.requirePlausible(weekStart);
 		if (weekStart.getDayOfWeek() != DayOfWeek.MONDAY) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerReportWeekStart"));
 		}
@@ -256,6 +268,16 @@ public class PeerDailyReportService {
 		requireEditable(dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.map(PeerDailyReport::getStatus)
 				.orElse(null));
+		requireWeekOpen(mentor, date);
+	}
+
+	/** Once the week's summary is sent, its days are fixed too: the coordinator reviews what the snapshot froze. */
+	private void requireWeekOpen(AppUser mentor, LocalDate date) {
+		weeklyRepository.findByMentorIdAndWeekStart(mentor.getId(), calendar.weekStartOf(date))
+				.filter(week -> !week.getStatus().editable())
+				.ifPresent(week -> {
+					throw new ConflictException(Texts.forRequest("error.peerReportWeekSent"));
+				});
 	}
 
 	private PeerDailyReport newReport(AppUser mentor, LocalDate date) {
@@ -301,6 +323,7 @@ public class PeerDailyReportService {
 	}
 
 	private static void requireWorkingDay(LocalDate date) {
+		PeerReportCalendar.requirePlausible(date);
 		if (!PeerReportCalendar.isWorkingDay(date)) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerReportNotWorkingDay"));
 		}

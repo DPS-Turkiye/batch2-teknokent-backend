@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -57,6 +58,8 @@ public class PeerMeetingReportService {
 	@Transactional(readOnly = true)
 	public List<PeerReportMeetingResponse> meetings(UUID actorId, LocalDate from, LocalDate to) {
 		AppUser mentor = access.requireMentor(actorId);
+		PeerReportCalendar.requirePlausible(from);
+		PeerReportCalendar.requirePlausible(to);
 		if (to.isBefore(from) || from.plusDays(MAX_RANGE_DAYS).isBefore(to)) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerReportRange"));
 		}
@@ -85,7 +88,8 @@ public class PeerMeetingReportService {
 		requireEditable(report);
 		apply(report, request);
 		report.setUpdatedAt(calendar.now());
-		return response(mentor, meeting, reportRepository.saveAndFlush(report));
+		return response(mentor, meeting,
+				PeerReportAccess.savedOrConflict(() -> reportRepository.saveAndFlush(report)));
 	}
 
 	/** Sends the report for review; refused, naming the sections still missing, while a required answer is empty. */
@@ -102,7 +106,8 @@ public class PeerMeetingReportService {
 					Texts.forRequest("error.peerReportIncomplete", String.join(", ", missing)), "PEER_REPORT_INCOMPLETE");
 		}
 		report.submit(calendar.now());
-		return response(mentor, meeting, reportRepository.saveAndFlush(report));
+		return response(mentor, meeting,
+				PeerReportAccess.savedOrConflict(() -> reportRepository.saveAndFlush(report)));
 	}
 
 	/** Ticks an action step; allowed after sending too, since the weekly summary counts the done ones. */
@@ -119,12 +124,14 @@ public class PeerMeetingReportService {
 			action.setDoneAt(done ? calendar.now() : null);
 			report.setUpdatedAt(calendar.now());
 		}
-		return response(mentor, meeting, reportRepository.saveAndFlush(report));
+		return response(mentor, meeting,
+				PeerReportAccess.savedOrConflict(() -> reportRepository.saveAndFlush(report)));
 	}
 
 	/** The list rows for these meetings: the report's own type, format and duration once it has them. */
 	List<PeerReportMeetingResponse> rows(AppUser mentor, List<Meeting> meetings) {
 		Map<UUID, PeerMeetingReport> reports = reportsFor(mentor, meetings);
+		Map<UUID, PeerMeetingType> types = types(mentor, meetings, reports);
 		return meetings.stream().map(meeting -> {
 			PeerMeetingReport report = reports.get(meeting.getId());
 			AppUser mentee = meeting.getMentorshipRequest().getRequester();
@@ -134,8 +141,7 @@ public class PeerMeetingReportService {
 					mentee.getFullName(),
 					meeting.getScheduledAt(),
 					durationOf(meeting, report),
-					report != null && report.getMeetingType() != null ? report.getMeetingType()
-							: defaultType(mentor, meeting),
+					types.get(meeting.getId()),
 					report != null && report.getMeetingFormat() != null ? report.getMeetingFormat()
 							: defaultFormat(meeting),
 					report == null ? null : report.getStatus());
@@ -165,10 +171,26 @@ public class PeerMeetingReportService {
 		return report != null && report.getStatus() != null && report.getStatus().sent();
 	}
 
-	/** The meeting type a report has, else what the calendar suggests. */
-	PeerMeetingType typeOf(AppUser mentor, Meeting meeting, PeerMeetingReport report) {
-		return report != null && report.getMeetingType() != null ? report.getMeetingType()
-				: defaultType(mentor, meeting);
+	/**
+	 * Each meeting's type: the report's when it has one, else the calendar's (a meeting after an earlier one with the
+	 * same mentee is a follow-up). One lookup per mentee, not per meeting.
+	 */
+	Map<UUID, PeerMeetingType> types(AppUser mentor, List<Meeting> meetings, Map<UUID, PeerMeetingReport> reports) {
+		Map<UUID, Instant> firstWith = new HashMap<>();
+		Map<UUID, PeerMeetingType> types = new HashMap<>();
+		for (Meeting meeting : meetings) {
+			PeerMeetingReport report = reports.get(meeting.getId());
+			if (report != null && report.getMeetingType() != null) {
+				types.put(meeting.getId(), report.getMeetingType());
+				continue;
+			}
+			Instant first = firstWith.computeIfAbsent(
+					meeting.getMentorshipRequest().getRequester().getId(),
+					menteeId -> access.meetingsWith(mentor, menteeId).getFirst().getScheduledAt());
+			types.put(meeting.getId(),
+					meeting.getScheduledAt().isAfter(first) ? PeerMeetingType.FOLLOW_UP : PeerMeetingType.FIRST);
+		}
+		return types;
 	}
 
 	private Optional<PeerMeetingReport> reportOf(Meeting meeting) {
