@@ -31,6 +31,14 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
 	List<Meeting> findByMentorshipRequestIdIn(Collection<UUID> mentorshipRequestIds);
 
+	/** The meetings booked on requests the user mentors, in [from, to): the peer-mentor reports' calendar. */
+	List<Meeting> findByMentorshipRequest_Mentor_IdAndScheduledAtGreaterThanEqualAndScheduledAtLessThanOrderByScheduledAtAsc(
+			UUID mentorId, Instant from, Instant to);
+
+	/** Every meeting between one mentor and one mentee, oldest first (meeting numbers, the previous meeting). */
+	List<Meeting> findByMentorshipRequest_Mentor_IdAndMentorshipRequest_Requester_IdOrderByScheduledAtAsc(
+			UUID mentorId, UUID requesterId);
+
 	boolean existsByMentorIdAndScheduledAtAndStatus(UUID mentorId, Instant scheduledAt, MeetingStatus status);
 
 	boolean existsByIdAndOrganizationId(UUID id, UUID organizationId);

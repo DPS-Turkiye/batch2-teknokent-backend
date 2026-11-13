@@ -34,6 +34,8 @@ import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationItem;
 import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.PeerDailyReport;
+import com.dps.teknokent.entity.PeerMeetingReport;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.StudentInterest;
 import com.dps.teknokent.entity.UserDeletionAudit;
@@ -394,6 +396,7 @@ class UserDataEraser {
 		if (interest != null) {
 			entityManager.remove(interest);
 		}
+		erasePeerReports(id);
 		entityManager.flush();
 
 		update("delete from ProfileAnalysis a where a.appUserId = :id", "id", id);
@@ -496,6 +499,30 @@ class UserDataEraser {
 
 	private static String fit(String text, int length) {
 		return text.length() <= length ? text : text.substring(0, length);
+	}
+
+	/**
+	 * Peer-mentor reports: everything the person wrote as a mentor, and every meeting report about them as a mentee
+	 * (free text about a person goes with that person). Through the entities, so action steps and chip collections go
+	 * with them. An activity that only named them as its mentee stays the mentor's, without the name.
+	 */
+	private void erasePeerReports(UUID id) {
+		entityManager.createQuery(
+				"select r from PeerMeetingReport r where r.mentorId = :id or r.menteeId = :id", PeerMeetingReport.class)
+				.setParameter("id", id)
+				.getResultList()
+				.forEach(entityManager::remove);
+		entityManager.createQuery("select r from PeerDailyReport r where r.mentorId = :id", PeerDailyReport.class)
+				.setParameter("id", id)
+				.getResultList()
+				.forEach(entityManager::remove);
+		entityManager.flush();
+		update("delete from PeerWeeklyReport r where r.mentorId = :id", "id", id);
+		update("delete from PeerActivity a where a.mentorId = :id", "id", id);
+		update("update PeerActivity a set a.menteeId = null where a.menteeId = :id", "id", id);
+		update("update PeerMeetingReport r set r.reviewedBy = null where r.reviewedBy = :id", "id", id);
+		update("update PeerDailyReport r set r.reviewedBy = null where r.reviewedBy = :id", "id", id);
+		update("update PeerWeeklyReport r set r.reviewedBy = null where r.reviewedBy = :id", "id", id);
 	}
 
 	private void update(String jpql, String parameter, Object value) {

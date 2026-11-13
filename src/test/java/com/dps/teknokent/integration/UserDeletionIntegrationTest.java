@@ -49,8 +49,12 @@ import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.PeerActionOwner;
+import com.dps.teknokent.domain.PeerActivityType;
 import com.dps.teknokent.domain.PeerDocumentVisibility;
 import com.dps.teknokent.domain.PeerEvidenceType;
+import com.dps.teknokent.domain.PeerMeetingTopic;
+import com.dps.teknokent.domain.PeerMentorSkill;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.PlatformFeedbackKind;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -69,7 +73,12 @@ import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.entity.DataProcessingConsent;
 import com.dps.teknokent.entity.OnboardingDraft;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.PeerActivity;
+import com.dps.teknokent.entity.PeerDailyReport;
+import com.dps.teknokent.entity.PeerMeetingReport;
+import com.dps.teknokent.entity.PeerMeetingReportAction;
 import com.dps.teknokent.entity.PeerMentorDocument;
+import com.dps.teknokent.entity.PeerWeeklyReport;
 import com.dps.teknokent.entity.PlatformFeedback;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.entity.TeamMembership;
@@ -709,7 +718,95 @@ class UserDeletionIntegrationTest {
 		verify(objectStorage).delete(transcript.getS3Key());
 	}
 
+	@Test
+	void aPeerMentorsReportsGoWithThemAndActivitiesLoseADeletedMenteesName() throws Exception {
+		AppUser target = user(UserRole.MENTEE, "Mert Demir", null);
+		AppUser otherMentor = user(UserRole.MENTEE, "Kemal Arslan", null);
+		AppUser mentee = user(UserRole.MENTEE, "Ayşe Yıldız", null);
+		PeerMeetingReport written = meetingReport(target, mentee);
+		PeerMeetingReport aboutSomeoneElse = meetingReport(otherMentor, mentee);
+		PeerDailyReport day = new PeerDailyReport();
+		day.setId(UUID.randomUUID());
+		day.setMentorId(target.getId());
+		day.setReportDate(LocalDate.of(2026, 11, 12));
+		day.getSkills().add(PeerMentorSkill.EMPATHY);
+		day.setCreatedAt(Instant.now());
+		day.setUpdatedAt(Instant.now());
+		PeerWeeklyReport week = new PeerWeeklyReport();
+		week.setId(UUID.randomUUID());
+		week.setMentorId(target.getId());
+		week.setWeekStart(LocalDate.of(2026, 11, 9));
+		week.setCreatedAt(Instant.now());
+		week.setUpdatedAt(Instant.now());
+		PeerActivity own = activity(target, null);
+		PeerActivity naming = activity(otherMentor, target);
+		entityManager.persist(written);
+		entityManager.persist(aboutSomeoneElse);
+		entityManager.persist(day);
+		entityManager.persist(week);
+		entityManager.persist(own);
+		entityManager.persist(naming);
+		flushAndClear();
+
+		delete(admin, target.getId(), target.getEmail()).andExpect(status().isOk());
+
+		assertThat(entityManager.find(PeerMeetingReport.class, written.getId())).isNull();
+		assertThat(count("select count(a) from PeerMeetingReportAction a where a.report.id = :id", written.getId()))
+				.isZero();
+		assertThat(entityManager.find(PeerMeetingReport.class, aboutSomeoneElse.getId())).isNotNull();
+		assertThat(entityManager.find(PeerDailyReport.class, day.getId())).isNull();
+		assertThat(entityManager.find(PeerWeeklyReport.class, week.getId())).isNull();
+		assertThat(entityManager.find(PeerActivity.class, own.getId())).isNull();
+		assertThat(entityManager.find(PeerActivity.class, naming.getId()).getMenteeId()).isNull();
+	}
+
+	@Test
+	void theMeetingReportsAboutADeletedMenteeGoWithThem() throws Exception {
+		AppUser target = user(UserRole.MENTEE, "Ayşe Yıldız", null);
+		AppUser peerMentor = user(UserRole.MENTEE, "Mert Demir", null);
+		PeerMeetingReport about = meetingReport(peerMentor, target);
+		entityManager.persist(about);
+		flushAndClear();
+
+		delete(admin, target.getId(), target.getEmail()).andExpect(status().isOk());
+
+		assertThat(entityManager.find(PeerMeetingReport.class, about.getId())).isNull();
+	}
+
 	// ---------------------------------------------------------------- helpers
+
+	private static PeerMeetingReport meetingReport(AppUser peerMentor, AppUser mentee) {
+		PeerMeetingReport report = new PeerMeetingReport();
+		report.setId(UUID.randomUUID());
+		report.setMeetingId(UUID.randomUUID());
+		report.setMentorId(peerMentor.getId());
+		report.setMenteeId(mentee.getId());
+		report.setDiscussion("Hedef şirket listesi çıkardık.");
+		report.getTopics().add(PeerMeetingTopic.CV_PREPARATION);
+		report.getSkills().add(PeerMentorSkill.ACTIVE_LISTENING);
+		PeerMeetingReportAction action = new PeerMeetingReportAction();
+		action.setId(UUID.randomUUID());
+		action.setReport(report);
+		action.setText("CV'yi yeniden yaz");
+		action.setOwner(PeerActionOwner.MENTEE);
+		report.getActions().add(action);
+		report.setCreatedAt(Instant.now());
+		report.setUpdatedAt(Instant.now());
+		return report;
+	}
+
+	private static PeerActivity activity(AppUser peerMentor, AppUser mentee) {
+		PeerActivity activity = new PeerActivity();
+		activity.setId(UUID.randomUUID());
+		activity.setMentorId(peerMentor.getId());
+		activity.setActivityDate(LocalDate.of(2026, 11, 12));
+		activity.setActivityType(PeerActivityType.MESSAGE_FOLLOW_UP);
+		activity.setTitle("Mesajla takip");
+		activity.setDurationMinutes(10);
+		activity.setMenteeId(mentee == null ? null : mentee.getId());
+		activity.setCreatedAt(Instant.now());
+		return activity;
+	}
 
 	private static PeerMentorDocument peerEvidence(AppUser owner, PeerEvidenceType type) {
 		PeerMentorDocument row = new PeerMentorDocument();
