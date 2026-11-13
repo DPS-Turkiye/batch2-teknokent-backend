@@ -104,9 +104,10 @@ public class OfficeHoursStudentMeService {
 	@Transactional
 	public OfficeHoursStudentRequestResponse request(UUID accountId, CreateMentonOfficeHoursRequest submission) {
 		InstitutionPerson record = people.require(accountId, IdentityKind.STUDENT);
+		// One request to this academician at a time, locked before their listing and settings are read, so a change
+		// to their limit or listing in the same moment is seen. createRequest takes the same lock again.
+		userRepository.findForUpdate(submission.academicianId());
 		UUID instructorId = listedAcademician(accountId, submission.academicianId()).person().getId();
-		// One request to this academician at a time: their open slots, held times and student limit are all theirs.
-		userRepository.findForUpdate(instructorId);
 		if (slotService.openSlotAt(instructorId, submission.startsAt()).isEmpty()) {
 			throw new ConflictException("That time is no longer free. Please choose another one.");
 		}
