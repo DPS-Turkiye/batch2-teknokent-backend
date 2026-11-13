@@ -7,6 +7,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,7 @@ import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.ProgramTeamMove;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -37,6 +39,7 @@ import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramTeamMoveRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
@@ -57,6 +60,7 @@ public class DocumentRequestService {
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramStartupRepository programStartupRepository;
+	private final ProgramTeamMoveRepository programTeamMoveRepository;
 	private final AppUserRepository appUserRepository;
 	private final DomainLookupService domainLookupService;
 	private final NotificationService notificationService;
@@ -218,8 +222,16 @@ public class DocumentRequestService {
 			existing.remove(organization.getId());
 			notifyDocumentsRequested(organization, actor, added, "notification.documentsRequestedByCoordinator.title", "/startup/files");
 		}
-		// Startups that have left the program no longer owe its documents.
-		existing.values().forEach(byTitle -> byTitle.values().forEach(leftovers::addAll));
+		// Startups that have left the program no longer owe its documents. One an admin moved to another program
+		// keeps what it uploaded here: that stays as this program's history.
+		Set<UUID> movedAway = programTeamMoveRepository.findByFromProgramId(program.getId()).stream()
+				.map(ProgramTeamMove::getOrganizationId)
+				.collect(Collectors.toSet());
+		existing.forEach((organizationId, byTitle) -> {
+			if (!movedAway.contains(organizationId)) {
+				byTitle.values().forEach(leftovers::addAll);
+			}
+		});
 		if (!leftovers.isEmpty()) {
 			itemRepository.deleteAll(leftovers);
 		}
