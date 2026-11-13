@@ -33,6 +33,9 @@ app:
   notifications:
     reminders:
       enabled: false
+  user-deletion:
+    cleanup:
+      enabled: false
   realtime:
     token-secret: test-secret
     allowed-origins: http://localhost:3000

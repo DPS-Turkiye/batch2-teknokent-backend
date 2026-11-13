@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -17,6 +18,8 @@ import com.dps.teknokent.entity.Meeting;
 
 public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
+	// The request is read for every meeting to tell which program it was held in (ProgramActivity).
+	@EntityGraph(attributePaths = "mentorshipRequest")
 	List<Meeting> findAllByOrderByScheduledAtDesc();
 	List<Meeting> findByOrganizationIdOrderByScheduledAtDesc(UUID organizationId);
 	List<Meeting> findByMentorIdOrderByScheduledAtDesc(UUID mentorId);
@@ -69,29 +72,11 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 	List<Meeting> findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(
 			MeetingStatus status, Instant from, Instant to);
 
+	@EntityGraph(attributePaths = "mentorshipRequest")
 	List<Meeting> findByOrganizationIdInOrderByScheduledAtDesc(Collection<UUID> organizationIds);
 
-	/**
-	 * A program's held meetings for its report: these teams' meetings between {@code since} and {@code until}, not
-	 * cancelled, and made in this program. A team can be in several programs, so a meeting of another program's
-	 * mentorship is left out; one with no request or no program (before V82) counts in each, as mentorships do.
-	 */
-	@Query("""
-			select m.id from Meeting m
-			left join m.mentorshipRequest r
-			left join r.program p
-			where m.organization.id in :teams
-			and m.status <> com.dps.teknokent.domain.MeetingStatus.CANCELLED
-			and m.scheduledAt >= :since and m.scheduledAt <= :until
-			and (p is null or p.id = :programId)
-			""")
-	List<UUID> findHeldMeetingIdsOfProgram(
-			@Param("programId") UUID programId,
-			@Param("teams") Collection<UUID> teams,
-			@Param("since") Instant since,
-			@Param("until") Instant until);
-
 	/** Meetings the mentor confirmed as held, starting in [from, until). */
+	@EntityGraph(attributePaths = "mentorshipRequest")
 	List<Meeting> findByOrganizationIdInAndHeldConfirmedAtIsNotNullAndScheduledAtGreaterThanEqualAndScheduledAtLessThan(
 			Collection<UUID> organizationIds, Instant from, Instant until);
 

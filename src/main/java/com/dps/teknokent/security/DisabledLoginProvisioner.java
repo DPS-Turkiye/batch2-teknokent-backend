@@ -46,6 +46,16 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 		throw noFirebase();
 	}
 
+	// Without Firebase there is no login to find or delete.
+	@Override
+	public Optional<String> uidForEmail(String email) {
+		return Optional.empty();
+	}
+
+	@Override
+	public void deleteLogin(String uid) {
+	}
+
 	@Override
 	public void revokeSignIns(String email) {
 		// Without Firebase there are no Firebase sign-ins; the recorded time still ends app sessions.

@@ -435,4 +435,22 @@ class OfficeHoursBookingServiceTest {
         assertThat(response.courseName()).isEqualTo("CENG 242 Programlama Dilleri");
         assertThat(response.allowedActions()).isEmpty();
     }
+
+    @Test
+    void aMeetingWithoutACourseHasNoCourseNameInsteadOfFailing() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        OfficeHoursRequest request = existing(OfficeHoursRequestStatus.ACCEPTED);
+        when(requestRepository.findByCourseIdAndStudentIdOrderByCreatedAtDesc(COURSE, STUDENT))
+                .thenReturn(List.of(request));
+        OfficeHoursMeeting meeting = new OfficeHoursMeeting();
+        meeting.setId(UUID.randomUUID());
+        meeting.setRequestId(REQUEST);
+        meeting.setStudentId(STUDENT);
+        meeting.setInstructorId(ACADEMIC);
+        meeting.setScheduledAt(Instant.parse("2026-11-10T11:00:00Z"));
+        meeting.setDurationMinutes(30);
+        when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of(meeting));
+
+        assertThat(service.upcomingMeetings(STUDENT, COURSE).getFirst().courseName()).isNull();
+    }
 }

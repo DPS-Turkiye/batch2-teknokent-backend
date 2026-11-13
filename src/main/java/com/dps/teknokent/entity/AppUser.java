@@ -46,6 +46,16 @@ import lombok.Setter;
 @NoArgsConstructor
 public class AppUser {
 
+	/** What everyone sees in place of a deleted person's name. */
+	public static final String DELETED_FULL_NAME = "Silinmiş kullanıcı";
+
+	private static final String DELETED_EMAIL_DOMAIN = "@deleted.invalid";
+
+	/** The placeholder a deleted account's address is replaced with: unique per account, and never deliverable. */
+	public static String deletedEmailFor(UUID id) {
+		return "deleted-" + id + DELETED_EMAIL_DOMAIN;
+	}
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
 	private UUID id;
@@ -206,5 +216,39 @@ public class AppUser {
 	/** Sets the primary role alone, for an account whose grants come from {@link #grant} rather than sign-up. */
 	public void setPrimaryRole(UserRole role) {
 		this.role = role;
+	}
+
+	/**
+	 * Turns the account into a tombstone after an admin deleted it: the id stays so shared history keeps its
+	 * links, and every personal field goes. The e-mail becomes a placeholder nobody can verify and the Firebase uid
+	 * is cleared, so no login can be matched to this row again. Every grant is revoked, and the primary role gets a
+	 * revoked row if it had none, because {@link #activePermissions} counts a role without a row as held.
+	 */
+	public void erase(Instant now) {
+		email = deletedEmailFor(id);
+		fullName = DELETED_FULL_NAME;
+		status = UserAccountStatus.DELETED;
+		organization = null;
+		programId = null;
+		jobTitle = null;
+		phone = null;
+		bio = null;
+		linkedinUrl = null;
+		firebaseUid = null;
+		signInsRevokedAt = now;
+		expertise.clear();
+		contactPreferences.clear();
+		boolean primaryHasRow = false;
+		for (AppUserPermission grant : permissions) {
+			primaryHasRow |= grant.getPermission() == role;
+			if (grant.getStatus() != PermissionStatus.REVOKED) {
+				grant.revoke(now);
+			}
+		}
+		if (!primaryHasRow && role != null) {
+			AppUserPermission tombstoneGrant = new AppUserPermission(this, role, PermissionSource.ADMIN, now);
+			tombstoneGrant.revoke(now);
+			permissions.add(tombstoneGrant);
+		}
 	}
 }

@@ -27,6 +27,8 @@ public record AdminOverviewResponse(
 			UUID coordinatorId,
 			/** Every coordinator, comma-separated; an admin who created the program is not listed. */
 			String coordinatorName,
+			/** Every coordinator's id, in {@code coordinatorName} order; empty when the program has none. */
+			List<UUID> coordinatorIds,
 			int startupCount,
 			int acceptedMentorCount,
 			int pendingMentorCount,
@@ -49,6 +51,8 @@ public record AdminOverviewResponse(
 			String email,
 			String fullName,
 			UserRole role,
+			/** Every active permission, the primary role included; a second-role mentor is listed with the mentors. */
+			List<UserRole> roles,
 			UserAccountStatus status,
 			UUID organizationId,
 			String organizationName,

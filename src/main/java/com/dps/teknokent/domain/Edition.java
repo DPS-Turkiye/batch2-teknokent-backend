@@ -15,6 +15,9 @@ public enum Edition {
 	TEKNOKENT(
 			EnumSet.of(ProgramType.STARTUP_MENTORING),
 			List.of(
+					"/api/admin/programs/*/mentors/*/remove",
+					"/api/admin/programs/*/startups/*/move",
+					"/api/admin/users/*/delete",
 					"/api/assistant/**",
 					"/api/auth/institution/otg/**",
 					"/api/auth/register/mentor/**",

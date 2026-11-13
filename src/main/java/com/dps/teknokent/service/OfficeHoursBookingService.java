@@ -446,14 +446,19 @@ public class OfficeHoursBookingService {
 					meeting == null ? null : new OfficeHoursSlotResponse(meeting.getScheduledAt(),
 							meeting.getDurationMinutes()),
 					request.getCreatedAt(), courseNames.get(request.getCourseId()),
-					times(request.getInstructorId(), request.getPreferredSlots()),
-					times(request.getInstructorId(), request.getProposedSlots()),
+					timesOf(request.getInstructorId(), request.getPreferredSlots()),
+					timesOf(request.getInstructorId(), request.getProposedSlots()),
 					OfficeHoursRequestAction.allowedFor(viewer, request.getStatus()));
 		}).toList();
 	}
 
 	/** Each slot with the length booking it would get, as {@link #book} gives it. */
-	private List<OfficeHoursTimeResponse> times(UUID instructorId, String joined) {
+	/**
+	 * Stored times ("yyyy-MM-ddTHH:mm" in Turkey time, comma-separated) as ranges, each as long as the meeting it
+	 * would book: its open slot's own length, or the academic's default for a time typed by hand. The Menton routes
+	 * show times the same way.
+	 */
+	public List<OfficeHoursTimeResponse> timesOf(UUID instructorId, String joined) {
 		return slots(joined).stream()
 				.map(MeetingSlotTimes::parseMachineSlot)
 				.filter(Objects::nonNull)
@@ -461,8 +466,10 @@ public class OfficeHoursBookingService {
 				.toList();
 	}
 
+	/** Course-free requests (booked from Menton, without a Moodle course) have no name and are skipped. */
 	private Map<UUID, String> courseNames(Collection<UUID> ids) {
-		return courseRepository.findAllById(Set.copyOf(ids)).stream()
+		Set<UUID> courseIds = ids.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+		return courseRepository.findAllById(courseIds).stream()
 				.collect(Collectors.toMap(OfficeHoursCourse::getId, OfficeHoursCourse::getTitle));
 	}
 
