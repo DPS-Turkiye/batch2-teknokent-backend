@@ -68,7 +68,7 @@ public class AppUserService {
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role, UserAccountStatus status) {
-		return appUserRepository.findAll().stream()
+		return appUserRepository.findByStatusNot(UserAccountStatus.DELETED).stream()
 				.filter(user -> role == null || user.has(role))
 				.filter(user -> status == null || user.getStatus() == status)
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))

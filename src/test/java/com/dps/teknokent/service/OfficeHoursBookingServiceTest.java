@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -27,13 +28,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.OfficeHoursMessageType;
+import com.dps.teknokent.domain.OfficeHoursRequestAction;
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 import com.dps.teknokent.domain.OfficeHoursRole;
 import com.dps.teknokent.dto.requests.AcceptOfficeHoursSlotRequest;
 import com.dps.teknokent.dto.requests.CreateOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.DecideOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.ReplyOfficeHoursRequest;
+import com.dps.teknokent.dto.responses.OfficeHoursMeetingResponse;
 import com.dps.teknokent.dto.responses.OfficeHoursRequestResponse;
+import com.dps.teknokent.dto.responses.OfficeHoursTimeResponse;
+import com.dps.teknokent.entity.OfficeHoursCourse;
 import com.dps.teknokent.entity.OfficeHoursEnrollment;
 import com.dps.teknokent.entity.OfficeHoursMeeting;
 import com.dps.teknokent.entity.OfficeHoursRequest;
@@ -41,6 +46,7 @@ import com.dps.teknokent.entity.OfficeHoursRequestMessage;
 import com.dps.teknokent.entity.OfficeHoursSettings;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.repository.OfficeHoursCourseRepository;
 import com.dps.teknokent.repository.OfficeHoursEnrollmentRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestMessageRepository;
@@ -74,18 +80,28 @@ class OfficeHoursBookingServiceTest {
     private OfficeHoursSettingsRepository settingsRepository;
     @Mock
     private OfficeHoursSlotService slotService;
+    @Mock
+    private OfficeHoursCourseRepository courseRepository;
 
     private OfficeHoursBookingService service;
 
     @BeforeEach
     void setUp() {
         service = new OfficeHoursBookingService(enrollmentRepository, userRepository, requestRepository,
-                messageRepository, meetingRepository, settingsRepository, slotService,
+                messageRepository, meetingRepository, settingsRepository, slotService, courseRepository,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(requestRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(userRepository.findAllById(any())).thenReturn(List.of());
         lenient().when(messageRepository.findByRequestIdInOrderByCreatedAtAsc(any())).thenReturn(List.of());
         lenient().when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of());
+        lenient().when(courseRepository.findAllById(any())).thenReturn(List.of(course()));
+    }
+
+    private static OfficeHoursCourse course() {
+        OfficeHoursCourse course = new OfficeHoursCourse();
+        course.setId(COURSE);
+        course.setTitle("CENG 242 Programlama Dilleri");
+        return course;
     }
 
     private void enrolled(UUID userId, OfficeHoursRole role) {
@@ -113,7 +129,8 @@ class OfficeHoursBookingServiceTest {
         request.setTopic("Ödev 2");
         request.setPreferredSlots(TUESDAY_2PM + "," + TUESDAY_3PM);
         request.setCreatedAt(NOW);
-        when(requestRepository.findById(REQUEST)).thenReturn(Optional.of(request));
+        // Lists read requests by course, not by id.
+        lenient().when(requestRepository.findById(REQUEST)).thenReturn(Optional.of(request));
         return request;
     }
 
@@ -356,5 +373,89 @@ class OfficeHoursBookingServiceTest {
                 OfficeHoursRequestStatus.COUNTER_PROPOSED, null, null, List.of(TUESDAY_2PM))))
                 .isInstanceOf(ConflictException.class);
         verify(requestRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void requestsCarryTheCourseTimesWithTurkeysOffsetAndWhatTheCallerMayDo() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        enrolled(ACADEMIC, OfficeHoursRole.INSTRUCTOR);
+        OfficeHoursRequest request = existing(OfficeHoursRequestStatus.PENDING);
+        when(requestRepository.findByCourseIdAndStudentIdOrderByCreatedAtDesc(COURSE, STUDENT))
+                .thenReturn(List.of(request));
+        when(requestRepository.findByCourseIdAndInstructorIdOrderByCreatedAtDesc(COURSE, ACADEMIC))
+                .thenReturn(List.of(request));
+        when(slotService.openSlotAt(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z")))
+                .thenReturn(Optional.of(new OfficeHoursSlotService.Slot(Instant.parse("2026-11-10T11:00:00Z"), 20)));
+        when(slotService.openSlotAt(ACADEMIC, Instant.parse("2026-11-10T12:00:00Z"))).thenReturn(Optional.empty());
+        when(slotService.defaultMeetingMinutes(ACADEMIC)).thenReturn(45);
+
+        OfficeHoursRequestResponse asStudent = service.requests(STUDENT, COURSE).getFirst();
+        OfficeHoursRequestResponse asAcademic = service.requests(ACADEMIC, COURSE).getFirst();
+
+        assertThat(asStudent.courseName()).isEqualTo("CENG 242 Programlama Dilleri");
+        assertThat(asStudent.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);
+        assertThat(asStudent.preferredTimes()).containsExactly(
+                new OfficeHoursTimeResponse(OffsetDateTime.parse("2026-11-10T14:00+03:00"),
+                        OffsetDateTime.parse("2026-11-10T14:20+03:00")),
+                new OfficeHoursTimeResponse(OffsetDateTime.parse("2026-11-10T15:00+03:00"),
+                        OffsetDateTime.parse("2026-11-10T15:45+03:00")));
+        assertThat(asStudent.proposedTimes()).isEmpty();
+        assertThat(asStudent.allowedActions()).containsExactly(OfficeHoursRequestAction.WITHDRAW);
+        assertThat(asAcademic.allowedActions()).containsExactly(OfficeHoursRequestAction.ACCEPT,
+                OfficeHoursRequestAction.DECLINE, OfficeHoursRequestAction.PROPOSE_TIMES,
+                OfficeHoursRequestAction.ASK_QUESTION);
+    }
+
+    @Test
+    void anAnswerShowsWhatIsLeftForTheAcademic() {
+        enrolled(ACADEMIC, OfficeHoursRole.INSTRUCTOR);
+        existing(OfficeHoursRequestStatus.PENDING);
+
+        OfficeHoursRequestResponse response = service.decide(ACADEMIC, COURSE, REQUEST,
+                new DecideOfficeHoursRequest(OfficeHoursRequestStatus.DECLINED, null, null, null));
+
+        assertThat(response.allowedActions()).isEmpty();
+    }
+
+    @Test
+    void upcomingMeetingsCarryTheirTimeWithTheOffsetAndTheCourse() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        OfficeHoursRequest request = existing(OfficeHoursRequestStatus.ACCEPTED);
+        when(requestRepository.findByCourseIdAndStudentIdOrderByCreatedAtDesc(COURSE, STUDENT))
+                .thenReturn(List.of(request));
+        OfficeHoursMeeting meeting = new OfficeHoursMeeting();
+        meeting.setId(UUID.randomUUID());
+        meeting.setRequestId(REQUEST);
+        meeting.setCourseId(COURSE);
+        meeting.setStudentId(STUDENT);
+        meeting.setInstructorId(ACADEMIC);
+        meeting.setScheduledAt(Instant.parse("2026-11-10T11:00:00Z"));
+        meeting.setDurationMinutes(30);
+        when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of(meeting));
+
+        OfficeHoursMeetingResponse response = service.upcomingMeetings(STUDENT, COURSE).getFirst();
+
+        assertThat(response.time()).isEqualTo(new OfficeHoursTimeResponse(
+                OffsetDateTime.parse("2026-11-10T14:00+03:00"), OffsetDateTime.parse("2026-11-10T14:30+03:00")));
+        assertThat(response.courseName()).isEqualTo("CENG 242 Programlama Dilleri");
+        assertThat(response.allowedActions()).isEmpty();
+    }
+
+    @Test
+    void aMeetingWithoutACourseHasNoCourseNameInsteadOfFailing() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        OfficeHoursRequest request = existing(OfficeHoursRequestStatus.ACCEPTED);
+        when(requestRepository.findByCourseIdAndStudentIdOrderByCreatedAtDesc(COURSE, STUDENT))
+                .thenReturn(List.of(request));
+        OfficeHoursMeeting meeting = new OfficeHoursMeeting();
+        meeting.setId(UUID.randomUUID());
+        meeting.setRequestId(REQUEST);
+        meeting.setStudentId(STUDENT);
+        meeting.setInstructorId(ACADEMIC);
+        meeting.setScheduledAt(Instant.parse("2026-11-10T11:00:00Z"));
+        meeting.setDurationMinutes(30);
+        when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of(meeting));
+
+        assertThat(service.upcomingMeetings(STUDENT, COURSE).getFirst().courseName()).isNull();
     }
 }

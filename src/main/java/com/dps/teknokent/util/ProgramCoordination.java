@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
@@ -100,7 +101,8 @@ public final class ProgramCoordination {
 		for (Program program : programs) {
 			List<AppUser> known = idsByProgram.get(program.getId()).stream()
 					.map(byId::get)
-					.filter(user -> user != null)
+					// A deleted account's tombstone runs nothing and must not be sent the program's notifications.
+					.filter(user -> user != null && user.getStatus() != UserAccountStatus.DELETED)
 					.toList();
 			List<AppUser> running = known.stream().filter(user -> user.has(UserRole.COORDINATOR)).toList();
 			runners.put(program.getId(), running.isEmpty()
