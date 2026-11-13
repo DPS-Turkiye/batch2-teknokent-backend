@@ -52,6 +52,7 @@ import com.dps.teknokent.repository.OfficeHoursRequestMessageRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestRepository;
 import com.dps.teknokent.repository.OfficeHoursSettingsRepository;
 import com.dps.teknokent.repository.OfficeHoursUserRepository;
+import com.dps.teknokent.util.MeetingSlotTimes;
 
 @ExtendWith(MockitoExtension.class)
 class OfficeHoursMeServiceTest {
@@ -86,8 +87,6 @@ class OfficeHoursMeServiceTest {
     private OfficeHoursAvailabilityService availabilityService;
     @Mock
     private OfficeHoursBookingService bookingService;
-    @Mock
-    private OfficeHoursSlotService slotService;
 
     private OfficeHoursMeService service;
 
@@ -95,10 +94,15 @@ class OfficeHoursMeServiceTest {
     void setUp() {
         service = new OfficeHoursMeService(institutionPeople, userRepository, settingsRepository, requestRepository,
                 messageRepository, meetingRepository, courseRepository, availabilityService, bookingService,
-                slotService, Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(messageRepository.findByRequestIdInOrderByCreatedAtAsc(any())).thenReturn(List.of());
         lenient().when(meetingRepository.findByRequestIdIn(any())).thenReturn(List.of());
-        lenient().when(slotService.defaultMeetingMinutes(PERSON)).thenReturn(30);
+        // The booking rules give each stored time its own slot's length; here a 30-minute slot.
+        lenient().when(bookingService.timesOf(eq(PERSON), any())).thenAnswer(invocation -> {
+            String joined = invocation.getArgument(1);
+            return joined == null || joined.isBlank() ? List.of()
+                    : List.of(OfficeHoursTimeResponse.of(MeetingSlotTimes.parseMachineSlot(joined), 30));
+        });
     }
 
     private static InstitutionPerson record(UUID accountId, String name, IdentityKind... kinds) {
@@ -258,7 +262,8 @@ class OfficeHoursMeServiceTest {
         List<OfficeHoursInboxRequestResponse> inbox = service.inbox(ACCOUNT);
 
         OfficeHoursInboxRequestResponse menton = inbox.get(0);
-        assertThat(menton.student().userId()).isEqualTo(STUDENT_ACCOUNT);
+        assertThat(menton.student().id()).isEqualTo(STUDENT);
+        assertThat(menton.student().accountId()).isEqualTo(STUDENT_ACCOUNT);
         assertThat(menton.student().fullName()).isEqualTo("Ali Kaya");
         assertThat(menton.student().department()).isEqualTo("Bilgisayar Mühendisliği");
         assertThat(menton.student().classYear()).isEqualTo(3);
@@ -270,7 +275,8 @@ class OfficeHoursMeServiceTest {
                 OfficeHoursRequestAction.DECLINE, OfficeHoursRequestAction.PROPOSE_TIMES);
 
         OfficeHoursInboxRequestResponse course1 = inbox.get(1);
-        assertThat(course1.student().userId()).isEqualTo(MOODLE_STUDENT);
+        assertThat(course1.student().id()).isEqualTo(MOODLE_STUDENT);
+        assertThat(course1.student().accountId()).isNull();
         assertThat(course1.student().fullName()).isEqualTo("Moodle Öğrenci");
         assertThat(course1.student().department()).isNull();
         assertThat(course1.student().classYear()).isNull();

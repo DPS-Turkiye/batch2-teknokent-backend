@@ -165,6 +165,46 @@ class OfficeHoursMeIntegrationTest {
 	}
 
 	@Test
+	void aRequestedTimeIsAsLongAsTheSlotItWouldBookNotTheDefault() throws Exception {
+		String everyDay = String.join(",", java.util.Arrays.stream(java.time.DayOfWeek.values())
+				.map(day -> "{\"dayOfWeek\":\"" + day + "\",\"startTime\":\"10:00\",\"endTime\":\"12:00\",\"slotMinutes\":20}")
+				.toList());
+		mockMvc.perform(put("/api/office-hours/me/availability").param("actorId", as(academician))
+						.with(frontendServer()).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"rules\":[" + everyDay + "],\"exceptions\":[],\"studentCapacity\":null,"
+								+ "\"defaultMeetingDurationMinutes\":45,\"meetingBufferMinutes\":0}"))
+				.andExpect(status().isOk());
+		UUID instructorId = officeHoursUsers.findByAppUserId(academician.getId()).orElseThrow().getId();
+		OfficeHoursUser asker = new OfficeHoursUser();
+		asker.setId(UUID.randomUUID());
+		asker.setAppUserId(student.getId());
+		asker.setFullName("Ali Kaya");
+		asker.setCreatedAt(Instant.now());
+		asker.setLastLaunchAt(Instant.now());
+		officeHoursUsers.saveAndFlush(asker);
+		String slot = java.time.LocalDate.now(MeetingSlotTimes.APP_ZONE).plusDays(7) + "T10:00";
+		OfficeHoursRequest request = new OfficeHoursRequest();
+		request.setId(UUID.randomUUID());
+		request.setStudentId(asker.getId());
+		request.setInstructorId(instructorId);
+		request.setStatus(OfficeHoursRequestStatus.PENDING);
+		request.setTopic("Staj");
+		request.setPreferredSlots(slot);
+		request.setCreatedAt(Instant.now());
+		request.setUpdatedAt(Instant.now());
+		requests.saveAndFlush(request);
+
+		String inbox = mockMvc.perform(get("/api/office-hours/me/inbox").param("actorId", as(academician))
+						.with(frontendServer()))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		java.time.OffsetDateTime startsAt = java.time.OffsetDateTime
+				.parse(com.jayway.jsonpath.JsonPath.<String>read(inbox, "$[0].requestedTimes[0].startsAt"));
+		java.time.OffsetDateTime endsAt = java.time.OffsetDateTime
+				.parse(com.jayway.jsonpath.JsonPath.<String>read(inbox, "$[0].requestedTimes[0].endsAt"));
+		assertThat(java.time.Duration.between(startsAt, endsAt)).isEqualTo(java.time.Duration.ofMinutes(20));
+	}
+
+	@Test
 	void aStudentHasNoAcademicianOfficeHours() throws Exception {
 		mockMvc.perform(get("/api/office-hours/me/inbox").param("actorId", as(student)).with(frontendServer()))
 				.andExpect(status().isNotFound());

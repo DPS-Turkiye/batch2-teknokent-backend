@@ -77,7 +77,6 @@ public class OfficeHoursMeService {
 	private final OfficeHoursCourseRepository courseRepository;
 	private final OfficeHoursAvailabilityService availabilityService;
 	private final OfficeHoursBookingService bookingService;
-	private final OfficeHoursSlotService slotService;
 	private final Clock clock;
 
 	@Autowired
@@ -85,17 +84,16 @@ public class OfficeHoursMeService {
 			OfficeHoursSettingsRepository settingsRepository, OfficeHoursRequestRepository requestRepository,
 			OfficeHoursRequestMessageRepository messageRepository, OfficeHoursMeetingRepository meetingRepository,
 			OfficeHoursCourseRepository courseRepository, OfficeHoursAvailabilityService availabilityService,
-			OfficeHoursBookingService bookingService, OfficeHoursSlotService slotService) {
+			OfficeHoursBookingService bookingService) {
 		this(institutionPeople, userRepository, settingsRepository, requestRepository, messageRepository,
-				meetingRepository, courseRepository, availabilityService, bookingService, slotService,
-				Clock.systemUTC());
+				meetingRepository, courseRepository, availabilityService, bookingService, Clock.systemUTC());
 	}
 
 	OfficeHoursMeService(InstitutionPersonRepository institutionPeople, OfficeHoursUserRepository userRepository,
 			OfficeHoursSettingsRepository settingsRepository, OfficeHoursRequestRepository requestRepository,
 			OfficeHoursRequestMessageRepository messageRepository, OfficeHoursMeetingRepository meetingRepository,
 			OfficeHoursCourseRepository courseRepository, OfficeHoursAvailabilityService availabilityService,
-			OfficeHoursBookingService bookingService, OfficeHoursSlotService slotService, Clock clock) {
+			OfficeHoursBookingService bookingService, Clock clock) {
 		this.institutionPeople = institutionPeople;
 		this.userRepository = userRepository;
 		this.settingsRepository = settingsRepository;
@@ -105,7 +103,6 @@ public class OfficeHoursMeService {
 		this.courseRepository = courseRepository;
 		this.availabilityService = availabilityService;
 		this.bookingService = bookingService;
-		this.slotService = slotService;
 		this.clock = clock;
 	}
 
@@ -144,7 +141,10 @@ public class OfficeHoursMeService {
 		return profileOf(settingsRepository.saveAndFlush(settings));
 	}
 
-	/** Every request sent to the academician, newest first, from Menton or from any of their courses. */
+	/**
+	 * Every request sent to the academician, newest first. A course's requests go to the academic's Moodle person, so
+	 * they show here only once FR-OH-12 links that person to this Menton account.
+	 */
 	@Transactional(readOnly = true)
 	public List<OfficeHoursInboxRequestResponse> inbox(UUID accountId) {
 		requireAcademic(accountId);
@@ -276,15 +276,14 @@ public class OfficeHoursMeService {
 		Map<UUID, OfficeHoursStudentResponse> students = students(
 				requests.stream().map(OfficeHoursRequest::getStudentId).toList());
 		Map<UUID, String> courses = courseNames(requests.stream().map(OfficeHoursRequest::getCourseId).toList());
-		Map<UUID, Integer> minutes = requests.stream().map(OfficeHoursRequest::getInstructorId).distinct()
-				.collect(Collectors.toMap(Function.identity(), slotService::defaultMeetingMinutes));
 		return requests.stream().map(request -> {
-			int length = minutes.get(request.getInstructorId());
 			OfficeHoursMeeting meeting = meetings.get(request.getId());
 			return new OfficeHoursInboxRequestResponse(request.getId(), request.getStatus(),
 					students.get(request.getStudentId()), request.getTopic(), request.getExpectedOutcome(),
-					courseName(courses, request.getCourseId()), times(request.getPreferredSlots(), length),
-					times(request.getProposedSlots(), length), messages.getOrDefault(request.getId(), List.of()),
+					courseName(courses, request.getCourseId()),
+					bookingService.timesOf(request.getInstructorId(), request.getPreferredSlots()),
+					bookingService.timesOf(request.getInstructorId(), request.getProposedSlots()),
+					messages.getOrDefault(request.getId(), List.of()),
 					meeting == null ? null
 							: OfficeHoursTimeResponse.of(meeting.getScheduledAt(), meeting.getDurationMinutes()),
 					request.getRejectionReason(), request.getCreatedAt(), allowedActions(request));
@@ -337,11 +336,10 @@ public class OfficeHoursMeService {
 		return people.stream().collect(Collectors.toMap(OfficeHoursUser::getId, person -> {
 			InstitutionPerson record = person.getAppUserId() == null ? null : records.get(person.getAppUserId());
 			if (record == null) {
-				return new OfficeHoursStudentResponse(
-						person.getAppUserId() != null ? person.getAppUserId() : person.getId(), person.getFullName(),
+				return new OfficeHoursStudentResponse(person.getId(), person.getAppUserId(), person.getFullName(),
 						null, null);
 			}
-			return new OfficeHoursStudentResponse(person.getAppUserId(), record.getFullName(),
+			return new OfficeHoursStudentResponse(person.getId(), person.getAppUserId(), record.getFullName(),
 					record.getDepartmentName(), record.getClassYear());
 		}));
 	}
@@ -358,16 +356,6 @@ public class OfficeHoursMeService {
 		return courseId == null ? null : courses.get(courseId);
 	}
 
-	private static List<OfficeHoursTimeResponse> times(String joined, int minutes) {
-		if (joined == null || joined.isBlank()) {
-			return List.of();
-		}
-		return Arrays.stream(joined.split(","))
-				.map(MeetingSlotTimes::parseMachineSlot)
-				.filter(Objects::nonNull)
-				.map(startsAt -> OfficeHoursTimeResponse.of(startsAt, minutes))
-				.toList();
-	}
 
 	private static OfficeHoursInboxRequestResponse.Message message(OfficeHoursRequestMessage message) {
 		return new OfficeHoursInboxRequestResponse.Message(
