@@ -25,7 +25,8 @@ public class OfficeHoursMeeting {
 	@Column(name = "request_id", nullable = false, unique = true)
 	private UUID requestId;
 
-	@Column(name = "course_id", nullable = false)
+	/** Empty for a meeting booked from Menton, which belongs to no course. */
+	@Column(name = "course_id")
 	private UUID courseId;
 
 	@Column(name = "instructor_id", nullable = false)

@@ -33,6 +33,20 @@ public class OfficeHoursSettings {
 	@Column(name = "meeting_buffer_minutes", nullable = false)
 	private int meetingBufferMinutes = 15;
 
+	/** Whether Menton students see them in the list; off until the academician turns it on. */
+	@Column(nullable = false)
+	private boolean listed;
+
+	@Column(name = "default_place", length = 200)
+	private String defaultPlace;
+
+	@Column(name = "online_link", length = 500)
+	private String onlineLink;
+
+	/** Shown to students only when filled in. */
+	@Column(name = "contact_email", length = 320)
+	private String contactEmail;
+
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 }

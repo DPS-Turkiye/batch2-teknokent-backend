@@ -5,15 +5,35 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.dps.teknokent.entity.OfficeHoursUser;
 
+import jakarta.persistence.LockModeType;
+
 public interface OfficeHoursUserRepository extends JpaRepository<OfficeHoursUser, UUID> {
 
 	Optional<OfficeHoursUser> findByIssuerAndSubject(String issuer, String subject);
+
+	Optional<OfficeHoursUser> findByAppUserId(UUID appUserId);
+
+	/** The person, locked until the transaction ends: one request of theirs is checked and saved at a time. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select person from OfficeHoursUser person where person.id = :id")
+	Optional<OfficeHoursUser> findForUpdate(@Param("id") UUID id);
+
+	/** The Menton side of {@link #insertIfAbsent}: two first visits at once leave one row for the account. */
+	@Modifying
+	@Query(value = """
+			INSERT INTO office_hours_user (id, app_user_id, full_name, created_at, last_launch_at)
+			VALUES (:id, :appUserId, :fullName, :now, :now)
+			ON CONFLICT DO NOTHING
+			""", nativeQuery = true)
+	int insertForAccountIfAbsent(@Param("id") UUID id, @Param("appUserId") UUID appUserId,
+			@Param("fullName") String fullName, @Param("now") Instant now);
 
 	/**
 	 * Adds the person unless they are already there. Two first launches at once both succeed this way, where a
