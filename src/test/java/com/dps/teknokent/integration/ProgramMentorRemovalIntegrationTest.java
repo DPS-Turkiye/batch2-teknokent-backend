@@ -43,6 +43,7 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -51,6 +52,7 @@ import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.NotificationRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRemovalRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
@@ -84,6 +86,8 @@ class ProgramMentorRemovalIntegrationTest {
 	private ProgramMentorRepository programMentorRepository;
 	@Autowired
 	private ProgramMentorRemovalRepository removalRepository;
+	@Autowired
+	private ProgramMentorInviteRepository inviteRepository;
 	@Autowired
 	private MentorshipRequestRepository mentorshipRequestRepository;
 	@Autowired
@@ -274,6 +278,17 @@ class ProgramMentorRemovalIntegrationTest {
 	}
 
 	@Test
+	void theSignupLinkTheMentorJoinedWithGoesWithTheMembership() throws Exception {
+		usedInvite(program, mentor);
+		ProgramMentorInvite elsewhere = usedInvite(otherProgram, mentor);
+
+		remove(admin, program, mentor).andExpect(status().isOk());
+
+		assertThat(inviteRepository.findByProgramIdAndMentorId(program.getId(), mentor.getId())).isEmpty();
+		assertThat(inviteRepository.findById(elsewhere.getId())).isPresent();
+	}
+
+	@Test
 	void aMentorCanBeRemovedFromAProgramThatHasEnded() throws Exception {
 		program.setStatus(ProgramStatus.COMPLETED);
 		programRepository.saveAndFlush(program);
@@ -449,6 +464,19 @@ class ProgramMentorRemovalIntegrationTest {
 		membership.setCreatedAt(Instant.now().minus(30, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MILLIS));
 		membership.setDecidedAt(Instant.now().minus(29, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MILLIS));
 		programMentorRepository.saveAndFlush(membership);
+	}
+
+	private ProgramMentorInvite usedInvite(Program in, AppUser joined) {
+		ProgramMentorInvite invite = new ProgramMentorInvite();
+		invite.setId(UUID.randomUUID());
+		invite.setProgramId(in.getId());
+		invite.setEmail(joined.getEmail());
+		invite.setCode(UUID.randomUUID().toString().replace("-", ""));
+		invite.setCreatedBy(coordinator.getId());
+		invite.setCreatedAt(Instant.now());
+		invite.setExpiresAt(Instant.now().plus(7, ChronoUnit.DAYS));
+		invite.setMentorId(joined.getId());
+		return inviteRepository.saveAndFlush(invite);
 	}
 
 	private void coordinatorOf(Program coordinated, AppUser user) {

@@ -1,16 +1,20 @@
 package com.dps.teknokent.service;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -25,6 +29,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRemovalRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
@@ -45,6 +50,9 @@ public class ProgramMentorRemovalService {
 
 	private static final String MENTOR_HREF = "/mentor-dashboard";
 	private static final String REQUEST_HREF = "/mentor-request/status?request=";
+	private static final Set<MentorshipRequestStatus> OPEN_REQUESTS = Arrays.stream(MentorshipRequestStatus.values())
+			.filter(MentorshipRequestStatus::isOpen)
+			.collect(Collectors.toUnmodifiableSet());
 
 	private final NotificationService notificationService;
 	private final EditionService editionService;
@@ -52,6 +60,7 @@ public class ProgramMentorRemovalService {
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramMentorRepository programMentorRepository;
+	private final ProgramMentorInviteRepository programMentorInviteRepository;
 	private final ProgramMentorRemovalRepository programMentorRemovalRepository;
 	private final MentorshipRequestRepository mentorshipRequestRepository;
 
@@ -76,6 +85,10 @@ public class ProgramMentorRemovalService {
 		// Deleted, not marked: every reader of the pool already takes "no row" as "not in the program", and
 		// "Programa ata" simply makes a new one.
 		programMentorRepository.delete(membership);
+		// The signup link the mentor once joined with belonged to that membership; left behind, it would make a
+		// later request to join look invited.
+		programMentorInviteRepository.findByProgramIdAndMentorId(programId, mentorId)
+				.ifPresent(programMentorInviteRepository::delete);
 		List<MentorshipRequest> withdrawn = withdrawOpenRequests(mentor, program);
 		ProgramMentorRemoval removal = programMentorRemovalRepository.save(new ProgramMentorRemoval(
 				mentorId, programId, admin.getId(), Instant.now(), membership.getCreatedAt()));
@@ -92,10 +105,7 @@ public class ProgramMentorRemovalService {
 	 */
 	private List<MentorshipRequest> withdrawOpenRequests(AppUser mentor, Program program) {
 		List<MentorshipRequest> open = mentorshipRequestRepository
-				.findByMentorIdAndProgramIdOrderByCreatedAtDesc(mentor.getId(), program.getId())
-				.stream()
-				.filter(request -> request.getStatus().isOpen())
-				.toList();
+				.findByMentorAndProgramForUpdate(mentor.getId(), program.getId(), OPEN_REQUESTS);
 		open.forEach(MentorshipRequest::withdraw);
 		return mentorshipRequestRepository.saveAll(open);
 	}
