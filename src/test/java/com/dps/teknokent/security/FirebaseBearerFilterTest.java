@@ -335,6 +335,42 @@ class FirebaseBearerFilterTest {
         }
     }
 
+    // The read takes its actor from the token, so the coordinator's own token may reach it and be counted
+    // against their own parse budget. Nothing else under /api/coordinator opens up.
+    @Test
+    void aTokenReachesTheWeeklyProgramReadAndNoOtherCoordinatorPath() throws Exception {
+        AppUser coordinator = user(UserAccountStatus.APPROVED);
+        coordinator.setRole(UserRole.COORDINATOR);
+        signsInAs(coordinator);
+        String read = "/api/coordinator/programs/" + OTHER_USER_ID + "/weekly-program/read";
+
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(request("POST", read, "Bearer good"), new MockHttpServletResponse(), chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        assertThat(((AppUserPrincipal) principal).id()).isEqualTo(USER_ID);
+        SecurityContextHolder.clearContext();
+
+        for (String[] call : new String[][] {
+                { "GET", read },
+                { "POST", read + "/extra" },
+                { "POST", "/api/coordinator/programs/not-an-id/weekly-program/read" },
+                { "PUT", "/api/coordinator/programs/" + OTHER_USER_ID + "/weekly-program" },
+                { "POST", "/api/coordinator/programs/syllabus/phases" },
+                { "GET", "/api/coordinator/programs" },
+                { "PATCH", "/api/coordinator/programs/" + OTHER_USER_ID } }) {
+            MockHttpServletResponse refused = new MockHttpServletResponse();
+            MockFilterChain stopped = new MockFilterChain();
+
+            filter.doFilter(request(call[0], call[1], "Bearer good"), refused, stopped);
+
+            assertThat(refused.getStatus()).as(call[0] + " " + call[1]).isEqualTo(403);
+            assertThat(stopped.getRequest()).isNull();
+            SecurityContextHolder.clearContext();
+        }
+    }
+
     // Endpoints off the browser's own paths trust ids sent in the request, so a token, even an
     // admin's, must not reach them directly; the proxy sets identity from its session instead.
     @Test

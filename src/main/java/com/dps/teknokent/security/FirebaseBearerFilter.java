@@ -48,6 +48,13 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	 */
 	private static final Pattern USER_DELETION_PATH = Pattern.compile(
 			"/api/admin/users/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/delete");
+	/**
+	 * Reading a weekly program PDF takes its actor from the token, so the coordinator's own token may reach it
+	 * and the read counts against that person's parse budget. The save and every other coordinator path stay
+	 * on the proxy.
+	 */
+	private static final Pattern WEEKLY_PROGRAM_READ_PATH = Pattern.compile(
+			"/api/coordinator/programs/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/weekly-program/read");
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
@@ -193,6 +200,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				|| uri.startsWith(NOTIFICATIONS_PATH + "/")
 				|| uri.startsWith(ASSISTANT_PATH_PREFIX)
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && USER_DELETION_PATH.matcher(uri).matches())
+				|| ("POST".equalsIgnoreCase(request.getMethod()) && WEEKLY_PROGRAM_READ_PATH.matcher(uri).matches())
 				|| isOwnMentorProfileUpdate(request, user)
 				|| isOwnUserProfileUpdate(request, user);
 	}
