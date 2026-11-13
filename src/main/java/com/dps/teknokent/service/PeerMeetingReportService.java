@@ -311,7 +311,7 @@ public class PeerMeetingReportService {
 		return missing;
 	}
 
-	private PeerMeetingReportResponse response(AppUser mentor, Meeting meeting, PeerMeetingReport report) {
+	PeerMeetingReportResponse response(AppUser mentor, Meeting meeting, PeerMeetingReport report) {
 		AppUser mentee = meeting.getMentorshipRequest().getRequester();
 		PeerReportStatus status = report.getStatus();
 		return new PeerMeetingReportResponse(

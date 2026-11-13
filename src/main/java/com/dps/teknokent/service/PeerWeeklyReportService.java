@@ -161,7 +161,7 @@ public class PeerWeeklyReportService {
 				byMentee.values().stream().map(MenteeTally::outcome).toList());
 	}
 
-	private PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report) {
+	PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report) {
 		PeerReportStatus status = report == null ? null : report.getStatus();
 		boolean open = status == null || status.editable();
 		PeerWeeklySummary summary = !open && report.getSummarySnapshot() != null

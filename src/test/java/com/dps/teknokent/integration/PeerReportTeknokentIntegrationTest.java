@@ -20,7 +20,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 
-/** The Teknokent deployment has no peer mentoring: every report endpoint answers 404, with or without credentials. */
+/** The Teknokent deployment has no peer mentoring: every report and review endpoint answers 404, signed in or not. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "app.edition=TEKNOKENT")
@@ -51,7 +51,15 @@ class PeerReportTeknokentIntegrationTest {
 				delete(base + "/activities/{id}", id).param("actorId", actorId),
 				get(base + "/weeks/{week}", "2026-11-09").param("actorId", actorId),
 				put(base + "/weeks/{week}", "2026-11-09").contentType(MediaType.APPLICATION_JSON).content(actor),
-				post(base + "/weeks/{week}/submit", "2026-11-09").param("actorId", actorId));
+				post(base + "/weeks/{week}/submit", "2026-11-09").param("actorId", actorId),
+				get(base + "/review").param("actorId", actorId),
+				get(base + "/review/meetings/{id}", id).param("actorId", actorId),
+				get(base + "/review/days/{id}", id).param("actorId", actorId),
+				get(base + "/review/weeks/{id}", id).param("actorId", actorId),
+				post(base + "/review/meetings/{id}/approve", id).contentType(MediaType.APPLICATION_JSON).content(actor),
+				post(base + "/review/days/{id}/revision", id).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"actorId\":\"" + actorId + "\",\"note\":\"x\"}"),
+				post(base + "/review/weeks/{id}/approve", id).contentType(MediaType.APPLICATION_JSON).content(actor));
 		for (AbstractMockHttpServletRequestBuilder<?> request : requests) {
 			mockMvc.perform(request).andExpect(status().isNotFound());
 			mockMvc.perform(request.with(httpBasic("test", "test"))).andExpect(status().isNotFound());

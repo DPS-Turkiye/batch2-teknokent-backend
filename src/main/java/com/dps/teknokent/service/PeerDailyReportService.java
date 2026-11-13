@@ -192,7 +192,7 @@ public class PeerDailyReportService {
 		}
 	}
 
-	private PeerDailyReportResponse response(AppUser mentor, LocalDate date, PeerDailyReport report) {
+	PeerDailyReportResponse response(AppUser mentor, LocalDate date, PeerDailyReport report) {
 		List<Meeting> meetings = meetingsOf(mentor, date);
 		Map<UUID, PeerMeetingReport> reports = meetingReports.reportsFor(mentor, meetings);
 		List<PeerReportMeetingResponse> rows = meetingReports.rows(mentor, meetings);
