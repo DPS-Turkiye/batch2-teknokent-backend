@@ -72,8 +72,7 @@ public class StudentProfileCompletionService {
 		Set<PeerTopicCategory> active = peerMentoringService.activeForStudent(studentId);
 		return studentInterestRepository.findById(studentId)
 				.map(saved -> new AdviseeProfileResponse(
-						new AdviseeProfileResponse.Interests(
-								saved.getTopics().stream().filter(active::contains).toList(),
+						new AdviseeProfileResponse.Interests(visibleTopics(saved, active),
 								List.copyOf(saved.getSubtopics())),
 						saved.getGoal()))
 				.orElse(AdviseeProfileResponse.EMPTY);
@@ -87,10 +86,15 @@ public class StudentProfileCompletionService {
 
 	private static StudentProfileCompletionResponse toResponse(StudentInterest interest, Set<PeerTopicCategory> active) {
 		return new StudentProfileCompletionResponse(
-				interest.getTopics().stream().filter(active::contains).toList(),
+				visibleTopics(interest, active),
 				List.copyOf(interest.getSubtopics()),
 				interest.getGoal(),
 				interest.isCompleted(),
 				interest.isSkipped());
+	}
+
+	/** What Profilim shows, to the student and their advisor alike: only topics still active in their program. */
+	private static List<PeerTopicCategory> visibleTopics(StudentInterest interest, Set<PeerTopicCategory> active) {
+		return interest.getTopics().stream().filter(active::contains).toList();
 	}
 }
