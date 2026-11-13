@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -145,7 +146,8 @@ class OfficeHoursBookingServiceTest {
         assertThat(response.status()).isEqualTo(OfficeHoursRequestStatus.PENDING);
         assertThat(response.topic()).isEqualTo("Ödev 2 hakkında");
         assertThat(response.expectedOutcome()).isNull();
-        assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);
+        assertThat(response.preferredSlots()).containsExactly(TUESDAY_2PM, TUESDAY_3PM);        // The Moodle path takes the academic's lock too: one request to them at a time, whichever way it comes.
+        verify(userRepository).findForUpdate(ACADEMIC);
     }
 
     @Test
@@ -367,6 +369,23 @@ class OfficeHoursBookingServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThatThrownBy(() -> service.withdraw(STUDENT, COURSE, REQUEST))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void aTimeAnotherOpenRequestHoldsIsNotAskedForOrOfferedAgain() {
+        enrolled(STUDENT, OfficeHoursRole.STUDENT);
+        enrolled(ACADEMIC, OfficeHoursRole.INSTRUCTOR);
+        Instant held = Instant.parse("2026-11-10T11:00:00Z");
+        when(slotService.heldTimes(ACADEMIC, null)).thenReturn(Set.of(held));
+
+        assertThatThrownBy(() -> service.create(STUDENT, COURSE, new CreateOfficeHoursRequest(
+                ACADEMIC, "Ödev 2", null, List.of(TUESDAY_2PM)))).isInstanceOf(ConflictException.class);
+
+        existing(OfficeHoursRequestStatus.PENDING);
+        when(slotService.heldTimes(ACADEMIC, REQUEST)).thenReturn(Set.of(held));
+        assertThatThrownBy(() -> service.decide(ACADEMIC, COURSE, REQUEST, new DecideOfficeHoursRequest(
+                OfficeHoursRequestStatus.COUNTER_PROPOSED, null, null, List.of(TUESDAY_2PM))))
+                .isInstanceOf(ConflictException.class);
         verify(requestRepository, never()).saveAndFlush(any());
     }
 
@@ -380,7 +399,7 @@ class OfficeHoursBookingServiceTest {
         when(requestRepository.findByCourseIdAndInstructorIdOrderByCreatedAtDesc(COURSE, ACADEMIC))
                 .thenReturn(List.of(request));
         // One look at the calendar per academic: the 14:00 slot is 20 minutes; 15:00 is no slot, so the default.
-        when(slotService.openSlots(ACADEMIC)).thenReturn(
+        when(slotService.calendarSlots(ACADEMIC)).thenReturn(
                 List.of(new OfficeHoursSlotService.Slot(Instant.parse("2026-11-10T11:00:00Z"), 20)));
         when(slotService.defaultMeetingMinutes(ACADEMIC)).thenReturn(45);
 
