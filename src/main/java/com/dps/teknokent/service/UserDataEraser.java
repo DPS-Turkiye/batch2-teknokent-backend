@@ -376,7 +376,10 @@ class UserDataEraser {
 		update("delete from AppUserIdentity i where i.user.id = :id", "id", id);
 		if (!firebaseUids.isEmpty()) {
 			update("delete from OnboardingDraft d where d.firebaseUid in :uids", "uids", firebaseUids);
+			update("delete from DataProcessingConsent c where c.consenterFirebaseUid in :uids", "uids", firebaseUids);
 		}
+		// The consent records name the person, so they go with the account, like the profile they were given for.
+		update("delete from DataProcessingConsent c where c.consenterUserId = :id or c.subjectUserId = :id", "id", id);
 
 		update("delete from MentorAvailabilitySlot s where s.mentor.id = :id", "id", id);
 		update("delete from MentorAvailabilityException e where e.mentor.id = :id", "id", id);
