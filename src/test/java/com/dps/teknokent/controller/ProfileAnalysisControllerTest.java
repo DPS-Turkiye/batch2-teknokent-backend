@@ -29,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.AiFeature;
+import com.dps.teknokent.domain.ConsentAnswer;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.dps.teknokent.exception.AiFeatureDisabledException;
@@ -45,6 +46,8 @@ class ProfileAnalysisControllerTest {
 
         @MockitoBean
         private ProfileAnalysisService profileAnalysisService;
+
+        private static final ConsentAnswer CONSENT = new ConsentAnswer(true, "cv-parsing-2026-11-13");
 
         @Test
         void requiresAuthenticationForLatest() throws Exception {
@@ -108,7 +111,7 @@ class ProfileAnalysisControllerTest {
 
         @Test
         void aSwitchedOffParseIsRefusedWithATypedCodeNotAServerError() throws Exception {
-                when(profileAnalysisService.parsePreview(eq("individual_mentee"), eq(true), eq("auto"), any()))
+                when(profileAnalysisService.parsePreview(eq("individual_mentee"), eq(CONSENT), eq("auto"), any()))
                                 .thenThrow(new AiFeatureDisabledException(AiFeature.PROFILE_PARSING));
 
                 mockMvc.perform(multipart("/api/profile-analyses/preview")
@@ -118,6 +121,7 @@ class ProfileAnalysisControllerTest {
                                                 "application/pdf",
                                                 "dummy pdf bytes".getBytes(StandardCharsets.UTF_8)))
                                 .param("consentAccepted", "true")
+                                .param("consentTextVersion", "cv-parsing-2026-11-13")
                                 .with(user("test-user")))
                                 .andExpect(status().isForbidden())
                                 .andExpect(jsonPath("$.code").value("AI_FEATURE_DISABLED"))
@@ -126,7 +130,7 @@ class ProfileAnalysisControllerTest {
 
         @Test
         void anOrdinaryErrorCarriesNoCode() throws Exception {
-                when(profileAnalysisService.parsePreview(eq("individual_mentee"), eq(false), eq("auto"), any()))
+                when(profileAnalysisService.parsePreview(eq("individual_mentee"), eq(new ConsentAnswer(false, null)), eq("auto"), any()))
                                 .thenThrow(new InvalidRequestException("Consent required."));
 
                 mockMvc.perform(multipart("/api/profile-analyses/preview")
@@ -149,7 +153,7 @@ class ProfileAnalysisControllerTest {
                                 eq(organizationId),
                                 eq((UUID) null),
                                 eq("mentee"),
-                                eq(true),
+                                eq(CONSENT),
                                 eq("auto"),
                                 any())).thenReturn(new ProfileAnalysisResponse(
                                                 analysisId,
@@ -173,6 +177,7 @@ class ProfileAnalysisControllerTest {
                                 .param("organizationId", organizationId.toString())
                                 .param("profileType", "mentee")
                                 .param("consentAccepted", "true")
+                                .param("consentTextVersion", "cv-parsing-2026-11-13")
                                 .param("ocrMode", "auto")
                                 .with(user("test-user")))
                                 .andExpect(status().isCreated())
@@ -229,11 +234,12 @@ class ProfileAnalysisControllerTest {
         void parsesAStoredCvForTheCaller() throws Exception {
                 UUID documentId = UUID.fromString("00000000-0000-0000-0000-000000000301");
                 when(profileAnalysisService.parseStoredCvPreview(
-                                any(), eq(documentId), eq("individual_mentee"), eq(true), eq("auto")))
+                                any(), eq(documentId), eq("individual_mentee"), eq(CONSENT), eq("auto")))
                                 .thenReturn(java.util.Map.of("current_role", "Ürün Yöneticisi"));
 
                 mockMvc.perform(post("/api/profile-analyses/preview/documents/{id}", documentId)
                                 .param("consentAccepted", "true")
+                                .param("consentTextVersion", "cv-parsing-2026-11-13")
                                 .with(user("test-user")))
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.current_role").value("Ürün Yöneticisi"));

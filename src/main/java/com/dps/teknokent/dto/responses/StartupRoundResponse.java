@@ -12,10 +12,12 @@ public record StartupRoundResponse(
 		String name,
 		StartupStage stage,
 		LocalDate startsOn,
-		LocalDate endsOn) {
+		LocalDate endsOn,
+		UUID phaseId) {
 
-	public static StartupRoundResponse fromEntity(StartupRound round) {
+	/** {@code phaseId}: the program phase the round falls in, or null. */
+	public static StartupRoundResponse fromEntity(StartupRound round, UUID phaseId) {
 		return new StartupRoundResponse(round.getId(), round.getTitle(), round.getName(), round.getStage(),
-				round.getStartsOn(), round.getEndsOn());
+				round.getStartsOn(), round.getEndsOn(), phaseId);
 	}
 }

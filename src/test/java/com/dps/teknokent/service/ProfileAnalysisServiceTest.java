@@ -13,6 +13,8 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.AiFeature;
+import com.dps.teknokent.domain.ConsentAnswer;
+import com.dps.teknokent.domain.ProcessingConsentSource;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.ProfileAnalysis;
@@ -32,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -57,6 +60,11 @@ class ProfileAnalysisServiceTest {
 	private MentorRecommendationService mentorRecommendationService;
 	@Mock
 	private DocumentService documentService;
+	@Mock
+	private DataProcessingConsentService consents;
+
+	private static final ConsentAnswer CONSENT = new ConsentAnswer(true, "cv-parsing-2026-11-13");
+	private static final ConsentAnswer REFUSED = new ConsentAnswer(false, null);
 
 	@Spy
 	private AiFeatures aiFeatures = TestAiFeatures.allOn();
@@ -74,7 +82,7 @@ class ProfileAnalysisServiceTest {
 		switchOffProfileParsing();
 
 		assertThatThrownBy(() -> profileAnalysisService.parse(
-				UUID.randomUUID(), null, "mentee", true, "auto", cvPdf()))
+				UUID.randomUUID(), null, "mentee", CONSENT, "auto", cvPdf()))
 				.isInstanceOf(AiFeatureDisabledException.class);
 		verifyNoInteractions(documentService, nativeProfileParserService, profileAnalysisRepository);
 	}
@@ -83,7 +91,7 @@ class ProfileAnalysisServiceTest {
 	void aSwitchedOffPreviewNeverReachesTheParser() {
 		switchOffProfileParsing();
 
-		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf()))
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", CONSENT, "auto", cvPdf()))
 				.isInstanceOf(AiFeatureDisabledException.class);
 		verifyNoInteractions(nativeProfileParserService);
 	}
@@ -93,7 +101,7 @@ class ProfileAnalysisServiceTest {
 		switchOffProfileParsing();
 
 		assertThatThrownBy(() -> profileAnalysisService.parseStoredCvPreview(
-				UUID.randomUUID(), UUID.randomUUID(), "individual_mentee", true, "auto"))
+				UUID.randomUUID(), UUID.randomUUID(), "individual_mentee", CONSENT, "auto"))
 				.isInstanceOf(AiFeatureDisabledException.class);
 		verifyNoInteractions(documentService, nativeProfileParserService);
 	}
@@ -121,7 +129,7 @@ class ProfileAnalysisServiceTest {
 	void parsePreviewPersistsNothing() {
 		stubParser("{\"current_role\":\"Ürün Yöneticisi\"}");
 
-		profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf());
+		profileAnalysisService.parsePreview("individual_mentee", CONSENT, "auto", cvPdf());
 
 		verifyNoInteractions(profileAnalysisRepository, documentService, organizationRepository, appUserRepository);
 	}
@@ -130,7 +138,7 @@ class ProfileAnalysisServiceTest {
 	void parsePreviewReturnsTheStructuredProfile() {
 		stubParser("{\"current_role\":\"Ürün Yöneticisi\",\"professional_functions\":[\"Ürün\",\"Analitik\"]}");
 
-		Map<String, Object> profile = profileAnalysisService.parsePreview("individual_mentee", true, "auto", cvPdf());
+		Map<String, Object> profile = profileAnalysisService.parsePreview("individual_mentee", CONSENT, "auto", cvPdf());
 
 		assertThat(profile).containsEntry("current_role", "Ürün Yöneticisi");
 		assertThat(profile.get("professional_functions"))
@@ -140,7 +148,7 @@ class ProfileAnalysisServiceTest {
 
 	@Test
 	void parsePreviewRequiresConsent() {
-		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", false, "auto", cvPdf()))
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", REFUSED, "auto", cvPdf()))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("consent");
 		verifyNoInteractions(nativeProfileParserService);
@@ -150,7 +158,7 @@ class ProfileAnalysisServiceTest {
 	void parsePreviewRejectsANonPdf() {
 		MockMultipartFile notPdf = new MockMultipartFile("file", "cv.docx", "application/msword", "x".getBytes());
 
-		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", true, "auto", notPdf))
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", CONSENT, "auto", notPdf))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("PDF");
 		verifyNoInteractions(nativeProfileParserService);
@@ -158,7 +166,7 @@ class ProfileAnalysisServiceTest {
 
 	@Test
 	void parsePreviewRejectsAnUnknownProfileType() {
-		assertThatThrownBy(() -> profileAnalysisService.parsePreview("investor", true, "auto", cvPdf()))
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("investor", CONSENT, "auto", cvPdf()))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("mentee");
 		verifyNoInteractions(nativeProfileParserService);
@@ -172,7 +180,7 @@ class ProfileAnalysisServiceTest {
 						parsed, objectMapper.createObjectNode(), objectMapper.createObjectNode()));
 		when(technologyInferenceService.enrich(any())).thenAnswer(call -> call.getArgument(0));
 
-		assertThat(profileAnalysisService.parsePreview("mentor", true, "auto", cvPdf()))
+		assertThat(profileAnalysisService.parsePreview("mentor", CONSENT, "auto", cvPdf()))
 				.containsEntry("current_company", "Looply");
 	}
 
@@ -180,7 +188,7 @@ class ProfileAnalysisServiceTest {
 	@Test
 	void parseStillRefusesAMentorProfile() {
 		assertThatThrownBy(() -> profileAnalysisService.parse(
-				null, null, "mentor", true, "auto", cvPdf()))
+				null, null, "mentor", CONSENT, "auto", cvPdf()))
 				.isInstanceOf(InvalidRequestException.class);
 		verifyNoInteractions(nativeProfileParserService, documentService);
 	}
@@ -193,7 +201,7 @@ class ProfileAnalysisServiceTest {
 		stubParser("{\"current_role\":\"Ürün Yöneticisi\"}");
 
 		Map<String, Object> profile = profileAnalysisService.parseStoredCvPreview(
-				caller, documentId, "individual_mentee", true, "auto");
+				caller, documentId, "individual_mentee", CONSENT, "auto");
 
 		assertThat(profile).containsEntry("current_role", "Ürün Yöneticisi");
 		verifyNoInteractions(profileAnalysisRepository, organizationRepository, appUserRepository);
@@ -206,7 +214,7 @@ class ProfileAnalysisServiceTest {
 		when(documentService.readOwnCv(caller, documentId)).thenReturn("PKword".getBytes());
 
 		assertThatThrownBy(() -> profileAnalysisService.parseStoredCvPreview(
-				caller, documentId, "individual_mentee", true, "auto"))
+				caller, documentId, "individual_mentee", CONSENT, "auto"))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("PDF");
 		verifyNoInteractions(nativeProfileParserService);
@@ -215,7 +223,7 @@ class ProfileAnalysisServiceTest {
 	@Test
 	void parseStoredCvPreviewRequiresConsentBeforeReadingTheFile() {
 		assertThatThrownBy(() -> profileAnalysisService.parseStoredCvPreview(
-				UUID.randomUUID(), UUID.randomUUID(), "individual_mentee", false, "auto"))
+				UUID.randomUUID(), UUID.randomUUID(), "individual_mentee", REFUSED, "auto"))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("consent");
 		verifyNoInteractions(documentService, nativeProfileParserService);
@@ -223,7 +231,7 @@ class ProfileAnalysisServiceTest {
 
 	@Test
 	void parsePreviewRejectsAnUnknownOcrMode() {
-		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", true, "sometimes", cvPdf()))
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", CONSENT, "sometimes", cvPdf()))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("OCR mode");
 		verifyNoInteractions(nativeProfileParserService);
@@ -258,7 +266,7 @@ class ProfileAnalysisServiceTest {
 	@Test
 	void parseRequiresExplicitConsent() {
 		assertThatThrownBy(() -> profileAnalysisService.parse(
-				UUID.randomUUID(), null, "mentee", false, "auto", null))
+				UUID.randomUUID(), null, "mentee", REFUSED, "auto", null))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("consent");
 	}
@@ -277,7 +285,7 @@ class ProfileAnalysisServiceTest {
 
 		MockMultipartFile file = new MockMultipartFile(
 				"file", "pitch.pdf", "application/pdf", "%PDF-1.4\n1 0 obj\n(Acme)\nendobj\n%%EOF".getBytes());
-		profileAnalysisService.parse(organizationId, null, "mentee", true, "auto", file);
+		profileAnalysisService.parse(organizationId, null, "mentee", CONSENT, "auto", file);
 
 		verify(documentService).store(
 				eq(null),
@@ -421,5 +429,86 @@ class ProfileAnalysisServiceTest {
 				.hasMessageContaining("not a member");
 		verify(profileAnalysisRepository, org.mockito.Mockito.never())
 				.findFirstByAppUserIdOrderByCreatedAtDesc(any());
+	}
+
+	@Test
+	void aPreviewRecordsTheConsentBeforeTheCvGoesToTheParser() {
+		stubParser("{\"current_role\":\"Ürün Yöneticisi\"}");
+
+		profileAnalysisService.parsePreview("individual_mentee", CONSENT, "auto", cvPdf());
+
+		var order = inOrder(consents, nativeProfileParserService);
+		order.verify(consents).record(CONSENT, ProcessingConsentSource.PREVIEW_UPLOAD, null);
+		order.verify(nativeProfileParserService).parse(any(), eq("individual_mentee"), eq("auto"));
+	}
+
+	@Test
+	void aStoredCvPreviewRecordsTheConsentForTheCaller() throws Exception {
+		UUID caller = UUID.randomUUID();
+		UUID documentId = UUID.randomUUID();
+		when(documentService.readOwnCv(caller, documentId)).thenReturn(cvPdf().getBytes());
+		stubParser("{\"current_role\":\"Ürün Yöneticisi\"}");
+
+		profileAnalysisService.parseStoredCvPreview(caller, documentId, "individual_mentee", CONSENT, "auto");
+
+		var order = inOrder(consents, nativeProfileParserService);
+		order.verify(consents).record(CONSENT, ProcessingConsentSource.PREVIEW_STORED_CV, caller);
+		order.verify(nativeProfileParserService).parse(any(), eq("individual_mentee"), eq("auto"));
+	}
+
+	@Test
+	void aSavedAnalysisRecordsTheConsentForThePersonTheProfileIsAbout() throws Exception {
+		UUID organizationId = UUID.randomUUID();
+		when(organizationRepository.existsById(organizationId)).thenReturn(true);
+		JsonNode empty = objectMapper.readTree("{}");
+		when(nativeProfileParserService.parse(any(), eq("mentee"), eq("auto")))
+				.thenReturn(new NativeProfileParserService.ParseResult(
+						objectMapper.readTree("{\"startup_name\":\"Acme\"}"), empty, empty));
+		when(technologyInferenceService.enrich(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		when(profileAnalysisRepository.save(any(ProfileAnalysis.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		profileAnalysisService.parse(organizationId, null, "mentee", CONSENT, "auto", cvPdf());
+
+		var order = inOrder(consents, nativeProfileParserService);
+		order.verify(consents).record(CONSENT, ProcessingConsentSource.PROFILE_ANALYSIS, null);
+		order.verify(nativeProfileParserService).parse(any(), eq("mentee"), eq("auto"));
+	}
+
+	@Test
+	void aConsentWithoutItsTextVersionIsRefusedBeforeAnythingIsReadOrRecorded() {
+		ConsentAnswer unversioned = new ConsentAnswer(true, null);
+
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", unversioned, "auto", cvPdf()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("consentTextVersion");
+		assertThatThrownBy(() -> profileAnalysisService.parseStoredCvPreview(
+				UUID.randomUUID(), UUID.randomUUID(), "individual_mentee", unversioned, "auto"))
+				.isInstanceOf(InvalidRequestException.class);
+		verifyNoInteractions(consents, documentService, nativeProfileParserService);
+	}
+
+	@Test
+	void aRefusedConsentIsNeverRecorded() {
+		assertThatThrownBy(() -> profileAnalysisService.parsePreview("individual_mentee", REFUSED, "auto", cvPdf()))
+				.isInstanceOf(InvalidRequestException.class);
+		verifyNoInteractions(consents);
+	}
+
+	// The consent names a subject, so it is only kept once that person is known to belong to the organization.
+	@Test
+	void noConsentIsRecordedForSomeoneOutsideTheOrganization() {
+		UUID organizationId = UUID.randomUUID();
+		UUID outsider = UUID.randomUUID();
+		when(organizationRepository.existsById(organizationId)).thenReturn(true);
+		AppUser stranger = new AppUser();
+		stranger.setId(outsider);
+		when(appUserRepository.findById(outsider)).thenReturn(Optional.of(stranger));
+
+		assertThatThrownBy(() -> profileAnalysisService.parse(
+				organizationId, outsider, "mentee", CONSENT, "auto", cvPdf()))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not a member");
+		verifyNoInteractions(consents, nativeProfileParserService, documentService);
 	}
 }

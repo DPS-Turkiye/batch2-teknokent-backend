@@ -83,6 +83,49 @@ class InstitutionDirectoryServiceTest {
 		assertThat(service.adviseesOf(studentId)).isEmpty();
 	}
 
+	@Test
+	void anAcademicianAdvisesOnlyTheStudentsTheRecordGivesThem() {
+		UUID academicianId = UUID.randomUUID();
+		UUID adviseeId = UUID.randomUUID();
+		UUID otherStudentId = UUID.randomUUID();
+		when(people.findFirstByUserIdOrderBySyncedAtDesc(academicianId))
+				.thenReturn(Optional.of(person("a1", "Ahmet", Set.of(IdentityKind.ACADEMIC), academicianId)));
+		when(people.findFirstByUserIdOrderBySyncedAtDesc(adviseeId))
+				.thenReturn(Optional.of(person("s1", "Ayşe", Set.of(IdentityKind.STUDENT), adviseeId)));
+		when(people.findFirstByUserIdOrderBySyncedAtDesc(otherStudentId))
+				.thenReturn(Optional.of(person("s2", "Can", Set.of(IdentityKind.STUDENT), otherStudentId)));
+		when(advising.existsByInstitutionAndStudentPersistentIdAndAdvisorPersistentId("odtu", "s1", "a1"))
+				.thenReturn(true);
+
+		assertThat(service.advises(academicianId, adviseeId)).isTrue();
+		assertThat(service.advises(academicianId, otherStudentId)).isFalse();
+		assertThat(service.advises(academicianId, UUID.randomUUID())).isFalse();
+	}
+
+	@Test
+	void noOneButASignedInAcademicianOfTheSameInstitutionAdvises() {
+		UUID studentId = UUID.randomUUID();
+		UUID adviseeId = UUID.randomUUID();
+		UUID elsewhereId = UUID.randomUUID();
+		when(people.findFirstByUserIdOrderBySyncedAtDesc(studentId))
+				.thenReturn(Optional.of(person("a1", "Ayşe", Set.of(IdentityKind.STUDENT), studentId)));
+		when(people.findFirstByUserIdOrderBySyncedAtDesc(adviseeId))
+				.thenReturn(Optional.of(person("s1", "Can", Set.of(IdentityKind.STUDENT), adviseeId)));
+		InstitutionPerson elsewhere = new InstitutionPerson("other", "a1");
+		elsewhere.setFullName("Ahmet");
+		elsewhere.setKinds(Set.of(IdentityKind.ACADEMIC));
+		elsewhere.setSyncedAt(Instant.now());
+		when(people.findFirstByUserIdOrderBySyncedAtDesc(elsewhereId)).thenReturn(Optional.of(elsewhere));
+		when(advising.existsByInstitutionAndStudentPersistentIdAndAdvisorPersistentId("odtu", "s1", "a1"))
+				.thenReturn(true);
+
+		// A student whose persistent id happens to match an advisor's is still no academician.
+		assertThat(service.advises(studentId, adviseeId)).isFalse();
+		// The same persistent id at another institution is someone else.
+		assertThat(service.advises(elsewhereId, adviseeId)).isFalse();
+		assertThat(service.advises(UUID.randomUUID(), adviseeId)).isFalse();
+	}
+
 	private static InstitutionPerson person(String persistentId, String name, Set<IdentityKind> kinds, UUID userId) {
 		InstitutionPerson person = new InstitutionPerson("odtu", persistentId);
 		person.setFullName(name);

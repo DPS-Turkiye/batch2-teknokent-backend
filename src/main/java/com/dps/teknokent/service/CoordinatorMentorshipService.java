@@ -31,7 +31,6 @@ import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipGoal;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Program;
-import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
@@ -83,13 +82,11 @@ public class CoordinatorMentorshipService {
 		List<Program> scope = programService.scopeOf(actorId, managed, programId);
 		Snapshot snapshot = programService.snapshot(scope);
 		Context context = context(scope, snapshot);
-		// Each mentorship is listed once, under the program it was made in. One made before V82 has no program
-		// and is listed under the first of the team's programs here, as before.
+		// Each mentorship is listed once, under the program it was made in, also after its team left that program.
+		// One made before V82 has no program and is listed under the first of the team's programs here, as before.
 		Set<UUID> listed = new HashSet<>();
 		return scope.stream()
-				.flatMap(program -> snapshot.startups().getOrDefault(program.getId(), List.of()).stream()
-						.flatMap(startup -> CoordinatorProgramService
-								.mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId()).stream())
+				.flatMap(program -> CoordinatorProgramService.programMentorships(snapshot, program).stream()
 						.filter(mentorship -> LISTED.contains(mentorship.getStatus()))
 						.filter(mentorship -> listed.add(mentorship.getId()))
 						.map(mentorship -> row(mentorship, program, snapshot, context)))
@@ -110,7 +107,7 @@ public class CoordinatorMentorshipService {
 		Context context = context(List.of(program), snapshot);
 		CoordinatorMentorshipResponse row = row(mentorship, program, snapshot, context);
 
-		List<Meeting> meetings = pairMeetings(mentorship, snapshot);
+		List<Meeting> meetings = pairMeetings(mentorship, program, snapshot);
 		List<Meeting> past = meetings.stream().filter(meeting -> isPast(meeting, snapshot.now())).toList();
 		List<Meeting> noted = past.stream().filter(meeting -> isNoted(meeting, context)).toList();
 		List<MentorshipGoal> goals = mentorshipGoalRepository.findByMentorshipIdOrderBySortOrderAscCreatedAtAsc(mentorship.getId());
@@ -170,7 +167,7 @@ public class CoordinatorMentorshipService {
 		UUID organizationId = mentorship.getOrganization().getId();
 		String pairKey = CoordinatorProgramService.pairKey(mentorId, organizationId);
 		Instant last = snapshot.lastMeetingByPair().get(pairKey);
-		List<Meeting> meetings = pairMeetings(mentorship, snapshot);
+		List<Meeting> meetings = pairMeetings(mentorship, program, snapshot);
 		Instant next = meetings.stream()
 				.filter(meeting -> meeting.getStatus() == MeetingStatus.SCHEDULED
 						&& meeting.getScheduledAt() != null
@@ -234,8 +231,8 @@ public class CoordinatorMentorshipService {
 	private Context context(List<Program> scope, Snapshot snapshot) {
 		Map<UUID, Program> programOf = new LinkedHashMap<>();
 		for (Program program : scope) {
-			for (ProgramStartup startup : snapshot.startups().getOrDefault(program.getId(), List.of())) {
-				programOf.putIfAbsent(startup.getOrganizationId(), program);
+			for (UUID organizationId : CoordinatorProgramService.activityTeams(snapshot, program)) {
+				programOf.putIfAbsent(organizationId, program);
 			}
 		}
 		if (programOf.isEmpty()) {
@@ -298,10 +295,12 @@ public class CoordinatorMentorshipService {
 		return new Scoped(mentorship, program);
 	}
 
-	private static List<Meeting> pairMeetings(Mentorship mentorship, Snapshot snapshot) {
+	/** The pair's meetings that count in the mentorship's program; a team can work with one mentor in two programs. */
+	private static List<Meeting> pairMeetings(Mentorship mentorship, Program program, Snapshot snapshot) {
 		UUID mentorId = mentorship.getMentor().getId();
 		return snapshot.meetingsByOrganization().getOrDefault(mentorship.getOrganization().getId(), List.of()).stream()
 				.filter(meeting -> meeting.getMentor() != null && meeting.getMentor().getId().equals(mentorId))
+				.filter(meeting -> CoordinatorProgramService.countsIn(meeting, program, snapshot))
 				.toList();
 	}
 

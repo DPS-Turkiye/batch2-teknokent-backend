@@ -26,7 +26,8 @@ public class OfficeHoursRequest {
 	@Id
 	private UUID id;
 
-	@Column(name = "course_id", nullable = false)
+	/** Empty for a request made from Menton, which belongs to no course. */
+	@Column(name = "course_id")
 	private UUID courseId;
 
 	@Column(name = "student_id", nullable = false)

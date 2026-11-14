@@ -18,12 +18,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MentorPoolStatus;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -63,6 +65,8 @@ class MentorPoolServiceTest {
 	private ProgramEligibilityService programEligibilityService;
 	@Mock
 	private BadgeService badgeService;
+	@Spy
+	private EditionService editionService = new EditionService("TEKNOKENT");
 
 	@InjectMocks
 	private MentorPoolService service;
@@ -197,6 +201,20 @@ class MentorPoolServiceTest {
 		Program finished = program();
 		finished.setStatus(ProgramStatus.COMPLETED);
 		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(finished));
+
+		assertThatThrownBy(() -> service.choosePrograms("uid-1", List.of(PROGRAM_ID)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(programMentorRepository, never()).save(any());
+	}
+
+	@Test
+	void onboardingRefusesAProgramOfTheOtherEdition() {
+		AppUser mentor = user(UUID.randomUUID(), UserRole.MENTOR, UserAccountStatus.PENDING);
+		when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(mentor));
+		Program peer = program();
+		peer.setStatus(ProgramStatus.ACTIVE);
+		peer.setProgramType(ProgramType.PEER_MENTORING);
+		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(peer));
 
 		assertThatThrownBy(() -> service.choosePrograms("uid-1", List.of(PROGRAM_ID)))
 				.isInstanceOf(InvalidRequestException.class);

@@ -47,6 +47,11 @@ public final class MeetingSlotTimes {
 		return (language == AppLanguage.EN ? FOR_PEOPLE_EN : FOR_PEOPLE).format(instant.atZone(APP_ZONE));
 	}
 
+	/** The other way round from {@link #parseMachineSlot}: "2026-11-24T14:00" in Turkey time; seconds are dropped. */
+	public static String formatMachineSlot(Instant instant) {
+		return MACHINE.format(instant.atZone(APP_ZONE));
+	}
+
 	public static Instant parseMachineSlot(String value) {
 		if (value == null || value.isBlank()) {
 			return null;

@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -19,11 +20,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.Edition;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.ProgramResponse;
@@ -63,6 +67,8 @@ class ProgramServiceTest {
 	private NotificationService notificationService;
 	@Mock
 	private ProgramEligibilityService programEligibilityService;
+	@Spy
+	private EditionService editionService = new EditionService("TEKNOKENT");
 
 	@InjectMocks
 	private ProgramService programService;
@@ -507,6 +513,48 @@ class ProgramServiceTest {
 		assertThatThrownBy(() -> programService.setStatus(COORDINATOR_ID, PROGRAM_ID, ProgramStatus.DRAFT))
 				.isInstanceOf(InvalidRequestException.class);
 		assertThat(program.getStatus()).isEqualTo(ProgramStatus.ACTIVE);
+	}
+
+	@Test
+	void createRefusesAStartupProgramInTheOdtuEdition() {
+		doReturn(Edition.ODTU).when(editionService).current();
+		AppUser admin = coordinator();
+		admin.setRole(UserRole.ADMIN);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(admin);
+
+		assertThatThrownBy(() -> programService.create(COORDINATOR_ID, "Seed 2026"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not available");
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void requestToJoinTreatsAProgramOfTheOtherEditionAsMissing() {
+		Program peer = program();
+		peer.setProgramType(ProgramType.PEER_MENTORING);
+		peer.setStatus(ProgramStatus.ACTIVE);
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(peer));
+
+		assertThatThrownBy(() -> programService.requestToJoin(MENTOR_ID, PROGRAM_ID))
+				.isInstanceOf(ResourceNotFoundException.class);
+		verify(programMentorRepository, never()).save(any());
+	}
+
+	@Test
+	void theSignupPickerListsOnlyThisEditionsOpenPrograms() {
+		Program startup = program();
+		startup.setStatus(ProgramStatus.ACTIVE);
+		Program peer = program();
+		peer.setId(UUID.randomUUID());
+		peer.setName("ODTÜ Akran");
+		peer.setProgramType(ProgramType.PEER_MENTORING);
+		peer.setStatus(ProgramStatus.ACTIVE);
+		when(programRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(peer, startup));
+
+		assertThat(programService.listNames()).extracting(name -> name.name()).containsExactly("Seed 2026");
+		doReturn(Edition.ODTU).when(editionService).current();
+		assertThat(programService.listNames()).extracting(name -> name.name()).containsExactly("ODTÜ Akran");
 	}
 
 	@Test

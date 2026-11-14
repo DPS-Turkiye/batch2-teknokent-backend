@@ -22,13 +22,15 @@ public record ProcessAssignmentResponse(
 		String submissionFilename,
 		String createdByName,
 		UserRole createdByRole,
-		Instant createdAt) {
+		Instant createdAt,
+		UUID phaseId) {
 
-	public static ProcessAssignmentResponse fromEntity(ActionItem item, String submissionFilename) {
+	/** {@code phaseId}: the program phase the Ödev belongs to, or null ("Fazsız görevler"). */
+	public static ProcessAssignmentResponse fromEntity(ActionItem item, String submissionFilename, UUID phaseId) {
 		AppUser creator = item.getCreatedBy();
 		return new ProcessAssignmentResponse(item.getId(), item.getRound() == null ? null : item.getRound().getId(),
 				item.getStage(), item.getTitle(), item.getDescription(), item.getStatus(), item.getDueDate(),
 				item.getSubmissionDocumentId(), submissionFilename, creator == null ? null : creator.getFullName(),
-				creator == null ? null : creator.getRole(), item.getCreatedAt());
+				creator == null ? null : creator.getRole(), item.getCreatedAt(), phaseId);
 	}
 }

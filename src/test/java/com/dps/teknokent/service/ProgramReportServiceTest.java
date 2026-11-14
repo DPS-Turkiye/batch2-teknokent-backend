@@ -32,6 +32,7 @@ import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingFeedback;
+import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
@@ -39,6 +40,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
@@ -55,6 +57,8 @@ class ProgramReportServiceTest {
 	private MeetingRepository meetingRepository;
 	@Mock
 	private MeetingFeedbackRepository meetingFeedbackRepository;
+	@Mock
+	private MentorshipRepository mentorshipRepository;
 	@Mock
 	private AppUserRepository appUserRepository;
 
@@ -96,13 +100,15 @@ class ProgramReportServiceTest {
 		startup.setProgramId(program.getId());
 		startup.setOrganizationId(UUID.randomUUID());
 		LocalDate from = LocalDate.now(MeetingSlotTimes.APP_ZONE).minusDays(10);
-		Meeting held = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(2)));
+		Organization team = team(startup.getOrganizationId());
+		Meeting held = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(2)), team);
+		Meeting cancelled = meeting(MeetingStatus.CANCELLED, Instant.now().minus(Duration.ofDays(1)), team);
+		Meeting beforeTheWindow = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(30)), team);
+		Meeting notYet = meeting(MeetingStatus.SCHEDULED, Instant.now().plus(Duration.ofDays(1)), team);
 		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of(startup));
-		when(meetingRepository.findHeldMeetingIdsOfProgram(
-				eq(program.getId()), eq(Set.of(startup.getOrganizationId())),
-				eq(from.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant()), any(Instant.class)))
-				.thenReturn(List.of(held.getId()));
+		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(Set.of(team.getId())))
+				.thenReturn(List.of(notYet, cancelled, held, beforeTheWindow));
 		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(List.of(held.getId()), UserRole.MENTEE))
 				.thenReturn(List.of(feedback(held, 4, 4, 4, 4)));
 
@@ -111,6 +117,49 @@ class ProgramReportServiceTest {
 		assertThat(ratings.heldMeetingCount()).isEqualTo(1);
 		assertThat(ratings.ratedMeetingCount()).isEqualTo(1);
 		assertThat(ratings.average()).isEqualTo(4.0);
+	}
+
+	// An admin moved the team to another program: its meetings with this program's mentor still count here, and
+	// the ones it has had since with its new program's mentor do not.
+	@Test
+	void countsAMeetingOfATeamThatLeftOnlyWhenItWasHeldInThisProgram() {
+		UUID actorId = UUID.randomUUID();
+		Program program = new Program();
+		program.setId(UUID.randomUUID());
+		Program newProgram = new Program();
+		newProgram.setId(UUID.randomUUID());
+		Organization moved = team(UUID.randomUUID());
+		AppUser oldMentor = mentor();
+		AppUser newMentor = mentor();
+		Mentorship here = mentorship(oldMentor, moved, program);
+		Mentorship there = mentorship(newMentor, moved, newProgram);
+		Meeting withOldMentor = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(3)), moved);
+		withOldMentor.setMentor(oldMentor);
+		Meeting withNewMentor = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(1)), moved);
+		withNewMentor.setMentor(newMentor);
+		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of());
+		when(mentorshipRepository.findTeamsWithMentorshipIn(List.of(program.getId())))
+				.thenReturn(List.of(new MentorshipRepository.ProgramTeam() {
+					@Override
+					public UUID getProgramId() {
+						return program.getId();
+					}
+
+					@Override
+					public UUID getOrganizationId() {
+						return moved.getId();
+					}
+				}));
+		when(mentorshipRepository.findByOrganizationIdIn(Set.of(moved.getId()))).thenReturn(List.of(here, there));
+		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(Set.of(moved.getId())))
+				.thenReturn(List.of(withNewMentor, withOldMentor));
+		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(List.of(withOldMentor.getId()), UserRole.MENTEE))
+				.thenReturn(List.of());
+
+		var ratings = service.meetingRatings(actorId, program.getId(), null);
+
+		assertThat(ratings.heldMeetingCount()).isEqualTo(1);
 	}
 
 	@Test
@@ -146,12 +195,12 @@ class ProgramReportServiceTest {
 		ProgramStartup startup = new ProgramStartup();
 		startup.setProgramId(program.getId());
 		startup.setOrganizationId(UUID.randomUUID());
-		Meeting held = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(1)));
+		Meeting held = meeting(
+				MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(1)), team(startup.getOrganizationId()));
 		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of(startup));
-		when(meetingRepository.findHeldMeetingIdsOfProgram(
-				eq(program.getId()), any(), eq(Instant.EPOCH), any(Instant.class)))
-				.thenReturn(List.of(held.getId()));
+		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(Set.of(startup.getOrganizationId())))
+				.thenReturn(List.of(held));
 		when(meetingFeedbackRepository.findByMeetingIdIn(any(), any())).thenReturn(Page.empty());
 
 		service.meetingFeedback(actorId, program.getId(), null, -3, 500);
@@ -284,6 +333,34 @@ class ProgramReportServiceTest {
 		meeting.setStatus(status);
 		meeting.setScheduledAt(scheduledAt);
 		return meeting;
+	}
+
+	private static Meeting meeting(MeetingStatus status, Instant scheduledAt, Organization team) {
+		Meeting meeting = meeting(status, scheduledAt);
+		meeting.setOrganization(team);
+		return meeting;
+	}
+
+	private static Organization team(UUID id) {
+		Organization team = new Organization();
+		team.setId(id);
+		return team;
+	}
+
+	private static AppUser mentor() {
+		AppUser mentor = new AppUser();
+		mentor.setId(UUID.randomUUID());
+		return mentor;
+	}
+
+	private static Mentorship mentorship(AppUser mentor, Organization team, Program program) {
+		Mentorship mentorship = new Mentorship();
+		mentorship.setId(UUID.randomUUID());
+		mentorship.setMentor(mentor);
+		mentorship.setOrganization(team);
+		mentorship.setProgram(program);
+		mentorship.setCreatedAt(Instant.now().minus(Duration.ofDays(20)));
+		return mentorship;
 	}
 
 	private static MeetingFeedback feedback(Meeting meeting, Integer... ratings) {

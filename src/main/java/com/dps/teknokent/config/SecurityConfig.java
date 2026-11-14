@@ -20,9 +20,14 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
+import com.dps.teknokent.domain.Edition;
+import com.dps.teknokent.filter.EditionPathFilter;
 import com.dps.teknokent.filter.RateLimitingFilter;
 import com.dps.teknokent.security.FirebaseBearerFilter;
+
+import tools.jackson.databind.json.JsonMapper;
 
 @Configuration
 @EnableWebSecurity
@@ -146,7 +151,9 @@ public class SecurityConfig {
 	@Bean
 	SecurityFilterChain securityFilterChain(
 			HttpSecurity http,
-			ObjectProvider<FirebaseBearerFilter> firebaseBearerFilter) throws Exception {
+			ObjectProvider<FirebaseBearerFilter> firebaseBearerFilter,
+			@Value("${app.edition:TEKNOKENT}") String edition,
+			JsonMapper jsonMapper) throws Exception {
 		http
 				.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -158,7 +165,9 @@ public class SecurityConfig {
 						.requestMatchers(PRE_ACCOUNT_PATHS).hasRole("REGISTERING")
 						.anyRequest().authenticated())
 				.httpBasic(Customizer.withDefaults())
-				.cors(Customizer.withDefaults());
+				.cors(Customizer.withDefaults())
+				// Not a bean: as one, Spring Boot would also register it as a servlet filter outside this chain.
+				.addFilterBefore(new EditionPathFilter(Edition.parse(edition), jsonMapper), CorsFilter.class);
 
 		FirebaseBearerFilter bearerFilter = firebaseBearerFilter.getIfAvailable();
 		if (bearerFilter != null) {

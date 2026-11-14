@@ -15,10 +15,13 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.domain.AppLanguage;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.OfficeHoursCourse;
 import com.dps.teknokent.entity.OfficeHoursMeeting;
 import com.dps.teknokent.entity.OfficeHoursRequest;
 import com.dps.teknokent.entity.OfficeHoursUser;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OfficeHoursCourseRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestRepository;
@@ -29,10 +32,10 @@ import com.dps.teknokent.util.Texts;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Office-hours people have no Menton account and so no in-app notifications: each step of a request reaches the
- * other side by e-mail, in the language Moodle launched them in. Mail is queued with the change and sent once it
- * commits ({@link OfficeHoursMailOutboxService}), and not at all for someone Moodle shared no e-mail address for. Links go to the Moodle course, since office hours open only
- * from there.
+ * Each step of a request reaches the other side by e-mail. Mail is queued with the change and sent once it commits
+ * ({@link OfficeHoursMailOutboxService}). A Moodle person gets it at the address and in the language Moodle launched
+ * them with, linking to the course; a Menton account (no course) at its own address and language, linking to its
+ * office hours in Menton. Nothing goes to someone with no address or a deleted account.
  */
 @Service
 @RequiredArgsConstructor
@@ -70,6 +73,7 @@ public class OfficeHoursMailService {
 	private final OfficeHoursCourseRepository courseRepository;
 	private final OfficeHoursRequestRepository requestRepository;
 	private final OfficeHoursMeetingRepository meetingRepository;
+	private final AppUserRepository appUserRepository;
 
 	/** Tells the side that did not act; {@code note} is their message, question, answer or reason, if any. */
 	public void requestChanged(OfficeHoursRequest request, Event event, String note) {
@@ -87,7 +91,8 @@ public class OfficeHoursMailService {
 			case MEETING -> meetingRepository.findByRequestId(request.getId())
 					.map(meeting -> List.of(meeting.getScheduledAt())).orElse(List.of());
 		};
-		compose(people.get(to), people.get(from), course(request), request.getTopic(), event.key, times, note)
+		compose(people.get(to), people.get(from), course(request), request.getTopic(), event.key, times, note,
+				event.toInstructor)
 				.ifPresent(mail -> outbox.enqueue(mail.to(), mail.subject(), mail.body()));
 	}
 
@@ -113,12 +118,13 @@ public class OfficeHoursMailService {
 		Map<UUID, OfficeHoursUser> people = people(request);
 		OfficeHoursUser to = people.get(meeting.getStudentId());
 		OfficeHoursUser from = people.get(meeting.getInstructorId());
-		if (side == Side.INSTRUCTOR) {
+		boolean toInstructor = side == Side.INSTRUCTOR;
+		if (toInstructor) {
 			to = people.get(meeting.getInstructorId());
 			from = people.get(meeting.getStudentId());
 		}
 		Optional<Mail> mail = compose(to, from, course(request), request.getTopic(), "meetingSoon",
-				List.of(meeting.getScheduledAt()), null);
+				List.of(meeting.getScheduledAt()), null, toInstructor);
 		if (mail.isEmpty()) {
 			return Delivery.NOTHING_TO_SEND;
 		}
@@ -131,14 +137,34 @@ public class OfficeHoursMailService {
 	private record Mail(String to, String subject, String body) {
 	}
 
-	/** The e-mail for one person, or nothing when they or the course are gone or Moodle shared no address. */
-	private static Optional<Mail> compose(OfficeHoursUser to, OfficeHoursUser from, OfficeHoursCourse course,
-			String topic, String event, List<Instant> times, String note) {
-		if (to == null || from == null || course == null || to.getEmail() == null) {
+	/** Where and how an e-mail reaches one person, and the page it sends them to. */
+	private record Recipient(String name, String email, AppLanguage language, String link) {
+	}
+
+	/**
+	 * The e-mail for one person, or nothing when either side is gone or there is no address. A request from Menton has
+	 * no course: its text names no course and its subject names the other person.
+	 */
+	private Optional<Mail> compose(OfficeHoursUser to, OfficeHoursUser from, OfficeHoursCourse course, String topic,
+			String event, List<Instant> times, String note, boolean toInstructor) {
+		if (to == null || from == null) {
 			return Optional.empty();
 		}
-		AppLanguage language = to.getPreferredLanguage();
+		Optional<Recipient> found = recipient(to, course, toInstructor);
+		if (found.isEmpty()) {
+			return Optional.empty();
+		}
+		Recipient recipient = found.get();
+		AppLanguage language = recipient.language();
 		String key = "officeHours.mail." + event;
+		String line = Texts.get(language, key + ".mentonLine", from.getFullName());
+		String subjectName = from.getFullName();
+		String body = "officeHours.mail.mentonBody";
+		if (course != null) {
+			line = Texts.get(language, key + ".line", from.getFullName(), course.getTitle());
+			subjectName = course.getTitle();
+			body = "officeHours.mail.body";
+		}
 		// The times, then the other side's message: whichever the step has.
 		List<String> details = new ArrayList<>();
 		if (!times.isEmpty()) {
@@ -148,12 +174,44 @@ public class OfficeHoursMailService {
 		if (note != null) {
 			details.add(Texts.get(language, "officeHours.mail.note", note));
 		}
-		String body = Texts.get(language, "officeHours.mail.body", to.getFullName(),
-				Texts.get(language, key + ".line", from.getFullName(), course.getTitle()), String.join("\n\n", details),
-				topic, courseLink(course));
+		String text = Texts.get(language, body, recipient.name(), line, String.join("\n\n", details), topic,
+				recipient.link());
 		// A step with no times or note leaves an empty paragraph; fold it away.
-		return Optional.of(new Mail(to.getEmail(), Texts.get(language, key + ".subject", course.getTitle()),
-				body.replaceAll("\n{3,}", "\n\n")));
+		return Optional.of(new Mail(recipient.email(), Texts.get(language, key + ".subject", subjectName),
+				text.replaceAll("\n{3,}", "\n\n")));
+	}
+
+	/**
+	 * A Menton account's own address and language win over what Moodle shared, since the account is where they read
+	 * Menton's mail; a Moodle-only person needs a course to be sent to.
+	 */
+	private Optional<Recipient> recipient(OfficeHoursUser person, OfficeHoursCourse course, boolean instructor) {
+		if (person.getAppUserId() != null) {
+			Optional<AppUser> account = appUserRepository.findById(person.getAppUserId())
+					.filter(found -> found.getStatus() != UserAccountStatus.DELETED);
+			if (account.isEmpty()) {
+				return Optional.empty();
+			}
+			String link = mentonLink(instructor);
+			if (course != null) {
+				link = courseLink(course);
+			}
+			return Optional.of(new Recipient(person.getFullName(), account.get().getEmail(),
+					account.get().getPreferredLanguage(), link));
+		}
+		if (person.getEmail() == null || course == null) {
+			return Optional.empty();
+		}
+		return Optional.of(new Recipient(person.getFullName(), person.getEmail(), person.getPreferredLanguage(),
+				courseLink(course)));
+	}
+
+	/** The academician's Randevularım or the student's Ofis Saatleri page in Menton. */
+	private String mentonLink(boolean instructor) {
+		if (instructor) {
+			return mailService.link("/academician/appointments");
+		}
+		return mailService.link("/student/office-hours");
 	}
 
 	private Map<UUID, OfficeHoursUser> people(OfficeHoursRequest request) {
@@ -161,7 +219,11 @@ public class OfficeHoursMailService {
 				.collect(Collectors.toMap(OfficeHoursUser::getId, Function.identity()));
 	}
 
+	/** None for a request made from Menton. */
 	private OfficeHoursCourse course(OfficeHoursRequest request) {
+		if (request.getCourseId() == null) {
+			return null;
+		}
 		return courseRepository.findById(request.getCourseId()).orElse(null);
 	}
 

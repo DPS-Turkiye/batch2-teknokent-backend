@@ -1,5 +1,7 @@
 package com.dps.teknokent.service;
 
+import com.dps.teknokent.domain.ConsentAnswer;
+import com.dps.teknokent.domain.ProcessingConsentSource;
 import com.dps.teknokent.domain.AiFeature;
 import java.io.IOException;
 import java.time.Instant;
@@ -45,6 +47,7 @@ public class ProfileAnalysisService {
 	private final DocumentService documentService;
 	private final JsonUtils jsonUtils;
 	private final AiFeatures aiFeatures;
+	private final DataProcessingConsentService consents;
 
 	/**
 	 * Same as {@link #parse} but with the organization taken from the signed-in
@@ -61,30 +64,31 @@ public class ProfileAnalysisService {
 	 * already confines that to their own organization.
 	 */
 	public ProfileAnalysisResponse parseForCaller(
-			UUID callerUserId, UUID appUserId, String profileType, boolean consentAccepted, String ocrMode,
+			UUID callerUserId, UUID appUserId, String profileType, ConsentAnswer consent, String ocrMode,
 			MultipartFile file) {
 		AppUser caller = appUserRepository.findById(callerUserId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + callerUserId));
 		if (caller.getOrganization() == null) {
 			throw new InvalidRequestException("This account has no organization to file a profile under.");
 		}
-		return parse(caller.getOrganization().getId(), appUserId, profileType, consentAccepted, ocrMode, file);
+		return parse(caller.getOrganization().getId(), appUserId, profileType, consent, ocrMode, file);
 	}
 
 	public ProfileAnalysisResponse parse(
-			UUID organizationId, UUID appUserId, String profileType, boolean consentAccepted, String ocrMode,
+			UUID organizationId, UUID appUserId, String profileType, ConsentAnswer consent, String ocrMode,
 			MultipartFile file) {
 		// Before anything is stored: a refused parse must not leave the PDF behind.
 		aiFeatures.require(AiFeature.PROFILE_PARSING);
 		UUID resolvedOrganizationId = organizationId == null ? DEFAULT_ORGANIZATION_ID : organizationId;
 		validateProfileType(profileType);
 		validateOcrMode(ocrMode);
-		requireConsent(consentAccepted);
+		consent.requireAccepted();
 		if (!organizationRepository.existsById(resolvedOrganizationId)) {
 			throw new ResourceNotFoundException("Organization not found.");
 		}
 		requireMemberOfOrganization(appUserId, resolvedOrganizationId);
 		byte[] pdfBytes = readPdf(file);
+		consents.record(consent, ProcessingConsentSource.PROFILE_ANALYSIS, appUserId);
 		documentService.store(
 				appUserId,
 				resolvedOrganizationId,
@@ -120,12 +124,14 @@ public class ProfileAnalysisService {
 	 * the only safe answer is to persist nothing and let the caller decide what
 	 * to keep. The CV itself is uploaded separately through POST /api/documents.
 	 */
-	public Map<String, Object> parsePreview(String profileType, boolean consentAccepted, String ocrMode, MultipartFile file) {
+	public Map<String, Object> parsePreview(String profileType, ConsentAnswer consent, String ocrMode, MultipartFile file) {
 		aiFeatures.require(AiFeature.PROFILE_PARSING);
 		validatePreviewProfileType(profileType);
 		validateOcrMode(ocrMode);
-		requireConsent(consentAccepted);
-		return preview(readPdf(file), profileType, ocrMode);
+		consent.requireAccepted();
+		byte[] pdfBytes = readPdf(file);
+		consents.record(consent, ProcessingConsentSource.PREVIEW_UPLOAD, null);
+		return preview(pdfBytes, profileType, ocrMode);
 	}
 
 	/**
@@ -134,15 +140,16 @@ public class ProfileAnalysisService {
 	 * sending the file again. Persists nothing, like the upload version.
 	 */
 	public Map<String, Object> parseStoredCvPreview(
-			UUID callerUserId, UUID documentId, String profileType, boolean consentAccepted, String ocrMode) {
+			UUID callerUserId, UUID documentId, String profileType, ConsentAnswer consent, String ocrMode) {
 		aiFeatures.require(AiFeature.PROFILE_PARSING);
 		validatePreviewProfileType(profileType);
 		validateOcrMode(ocrMode);
-		requireConsent(consentAccepted);
+		consent.requireAccepted();
 		byte[] bytes = documentService.readOwnCv(callerUserId, documentId);
 		if (!hasPdfSignature(bytes) || !hasPdfEofMarker(bytes)) {
 			throw new InvalidRequestException("Only a PDF CV can be read into the profile.");
 		}
+		consents.record(consent, ProcessingConsentSource.PREVIEW_STORED_CV, callerUserId);
 		return preview(bytes, profileType, ocrMode);
 	}
 
@@ -159,12 +166,6 @@ public class ProfileAnalysisService {
 	private void validateOcrMode(String ocrMode) {
 		if (!java.util.Set.of("off", "auto", "force").contains(ocrMode)) {
 			throw new InvalidRequestException("OCR mode must be off, auto, or force.");
-		}
-	}
-
-	private void requireConsent(boolean consentAccepted) {
-		if (!consentAccepted) {
-			throw new InvalidRequestException("Document processing consent is required.");
 		}
 	}
 

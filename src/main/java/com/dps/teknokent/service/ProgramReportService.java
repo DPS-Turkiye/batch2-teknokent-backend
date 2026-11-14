@@ -35,14 +35,17 @@ import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingFeedback;
+import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
+import com.dps.teknokent.util.ProgramActivity;
 
 import lombok.RequiredArgsConstructor;
 
@@ -63,6 +66,7 @@ public class ProgramReportService {
 	private final ProgramStartupRepository programStartupRepository;
 	private final MeetingRepository meetingRepository;
 	private final MeetingFeedbackRepository meetingFeedbackRepository;
+	private final MentorshipRepository mentorshipRepository;
 
 	@Transactional(readOnly = true)
 	public AdminOverviewResponse report(UUID actorId, UUID programId) {
@@ -116,11 +120,43 @@ public class ProgramReportService {
 	/** The program's meetings that took place: not cancelled, already started, and on or after {@code from}. */
 	private List<UUID> heldMeetingIds(Program program, LocalDate from) {
 		Set<UUID> teams = teamsOf(program);
-		if (teams.isEmpty()) {
+		Set<UUID> everTeams = withFormerTeams(program, teams);
+		if (everTeams.isEmpty()) {
 			return List.of();
 		}
 		Instant since = from == null ? Instant.EPOCH : from.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant();
-		return meetingRepository.findHeldMeetingIdsOfProgram(program.getId(), teams, since, Instant.now());
+		Instant now = Instant.now();
+		List<Meeting> started = meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(everTeams).stream()
+				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+						&& meeting.getScheduledAt() != null
+						&& !meeting.getScheduledAt().isBefore(since)
+						&& !meeting.getScheduledAt().isAfter(now))
+				.toList();
+		return heldHere(program, teams, everTeams, started).stream().map(Meeting::getId).toList();
+	}
+
+	/**
+	 * The program's teams plus the ones that made a mentorship in it and have since left: an admin moved them to
+	 * another program, or a coordinator removed them. Their meetings from this program still count here.
+	 */
+	private Set<UUID> withFormerTeams(Program program, Set<UUID> teams) {
+		Set<UUID> all = new HashSet<>(teams);
+		mentorshipRepository.findTeamsWithMentorshipIn(List.of(program.getId()))
+				.forEach(team -> all.add(team.getOrganizationId()));
+		return all;
+	}
+
+	/**
+	 * Of these teams' meetings, the ones held in this program. A team can be in several programs and can change
+	 * programs, so a meeting of another program's mentorship is left out (see {@link ProgramActivity#countsIn}).
+	 */
+	private List<Meeting> heldHere(Program program, Set<UUID> teams, Set<UUID> everTeams, List<Meeting> meetings) {
+		if (meetings.isEmpty()) {
+			return List.of();
+		}
+		Map<UUID, List<Mentorship>> mentorships = mentorshipRepository.findByOrganizationIdIn(everTeams).stream()
+				.collect(Collectors.groupingBy(mentorship -> mentorship.getOrganization().getId()));
+		return ProgramActivity.heldIn(program.getId(), meetings, teams, mentorships);
 	}
 
 	/**
@@ -138,16 +174,17 @@ public class ProgramReportService {
 			throw new InvalidRequestException("The report cannot end before it starts.");
 		}
 		Set<UUID> teams = teamsOf(program);
-		List<Meeting> held = teams.isEmpty()
+		Set<UUID> everTeams = withFormerTeams(program, teams);
+		List<Meeting> held = everTeams.isEmpty()
 				? List.of()
-				: meetingRepository
+				: heldHere(program, teams, everTeams, meetingRepository
 						.findByOrganizationIdInAndHeldConfirmedAtIsNotNullAndScheduledAtGreaterThanEqualAndScheduledAtLessThan(
-								teams,
+								everTeams,
 								first.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant(),
 								last.plusDays(1).atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant())
 						.stream()
 						.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED)
-						.toList();
+						.toList());
 		Set<UUID> heldTeams = new HashSet<>();
 		held.forEach(meeting -> heldTeams.add(meeting.getOrganization().getId()));
 		Map<UUID, String> teamEmails = heldTeams.isEmpty()

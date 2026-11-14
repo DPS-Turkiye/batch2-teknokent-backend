@@ -13,6 +13,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
+import com.dps.teknokent.dto.provider.ProviderBotSummary;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -61,6 +62,40 @@ class MeetingProviderClientTest {
     assertThat(response.status()).isEqualTo("joining");
     assertThat(response.title()).isEqualTo("Mentor Bot");
     server.verify();
+  }
+
+  @Test
+  void findLatestBotReturnsTheNewestRowForTheMeeting() {
+    server.expect(requestTo("http://localhost/bots?platform=google_meet&limit=25"))
+        .andExpect(method(HttpMethod.GET))
+        .andRespond(withSuccess(
+            """
+            {"meetings":[
+              {"id":52,"platform":"google_meet","native_meeting_id":"zzz-zzzz-zzz","status":"active"},
+              {"id":51,"platform":"google_meet","native_meeting_id":"abc-defg-hij","status":"failed",
+               "completion_reason":"join_failure","failure_stage":"awaiting_admission",
+               "created_at":"2026-11-11T20:03:06.512Z"},
+              {"id":49,"platform":"google_meet","native_meeting_id":"abc-defg-hij","status":"failed",
+               "completion_reason":"stopped"}
+            ],"has_more":false}
+            """,
+            MediaType.APPLICATION_JSON));
+
+    ProviderBotSummary latest = client.findLatestBot("google_meet", "abc-defg-hij");
+
+    assertThat(latest.id()).isEqualTo(51L);
+    assertThat(latest.status()).isEqualTo("failed");
+    assertThat(latest.completionReason()).isEqualTo("join_failure");
+    assertThat(latest.createdAt()).isEqualTo(java.time.Instant.parse("2026-11-11T20:03:06.512Z"));
+    server.verify();
+  }
+
+  @Test
+  void findLatestBotIsNullWhenTheMeetingHasNoBot() {
+    server.expect(requestTo("http://localhost/bots?platform=google_meet&limit=25"))
+        .andRespond(withSuccess("{\"meetings\":[]}", MediaType.APPLICATION_JSON));
+
+    assertThat(client.findLatestBot("google_meet", "abc-defg-hij")).isNull();
   }
 
   @Test

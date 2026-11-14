@@ -64,6 +64,12 @@ public class OfficeHoursAvailabilityService {
 	@Transactional(readOnly = true)
 	public OfficeHoursAvailabilityResponse find(UUID instructorId) {
 		requireInstructor(instructorId);
+		return read(instructorId);
+	}
+
+	/** Someone's office hours, once the caller is known to be an academic (Moodle or Menton). */
+	@Transactional(readOnly = true)
+	public OfficeHoursAvailabilityResponse read(UUID instructorId) {
 		OfficeHoursSettings settings = settingsRepository.findById(instructorId).orElseGet(OfficeHoursSettings::new);
 		return response(instructorId, settings);
 	}
@@ -71,6 +77,12 @@ public class OfficeHoursAvailabilityService {
 	@Transactional
 	public OfficeHoursAvailabilityResponse update(UUID instructorId, UpdateOfficeHoursAvailabilityRequest request) {
 		requireInstructor(instructorId);
+		return write(instructorId, request);
+	}
+
+	/** Saves someone's office hours as a whole, once the caller is known to be an academic. */
+	@Transactional
+	public OfficeHoursAvailabilityResponse write(UUID instructorId, UpdateOfficeHoursAvailabilityRequest request) {
 		validateRules(request.rules());
 		validateExceptions(request.exceptions());
 		Instant now = clock.instant();

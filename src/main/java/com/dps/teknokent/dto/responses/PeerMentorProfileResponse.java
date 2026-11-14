@@ -1,8 +1,10 @@
 package com.dps.teknokent.dto.responses;
 
 import java.util.List;
+import java.util.Map;
 
 import com.dps.teknokent.domain.PeerTopicCategory;
+import com.dps.teknokent.domain.PeerTopicLevel;
 
 /** The signed-in peer mentor's own published profile (the wizard's answers), plus what ODTÜ says about them. */
 public record PeerMentorProfileResponse(
@@ -15,5 +17,7 @@ public record PeerMentorProfileResponse(
 		String linkedinUrl,
 		String department,
 		Integer classYear,
-		Integer menteeCapacity) {
+		Integer menteeCapacity,
+		Map<PeerTopicCategory, PeerTopicLevel> levels,
+		List<PeerExperienceCardResponse> experiences) {
 }

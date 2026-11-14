@@ -100,6 +100,9 @@ ai:
     app-name: ${OPENROUTER_APP_NAME:TeamTNT Spring Backend}
 
 app:
+  # Which deployment this is: TEKNOKENT (startup mentoring, the default) or ODTU (office hours + İŞKUR). Each
+  # edition answers 404 for the other one's endpoints and accepts only its own program types.
+  edition: ${APP_EDITION:TEKNOKENT}
   firebase:
     project-id: ${FIREBASE_PROJECT_ID:}
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
@@ -124,6 +127,8 @@ app:
     bucket: ${AWS_S3_BUCKET:}
     access-key-id: ${AWS_ACCESS_KEY_ID:}
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+  registration:
+    allowed-email-domains: ${REGISTRATION_ALLOWED_EMAIL_DOMAINS:}
   mail:
     region: ${AWS_REGION:eu-central-1}
     from: ${MAIL_FROM:}

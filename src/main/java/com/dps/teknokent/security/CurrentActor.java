@@ -2,10 +2,14 @@ package com.dps.teknokent.security;
 
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import org.springframework.web.server.ResponseStatusException;
+
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.Texts;
 
 public final class CurrentActor {
 
@@ -53,5 +57,17 @@ public final class CurrentActor {
 			throw new InvalidRequestException("actorId is required");
 		}
 		return requestedActorId;
+	}
+
+	/**
+	 * The caller's own account from their verified Firebase sign-in, and nothing else: for actions too grave to
+	 * take on the word of the shared service credentials, where the actor is only a field the caller fills in.
+	 */
+	public static UUID requireSignedIn() {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {
+			return principal.id();
+		}
+		throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.signInRequiredForAction"));
 	}
 }

@@ -1,13 +1,17 @@
 package com.dps.teknokent.entity;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.hibernate.annotations.BatchSize;
 
 import com.dps.teknokent.domain.MeetingFrequency;
 import com.dps.teknokent.domain.MentorLanguage;
+import com.dps.teknokent.domain.PeerTopicCategory;
+import com.dps.teknokent.domain.PeerTopicLevel;
 import com.dps.teknokent.domain.PrepFileRequirement;
 import com.dps.teknokent.util.TextUtils;
 
@@ -20,6 +24,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.MapKeyColumn;
+import jakarta.persistence.MapKeyEnumerated;
 import jakarta.persistence.MapsId;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.OrderColumn;
@@ -173,6 +179,16 @@ public class MentorProfile {
 	@Column(name = "project", nullable = false, length = 500)
 	@BatchSize(size = 50)
 	private List<String> projects = new ArrayList<>();
+
+	/** Peer mentors only: the wizard's optional level for a category they offer. */
+	@ElementCollection
+	@CollectionTable(name = "peer_mentor_category_level", joinColumns = @JoinColumn(name = "mentor_id"))
+	@MapKeyEnumerated(EnumType.STRING)
+	@MapKeyColumn(name = "category", length = 40)
+	@Enumerated(EnumType.STRING)
+	@Column(name = "level", nullable = false, length = 16)
+	@BatchSize(size = 50)
+	private Map<PeerTopicCategory, PeerTopicLevel> categoryLevels = new HashMap<>();
 
 	/**
 	 * A profile row for a new mentor: onboarding and the peer-mentor wizard update a profile rather than create one, so

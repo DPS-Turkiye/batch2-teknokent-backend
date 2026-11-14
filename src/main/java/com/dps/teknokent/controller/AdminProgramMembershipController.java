@@ -5,15 +5,22 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dps.teknokent.dto.requests.MoveStartupProgramRequest;
+import com.dps.teknokent.dto.responses.ProgramMentorRemovalResponse;
+import com.dps.teknokent.dto.responses.ProgramTeamMoveResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.AdminProgramMembershipService;
+import com.dps.teknokent.service.ProgramMentorRemovalService;
+import com.dps.teknokent.service.ProgramTeamMoveService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -23,6 +30,8 @@ import lombok.RequiredArgsConstructor;
 public class AdminProgramMembershipController {
 
 	private final AdminProgramMembershipService adminProgramMembershipService;
+	private final ProgramTeamMoveService programTeamMoveService;
+	private final ProgramMentorRemovalService programMentorRemovalService;
 
 	@PostMapping("/mentors/{mentorId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
@@ -33,6 +42,15 @@ public class AdminProgramMembershipController {
 		adminProgramMembershipService.assignMentor(CurrentActor.resolve(actorId), programId, mentorId);
 	}
 
+	/** Takes an accepted mentor out of this program's pool; Teknokent edition only. */
+	@PostMapping("/mentors/{mentorId}/remove")
+	public ProgramMentorRemovalResponse removeMentor(
+			@PathVariable UUID programId,
+			@PathVariable UUID mentorId,
+			@RequestParam(required = false) UUID actorId) {
+		return programMentorRemovalService.remove(CurrentActor.resolve(actorId), programId, mentorId);
+	}
+
 	@PostMapping("/startups/{organizationId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void assignStartup(
@@ -40,5 +58,16 @@ public class AdminProgramMembershipController {
 			@PathVariable UUID organizationId,
 			@RequestParam(required = false) UUID actorId) {
 		adminProgramMembershipService.assignStartup(CurrentActor.resolve(actorId), programId, organizationId);
+	}
+
+	/** Moves the startup out of {@code fromProgramId} into this program; Teknokent edition only. */
+	@PostMapping("/startups/{organizationId}/move")
+	public ProgramTeamMoveResponse moveStartup(
+			@PathVariable UUID programId,
+			@PathVariable UUID organizationId,
+			@RequestParam(required = false) UUID actorId,
+			@Valid @RequestBody MoveStartupProgramRequest request) {
+		return programTeamMoveService.move(
+				CurrentActor.resolve(actorId), programId, organizationId, request.fromProgramId());
 	}
 }

@@ -38,6 +38,7 @@ import com.dps.teknokent.dto.requests.CreateStartupRoundRequest;
 import com.dps.teknokent.dto.requests.SubmitProcessAssignmentRequest;
 import com.dps.teknokent.dto.requests.UpdateStartupStageRequest;
 import com.dps.teknokent.dto.responses.ProcessAssignmentResponse;
+import com.dps.teknokent.dto.responses.ProcessPhaseResponse;
 import com.dps.teknokent.dto.responses.StartupProcessResponse;
 import com.dps.teknokent.dto.responses.StartupRoundResponse;
 import com.dps.teknokent.dto.responses.StartupStageResponse;
@@ -50,6 +51,7 @@ class StartupProcessControllerTest {
     private static final UUID ORG_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID ACTOR_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
     private static final UUID ROUND_ID = UUID.fromString("40000000-0000-0000-0000-000000000001");
+    private static final UUID PHASE_ID = UUID.fromString("50000000-0000-0000-0000-000000000001");
     private static final UUID ASSIGNMENT_ID = UUID.fromString("50000000-0000-0000-0000-000000000001");
 
     @Autowired
@@ -60,14 +62,16 @@ class StartupProcessControllerTest {
 
     private static StartupProcessResponse process(StartupStage currentStage) {
         StartupRoundResponse round = new StartupRoundResponse(ROUND_ID, "Value proposition & onboarding",
-                "MVP test turu", StartupStage.MVP, LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 31));
+                "MVP test turu", StartupStage.MVP, LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 31), PHASE_ID);
         ProcessAssignmentResponse assignment = new ProcessAssignmentResponse(ASSIGNMENT_ID, ROUND_ID,
                 StartupStage.FINANCE, "Finansal model", null, ActionItemStatus.OPEN, null, null, null, null, null,
-                Instant.parse("2026-08-10T09:00:00Z"));
+                Instant.parse("2026-08-10T09:00:00Z"), PHASE_ID);
+        ProcessPhaseResponse phase = new ProcessPhaseResponse(PHASE_ID, "Çözüm", 1, LocalDate.of(2026, 8, 1),
+                LocalDate.of(2026, 8, 31), "MVP", StartupStageState.CURRENT);
         return new StartupProcessResponse(ORG_ID, currentStage,
                 List.of(new StartupStageResponse(StartupStage.PROBLEM, StartupStageState.COMPLETED),
                         new StartupStageResponse(StartupStage.MVP, StartupStageState.CURRENT)),
-                round, List.of(round), List.of(assignment));
+                round, List.of(round), List.of(assignment), PHASE_ID, List.of(phase));
     }
 
     @Test
@@ -88,7 +92,11 @@ class StartupProcessControllerTest {
                 .andExpect(jsonPath("$.stages[1].state").value("CURRENT"))
                 .andExpect(jsonPath("$.currentRound.name").value("MVP test turu"))
                 .andExpect(jsonPath("$.currentRound.startsOn").value("2026-08-02"))
-                .andExpect(jsonPath("$.assignments[0].title").value("Finansal model"));
+                .andExpect(jsonPath("$.assignments[0].title").value("Finansal model"))
+                .andExpect(jsonPath("$.assignments[0].phaseId").value(PHASE_ID.toString()))
+                .andExpect(jsonPath("$.currentPhaseId").value(PHASE_ID.toString()))
+                .andExpect(jsonPath("$.phases[0].name").value("Çözüm"))
+                .andExpect(jsonPath("$.phases[0].state").value("CURRENT"));
     }
 
     @Test

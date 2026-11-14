@@ -22,12 +22,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 import com.dps.teknokent.entity.OfficeHoursException;
 import com.dps.teknokent.entity.OfficeHoursMeeting;
+import com.dps.teknokent.entity.OfficeHoursRequest;
 import com.dps.teknokent.entity.OfficeHoursRule;
 import com.dps.teknokent.entity.OfficeHoursSettings;
 import com.dps.teknokent.repository.OfficeHoursExceptionRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
+import com.dps.teknokent.repository.OfficeHoursRequestRepository;
 import com.dps.teknokent.repository.OfficeHoursRuleRepository;
 import com.dps.teknokent.repository.OfficeHoursSettingsRepository;
 
@@ -46,16 +49,29 @@ class OfficeHoursSlotServiceTest {
     private OfficeHoursMeetingRepository meetingRepository;
     @Mock
     private OfficeHoursSettingsRepository settingsRepository;
+    @Mock
+    private OfficeHoursRequestRepository requestRepository;
 
     private OfficeHoursSlotService service;
 
     @BeforeEach
     void setUp() {
         service = new OfficeHoursSlotService(ruleRepository, exceptionRepository, meetingRepository,
-                settingsRepository, Clock.fixed(NOW, ZoneOffset.UTC));
+                settingsRepository, requestRepository, Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(settingsRepository.findById(ACADEMIC)).thenReturn(Optional.of(settings(0)));
         lenient().when(exceptionRepository.findByInstructorIdOrderByStartsOnAsc(ACADEMIC)).thenReturn(List.of());
         lenient().when(meetingRepository.findByInstructorIdAndScheduledAtAfter(any(), any())).thenReturn(List.of());
+        lenient().when(requestRepository.findByInstructorIdAndStatusIn(eq(ACADEMIC), any())).thenReturn(List.of());
+    }
+
+    private static OfficeHoursRequest open(UUID id, OfficeHoursRequestStatus status, String preferred,
+            String proposed) {
+        OfficeHoursRequest request = new OfficeHoursRequest();
+        request.setId(id);
+        request.setStatus(status);
+        request.setPreferredSlots(preferred);
+        request.setProposedSlots(proposed);
+        return request;
     }
 
     private static OfficeHoursSettings settings(int bufferMinutes) {
@@ -169,5 +185,33 @@ class OfficeHoursSlotServiceTest {
         assertThat(service.clashesWithCalendar(ACADEMIC, Instant.parse("2026-11-10T10:30:00Z"), 45)).isTrue();
         assertThat(service.clashesWithCalendar(ACADEMIC, Instant.parse("2026-11-10T12:00:00Z"), 45)).isFalse();
         assertThat(service.clashesWithCalendar(ACADEMIC, Instant.parse("2026-11-10T10:15:00Z"), 45)).isFalse();
+    }
+
+    @Test
+    void anOpenRequestHoldsItsTimesSoNoOneElseIsOfferedThem() {
+        rules(rule(DayOfWeek.TUESDAY, 14, 16, 60));
+        UUID asking = UUID.randomUUID();
+        UUID offered = UUID.randomUUID();
+        when(requestRepository.findByInstructorIdAndStatusIn(eq(ACADEMIC), any())).thenReturn(List.of(
+                open(asking, OfficeHoursRequestStatus.PENDING, "2026-11-10T14:00", null),
+                // The academic offered 15:00 instead; the student's own 14:00 no longer holds anything.
+                open(offered, OfficeHoursRequestStatus.COUNTER_PROPOSED, "2026-11-17T14:00", "2026-11-10T15:00")));
+
+        List<Instant> starts = service.openSlots(ACADEMIC).stream().map(OfficeHoursSlotService.Slot::startsAt)
+                .toList();
+
+        assertThat(starts).doesNotContain(Instant.parse("2026-11-10T11:00:00Z"), Instant.parse("2026-11-10T12:00:00Z"))
+                .contains(Instant.parse("2026-11-17T11:00:00Z"));
+        assertThat(service.heldTimes(ACADEMIC, asking)).containsExactly(Instant.parse("2026-11-10T12:00:00Z"));
+    }
+
+    @Test
+    void aHeldTimeStillHasItsSlotLengthWhenItsOwnRequestIsAccepted() {
+        rules(rule(DayOfWeek.TUESDAY, 14, 16, 45));
+        lenient().when(requestRepository.findByInstructorIdAndStatusIn(eq(ACADEMIC), any())).thenReturn(List.of(
+                open(UUID.randomUUID(), OfficeHoursRequestStatus.PENDING, "2026-11-10T14:00", null)));
+
+        assertThat(service.openSlotAt(ACADEMIC, Instant.parse("2026-11-10T11:00:00Z")))
+                .map(OfficeHoursSlotService.Slot::durationMinutes).contains(45);
     }
 }

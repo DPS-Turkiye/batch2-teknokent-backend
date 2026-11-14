@@ -87,5 +87,22 @@ public interface MentorshipRepository extends JpaRepository<Mentorship, UUID> {
 
 	List<Mentorship> findByOrganizationIdIn(Collection<UUID> organizationIds);
 
+	/**
+	 * The teams that made a mentorship in one of these programs, by program. A student's personal team is left
+	 * out: it never joins a program as a startup, so it cannot have left one either.
+	 */
+	@Query("""
+			SELECT DISTINCT m.program.id AS programId, m.organization.id AS organizationId
+			FROM Mentorship m
+			WHERE m.program.id IN :programIds AND m.organization.personal = false
+			""")
+	List<ProgramTeam> findTeamsWithMentorshipIn(@Param("programIds") Collection<UUID> programIds);
+
+	interface ProgramTeam {
+		UUID getProgramId();
+
+		UUID getOrganizationId();
+	}
+
 	long countByMentorIdAndStatusIn(UUID mentorId, Collection<MentorshipStatus> statuses);
 }

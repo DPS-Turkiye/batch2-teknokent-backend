@@ -19,7 +19,8 @@ public enum DocumentKind {
 	PROFILE_PDF("profile-pdf", 50 * 1024 * 1024, true, false),
 	REQUESTED_DOC("requested-doc", 25 * 1024 * 1024, false, false),
 	SYLLABUS("syllabus", 10 * 1024 * 1024, true, false),
-	WEEKLY_PROGRAM("weekly-program", 10 * 1024 * 1024, true, false);
+	WEEKLY_PROGRAM("weekly-program", 10 * 1024 * 1024, true, false),
+	PEER_EVIDENCE("peer-evidence", 10 * 1024 * 1024, true, false);
 
 	private final String value;
 	private final long maxBytes;

@@ -15,5 +15,7 @@ public interface AppUserIdentityRepository extends JpaRepository<AppUserIdentity
 
 	boolean existsByUserIdAndProvider(UUID userId, String provider);
 
+	boolean existsByUserIdAndProviderNot(UUID userId, String provider);
+
 	List<AppUserIdentity> findByUserIdIn(Collection<UUID> userIds);
 }
