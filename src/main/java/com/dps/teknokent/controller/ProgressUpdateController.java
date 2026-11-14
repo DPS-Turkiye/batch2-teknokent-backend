@@ -9,11 +9,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateProgressUpdateRequest;
 import com.dps.teknokent.dto.responses.ProgressUpdateResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.ProgressUpdateService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,8 +31,10 @@ public class ProgressUpdateController {
 	private final ProgressUpdateService progressUpdateService;
 
 	@GetMapping
-	public List<ProgressUpdateResponse> findByOrganization(@PathVariable UUID organizationId) {
-		return progressUpdateService.findByOrganization(organizationId);
+	public List<ProgressUpdateResponse> findByOrganization(
+			@PathVariable UUID organizationId,
+			@RequestParam(required = false) UUID actorId) {
+		return progressUpdateService.findByOrganization(organizationId, CurrentActor.resolve(actorId));
 	}
 
 	@PostMapping
@@ -38,6 +42,7 @@ public class ProgressUpdateController {
 	public ProgressUpdateResponse create(
 			@PathVariable UUID organizationId,
 			@Valid @RequestBody CreateProgressUpdateRequest request) {
-		return progressUpdateService.create(organizationId, request);
+		// The author is whoever is acting; a signed-in caller cannot write in someone else's name.
+		return progressUpdateService.create(organizationId, CurrentActor.resolve(request.authorId()), request);
 	}
 }

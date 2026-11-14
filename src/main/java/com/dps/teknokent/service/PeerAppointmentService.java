@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -50,7 +51,9 @@ public class PeerAppointmentService {
 			return List.of();
 		}
 		return meetingRepository.findByMentorshipRequestIdIn(requests.keySet()).stream()
-				.map(meeting -> toResponse(meeting, requests.get(meeting.getMentorshipRequest().getId()), student))
+				.flatMap(meeting -> Optional.ofNullable(requests.get(meeting.getMentorshipRequest().getId()))
+						.map(request -> toResponse(meeting, request, student))
+						.stream())
 				.sorted(Comparator.comparing(AppointmentResponse::startsAt))
 				.toList();
 	}

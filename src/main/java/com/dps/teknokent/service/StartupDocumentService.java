@@ -1,7 +1,7 @@
 package com.dps.teknokent.service;
 
-import java.util.Collection;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -62,16 +62,17 @@ public class StartupDocumentService {
 	private final DocumentRequestUploadRepository documentRequestUploadRepository;
 	private final DomainLookupService domainLookupService;
 	private final ObjectStorage objectStorage;
+	private final StartupAccessService startupAccessService;
 	private final PlatformTransactionManager transactionManager;
 
 	@Transactional(readOnly = true)
 	public List<OrganizationDocumentResponse> listForOrganization(UUID organizationId, UUID actorId) {
 		domainLookupService.requireOrganization(organizationId);
 		AppUser actor = domainLookupService.requireUser(actorId);
-		if (!isTeamMember(actor, organizationId) && !isStaff(actor) && !isMentorForOrganization(actor, organizationId)) {
+		boolean insider = isTeamMember(actor, organizationId) || isStaff(actor, organizationId);
+		if (!insider && !isMentorForOrganization(actor, organizationId)) {
 			throw new InvalidRequestException("Only the startup's team or related mentor can list its documents");
 		}
-		boolean insider = isTeamMember(actor, organizationId) || isStaff(actor);
 		return describe(storedDocumentRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId).stream()
 				.filter(document -> insider || !isCv(document))
 				.toList());
@@ -126,7 +127,7 @@ public class StartupDocumentService {
 	public OrganizationDocumentResponse review(UUID documentId, UUID actorId) {
 		StoredDocument document = requireDocument(documentId);
 		AppUser actor = domainLookupService.requireUser(actorId);
-		boolean reviewerRole = isStaff(actor) || actor.has(UserRole.MENTOR);
+		boolean reviewerRole = isStaff(actor, document.getOrganizationId()) || actor.has(UserRole.MENTOR);
 		boolean ownUpload = actor.getId().equals(document.getUserId());
 		if (!reviewerRole || ownUpload || !canRead(document, actor)) {
 			throw new InvalidRequestException("Only a mentor with access or a coordinator can review this document");
@@ -187,7 +188,7 @@ public class StartupDocumentService {
 	}
 
 	private boolean canRead(StoredDocument document, AppUser actor) {
-		if (actor.getId().equals(document.getUserId()) || isStaff(actor)
+		if (actor.getId().equals(document.getUserId()) || isStaff(actor, document.getOrganizationId())
 				|| isTeamMember(actor, document.getOrganizationId())) {
 			return true;
 		}
@@ -222,14 +223,21 @@ public class StartupDocumentService {
 				.isPresent();
 	}
 
+	/**
+	 * A live request (a pending one too: the mentor reads the files to decide on it), a mentorship that has not
+	 * ended, or the mentor pool of the startup's program. A declined or withdrawn request, or a finished
+	 * mentorship, no longer opens the files.
+	 */
 	private boolean isMentorForOrganization(AppUser mentor, UUID organizationId) {
 		if (!mentor.has(UserRole.MENTOR) || organizationId == null) {
 			return false;
 		}
-		if (mentorshipRequestRepository.existsByMentorIdAndOrganizationId(mentor.getId(), organizationId)) {
+		if (mentorshipRequestRepository.existsByMentorIdAndOrganizationIdAndStatusIn(
+				mentor.getId(), organizationId, PersonAccessService.LIVE_REQUESTS)) {
 			return true;
 		}
-		if (mentorshipRepository.existsByMentorIdAndOrganizationId(mentor.getId(), organizationId)) {
+		if (mentorshipRepository.existsByMentorIdAndOrganizationIdAndStatusIn(
+				mentor.getId(), organizationId, PersonAccessService.ONGOING_MENTORSHIPS)) {
 			return true;
 		}
 		return programMentorRepository.countAcceptedForOrganization(
@@ -250,17 +258,18 @@ public class StartupDocumentService {
 	}
 
 	private static boolean isCv(StoredDocument document) {
-		return DocumentKind.CV.value().equals(document.getKind());
+		return document.getKind() == DocumentKind.CV;
 	}
 
-	private static boolean isStaff(AppUser actor) {
-		return actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR);
+	/** Admins everywhere; a coordinator only for the startups in a program they run. */
+	private boolean isStaff(AppUser actor, UUID organizationId) {
+		return actor.has(UserRole.ADMIN) || startupAccessService.coordinates(actor, organizationId);
 	}
 
 	/** Peer mentor evidence has its own visibility rules (PeerMentorDocumentService), so it reads as missing here. */
 	private StoredDocument requireDocument(UUID documentId) {
 		return storedDocumentRepository.findById(documentId)
-				.filter(document -> !DocumentKind.PEER_EVIDENCE.value().equals(document.getKind()))
+				.filter(document -> document.getKind() != DocumentKind.PEER_EVIDENCE)
 				.orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 	}
 

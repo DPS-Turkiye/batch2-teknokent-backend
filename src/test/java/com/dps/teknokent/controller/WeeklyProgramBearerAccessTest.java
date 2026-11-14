@@ -78,9 +78,9 @@ class WeeklyProgramBearerAccessTest {
 						List.of(), 1, new WeeklyProgramProposalResponse.Existing(0, 0, null)));
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/weekly-program/read", PROGRAM_ID)
-						.header(HttpHeaders.AUTHORIZATION, "Bearer good")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + OTHER_ID + "\",\"documentId\":\"" + DOCUMENT_ID + "\"}"))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer good")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + OTHER_ID + "\",\"documentId\":\"" + DOCUMENT_ID + "\"}"))
 				.andExpect(status().isOk());
 
 		verify(weeklyProgramService).read(eq(COORDINATOR_ID), eq(PROGRAM_ID), any(ReadWeeklyProgramRequest.class));
@@ -89,9 +89,9 @@ class WeeklyProgramBearerAccessTest {
 	@Test
 	void theSaveStillRefusesATokenSoItGoesThroughTheProxy() throws Exception {
 		mockMvc.perform(put("/api/coordinator/programs/{id}/weekly-program", PROGRAM_ID)
-						.header(HttpHeaders.AUTHORIZATION, "Bearer good")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{}"))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer good")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
 				.andExpect(status().isForbidden());
 
 		verifyNoInteractions(weeklyProgramService);

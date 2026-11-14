@@ -2,10 +2,10 @@ package com.dps.teknokent.security;
 
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -22,7 +22,7 @@ public final class CurrentActor {
 	 * Like {@link #resolve}, but null instead of an error when nobody is named: for reads that only narrow what a
 	 * known caller sees. A signed-in caller is always themselves.
 	 */
-	public static UUID resolveOptional(UUID requestedActorId) {
+	public static @Nullable UUID resolveOptional(@Nullable UUID requestedActorId) {
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {
 			return principal.id();
@@ -48,7 +48,7 @@ public final class CurrentActor {
 		throw new InvalidRequestException("A Firebase session is required.");
 	}
 
-	public static UUID resolve(UUID requestedActorId) {
+	public static UUID resolve(@Nullable UUID requestedActorId) {
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {
 			return principal.id();

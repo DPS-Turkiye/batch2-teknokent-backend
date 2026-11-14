@@ -30,6 +30,13 @@
 #   MVNW_M2_HOST_DIR - optional host directory mounted as /root/.m2 (for CI cache)
 # ----------------------------------------------------------------------------
 
+# Turn on the shared git hooks (.githooks) the first time a build runs in a checkout, as husky does in the web
+# repo. Nothing changes when core.hooksPath is already set: `git config core.hooksPath .git/hooks` opts out.
+if [ "${MVNW_IN_DOCKER-}" != "1" ] && [ -d "$(dirname "$0")/.githooks" ] && command -v git >/dev/null 2>&1 &&
+  [ -z "$(git -C "$(dirname "$0")" config --get core.hooksPath 2>/dev/null)" ]; then
+  git -C "$(dirname "$0")" config core.hooksPath .githooks 2>/dev/null || :
+fi
+
 # Always run Maven in Docker unless already inside the container.
 if [ "${MVNW_IN_DOCKER-}" != "1" ]; then
   if ! command -v docker >/dev/null 2>&1; then

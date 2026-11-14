@@ -1,17 +1,17 @@
 package com.dps.teknokent.controller;
 
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
-import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
-import com.dps.teknokent.domain.UserAccountStatus;
-import com.dps.teknokent.domain.UserRole;
-import com.dps.teknokent.security.AppUserPrincipal;
-import org.springframework.http.MediaType;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -19,20 +19,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorRatingResponse;
+import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.MentorProfileService;
 import com.dps.teknokent.service.MentorRatingService;
-
-import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(MentorProfileController.class)
 @Import(SecurityConfig.class)
@@ -105,7 +105,7 @@ class MentorProfileControllerTest {
 		when(mentorRatingService.rating(mentor)).thenReturn(new MentorRatingResponse(4.8, 12, java.util.List.of()));
 
 		mockMvc.perform(get("/api/mentors/{id}/rating", mentor)
-						.with(authentication(signedInAs(UUID.fromString("00000000-0000-0000-0000-000000000801")))))
+				.with(authentication(signedInAs(UUID.fromString("00000000-0000-0000-0000-000000000801")))))
 				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
 				.andExpect(jsonPath("$.average").value(4.8))
 				.andExpect(jsonPath("$.feedbackCount").value(12));
@@ -123,9 +123,9 @@ class MentorProfileControllerTest {
 		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000702");
 
 		mockMvc.perform(put("/api/mentors/{id}", otherMentor)
-						.with(authentication(signedInAs(signedIn)))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(PROFILE_UPDATE))
+				.with(authentication(signedInAs(signedIn)))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(PROFILE_UPDATE))
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(mentorProfileService);
@@ -138,9 +138,9 @@ class MentorProfileControllerTest {
 			String request = PROFILE_UPDATE.replace("\"specialties\": []",
 					"\"specialties\": [], \"educations\": " + educations);
 			mockMvc.perform(put("/api/mentors/{id}", mentor)
-						.with(authentication(signedInAs(mentor)))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(request))
+					.with(authentication(signedInAs(mentor)))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(request))
 					.andExpect(status().isBadRequest());
 		}
 		verifyNoInteractions(mentorProfileService);
@@ -151,9 +151,9 @@ class MentorProfileControllerTest {
 		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000701");
 
 		mockMvc.perform(put("/api/mentors/{id}", signedIn)
-						.with(authentication(signedInAs(signedIn)))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(PROFILE_UPDATE))
+				.with(authentication(signedInAs(signedIn)))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(PROFILE_UPDATE))
 				.andExpect(status().isOk());
 
 		verify(mentorProfileService).updateProfile(eq(signedIn), any(UpdateMentorProfileRequest.class));
@@ -165,7 +165,7 @@ class MentorProfileControllerTest {
 		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000802");
 
 		mockMvc.perform(get("/api/mentors/{id}/availability-settings", otherMentor)
-						.with(authentication(signedInAs(signedIn))))
+				.with(authentication(signedInAs(signedIn))))
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(mentorProfileService);
@@ -176,7 +176,7 @@ class MentorProfileControllerTest {
 		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000801");
 
 		mockMvc.perform(get("/api/mentors/{id}/availability-settings", signedIn)
-						.with(authentication(signedInAs(signedIn))))
+				.with(authentication(signedInAs(signedIn))))
 				.andExpect(status().isOk());
 
 		verify(mentorProfileService).findAvailabilitySettings(signedIn);
@@ -188,12 +188,12 @@ class MentorProfileControllerTest {
 		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000802");
 
 		mockMvc.perform(put("/api/mentors/{id}/availability-settings", otherMentor)
-						.with(authentication(signedInAs(signedIn)))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{"rules": [], "exceptions": [], "menteeCapacity": null,
-								 "defaultMeetingDurationMinutes": 45, "meetingBufferMinutes": 15}
-								"""))
+				.with(authentication(signedInAs(signedIn)))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"rules": [], "exceptions": [], "menteeCapacity": null,
+						 "defaultMeetingDurationMinutes": 45, "meetingBufferMinutes": 15}
+						"""))
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(mentorProfileService);

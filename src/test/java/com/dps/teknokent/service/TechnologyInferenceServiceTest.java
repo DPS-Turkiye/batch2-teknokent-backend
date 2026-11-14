@@ -1,15 +1,15 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 class TechnologyInferenceServiceTest {
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -70,7 +70,7 @@ class TechnologyInferenceServiceTest {
 
 	private List<String> textValues(JsonNode array) {
 		List<String> values = new ArrayList<>();
-		array.forEach(item -> values.add(item.asText()));
+		array.forEach(item -> values.add(item.asString()));
 		return values;
 	}
 }

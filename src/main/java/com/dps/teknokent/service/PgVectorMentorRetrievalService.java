@@ -27,9 +27,14 @@ public class PgVectorMentorRetrievalService {
 	private boolean enabled;
 
 	public List<MentorProfileResponse> shortlist(
-			String queryText, List<MentorProfileResponse> mentors, String provider, String model, int limit) throws Exception {
-		if (!enabled) throw new IllegalStateException("pgvector matching is disabled");
-		if (mentors.isEmpty()) return mentors;
+			String queryText, List<MentorProfileResponse> mentors, String provider, String model, int limit)
+			throws Exception {
+		if (!enabled) {
+			throw new IllegalStateException("pgvector matching is disabled");
+		}
+		if (mentors.isEmpty()) {
+			return mentors;
+		}
 
 		Map<UUID, MentorProfileResponse> byId = mentors.stream()
 				.collect(Collectors.toMap(MentorProfileResponse::id, Function.identity()));
@@ -49,13 +54,13 @@ public class PgVectorMentorRetrievalService {
 		String vector = vectorLiteral(queryVector);
 		List<UUID> ids = jdbcTemplate.query(
 				"""
-				SELECT mentor_id
-				FROM mentor_profile_embedding
-				WHERE provider = ? AND model = ? AND vector_dims(embedding) = ?
-				  AND mentor_id = ANY (?::uuid[])
-				ORDER BY embedding <=> CAST(? AS vector), mentor_id
-				LIMIT ?
-				""",
+						SELECT mentor_id
+						FROM mentor_profile_embedding
+						WHERE provider = ? AND model = ? AND vector_dims(embedding) = ?
+						  AND mentor_id = ANY (?::uuid[])
+						ORDER BY embedding <=> CAST(? AS vector), mentor_id
+						LIMIT ?
+						""",
 				ps -> {
 					ps.setString(1, provider);
 					ps.setString(2, model);
@@ -79,13 +84,13 @@ public class PgVectorMentorRetrievalService {
 	private void upsert(MentorDocument document, String provider, String model, List<Double> embedding) {
 		jdbcTemplate.update(
 				"""
-				INSERT INTO mentor_profile_embedding (mentor_id, provider, model, source_fingerprint, embedding)
-				VALUES (?, ?, ?, ?, CAST(? AS vector))
-				ON CONFLICT (mentor_id, provider, model) DO UPDATE SET
-				  source_fingerprint = EXCLUDED.source_fingerprint,
-				  embedding = EXCLUDED.embedding,
-				  updated_at = CURRENT_TIMESTAMP
-				""",
+						INSERT INTO mentor_profile_embedding (mentor_id, provider, model, source_fingerprint, embedding)
+						VALUES (?, ?, ?, ?, CAST(? AS vector))
+						ON CONFLICT (mentor_id, provider, model) DO UPDATE SET
+						  source_fingerprint = EXCLUDED.source_fingerprint,
+						  embedding = EXCLUDED.embedding,
+						  updated_at = CURRENT_TIMESTAMP
+						""",
 				document.id(), provider, model, fingerprint(document.text()), vectorLiteral(embedding));
 	}
 
@@ -108,7 +113,8 @@ public class PgVectorMentorRetrievalService {
 
 	private String fingerprint(String text) {
 		try {
-			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
+			return HexFormat.of()
+					.formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
 		} catch (Exception error) {
 			throw new IllegalStateException(error);
 		}
@@ -118,5 +124,6 @@ public class PgVectorMentorRetrievalService {
 		return vector.stream().map(String::valueOf).collect(Collectors.joining(",", "[", "]"));
 	}
 
-	private record MentorDocument(UUID id, String text) {}
+	private record MentorDocument(UUID id, String text) {
+	}
 }

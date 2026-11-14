@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.LocalDate;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.WeeklyProgramWarning;
 
 /**
@@ -18,11 +20,11 @@ public record WeeklyProgramProposalResponse(
 		List<String> notes,
 		List<String> readingWarnings,
 		int pageCount,
-		Existing existing) {
+		@Nullable Existing existing) {
 
 	public record Phase(
 			String name,
-			String expectedOutput,
+			@Nullable String expectedOutput,
 			int firstWeek,
 			int lastWeek,
 			LocalDate startDate,
@@ -37,6 +39,6 @@ public record WeeklyProgramProposalResponse(
 	 * {@code currentWeek} is the first week a keep-past save replaces: the running week, or {@code totalWeeks + 1}
 	 * once the program has ended. It is null until the program starts; once set, saving can keep the past.
 	 */
-	public record Existing(int phaseCount, int weekCount, Integer currentWeek) {
+	public record Existing(int phaseCount, int weekCount, @Nullable Integer currentWeek) {
 	}
 }

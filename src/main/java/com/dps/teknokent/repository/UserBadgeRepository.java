@@ -1,6 +1,5 @@
 package com.dps.teknokent.repository;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,8 +20,6 @@ public interface UserBadgeRepository extends JpaRepository<UserBadge, UUID> {
 			UUID programId, BadgeStatus status);
 
 	List<UserBadge> findByProgramIdAndBadgeCodeOrderByAwardedAtDesc(UUID programId, BadgeCode badgeCode);
-
-	List<UserBadge> findByBadgeCodeAndUserIdInOrderByAwardedAtDesc(BadgeCode badgeCode, Collection<UUID> userIds);
 
 	List<UserBadge> findByBadgeCodeOrderByAwardedAtDesc(BadgeCode badgeCode);
 

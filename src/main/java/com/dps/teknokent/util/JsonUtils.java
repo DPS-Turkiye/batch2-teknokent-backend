@@ -4,23 +4,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @Component
 public class JsonUtils {
 
 	private final ObjectMapper objectMapper;
 
-	public JsonUtils() {
-		this(new ObjectMapper());
-	}
-
+	/** Spring's mapper, so trees and values follow the same settings (java.time, naming) as the HTTP layer. */
 	public JsonUtils(ObjectMapper objectMapper) {
 		this.objectMapper = objectMapper;
 	}
@@ -28,7 +26,7 @@ public class JsonUtils {
 	public JsonNode readTree(String json) {
 		try {
 			return objectMapper.readTree(json);
-		} catch (JsonProcessingException error) {
+		} catch (JacksonException error) {
 			throw new IllegalStateException("Invalid JSON data.", error);
 		}
 	}
@@ -36,7 +34,7 @@ public class JsonUtils {
 	public String writeValue(Object value) {
 		try {
 			return objectMapper.writeValueAsString(value);
-		} catch (JsonProcessingException error) {
+		} catch (JacksonException error) {
 			throw new IllegalStateException("Value could not be serialized as JSON.", error);
 		}
 	}
@@ -45,7 +43,7 @@ public class JsonUtils {
 		return objectMapper.valueToTree(value);
 	}
 
-	public String unwrapJsonContent(String content) {
+	public String unwrapJsonContent(@Nullable String content) {
 		if (content == null) {
 			return "";
 		}
@@ -69,13 +67,10 @@ public class JsonUtils {
 		return trimmed;
 	}
 
-	/**
-	 * Converts a node to a plain map. Returning a JsonNode straight from a
-	 * controller serialises its bean getters ({@code isArray}, {@code isBigDecimal},
-	 * …) rather than its content, so anything crossing the wire goes through this.
-	 */
+	/** Converts a node to a plain map. */
 	public Map<String, Object> toMap(JsonNode node) {
-		return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {});
+		return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {
+		});
 	}
 
 	public ObjectNode createObjectNode() {
@@ -83,16 +78,16 @@ public class JsonUtils {
 	}
 
 	public String textOrEmpty(JsonNode node, String field) {
-		String value = node.path(field).asText("");
+		String value = node.path(field).asString("");
 		return value == null ? "" : value;
 	}
 
-	public String nullableText(JsonNode node, String field) {
+	public @Nullable String nullableText(JsonNode node, String field) {
 		JsonNode value = node.path(field);
 		if (value.isNull() || value.isMissingNode()) {
 			return null;
 		}
-		String text = value.asText(null);
+		String text = value.asString(null);
 		return text != null && text.isBlank() ? null : text;
 	}
 
@@ -102,7 +97,7 @@ public class JsonUtils {
 			return values;
 		}
 		for (JsonNode item : node) {
-			String value = item.asText("");
+			String value = item.asString("");
 			if (!value.isBlank()) {
 				values.add(value);
 			}

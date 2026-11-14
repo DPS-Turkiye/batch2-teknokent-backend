@@ -2,6 +2,8 @@ package com.dps.teknokent.dto.responses;
 
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.CoordinatorCandidateStatus;
 import com.dps.teknokent.domain.UserRole;
 
@@ -9,7 +11,7 @@ import com.dps.teknokent.domain.UserRole;
 public record CoordinatorCandidateResponse(
 		String email,
 		CoordinatorCandidateStatus status,
-		UUID userId,
-		String fullName,
-		UserRole role) {
+		@Nullable UUID userId,
+		@Nullable String fullName,
+		@Nullable UserRole role) {
 }

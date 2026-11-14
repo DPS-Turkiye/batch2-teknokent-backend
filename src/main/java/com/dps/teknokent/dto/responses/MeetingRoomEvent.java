@@ -2,12 +2,14 @@ package com.dps.teknokent.dto.responses;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingRoomEventType;
 
 public record MeetingRoomEvent(
 		MeetingRoomEventType type,
-		List<MeetingTodoResponse> todos,
-		String update) {
+		@Nullable List<MeetingTodoResponse> todos,
+		@Nullable String update) {
 
 	public static MeetingRoomEvent documentUpdated(String update) {
 		return new MeetingRoomEvent(MeetingRoomEventType.DOCUMENT_UPDATED, null, update);

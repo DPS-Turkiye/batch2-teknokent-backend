@@ -2,12 +2,17 @@ package com.dps.teknokent.dto.responses;
 
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.StudyLevel;
 import com.dps.teknokent.entity.InstitutionPerson;
 
-/** A person from the institution's records, e.g. one of an academician's advisees; {@code userId} null until they sign in. */
+/**
+ * A person from the institution's records, e.g. one of an academician's advisees; {@code userId} null until they sign
+ * in.
+ */
 public record InstitutionPersonSummaryResponse(
-		UUID userId,
+		@Nullable UUID userId,
 		String fullName,
 		String departmentName,
 		Integer classYear,

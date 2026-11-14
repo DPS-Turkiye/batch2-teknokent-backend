@@ -11,10 +11,12 @@ import com.dps.teknokent.entity.MentorAvailabilityException;
 public interface MentorAvailabilityExceptionRepository
 		extends JpaRepository<MentorAvailabilityException, UUID> {
 	List<MentorAvailabilityException> findByMentorIdOrderByStartsOnAsc(UUID mentorId);
+
 	List<MentorAvailabilityException> findByMentorId(UUID mentorId);
 
 	List<MentorAvailabilityException> findByMentorIdAndEndsOnGreaterThanEqualOrderByStartsOnAsc(
 			UUID mentorId, LocalDate endsOn);
+
 	boolean existsByMentorIdAndStartsOnLessThanEqualAndEndsOnGreaterThanEqual(
 			UUID mentorId, LocalDate startsOn, LocalDate endsOn);
 }

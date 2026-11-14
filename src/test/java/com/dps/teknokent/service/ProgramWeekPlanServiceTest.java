@@ -51,7 +51,7 @@ class ProgramWeekPlanServiceTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // ArgumentCaptor.forClass takes the raw collection class.
 	void savingReplacesThePlanInWeekOrderWithItsLinesAndDatesFromTheProgram() {
 		ProgramWeekPlanResponse saved = service.replace(COORDINATOR, PROGRAM_ID, new ReplaceProgramWeeksRequest(null,
 				List.of(input(4, " Sunum "), new ReplaceProgramWeeksRequest.WeekInput(1, "Tanışma",

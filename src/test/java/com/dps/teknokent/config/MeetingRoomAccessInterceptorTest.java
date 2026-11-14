@@ -1,5 +1,12 @@
 package com.dps.teknokent.config;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,13 +28,6 @@ import org.springframework.messaging.support.MessageBuilder;
 
 import com.dps.teknokent.service.MeetingRoomAccessService;
 import com.dps.teknokent.service.RealtimeTokenService.RealtimeIdentity;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingRoomAccessInterceptorTest {
@@ -181,6 +181,56 @@ class MeetingRoomAccessInterceptorTest {
 		assertThatThrownBy(() -> interceptor.preSend(subscribe(sessionAttributes), null))
 				.isInstanceOf(MessagingException.class);
 		verifyNoInteractions(meetingRoomAccessService);
+	}
+
+	// CONNECT, DISCONNECT and heartbeats address no room, so there is nothing to check yet.
+	@Test
+	void letsFramesOtherThanSubscribeAndSendThroughUnchecked() {
+		Message<?> connect = message(StompCommand.CONNECT, null, new HashMap<>());
+		Message<?> unsubscribe = message(StompCommand.UNSUBSCRIBE, "/topic/meetings/" + meetingId, new HashMap<>());
+
+		assertThat(interceptor().preSend(connect, null)).isSameAs(connect);
+		assertThat(interceptor().preSend(unsubscribe, null)).isSameAs(unsubscribe);
+		verifyNoInteractions(meetingRoomAccessService);
+	}
+
+	@Test
+	void rejectsASubscriptionToAnythingButOneMeetingsRoom() {
+		MeetingRoomAccessInterceptor interceptor = interceptor();
+
+		for (String destination : new String[] { "/topic/meetings/not-a-uuid", "/topic/meetings/",
+				"/topic/notifications", "/queue/meetings/" + meetingId, "/app/meetings/everyone/document" }) {
+			Message<?> message = message(StompCommand.SUBSCRIBE, destination, sessionAttributes());
+
+			assertThatThrownBy(() -> interceptor.preSend(message, null)).isInstanceOf(MessagingException.class);
+		}
+		Message<?> noDestination = message(StompCommand.SEND, null, sessionAttributes());
+		assertThatThrownBy(() -> interceptor.preSend(noDestination, null)).isInstanceOf(MessagingException.class);
+		verifyNoInteractions(meetingRoomAccessService);
+	}
+
+	@Test
+	void rejectsAFrameThatCarriesNoSessionAtAll() {
+		Message<?> message = message(StompCommand.SUBSCRIBE, "/topic/meetings/" + meetingId, null);
+
+		assertThatThrownBy(() -> interceptor().preSend(message, null)).isInstanceOf(MessagingException.class);
+		verifyNoInteractions(meetingRoomAccessService);
+	}
+
+	// Each room is checked on its own: seeing one meeting says nothing about another.
+	@Test
+	void aRoomOpenedInOneMeetingDoesNotOpenAnother() {
+		UUID otherMeetingId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId)).thenReturn(true);
+		when(meetingRoomAccessService.isMeetingVisibleTo(otherMeetingId, organizationId)).thenReturn(false);
+		stillMember(true);
+		MeetingRoomAccessInterceptor interceptor = interceptor();
+		Map<String, Object> sessionAttributes = sessionAttributes();
+		interceptor.preSend(subscribe(sessionAttributes), null);
+
+		Message<?> other = message(StompCommand.SUBSCRIBE, "/topic/meetings/" + otherMeetingId, sessionAttributes);
+
+		assertThatThrownBy(() -> interceptor.preSend(other, null)).isInstanceOf(MessagingException.class);
 	}
 
 	private MeetingRoomAccessInterceptor interceptor() {

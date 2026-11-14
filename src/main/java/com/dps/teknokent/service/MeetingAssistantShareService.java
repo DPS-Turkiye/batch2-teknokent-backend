@@ -2,19 +2,24 @@ package com.dps.teknokent.service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.dps.teknokent.domain.MeetingAssistantShareKind;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.PublishMeetingAssistantShareRequest;
 import com.dps.teknokent.dto.responses.MeetingAssistantShareResponse;
+import com.dps.teknokent.dto.responses.MeetingReportActionItem;
+import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.dto.responses.TranscriptUploadUrlResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -25,13 +30,20 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingAssistantShareRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.util.JsonUtils;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
+import tools.jackson.databind.JsonNode;
 
 @Service
 @RequiredArgsConstructor
 public class MeetingAssistantShareService {
+
+	/**
+	 * The most an uploaded transcript or report may weigh. A two-hour transcript is a few hundred kilobytes, and the
+	 * upload is read whole into memory, so a presigned PUT (which S3 cannot cap) must not become an unbounded read.
+	 */
+	static final long MAX_UPLOAD_BYTES = 10L * 1024 * 1024;
 
 	private final DomainLookupService domainLookupService;
 	private final MeetingAssistantShareRepository shareRepository;
@@ -41,13 +53,16 @@ public class MeetingAssistantShareService {
 	private final MeetingNoteService meetingNoteService;
 	private final PlatformTransactionManager transactionManager;
 
+	/**
+	 * The meeting's notebook: everything stored for its mentor, only what was published for its team.
+	 *
+	 * @param organizationId the team side's startup; trusted as it is only when {@code viewerId} is null, which only
+	 *                       the proxy's service credentials can send
+	 * @param viewerId       who is looking: a bearer caller always, or the mentor the proxy names
+	 */
 	@Transactional(readOnly = true)
-	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId) {
-		return find(meetingId, organizationId, null);
-	}
-
-	@Transactional(readOnly = true)
-	public MeetingAssistantShareResponse find(UUID meetingId, UUID organizationId, UUID viewerId) {
+	public MeetingAssistantShareResponse find(UUID meetingId, @Nullable UUID organizationId,
+			@Nullable UUID viewerId) {
 		Meeting meeting = requireVisibleMeeting(meetingId, organizationId, viewerId);
 		boolean mentorViewer = isMeetingMentor(meeting, viewerId);
 		MeetingAssistantShare share = shareRepository.findByMeetingId(meeting.getId()).orElse(null);
@@ -69,33 +84,38 @@ public class MeetingAssistantShareService {
 			PublishMeetingAssistantShareRequest request) {
 		readOnly().executeWithoutResult(status -> requireMeetingMentor(meetingId, request.actorId()));
 
-		String kind = request.kind() == null ? "" : request.kind().trim().toUpperCase();
-		boolean transcriptKind = kind.startsWith("TRANSCRIPT");
+		MeetingAssistantShareKind kind = request.kind();
+		if (kind == null) {
+			throw new InvalidRequestException("kind must be TRANSCRIPT, TRANSCRIPT_S3, REPORT or REPORT_S3.");
+		}
 		JsonNode report = null;
-		Stored stored;
-		if ("TRANSCRIPT".equals(kind)) {
+		Stored stored = switch (kind) {
+		case TRANSCRIPT -> {
 			JsonNode transcript = request.transcript();
 			if (transcript == null || !transcript.isArray() || transcript.isEmpty()) {
 				throw new InvalidRequestException("Transcript is required.");
 			}
-			stored = storeJson(transcriptObjectKey(meetingId), jsonUtils.writeValue(transcript));
-		} else if ("TRANSCRIPT_S3".equals(kind)) {
+			yield storeJson(transcriptObjectKey(meetingId), jsonUtils.writeValue(transcript));
+		}
+		case TRANSCRIPT_S3 -> {
 			readUpload(transcriptObjectKey(meetingId), "Transcript", node -> node.isArray() && !node.isEmpty());
-			stored = new Stored(transcriptObjectKey(meetingId), null);
-		} else if ("REPORT".equals(kind)) {
+			yield new Stored(transcriptObjectKey(meetingId), null);
+		}
+		case REPORT -> {
 			report = request.report();
 			if (report == null || !report.isObject()) {
 				throw new InvalidRequestException("Report is required.");
 			}
-			stored = storeJson(reportObjectKey(meetingId), jsonUtils.writeValue(report));
-		} else if ("REPORT_S3".equals(kind)) {
-			report = readUpload(reportObjectKey(meetingId), "Report", JsonNode::isObject);
-			stored = new Stored(reportObjectKey(meetingId), null);
-		} else {
-			throw new InvalidRequestException("kind must be TRANSCRIPT, TRANSCRIPT_S3, REPORT or REPORT_S3.");
+			yield storeJson(reportObjectKey(meetingId), jsonUtils.writeValue(report));
 		}
+		case REPORT_S3 -> {
+			report = readUpload(reportObjectKey(meetingId), "Report", JsonNode::isObject);
+			yield new Stored(reportObjectKey(meetingId), null);
+		}
+		};
 
-		JsonNode publishedReport = report;
+		boolean transcriptKind = kind.isTranscript();
+		List<MeetingReportActionItem> actionItems = report == null ? List.of() : actionItems(report);
 		return writing().execute(status -> {
 			MentorMeeting checked = requireMeetingMentor(meetingId, request.actorId());
 			Meeting meeting = checked.meeting();
@@ -110,10 +130,10 @@ public class MeetingAssistantShareService {
 				share.setReportPublishedAt(Instant.now());
 			}
 			MeetingAssistantShare saved = shareRepository.saveAndFlush(share);
-			copyPublishedShareToRoommates(meeting, saved, kind);
-			if (publishedReport != null) {
+			copyPublishedShareToRoommates(meeting, saved, transcriptKind);
+			if (!actionItems.isEmpty()) {
 				for (Meeting mate : roommates(meeting)) {
-					meetingNoteService.addReportActionItems(mate.getId(), publishedReport);
+					meetingNoteService.addReportActionItems(mate.getId(), actionItems);
 				}
 			}
 			return toResponse(meeting.getId(), saved, true);
@@ -155,7 +175,8 @@ public class MeetingAssistantShareService {
 				return false;
 			}
 			applyTranscript(share, stored);
-			// "Transkript gönderilsin" was the mentor's go-ahead to share it, so the team sees it without a second step.
+			// "Transkript gönderilsin" was the mentor's go-ahead to share it, so the team sees it without a second
+			// step.
 			if (meeting.isTranscribeRequested()) {
 				share.setTranscriptPublishedAt(Instant.now());
 			}
@@ -164,8 +185,8 @@ public class MeetingAssistantShareService {
 		});
 	}
 
-	public boolean storeGeneratedReport(UUID meetingId, Object report) {
-		if (alreadyStored(meetingId, this::hasStoredReport)) {
+	public boolean storeGeneratedReport(UUID meetingId, MeetingReportResponse report) {
+		if (report == null || alreadyStored(meetingId, this::hasStoredReport)) {
 			return false;
 		}
 		Stored stored = storeJson(reportObjectKey(meetingId), jsonUtils.writeValue(report));
@@ -179,7 +200,8 @@ public class MeetingAssistantShareService {
 			applyReport(share, stored);
 			share.setReportPublishedAt(Instant.now());
 			shareRepository.saveAndFlush(share);
-			meetingNoteService.addReportActionItems(meeting.getId(), jsonUtils.valueToTree(report));
+			meetingNoteService.addReportActionItems(meeting.getId(),
+					report.actionItems() == null ? List.of() : report.actionItems());
 			return true;
 		});
 	}
@@ -192,7 +214,7 @@ public class MeetingAssistantShareService {
 	}
 
 	/** Where a transcript or report lives: an S3 key, or the JSON itself when storage is not configured. */
-	private record Stored(String s3Key, String json) {
+	private record Stored(@Nullable String s3Key, @Nullable String json) {
 	}
 
 	private Stored storeJson(String key, String json) {
@@ -207,15 +229,57 @@ public class MeetingAssistantShareService {
 		if (!objectStorage.isConfigured()) {
 			throw new InvalidRequestException("Object storage is not configured.");
 		}
+		Long size = objectStorage.sizeOf(key);
+		if (size == null || size == 0) {
+			throw new InvalidRequestException(what + " upload was not found.");
+		}
+		if (size > MAX_UPLOAD_BYTES) {
+			throw new InvalidRequestException(Texts.forRequest("error.meetingUploadTooLarge",
+					MAX_UPLOAD_BYTES / (1024 * 1024)));
+		}
 		byte[] bytes = objectStorage.get(key);
 		if (bytes == null || bytes.length == 0) {
 			throw new InvalidRequestException(what + " upload was not found.");
+		}
+		// The object can be replaced between the size check and the read while its upload link is still valid.
+		if (bytes.length > MAX_UPLOAD_BYTES) {
+			throw new InvalidRequestException(Texts.forRequest("error.meetingUploadTooLarge",
+					MAX_UPLOAD_BYTES / (1024 * 1024)));
 		}
 		JsonNode parsed = jsonUtils.readTree(new String(bytes, StandardCharsets.UTF_8));
 		if (parsed == null || !valid.test(parsed)) {
 			throw new InvalidRequestException(what + " is required.");
 		}
 		return parsed;
+	}
+
+	/**
+	 * The action items of a report the mentor wrote or edited: each is an object with a task (or a title), an owner
+	 * and a due date, or a bare task string. Items without a task are left out.
+	 */
+	static List<MeetingReportActionItem> actionItems(JsonNode report) {
+		JsonNode items = report.path("actionItems");
+		if (!items.isArray()) {
+			return List.of();
+		}
+		List<MeetingReportActionItem> parsed = new ArrayList<>();
+		for (JsonNode item : items) {
+			String task = item.isString() ? item.asString() : firstText(item, "task", "title");
+			if (task != null && !task.isBlank()) {
+				parsed.add(new MeetingReportActionItem(firstText(item, "owner"), task, firstText(item, "due")));
+			}
+		}
+		return parsed;
+	}
+
+	private static @Nullable String firstText(JsonNode item, String... fields) {
+		for (String field : fields) {
+			JsonNode value = item.path(field);
+			if (value.isString() && !value.asString().isBlank()) {
+				return value.asString();
+			}
+		}
+		return null;
 	}
 
 	private static void applyTranscript(MeetingAssistantShare share, Stored stored) {
@@ -276,11 +340,11 @@ public class MeetingAssistantShareService {
 				share.getReportPublishedAt());
 	}
 
-	private boolean hasReadableShare(MeetingAssistantShare share, boolean mentorViewer) {
+	private boolean hasReadableShare(@Nullable MeetingAssistantShare share, boolean mentorViewer) {
 		return hasVisibleShare(share, mentorViewer);
 	}
 
-	private boolean hasVisibleShare(MeetingAssistantShare share, boolean mentorViewer) {
+	private boolean hasVisibleShare(@Nullable MeetingAssistantShare share, boolean mentorViewer) {
 		if (share == null) {
 			return false;
 		}
@@ -290,9 +354,9 @@ public class MeetingAssistantShareService {
 		return share.getTranscriptPublishedAt() != null || share.getReportPublishedAt() != null;
 	}
 
-	private MeetingAssistantShare publishedShareFromRoommates(
+	private @Nullable MeetingAssistantShare publishedShareFromRoommates(
 			Meeting meeting,
-			MeetingAssistantShare current) {
+			@Nullable MeetingAssistantShare current) {
 		for (Meeting mate : roommates(meeting)) {
 			if (mate.getId().equals(meeting.getId())) {
 				continue;
@@ -308,8 +372,7 @@ public class MeetingAssistantShareService {
 	private void copyPublishedShareToRoommates(
 			Meeting source,
 			MeetingAssistantShare sourceShare,
-			String kind) {
-		boolean transcript = kind.startsWith("TRANSCRIPT");
+			boolean transcript) {
 		for (Meeting mate : roommates(source)) {
 			if (mate.getId().equals(source.getId())) {
 				continue;
@@ -342,7 +405,7 @@ public class MeetingAssistantShareService {
 		return hasText(share.getReportS3Key()) || hasText(share.getReport());
 	}
 
-	private boolean hasText(String value) {
+	private boolean hasText(@Nullable String value) {
 		return value != null && !value.isBlank();
 	}
 
@@ -360,13 +423,13 @@ public class MeetingAssistantShareService {
 		return new StoredJson(parseOrNull(jsonb), null);
 	}
 
-	private record StoredJson(JsonNode body, String url) {
+	private record StoredJson(@Nullable JsonNode body, @Nullable String url) {
 		static StoredJson missing() {
 			return new StoredJson(null, null);
 		}
 	}
 
-	private JsonNode parseOrNull(String json) {
+	private @Nullable JsonNode parseOrNull(@Nullable String json) {
 		if (json == null || json.isBlank()) {
 			return null;
 		}
@@ -377,10 +440,15 @@ public class MeetingAssistantShareService {
 		}
 	}
 
-	private boolean isMeetingMentor(Meeting meeting, UUID viewerId) {
+	private boolean isMeetingMentor(Meeting meeting, @Nullable UUID viewerId) {
 		return viewerId != null
 				&& meeting.getMentor() != null
 				&& meeting.getMentor().getId().equals(viewerId);
+	}
+
+	private boolean isMemberOf(UUID userId, UUID organizationId) {
+		AppUser user = domainLookupService.requireUser(userId);
+		return user.getOrganization() != null && organizationId.equals(user.getOrganization().getId());
 	}
 
 	private record MentorMeeting(AppUser actor, Meeting meeting) {
@@ -395,7 +463,7 @@ public class MeetingAssistantShareService {
 		return new MentorMeeting(actor, meeting);
 	}
 
-	private AppUser requireApprovedMentor(UUID actorId) {
+	private AppUser requireApprovedMentor(@Nullable UUID actorId) {
 		if (actorId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
@@ -409,11 +477,12 @@ public class MeetingAssistantShareService {
 		return actor;
 	}
 
-	private Meeting requireVisibleMeeting(UUID meetingId, UUID organizationId, UUID viewerId) {
+	private Meeting requireVisibleMeeting(UUID meetingId, @Nullable UUID organizationId, @Nullable UUID viewerId) {
 		Meeting meeting = domainLookupService.requireMeeting(meetingId);
-		boolean inOrganization = organizationId != null
-				&& meeting.getOrganization().getId().equals(organizationId);
 		boolean meetingMentor = isMeetingMentor(meeting, viewerId);
+		boolean inOrganization = organizationId != null
+				&& meeting.getOrganization().getId().equals(organizationId)
+				&& (meetingMentor || viewerId == null || isMemberOf(viewerId, organizationId));
 		if (!inOrganization && !meetingMentor) {
 			throw new ResourceNotFoundException("Meeting not found: " + meetingId);
 		}

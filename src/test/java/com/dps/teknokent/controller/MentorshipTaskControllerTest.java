@@ -34,63 +34,65 @@ import com.dps.teknokent.service.MentorshipTaskService;
 @Import(SecurityConfig.class)
 class MentorshipTaskControllerTest {
 
-    @Autowired private MockMvc mvc;
-    @MockitoBean private MentorshipTaskService tasks;
+	@Autowired
+	private MockMvc mvc;
+	@MockitoBean
+	private MentorshipTaskService tasks;
 
-    private static final UUID REQUEST = UUID.randomUUID();
-    private static final UUID MENTOR = UUID.randomUUID();
-    private static final UUID OWNER = UUID.randomUUID();
-    private static final String URL = "/api/mentorship-requests/" + REQUEST;
+	private static final UUID REQUEST = UUID.randomUUID();
+	private static final UUID MENTOR = UUID.randomUUID();
+	private static final UUID OWNER = UUID.randomUUID();
+	private static final String URL = "/api/mentorship-requests/" + REQUEST;
 
-    @Test
-    void bothEndpointsRequireAuthentication() throws Exception {
-        mvc.perform(get(URL + "/task-assignees")).andExpect(status().isUnauthorized());
-        mvc.perform(post(URL + "/tasks").contentType(MediaType.APPLICATION_JSON).content(body("Task")))
-                .andExpect(status().isUnauthorized());
-        verifyNoInteractions(tasks);
-    }
+	@Test
+	void bothEndpointsRequireAuthentication() throws Exception {
+		mvc.perform(get(URL + "/task-assignees")).andExpect(status().isUnauthorized());
+		mvc.perform(post(URL + "/tasks").contentType(MediaType.APPLICATION_JSON).content(body("Task")))
+				.andExpect(status().isUnauthorized());
+		verifyNoInteractions(tasks);
+	}
 
-    @Test
-    void serviceCredentialsMustNameTheActor() throws Exception {
-        mvc.perform(get(URL + "/task-assignees").with(user("service"))).andExpect(status().isBadRequest());
-        verifyNoInteractions(tasks);
-    }
+	@Test
+	void serviceCredentialsMustNameTheActor() throws Exception {
+		mvc.perform(get(URL + "/task-assignees").with(user("service"))).andExpect(status().isBadRequest());
+		verifyNoInteractions(tasks);
+	}
 
-    @Test
-    void theProxyActorScopesBothAssigneeReadsAndCreation() throws Exception {
-        when(tasks.assignees(MENTOR, REQUEST)).thenReturn(List.of());
-        mvc.perform(get(URL + "/task-assignees").param("actorId", MENTOR.toString()).with(user("service")))
-                .andExpect(status().isOk());
-        mvc.perform(post(URL + "/tasks").param("actorId", MENTOR.toString()).with(user("service"))
-                        .contentType(MediaType.APPLICATION_JSON).content(body("Task")))
-                .andExpect(status().isCreated());
-        verify(tasks).assignees(MENTOR, REQUEST);
-        verify(tasks).assign(eq(MENTOR), eq(REQUEST), any());
-    }
+	@Test
+	void theProxyActorScopesBothAssigneeReadsAndCreation() throws Exception {
+		when(tasks.assignees(MENTOR, REQUEST)).thenReturn(List.of());
+		mvc.perform(get(URL + "/task-assignees").param("actorId", MENTOR.toString()).with(user("service")))
+				.andExpect(status().isOk());
+		mvc.perform(post(URL + "/tasks").param("actorId", MENTOR.toString()).with(user("service"))
+				.contentType(MediaType.APPLICATION_JSON).content(body("Task")))
+				.andExpect(status().isCreated());
+		verify(tasks).assignees(MENTOR, REQUEST);
+		verify(tasks).assign(eq(MENTOR), eq(REQUEST), any());
+	}
 
-    @Test
-    void aVerifiedPrincipalCannotSpoofTheActorQueryParameter() throws Exception {
-        var principal = new AppUserPrincipal(MENTOR, "mentor@task.test", UserRole.MENTOR,
-                UserAccountStatus.APPROVED, "task-mentor");
-        var auth = UsernamePasswordAuthenticationToken.authenticated(principal, null,
-                List.of(new SimpleGrantedAuthority("ROLE_MENTOR")));
-        mvc.perform(post(URL + "/tasks").param("actorId", UUID.randomUUID().toString())
-                        .with(authentication(auth)).contentType(MediaType.APPLICATION_JSON).content(body("Task")))
-                .andExpect(status().isCreated());
-        verify(tasks).assign(eq(MENTOR), eq(REQUEST), any());
-    }
+	@Test
+	void aVerifiedPrincipalCannotSpoofTheActorQueryParameter() throws Exception {
+		var principal = new AppUserPrincipal(MENTOR, "mentor@task.test", UserRole.MENTOR,
+				UserAccountStatus.APPROVED, "task-mentor");
+		var auth = UsernamePasswordAuthenticationToken.authenticated(principal, null,
+				List.of(new SimpleGrantedAuthority("ROLE_MENTOR")));
+		mvc.perform(post(URL + "/tasks").param("actorId", UUID.randomUUID().toString())
+				.with(authentication(auth)).contentType(MediaType.APPLICATION_JSON).content(body("Task")))
+				.andExpect(status().isCreated());
+		verify(tasks).assign(eq(MENTOR), eq(REQUEST), any());
+	}
 
-    @Test
-    void emptyAndOverlongTitlesAreRejectedBeforeTheService() throws Exception {
-        for (String title : List.of("   ", "x".repeat(256))) {
-            mvc.perform(post(URL + "/tasks").param("actorId", MENTOR.toString()).with(user("service"))
-                            .contentType(MediaType.APPLICATION_JSON).content(body(title)))
-                    .andExpect(status().isBadRequest());
-        }
-        verifyNoInteractions(tasks);
-    }
+	@Test
+	void emptyAndOverlongTitlesAreRejectedBeforeTheService() throws Exception {
+		for (String title : List.of("   ", "x".repeat(256))) {
+			mvc.perform(post(URL + "/tasks").param("actorId", MENTOR.toString()).with(user("service"))
+					.contentType(MediaType.APPLICATION_JSON).content(body(title)))
+					.andExpect(status().isBadRequest());
+		}
+		verifyNoInteractions(tasks);
+	}
 
-    private String body(String title) {
-        return "{\"ownerId\":\"" + OWNER + "\",\"title\":\"" + title + "\"}";
-    }
+	private String body(String title) {
+		return "{\"ownerId\":\"" + OWNER + "\",\"title\":\"" + title + "\"}";
+	}
 }

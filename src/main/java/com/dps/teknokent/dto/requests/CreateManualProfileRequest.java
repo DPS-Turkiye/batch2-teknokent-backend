@@ -1,11 +1,11 @@
 package com.dps.teknokent.dto.requests;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.dps.teknokent.domain.ProfileType;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import tools.jackson.databind.JsonNode;
 
 public record CreateManualProfileRequest(
-		@NotBlank String profileType,
+		@NotNull ProfileType profileType,
 		@NotNull JsonNode profile) {
 }

@@ -5,6 +5,9 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
@@ -23,18 +26,18 @@ public record CoordinatorProgramResponse(
 		LocalDate startDate,
 		LocalDate endDate,
 		UUID coordinatorId,
-		String coordinatorName,
+		@Nullable String coordinatorName,
 		int teamCount,
 		int mentorCount,
 		int pendingMentorCount,
 		int activeMentorshipCount,
 		int riskyMentorshipCount,
 		int awaitingMatchCount,
-		Integer oldestAwaitingMatchDays,
-		ProgramPhaseResponse currentPhase,
+		@Nullable Integer oldestAwaitingMatchDays,
+		@Nullable ProgramPhaseResponse currentPhase,
 		List<ProgramPhaseResponse> phases,
-		Integer currentWeek,
-		Integer totalWeeks) {
+		@Nullable Integer currentWeek,
+		@Nullable Integer totalWeeks) {
 
 	public record Detail(
 			CoordinatorProgramResponse program,
@@ -46,7 +49,7 @@ public record CoordinatorProgramResponse(
 			MentorDistribution mentors,
 			List<CoordinatorRef> coordinators,
 			int missingNoteMeetings,
-			Syllabus syllabus,
+			@Nullable Syllabus syllabus,
 			int pendingApprovalCount) {
 	}
 
@@ -54,7 +57,7 @@ public record CoordinatorProgramResponse(
 	 * The file the plan was read from: a weekly program, or an older syllabus ({@code kind} tells which); null when
 	 * there is none.
 	 */
-	public record Syllabus(UUID id, String filename, long sizeBytes, Instant uploadedAt, String kind) {
+	public record Syllabus(UUID id, String filename, long sizeBytes, Instant uploadedAt, DocumentKind kind) {
 	}
 
 	/** {@code owner} is the coordinator who created the program; the others were added to it. */

@@ -8,6 +8,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -65,7 +66,8 @@ public class LtiLaunchVerifier {
 		Date expires = claims.getExpirationTime();
 		require(expires != null && now.minus(CLOCK_SKEW).isBefore(expires.toInstant()), "The token has expired.");
 		Date issued = claims.getIssueTime();
-		require(issued != null && !issued.toInstant().isAfter(now.plus(CLOCK_SKEW)), "The token is issued in the future.");
+		require(issued != null && !issued.toInstant().isAfter(now.plus(CLOCK_SKEW)),
+				"The token is issued in the future.");
 		require(expectedNonce != null && expectedNonce.equals(claims.getClaim("nonce")), "The nonce does not match.");
 		require(properties.deploymentIdList().contains(stringClaim(claims, CLAIM_PREFIX + "deployment_id")),
 				"Unknown deployment.");
@@ -77,7 +79,9 @@ public class LtiLaunchVerifier {
 
 		Map<String, Object> context = mapClaim(claims, CLAIM_PREFIX + "context");
 		String contextId = context == null ? null : text(context.get("id"));
-		require(contextId != null && !contextId.isBlank(), "Office hours open from a course only.");
+		if (context == null || contextId == null || contextId.isBlank()) {
+			throw unauthorized("Office hours open from a course only.");
+		}
 
 		return new LtiLaunchClaims(
 				claims.getIssuer(),
@@ -123,20 +127,20 @@ public class LtiLaunchVerifier {
 	}
 
 	/** A context value as text: LMSes send ids as strings or as numbers, so either is accepted. */
-	private static String text(Object value) {
+	private static @Nullable String text(@Nullable Object value) {
 		if (value instanceof String string) {
 			return string;
 		}
 		return value instanceof Number number ? number.toString() : null;
 	}
 
-	private static String stringClaim(JWTClaimsSet claims, String name) {
+	private static @Nullable String stringClaim(JWTClaimsSet claims, String name) {
 		Object value = claims.getClaim(name);
 		return value instanceof String text ? text : null;
 	}
 
-	@SuppressWarnings("unchecked")
-	private static Map<String, Object> mapClaim(JWTClaimsSet claims, String name) {
+	@SuppressWarnings("unchecked") // A JSON object claim: its keys are strings.
+	private static @Nullable Map<String, Object> mapClaim(JWTClaimsSet claims, String name) {
 		Object value = claims.getClaim(name);
 		return value instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
 	}

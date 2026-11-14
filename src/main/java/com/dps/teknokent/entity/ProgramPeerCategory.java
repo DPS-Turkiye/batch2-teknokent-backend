@@ -18,8 +18,8 @@ import lombok.Setter;
 
 /** One category a coordinator turned on for a peer-mentoring program. */
 @Entity
-@Table(name = "program_peer_category",
-		uniqueConstraints = @UniqueConstraint(name = "uq_program_peer_category", columnNames = { "program_id", "category" }))
+@Table(name = "program_peer_category", uniqueConstraints = @UniqueConstraint(name = "uq_program_peer_category", columnNames = {
+		"program_id", "category" }))
 @Getter
 @Setter
 @NoArgsConstructor

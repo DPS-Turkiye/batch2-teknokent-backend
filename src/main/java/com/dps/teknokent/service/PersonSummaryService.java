@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -127,13 +128,13 @@ public class PersonSummaryService {
 						LinkedHashMap::new));
 	}
 
-	private static Organization currentStartup(AppUser person) {
+	private static @Nullable Organization currentStartup(AppUser person) {
 		Organization organization = person.getOrganization();
 		return organization == null || organization.isPersonal() ? null : organization;
 	}
 
 	/** The programs the page lists for a mentee: their own program and their current startup's programs. */
-	private Set<UUID> menteePrograms(AppUser person, Organization startup) {
+	private Set<UUID> menteePrograms(AppUser person, @Nullable Organization startup) {
 		Set<UUID> ids = new LinkedHashSet<>();
 		if (person.getProgramId() != null) {
 			ids.add(person.getProgramId());

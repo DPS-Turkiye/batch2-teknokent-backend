@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.AttendanceState;
 
 /**
@@ -11,12 +13,12 @@ import com.dps.teknokent.domain.AttendanceState;
  * are null when no week is running; {@code checkedInAt} is set once the caller has checked in.
  */
 public record AttendanceStatusResponse(
-		UUID programId,
-		String programName,
+		@Nullable UUID programId,
+		@Nullable String programName,
 		AttendanceState state,
-		Integer week,
-		Integer totalWeeks,
-		LocalDate weekStart,
-		LocalDate weekEnd,
-		Instant checkedInAt) {
+		@Nullable Integer week,
+		@Nullable Integer totalWeeks,
+		@Nullable LocalDate weekStart,
+		@Nullable LocalDate weekEnd,
+		@Nullable Instant checkedInAt) {
 }

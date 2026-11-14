@@ -9,13 +9,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.BadgeCode;
 import com.dps.teknokent.domain.BadgeKind;
@@ -60,14 +63,20 @@ public class AchievementService {
 	private final UserBadgeRepository awards;
 	private final AppUserRepository users;
 	private final BadgeService badgeService;
+	private final PlatformTransactionManager transactionManager;
 
-	/** After the session or feedback is committed, so a rule that fails never undoes it. */
+	/**
+	 * After the session or feedback is committed, so a rule that fails never undoes it. Each person gets their own
+	 * transaction: called on {@code this}, evaluate's own {@code @Transactional} does not apply, and in one shared
+	 * transaction a single failure would roll back everyone's new badges.
+	 */
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void onChange(AchievementsMayChangeEvent event) {
+		TransactionTemplate perPerson = new TransactionTemplate(transactionManager);
+		perPerson.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 		for (UUID userId : event.userIds()) {
 			try {
-				evaluate(userId, true);
+				perPerson.executeWithoutResult(status -> evaluate(userId, true));
 			} catch (RuntimeException failure) {
 				log.warn("Achievement check failed for user {}", userId, failure);
 			}
@@ -108,13 +117,13 @@ public class AchievementService {
 			}
 			boolean earned = active.containsKey(code);
 			rows.add(switch (code) {
-				case FIRST_SESSION -> row(code, earned, active, progress.sessions(), 1);
-				case SESSIONS_10 -> row(code, earned, active, progress.sessions(), SESSIONS_FOR_TEN);
-				case HOURS_25 -> row(code, earned, active, progress.minutes(), MINUTES_FOR_HOURS);
-				case WELL_RATED -> new AchievementProgressResponse(code, earned, active.get(code),
-						progress.ratedFeedback(), RATINGS_FOR_WELL_RATED, progress.average(), AVERAGE_FOR_WELL_RATED);
-				case ACTIVE_MENTEE -> row(code, earned, active, progress.menteeSessions(), SESSIONS_FOR_ACTIVE_MENTEE);
-				default -> throw new IllegalStateException("Unhandled achievement " + code);
+			case FIRST_SESSION -> row(code, earned, active, progress.sessions(), 1);
+			case SESSIONS_10 -> row(code, earned, active, progress.sessions(), SESSIONS_FOR_TEN);
+			case HOURS_25 -> row(code, earned, active, progress.minutes(), MINUTES_FOR_HOURS);
+			case WELL_RATED -> new AchievementProgressResponse(code, earned, active.get(code),
+					progress.ratedFeedback(), RATINGS_FOR_WELL_RATED, progress.average(), AVERAGE_FOR_WELL_RATED);
+			case ACTIVE_MENTEE -> row(code, earned, active, progress.menteeSessions(), SESSIONS_FOR_ACTIVE_MENTEE);
+			default -> throw new IllegalStateException("Unhandled achievement " + code);
 			});
 		}
 		return rows;
@@ -167,17 +176,17 @@ public class AchievementService {
 		return new Progress(slots.size(), minutes, ratedFeedback, average, menteeSessions.size());
 	}
 
-	record Progress(int sessions, int minutes, int ratedFeedback, Double average, int menteeSessions) {
+	record Progress(int sessions, int minutes, int ratedFeedback, @Nullable Double average, int menteeSessions) {
 
 		boolean reached(BadgeCode code) {
 			return switch (code) {
-				case FIRST_SESSION -> sessions >= 1;
-				case SESSIONS_10 -> sessions >= SESSIONS_FOR_TEN;
-				case HOURS_25 -> minutes >= MINUTES_FOR_HOURS;
-				case WELL_RATED -> ratedFeedback >= RATINGS_FOR_WELL_RATED && average != null
-						&& average >= AVERAGE_FOR_WELL_RATED;
-				case ACTIVE_MENTEE -> menteeSessions >= SESSIONS_FOR_ACTIVE_MENTEE;
-				default -> false;
+			case FIRST_SESSION -> sessions >= 1;
+			case SESSIONS_10 -> sessions >= SESSIONS_FOR_TEN;
+			case HOURS_25 -> minutes >= MINUTES_FOR_HOURS;
+			case WELL_RATED -> ratedFeedback >= RATINGS_FOR_WELL_RATED && average != null
+					&& average >= AVERAGE_FOR_WELL_RATED;
+			case ACTIVE_MENTEE -> menteeSessions >= SESSIONS_FOR_ACTIVE_MENTEE;
+			default -> false;
 			};
 		}
 	}

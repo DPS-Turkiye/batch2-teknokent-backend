@@ -27,15 +27,15 @@ public enum OfficeHoursRequestAction {
 	public static List<OfficeHoursRequestAction> allowedFor(OfficeHoursRole viewer, OfficeHoursRequestStatus status) {
 		if (viewer == OfficeHoursRole.INSTRUCTOR) {
 			return switch (status) {
-				case PENDING, MORE_INFO_REQUESTED -> ANSWERS;
-				case ACCEPTED, DECLINED, COUNTER_PROPOSED, WITHDRAWN -> List.of();
+			case PENDING, MORE_INFO_REQUESTED -> ANSWERS;
+			case ACCEPTED, DECLINED, COUNTER_PROPOSED, WITHDRAWN -> List.of();
 			};
 		}
 		return switch (status) {
-			case PENDING -> List.of(WITHDRAW);
-			case MORE_INFO_REQUESTED -> List.of(REPLY, WITHDRAW);
-			case COUNTER_PROPOSED -> List.of(ACCEPT_PROPOSED, WITHDRAW);
-			case ACCEPTED, DECLINED, WITHDRAWN -> List.of();
+		case PENDING -> List.of(WITHDRAW);
+		case MORE_INFO_REQUESTED -> List.of(REPLY, WITHDRAW);
+		case COUNTER_PROPOSED -> List.of(ACCEPT_PROPOSED, WITHDRAW);
+		case ACCEPTED, DECLINED, WITHDRAWN -> List.of();
 		};
 	}
 }

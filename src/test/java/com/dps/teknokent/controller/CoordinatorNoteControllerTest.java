@@ -49,7 +49,8 @@ class CoordinatorNoteControllerTest {
 
 	@Test
 	void requiresAuthentication() throws Exception {
-		mockMvc.perform(get("/api/coordinator/mentorships/{id}/notes", MENTORSHIP_ID)).andExpect(status().isUnauthorized());
+		mockMvc.perform(get("/api/coordinator/mentorships/{id}/notes", MENTORSHIP_ID))
+				.andExpect(status().isUnauthorized());
 		verifyNoInteractions(noteService);
 	}
 
@@ -58,15 +59,16 @@ class CoordinatorNoteControllerTest {
 		CoordinatorNoteResponse note = new CoordinatorNoteResponse(
 				NOTE_ID, MENTORSHIP_ID, "Elif Demir", "Nakit akışı riskli", Instant.now(), true);
 		when(noteService.list(SIGNED_IN_ID, MENTORSHIP_ID)).thenReturn(List.of(note));
-		when(noteService.add(eq(SIGNED_IN_ID), eq(MENTORSHIP_ID), any(AddCoordinatorNoteRequest.class))).thenReturn(note);
+		when(noteService.add(eq(SIGNED_IN_ID), eq(MENTORSHIP_ID), any(AddCoordinatorNoteRequest.class)))
+				.thenReturn(note);
 
 		mockMvc.perform(get("/api/coordinator/mentorships/{id}/notes", MENTORSHIP_ID).with(authentication(signedIn())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].authorName").value("Elif Demir"));
 		mockMvc.perform(post("/api/coordinator/mentorships/{id}/notes", MENTORSHIP_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"body\":\"Nakit akışı riskli\"}")
-						.with(authentication(signedIn())))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"body\":\"Nakit akışı riskli\"}")
+				.with(authentication(signedIn())))
 				.andExpect(status().isCreated());
 		mockMvc.perform(delete("/api/coordinator/notes/{id}", NOTE_ID).with(authentication(signedIn())))
 				.andExpect(status().isNoContent());
@@ -77,16 +79,17 @@ class CoordinatorNoteControllerTest {
 	@Test
 	void aBlankNoteIsRejected() throws Exception {
 		mockMvc.perform(post("/api/coordinator/mentorships/{id}/notes", MENTORSHIP_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"body\":\"   \"}")
-						.with(authentication(signedIn())))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"body\":\"   \"}")
+				.with(authentication(signedIn())))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(noteService);
 	}
 
 	private static UsernamePasswordAuthenticationToken signedIn() {
 		return new UsernamePasswordAuthenticationToken(
-				new AppUserPrincipal(SIGNED_IN_ID, "elif@tekno.test", UserRole.COORDINATOR, UserAccountStatus.APPROVED, "uid"),
+				new AppUserPrincipal(SIGNED_IN_ID, "elif@tekno.test", UserRole.COORDINATOR, UserAccountStatus.APPROVED,
+						"uid"),
 				null, List.of());
 	}
 }

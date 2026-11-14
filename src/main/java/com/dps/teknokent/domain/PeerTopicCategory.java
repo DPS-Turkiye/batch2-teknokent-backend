@@ -3,6 +3,8 @@ package com.dps.teknokent.domain;
 import java.util.Arrays;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /** The board's eight peer-mentoring categories (frontend PeerTopicCategory mirrors them). */
 public enum PeerTopicCategory {
 	ACADEMIC_DEVELOPMENT("Akademik Gelişim"),
@@ -24,7 +26,7 @@ public enum PeerTopicCategory {
 	 * The category a stored text names, by code or by the board's Turkish label (a mentor profile's topics are free
 	 * text until the peer-mentor wizard stores codes); null for anything else.
 	 */
-	public static PeerTopicCategory fromText(String text) {
+	public static @Nullable PeerTopicCategory fromText(@Nullable String text) {
 		if (text == null || text.isBlank()) {
 			return null;
 		}

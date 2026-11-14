@@ -1,17 +1,15 @@
 package com.dps.teknokent.service;
 
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -39,6 +37,9 @@ import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.security.institution.InstitutionIdentity;
 import com.dps.teknokent.security.institution.InstitutionLoginProvider;
 import com.dps.teknokent.security.institution.InstitutionRecords;
+import com.dps.teknokent.util.EmailDomains;
+import com.dps.teknokent.util.RandomTokens;
+import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -62,7 +63,6 @@ public class InstitutionLoginService {
 	static final String SIGNUP_CODE_KEY = "institution-login:signup:";
 	/** Firebase uids are at most 128 characters; the provider prefix takes the rest. */
 	private static final int MAX_PERSISTENT_ID = 100;
-	private static final SecureRandom RANDOM = new SecureRandom();
 
 	private final ObjectProvider<InstitutionLoginProvider> providers;
 	private final StringRedisTemplate redis;
@@ -88,7 +88,7 @@ public class InstitutionLoginService {
 
 	public InstitutionLoginStartResponse start(String providerId) {
 		InstitutionLoginProvider provider = provider(providerId);
-		String state = randomToken();
+		String state = RandomTokens.urlSafe(32);
 		redis.opsForValue().set(STATE_KEY + state, provider.id(), STATE_TTL);
 		return new InstitutionLoginStartResponse(provider.startLogin(state), state);
 	}
@@ -107,12 +107,12 @@ public class InstitutionLoginService {
 		Optional<AppUser> account = transactions.execute(status -> provider.grantsAccess()
 				? Optional.of(signIn(provider, identity))
 				: findAccount(provider, identity));
-		String code = randomToken();
+		String code = RandomTokens.urlSafe(32);
 		if (account != null && account.isPresent()) {
 			redis.opsForValue().set(CODE_KEY + code, account.get().getId().toString(), CODE_TTL);
 		} else {
 			NewLogin login = new NewLogin(firebaseUid(provider, requirePersistentId(identity)), requireEmail(identity),
-					blankToNull(identity.fullName()), identity.emailVerified());
+					TextUtils.normalizeOptional(identity.fullName()), identity.emailVerified());
 			redis.opsForValue().set(SIGNUP_CODE_KEY + code, jsonMapper.writeValueAsString(login), CODE_TTL);
 		}
 		return code;
@@ -294,11 +294,7 @@ public class InstitutionLoginService {
 		if (identity.email() == null || identity.email().isBlank()) {
 			throw new InvalidRequestException("The institution sent no e-mail address for this person.");
 		}
-		return identity.email().trim().toLowerCase(Locale.ROOT);
-	}
-
-	private static String blankToNull(String value) {
-		return value == null || value.isBlank() ? null : value.trim();
+		return EmailDomains.normalizeEmail(identity.email());
 	}
 
 	private InstitutionLoginProvider provider(String providerId) {
@@ -315,13 +311,7 @@ public class InstitutionLoginService {
 		return new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.institutionNoAccess"));
 	}
 
-	private static String randomToken() {
-		byte[] bytes = new byte[32];
-		RANDOM.nextBytes(bytes);
-		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-	}
-
 	/** Who a sign-up code is for: the Firebase login to create, carried for the code's 60 seconds only. */
-	record NewLogin(String uid, String email, String fullName, boolean emailVerified) {
+	record NewLogin(String uid, String email, @Nullable String fullName, boolean emailVerified) {
 	}
 }

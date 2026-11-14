@@ -2,13 +2,19 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -22,20 +28,23 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.Edition;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.TeamJoinStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateCoordinatorProgramRequest;
 import com.dps.teknokent.dto.requests.NewCoordinatorInput;
-import com.dps.teknokent.service.AdminCoordinatorService.CheckedInvite;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest;
 import com.dps.teknokent.dto.requests.TeamInviteInput;
 import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
+import com.dps.teknokent.dto.responses.ProgramTeamResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
@@ -43,12 +52,14 @@ import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
+import com.dps.teknokent.service.AdminCoordinatorService.CheckedInvite;
 
 @ExtendWith(MockitoExtension.class)
 class ProgramLaunchServiceTest {
@@ -126,8 +137,8 @@ class ProgramLaunchServiceTest {
 		when(programService.requireCoordinatorOrAdmin(ELIF)).thenReturn(user(ELIF, UserRole.COORDINATOR));
 
 		assertThatThrownBy(() -> service.create(ELIF, request(List.of(BURCU), List.of())))
-				.isInstanceOf(InvalidRequestException.class)
-				.hasMessageContaining("admin");
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		verify(programRepository, never()).save(any());
 	}
 
@@ -182,7 +193,8 @@ class ProgramLaunchServiceTest {
 		CreateCoordinatorProgramRequest base = request(List.of(ELIF), List.of());
 
 		service.create(ADMIN, new CreateCoordinatorProgramRequest(null, base.type(), base.name(), base.description(),
-				base.startDate(), base.endDate(), base.coordinatorIds(), null, 4, 14, 14, 21, List.of(), phases, syllabusId));
+				base.startDate(), base.endDate(), base.coordinatorIds(), null, 4, 14, 14, 21, List.of(), phases,
+				syllabusId));
 
 		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
 		verify(programRepository).save(program.capture());
@@ -224,7 +236,8 @@ class ProgramLaunchServiceTest {
 
 		assertThatThrownBy(() -> service.removeTeam(ELIF, programId, joined.getId()))
 				.isInstanceOf(InvalidRequestException.class);
-		assertThatThrownBy(() -> service.updateTeam(ELIF, programId, joined.getId(), new TeamInviteInput("X", "x@y.co")))
+		assertThatThrownBy(
+				() -> service.updateTeam(ELIF, programId, joined.getId(), new TeamInviteInput("X", "x@y.co")))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(inviteRepository, never()).delete(any());
 	}
@@ -276,7 +289,8 @@ class ProgramLaunchServiceTest {
 		assertThat(service.sendCode(ELIF, programId, waiting.getId())).singleElement()
 				.satisfies(row -> assertThat(row.codeSendFailed()).isTrue());
 
-		var fixed = service.updateTeam(ELIF, programId, waiting.getId(), new TeamInviteInput("Pusula", "ali@pusula.com"));
+		var fixed = service.updateTeam(ELIF, programId, waiting.getId(),
+				new TeamInviteInput("Pusula", "ali@pusula.com"));
 		assertThat(fixed).singleElement().satisfies(row -> {
 			assertThat(row.codeSendFailed()).isFalse();
 			assertThat(row.codeSentAt()).isNull();
@@ -397,11 +411,13 @@ class ProgramLaunchServiceTest {
 		UUID invited = UUID.randomUUID();
 		CheckedInvite yeni = new CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null);
 		CheckedInvite elif = new CheckedInvite("elif@teknokent.org", "Elif", user(ELIF, UserRole.COORDINATOR));
-		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "Yeni@Teknokent.org", "Yeni Kişi")).thenReturn(yeni);
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "Yeni@Teknokent.org", "Yeni Kişi"))
+				.thenReturn(yeni);
 		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "elif@teknokent.org", "Elif")).thenReturn(elif);
 		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, yeni, "METU BİGG 2026"))
 				.thenReturn(user(invited, UserRole.COORDINATOR));
-		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, elif, "METU BİGG 2026")).thenReturn(elif.existing());
+		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, elif, "METU BİGG 2026"))
+				.thenReturn(elif.existing());
 
 		service.create(ADMIN, withInvites(List.of(ELIF), List.of(
 				new NewCoordinatorInput("Yeni Kişi", "Yeni@Teknokent.org"),
@@ -419,7 +435,8 @@ class ProgramLaunchServiceTest {
 		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
 		UUID invited = UUID.randomUUID();
 		CheckedInvite yeni = new CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null);
-		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@teknokent.org", "Yeni Kişi")).thenReturn(yeni);
+		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@teknokent.org", "Yeni Kişi"))
+				.thenReturn(yeni);
 		when(adminCoordinatorService.coordinatorForNewProgram(ADMIN, yeni, "METU BİGG 2026"))
 				.thenReturn(user(invited, UserRole.COORDINATOR));
 
@@ -473,15 +490,301 @@ class ProgramLaunchServiceTest {
 		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
 		when(adminCoordinatorService.checkNewProgramCoordinator(ADMIN, "yeni@teknokent.org", "Yeni Kişi"))
 				.thenReturn(new CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null));
-		CreateCoordinatorProgramRequest base =
-				withInvites(null, List.of(new NewCoordinatorInput("Yeni Kişi", "yeni@teknokent.org")));
+		CreateCoordinatorProgramRequest base = withInvites(null,
+				List.of(new NewCoordinatorInput("Yeni Kişi", "yeni@teknokent.org")));
 		List<TeamInviteInput> twice = List.of(
 				new TeamInviteInput("Kavşak", "deniz@kavsak.co"), new TeamInviteInput("Mira", "deniz@kavsak.co"));
 
 		assertThatThrownBy(() -> service.create(ADMIN, new CreateCoordinatorProgramRequest(null, base.type(),
-				base.name(), null, null, null, null, base.newCoordinators(), null, null, null, null, twice, null, null)))
+				base.name(), null, null, null, null, base.newCoordinators(), null, null, null, null, twice, null,
+				null)))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(adminCoordinatorService, never()).coordinatorForNewProgram(any(), any(), any());
+	}
+
+	@Test
+	void aProgramCannotEndBeforeItStarts() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+
+		assertThatThrownBy(() -> service.create(ADMIN, new CreateCoordinatorProgramRequest(null,
+				ProgramType.STARTUP_MENTORING, "METU BİGG 2026", null, LocalDate.of(2026, 11, 3),
+				LocalDate.of(2026, 11, 2), List.of(ELIF), null, null, null, null, null, null, null, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("cannot end before it starts");
+		verify(programRepository, never()).save(any());
+		verifyNoInteractions(appUserRepository, adminCoordinatorService);
+	}
+
+	@Test
+	void aProgramOfASingleDayWithABlankDescriptionIsCreatedWithoutADescription() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		when(appUserRepository.findById(ELIF)).thenReturn(Optional.of(user(ELIF, UserRole.COORDINATOR)));
+		LocalDate day = LocalDate.of(2026, 11, 3);
+
+		service.create(ADMIN, new CreateCoordinatorProgramRequest(null, ProgramType.STARTUP_MENTORING,
+				"Demo Day", "   ", day, day, List.of(ELIF), null, null, null, 30, null, null, null, null));
+
+		ArgumentCaptor<Program> program = ArgumentCaptor.forClass(Program.class);
+		verify(programRepository).save(program.capture());
+		assertThat(program.getValue().getDescription()).isNull();
+		assertThat(program.getValue().getStartDate()).isEqualTo(program.getValue().getEndDate());
+		// The wizard's one "iletişim boşluğu" number sets both the stale limit and the communication gap.
+		assertThat(program.getValue().getStaleAfterDays()).isEqualTo(30);
+		assertThat(program.getValue().getCommunicationGapDays()).isEqualTo(30);
+	}
+
+	@Test
+	void aCoordinatorWhoIsNotApprovedOrDoesNotExistCannotRunAProgram() {
+		when(programService.requireCoordinatorOrAdmin(ADMIN)).thenReturn(user(ADMIN, UserRole.ADMIN));
+		AppUser waiting = user(BURCU, UserRole.COORDINATOR);
+		waiting.setStatus(UserAccountStatus.PENDING);
+		when(appUserRepository.findById(BURCU)).thenReturn(Optional.of(waiting));
+		UUID unknownId = UUID.randomUUID();
+		when(appUserRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.create(ADMIN, request(List.of(BURCU), List.of())))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("approved coordinators");
+		assertThatThrownBy(() -> service.create(ADMIN, request(List.of(unknownId), List.of())))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("approved coordinators");
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void addingTeamsLaterInvitesEachLeadWithACodeOfTheProgram() {
+		Program program = starsProgram();
+		when(programService.requireManagedProgram(ELIF, program.getId())).thenReturn(program);
+
+		service.addTeams(ELIF, program.getId(), List.of(new TeamInviteInput(" Kavşak ", " Deniz@Kavsak.co ")));
+
+		ArgumentCaptor<ProgramTeamInvite> invite = ArgumentCaptor.forClass(ProgramTeamInvite.class);
+		verify(inviteRepository).save(invite.capture());
+		assertThat(invite.getValue().getProgramId()).isEqualTo(program.getId());
+		assertThat(invite.getValue().getTeamName()).isEqualTo("Kavşak");
+		assertThat(invite.getValue().getLeadEmail()).isEqualTo("deniz@kavsak.co");
+		assertThat(invite.getValue().getCode()).matches("STARS26-[A-Z2-9]{4}");
+		assertThat(invite.getValue().getCreatedBy()).isEqualTo(ELIF);
+		assertThat(invite.getValue().getOrganizationId()).isNull();
+		verify(programEligibilityService).requirePerson(program, "deniz@kavsak.co");
+	}
+
+	@Test
+	void aLeadAlreadyInvitedToTheProgramIsNotInvitedAgain() {
+		Program program = starsProgram();
+		when(programService.requireManagedProgram(ELIF, program.getId())).thenReturn(program);
+		when(inviteRepository.existsByProgramIdAndLeadEmailIgnoreCase(program.getId(), "deniz@kavsak.co"))
+				.thenReturn(true);
+
+		assertThatThrownBy(() -> service.addTeams(ELIF, program.getId(),
+				List.of(new TeamInviteInput("Kavşak", "Deniz@Kavsak.co"))))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("deniz@kavsak.co");
+		verify(inviteRepository, never()).save(any());
+	}
+
+	@Test
+	void aLeadTheProgramsRulesExcludeIsNotInvited() {
+		Program program = starsProgram();
+		when(programService.requireManagedProgram(ELIF, program.getId())).thenReturn(program);
+		doThrow(new InvalidRequestException("Not eligible.")).when(programEligibilityService)
+				.requirePerson(program, "deniz@gmail.com");
+
+		assertThatThrownBy(() -> service.addTeams(ELIF, program.getId(),
+				List.of(new TeamInviteInput("Kavşak", "deniz@gmail.com"))))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Not eligible.");
+		verify(inviteRepository, never()).save(any());
+	}
+
+	@Test
+	void aCodeAlreadyUsedByATeamOrAnOrganizationIsDrawnAgain() {
+		Program program = starsProgram();
+		when(programService.requireManagedProgram(ELIF, program.getId())).thenReturn(program);
+		when(inviteRepository.existsByCode(anyString())).thenReturn(true).thenReturn(false);
+		when(organizationRepository.existsByInviteCode(anyString())).thenReturn(true).thenReturn(false);
+
+		service.addTeams(ELIF, program.getId(), List.of(new TeamInviteInput("Kavşak", "deniz@kavsak.co")));
+
+		ArgumentCaptor<String> drawn = ArgumentCaptor.forClass(String.class);
+		verify(inviteRepository, times(3)).existsByCode(drawn.capture());
+		ArgumentCaptor<ProgramTeamInvite> invite = ArgumentCaptor.forClass(ProgramTeamInvite.class);
+		verify(inviteRepository).save(invite.capture());
+		assertThat(invite.getValue().getCode()).isEqualTo(drawn.getAllValues().get(2));
+	}
+
+	@Test
+	void givesUpInsteadOfReusingACodeWhenNoFreeOneIsFound() {
+		Program program = starsProgram();
+		when(programService.requireManagedProgram(ELIF, program.getId())).thenReturn(program);
+		when(inviteRepository.existsByCode(anyString())).thenReturn(true);
+
+		assertThatThrownBy(() -> service.addTeams(ELIF, program.getId(),
+				List.of(new TeamInviteInput("Kavşak", "deniz@kavsak.co"))))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("STARS26");
+		verify(inviteRepository, times(20)).existsByCode(anyString());
+		verify(inviteRepository, never()).save(any());
+	}
+
+	@Test
+	void renamingATeamKeepsItsSendStatusWhileTheLeadEmailStaysTheSame() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+		Instant sentAt = Instant.parse("2026-11-01T09:00:00Z");
+		waiting.setCodeSentAt(sentAt);
+
+		var rows = service.updateTeam(ELIF, programId, waiting.getId(),
+				new TeamInviteInput(" Pusula Robotik ", "ALI@pusula.io"));
+
+		assertThat(rows).singleElement().satisfies(row -> {
+			assertThat(row.name()).isEqualTo("Pusula Robotik");
+			assertThat(row.leadEmail()).isEqualTo("ali@pusula.io");
+			assertThat(row.codeSentAt()).isEqualTo(sentAt);
+		});
+		verify(inviteRepository, never()).existsByProgramIdAndLeadEmailIgnoreCase(any(), any());
+		verify(inviteRepository).save(waiting);
+	}
+
+	@Test
+	void aTeamCannotTakeTheLeadEmailOfAnotherTeamInTheProgram() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+		when(inviteRepository.existsByProgramIdAndLeadEmailIgnoreCase(programId, "selin@mirabio.com"))
+				.thenReturn(true);
+
+		assertThatThrownBy(() -> service.updateTeam(ELIF, programId, waiting.getId(),
+				new TeamInviteInput("Pusula", "Selin@MiraBio.com")))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("already has this lead email");
+		assertThat(waiting.getLeadEmail()).isEqualTo("ali@pusula.io");
+		verify(inviteRepository, never()).save(any());
+	}
+
+	@Test
+	void removingATeamWhoseLeadHasNotJoinedDeletesItsInvite() {
+		UUID programId = UUID.randomUUID();
+		ProgramTeamInvite waiting = waitingInvite(programId);
+
+		service.removeTeam(ELIF, programId, waiting.getId());
+
+		verify(inviteRepository).delete(waiting);
+	}
+
+	@Test
+	void anInviteThatIsNotThisProgramsIsNotFound() {
+		UUID programId = UUID.randomUUID();
+		UUID inviteId = UUID.randomUUID();
+		when(inviteRepository.findByIdAndProgramId(inviteId, programId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.removeTeam(ELIF, programId, inviteId))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessageContaining(inviteId.toString());
+		verify(inviteRepository, never()).delete(any());
+	}
+
+	@Test
+	void theTeamsTabShowsJoinedTeamsWithTheirLeadAndSizeAndTeamsThatJoinedWithoutACode() {
+		UUID programId = UUID.randomUUID();
+		AppUser gamze = user(UUID.randomUUID(), UserRole.MENTEE);
+		gamze.setFullName("Gamze Kozak");
+		Organization atlas = organization("Atlas AI", gamze, "ATLAS-OLD");
+		ProgramTeamInvite joined = new ProgramTeamInvite();
+		joined.setId(UUID.randomUUID());
+		joined.setTeamName("Atlas");
+		joined.setLeadEmail("gamze@atlas.ai");
+		joined.setCode("BIGG26-A82K");
+		joined.setOrganizationId(atlas.getId());
+		joined.setJoinedAt(Instant.parse("2026-11-05T09:00:00Z"));
+		AppUser kurucu = user(UUID.randomUUID(), UserRole.MENTEE);
+		kurucu.setFullName("Mert Kurucu");
+		kurucu.setEmail("mert@kavun.co");
+		Organization withoutCode = organization("Kavun", kurucu, "KAVUN-7Q2M");
+		Organization withoutLead = organization("Nova", null, "NOVA-3KXP");
+		Organization awaitingApproval = organization("Bekleyen", null, "BEKLE-1111");
+		awaitingApproval.setApprovalStatus(UserAccountStatus.PENDING);
+		when(inviteRepository.findByProgramIdOrderByCreatedAtAsc(programId)).thenReturn(List.of(joined));
+		when(programStartupRepository.findByProgramIdIn(List.of(programId))).thenReturn(List.of(
+				startup(atlas), startup(withoutCode), startup(withoutLead), startup(awaitingApproval)));
+		when(organizationRepository.findAllById(any()))
+				.thenReturn(List.of(atlas, withoutCode, withoutLead, awaitingApproval));
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(atlas.getId()))
+				.thenReturn(List.of(gamze, user(UUID.randomUUID(), UserRole.MENTEE)));
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(withoutCode.getId()))
+				.thenReturn(List.of(kurucu));
+
+		var rows = service.teams(ELIF, programId);
+
+		assertThat(rows)
+				.extracting(ProgramTeamResponse::inviteId, ProgramTeamResponse::name, ProgramTeamResponse::status,
+						ProgramTeamResponse::leadName, ProgramTeamResponse::leadEmail, ProgramTeamResponse::code,
+						ProgramTeamResponse::memberCount)
+				.containsExactly(
+						tuple(joined.getId(), "Atlas AI", TeamJoinStatus.JOINED, "Gamze Kozak", "gamze@atlas.ai",
+								"BIGG26-A82K", 2),
+						tuple(null, "Kavun", TeamJoinStatus.JOINED, "Mert Kurucu", "mert@kavun.co", "KAVUN-7Q2M", 1),
+						tuple(null, "Nova", TeamJoinStatus.JOINED, null, null, "NOVA-3KXP", 0));
+		assertThat(rows.getFirst().joinedAt()).isEqualTo(Instant.parse("2026-11-05T09:00:00Z"));
+	}
+
+	@Test
+	void theTeamDrawerShowsTheCodeTheTeamJoinedWithAndCopesWithoutALead() {
+		UUID programId = UUID.randomUUID();
+		Organization atlas = organization("Atlas AI", null, "ATLAS-OLD");
+		atlas.setSector(StartupSector.AI);
+		ProgramTeamInvite ofAnotherTeam = new ProgramTeamInvite();
+		ofAnotherTeam.setOrganizationId(UUID.randomUUID());
+		ofAnotherTeam.setCode("BIGG26-ZZZZ");
+		ProgramTeamInvite own = new ProgramTeamInvite();
+		own.setOrganizationId(atlas.getId());
+		own.setCode("BIGG26-A82K");
+		when(programStartupRepository.findByProgramIdIn(List.of(programId))).thenReturn(List.of(startup(atlas)));
+		when(organizationRepository.findById(atlas.getId())).thenReturn(Optional.of(atlas));
+		when(inviteRepository.findByProgramIdOrderByCreatedAtAsc(programId)).thenReturn(List.of(ofAnotherTeam, own));
+
+		var detail = service.teamDetail(ELIF, programId, atlas.getId());
+
+		assertThat(detail.code()).isEqualTo("BIGG26-A82K");
+		assertThat(detail.sector()).isEqualTo("Yapay Zekâ");
+		assertThat(detail.lead()).isNull();
+		assertThat(detail.members()).isEmpty();
+		assertThat(detail.mentorships()).isEmpty();
+	}
+
+	@Test
+	void aTeamThatExistsButIsNotInTheProgramIsNotFoundInItsDrawer() {
+		UUID programId = UUID.randomUUID();
+		Organization elsewhere = organization("Atlas AI", null, "ATLAS-OLD");
+		when(programStartupRepository.findByProgramIdIn(List.of(programId))).thenReturn(List.of());
+		when(organizationRepository.findById(elsewhere.getId())).thenReturn(Optional.of(elsewhere));
+
+		assertThatThrownBy(() -> service.teamDetail(ELIF, programId, elsewhere.getId()))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessageContaining(elsewhere.getId().toString());
+		verifyNoInteractions(mentorshipService);
+	}
+
+	private static Program starsProgram() {
+		Program program = new Program();
+		program.setId(UUID.randomUUID());
+		program.setName("METU Stars 2026");
+		return program;
+	}
+
+	private static Organization organization(String name, AppUser founder, String inviteCode) {
+		Organization organization = new Organization();
+		organization.setId(UUID.randomUUID());
+		organization.setName(name);
+		organization.setFounder(founder);
+		organization.setInviteCode(inviteCode);
+		return organization;
+	}
+
+	private static ProgramStartup startup(Organization organization) {
+		ProgramStartup startup = new ProgramStartup();
+		startup.setOrganizationId(organization.getId());
+		startup.setCreatedAt(Instant.parse("2026-11-04T09:00:00Z"));
+		return startup;
 	}
 
 	private static CreateCoordinatorProgramRequest withInvites(List<UUID> ids, List<NewCoordinatorInput> invites) {
@@ -490,7 +793,8 @@ class ProgramLaunchServiceTest {
 	}
 
 	private static CreateCoordinatorProgramRequest request(List<UUID> coordinators, List<TeamInviteInput> teams) {
-		return new CreateCoordinatorProgramRequest(null, ProgramType.STARTUP_MENTORING, " METU BİGG 2026 ", "Kuluçka", LocalDate.of(2026, 11, 3),
+		return new CreateCoordinatorProgramRequest(null, ProgramType.STARTUP_MENTORING, " METU BİGG 2026 ", "Kuluçka",
+				LocalDate.of(2026, 11, 3),
 				LocalDate.of(2027, 9, 30), coordinators, null, 4, 14, 14, 21, teams, null, null);
 	}
 

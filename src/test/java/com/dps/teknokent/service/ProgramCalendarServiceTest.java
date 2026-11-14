@@ -15,11 +15,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
-import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramEvent;
@@ -66,7 +66,8 @@ class ProgramCalendarServiceTest {
 		membership.setOrganizationId(ORG_ID);
 		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(ORG_ID)).thenReturn(List.of(membership));
 		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(program()));
-		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(List.of(PROGRAM_ID), FROM, TO))
+		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(List.of(PROGRAM_ID), FROM,
+				TO))
 				.thenReturn(List.of(event()));
 
 		var events = service.eventsFor(ACTOR_ID, FROM, TO);
@@ -83,10 +84,12 @@ class ProgramCalendarServiceTest {
 		when(domainLookupService.requireUser(ACTOR_ID)).thenReturn(user(UserRole.MENTOR, null));
 		ProgramMentor membership = new ProgramMentor();
 		membership.setProgramId(PROGRAM_ID);
-		when(programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(ACTOR_ID, ProgramMentorStatus.ACCEPTED))
+		when(programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(ACTOR_ID,
+				ProgramMentorStatus.ACCEPTED))
 				.thenReturn(List.of(membership));
 		when(programRepository.findAllById(List.of(PROGRAM_ID))).thenReturn(List.of(program()));
-		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(List.of(PROGRAM_ID), FROM, TO))
+		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(List.of(PROGRAM_ID), FROM,
+				TO))
 				.thenReturn(List.of(event()));
 
 		assertThat(service.eventsFor(ACTOR_ID, FROM, TO)).hasSize(1);
@@ -101,7 +104,8 @@ class ProgramCalendarServiceTest {
 		when(domainLookupService.requireUser(ACTOR_ID)).thenReturn(student);
 		ProgramMentor mentoring = new ProgramMentor();
 		mentoring.setProgramId(mentoredIn);
-		when(programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(ACTOR_ID, ProgramMentorStatus.ACCEPTED))
+		when(programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(ACTOR_ID,
+				ProgramMentorStatus.ACCEPTED))
 				.thenReturn(List.of(mentoring));
 		ProgramStartup team = new ProgramStartup();
 		team.setProgramId(PROGRAM_ID);

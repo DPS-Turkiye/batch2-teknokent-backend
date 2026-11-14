@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -64,7 +65,8 @@ public class ProgramAttendanceService {
 	private final ProgramAttendanceRepository attendanceRepository;
 
 	/** Where a program stands on {@code today}: the running week and its days, or why no week is open. */
-	record Window(AttendanceState state, Integer week, Integer totalWeeks, LocalDate weekStart, LocalDate weekEnd) {
+	record Window(AttendanceState state, @Nullable Integer week, @Nullable Integer totalWeeks,
+			@Nullable LocalDate weekStart, @Nullable LocalDate weekEnd) {
 	}
 
 	static Window window(Program program, LocalDate today) {
@@ -80,7 +82,7 @@ public class ProgramAttendanceService {
 		if (end != null && today.isAfter(end)) {
 			return new Window(AttendanceState.ENDED, null, total, null, null);
 		}
-		int week = ProgramCalendar.currentWeek(start, end, today);
+		int week = ProgramCalendar.weekOn(start, end, today);
 		return new Window(AttendanceState.OPEN, week, total, weekStart(start, week), weekEnd(start, end, week));
 	}
 
@@ -111,11 +113,12 @@ public class ProgramAttendanceService {
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
 						"Only a program's participants check in to it."));
 		Window window = window(program, today());
-		if (window.state() != AttendanceState.OPEN) {
+		Integer running = window.week();
+		if (window.state() != AttendanceState.OPEN || running == null) {
 			throw new ConflictException("No program week is open for check-in.");
 		}
-		if (week != window.week()) {
-			throw new InvalidRequestException("Only the running week (" + window.week() + ") can be checked in.");
+		if (week != running) {
+			throw new InvalidRequestException("Only the running week (" + running + ") can be checked in.");
 		}
 		if (attendanceRepository.findByProgramIdAndUserIdAndWeekNumber(program.getId(), actor.getId(), week)
 				.isPresent()) {
@@ -209,11 +212,10 @@ public class ProgramAttendanceService {
 		if (start == null || today.isBefore(start)) {
 			return 0;
 		}
-		Integer total = ProgramCalendar.totalWeeks(start, end);
 		if (end != null && today.isAfter(end)) {
-			return total;
+			return ProgramCalendar.weeksBetween(start, end);
 		}
-		return ProgramCalendar.currentWeek(start, end, today);
+		return ProgramCalendar.weekOn(start, end, today);
 	}
 
 	/** A participant row; {@code current} is false for someone who checked in here earlier but has since left. */
@@ -249,13 +251,13 @@ public class ProgramAttendanceService {
 		earlier.removeAll(people.keySet());
 		appUserRepository.findAllById(earlier).forEach(person -> people.put(person.getId(), new Person(person, false)));
 		return people.values().stream()
-				.sorted(Comparator.comparing((Person person) -> person.current() ? 0 : 1)
+				.sorted(Comparator.comparingInt((Person person) -> person.current() ? 0 : 1)
 						.thenComparing(person -> teamName(person.user()), TURKISH)
 						.thenComparing(person -> String.valueOf(person.user().getFullName()), TURKISH))
 				.toList();
 	}
 
-	private static String teamNameOrNull(AppUser person) {
+	private static @Nullable String teamNameOrNull(AppUser person) {
 		String name = teamName(person);
 		return name.isEmpty() ? null : name;
 	}
@@ -270,9 +272,10 @@ public class ProgramAttendanceService {
 	}
 
 	private AttendanceStatusResponse statusOf(AppUser actor, Program program, Window window) {
-		Instant checkedInAt = window.state() == AttendanceState.OPEN
+		Integer running = window.week();
+		Instant checkedInAt = window.state() == AttendanceState.OPEN && running != null
 				? attendanceRepository
-						.findByProgramIdAndUserIdAndWeekNumber(program.getId(), actor.getId(), window.week())
+						.findByProgramIdAndUserIdAndWeekNumber(program.getId(), actor.getId(), running)
 						.map(ProgramAttendance::getCheckedInAt)
 						.orElse(null)
 				: null;

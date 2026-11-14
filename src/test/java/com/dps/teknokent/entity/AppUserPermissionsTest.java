@@ -158,7 +158,7 @@ class AppUserPermissionsTest {
 		assertThat(grants(user)).hasSize(1);
 	}
 
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // getField returns Object; the field is a List<AppUserPermission>.
 	private static List<AppUserPermission> grants(AppUser user) {
 		return (List<AppUserPermission>) ReflectionTestUtils.getField(user, "permissions");
 	}

@@ -4,8 +4,6 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +20,7 @@ import com.dps.teknokent.dto.responses.ProgramAttendanceReportResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.ProgramAttendanceService;
 import com.dps.teknokent.util.AttendanceExport;
+import com.dps.teknokent.util.Downloads;
 import com.dps.teknokent.util.SessionsExport;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -65,12 +64,7 @@ public class ProgramAttendanceController {
 			@RequestParam(defaultValue = "XLSX") SessionsExport.Format format,
 			@RequestParam(required = false) UUID actorId) {
 		ProgramAttendanceReportResponse report = attendanceService.report(CurrentActor.resolve(actorId), id, from, to);
-		return ResponseEntity.ok()
-				.header(HttpHeaders.CONTENT_TYPE, SessionsExport.contentType(format))
-				.header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-						.filename(AttendanceExport.filename(report, format))
-						.build()
-						.toString())
-				.body(AttendanceExport.write(report, format));
+		return Downloads.attachment(AttendanceExport.write(report, format), AttendanceExport.filename(report, format),
+				SessionsExport.contentType(format));
 	}
 }

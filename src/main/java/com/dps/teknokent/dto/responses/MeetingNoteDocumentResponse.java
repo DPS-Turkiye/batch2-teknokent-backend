@@ -1,6 +1,8 @@
 package com.dps.teknokent.dto.responses;
 
+import org.jspecify.annotations.Nullable;
+
 public record MeetingNoteDocumentResponse(
-		String state,
+		@Nullable String state,
 		boolean seedFromSnapshot) {
 }

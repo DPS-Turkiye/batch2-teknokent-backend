@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,7 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.util.Texts;
 
@@ -93,9 +95,11 @@ public class AdminCoordinatorService {
 		return toResponse(coordinator, outcome);
 	}
 
-	/** An email the admin typed as a program coordinator, checked but not acted on: {@code existing} is set for an
-	 * approved coordinator, null for an email that will get a new account. Only this service makes one. */
-	record CheckedInvite(String email, String fullName, AppUser existing) {
+	/**
+	 * An email the admin typed as a program coordinator, checked but not acted on: {@code existing} is set for an
+	 * approved coordinator, null for an email that will get a new account. Only this service makes one.
+	 */
+	record CheckedInvite(String email, String fullName, @Nullable AppUser existing) {
 	}
 
 	/**
@@ -182,7 +186,8 @@ public class AdminCoordinatorService {
 					mailService.sendAfterCommit(
 							coordinator.getEmail(),
 							Texts.get(coordinator, "mail.coordinatorAccount.subject"),
-							Texts.get(coordinator, "mail.coordinatorAccount.body", coordinator.getFullName(), link, login));
+							Texts.get(coordinator, "mail.coordinatorAccount.body", coordinator.getFullName(), link,
+									login));
 					return true;
 				})
 				.orElse(false);
@@ -208,35 +213,35 @@ public class AdminCoordinatorService {
 		}
 		AppUser user = existing.get();
 		return switch (user.getRole()) {
-			case ADMIN -> CoordinatorCandidateStatus.ADMIN;
-			case COORDINATOR -> user.getStatus() == UserAccountStatus.APPROVED
-					? CoordinatorCandidateStatus.ALREADY_COORDINATOR
-					: CoordinatorCandidateStatus.REACTIVATABLE;
-			case MENTEE -> user.getOrganization() != null
-					? CoordinatorCandidateStatus.TEAM_MEMBER
-					: CoordinatorCandidateStatus.PROMOTABLE;
-			case MENTOR -> mentorshipRepository.countByMentorIdAndStatusIn(user.getId(), ONGOING) > 0
-					? CoordinatorCandidateStatus.MENTOR_IN_MENTORSHIP
-					: CoordinatorCandidateStatus.PROMOTABLE;
-			case ACADEMICIAN -> CoordinatorCandidateStatus.PROMOTABLE;
+		case ADMIN -> CoordinatorCandidateStatus.ADMIN;
+		case COORDINATOR -> user.getStatus() == UserAccountStatus.APPROVED
+				? CoordinatorCandidateStatus.ALREADY_COORDINATOR
+				: CoordinatorCandidateStatus.REACTIVATABLE;
+		case MENTEE -> user.getOrganization() != null
+				? CoordinatorCandidateStatus.TEAM_MEMBER
+				: CoordinatorCandidateStatus.PROMOTABLE;
+		case MENTOR -> mentorshipRepository.countByMentorIdAndStatusIn(user.getId(), ONGOING) > 0
+				? CoordinatorCandidateStatus.MENTOR_IN_MENTORSHIP
+				: CoordinatorCandidateStatus.PROMOTABLE;
+		case ACADEMICIAN -> CoordinatorCandidateStatus.PROMOTABLE;
 		};
 	}
 
 	private static String refusal(CoordinatorCandidateStatus status) {
 		return switch (status) {
-			case ALREADY_COORDINATOR -> "This person is already a coordinator.";
-			case ADMIN -> "This email belongs to an admin.";
-			case TEAM_MEMBER -> "A startup team member cannot become a coordinator.";
-			case MENTOR_IN_MENTORSHIP -> "This mentor still has a planned or active mentorship.";
-			default -> "This email cannot become a coordinator.";
+		case ALREADY_COORDINATOR -> "This person is already a coordinator.";
+		case ADMIN -> "This email belongs to an admin.";
+		case TEAM_MEMBER -> "A startup team member cannot become a coordinator.";
+		case MENTOR_IN_MENTORSHIP -> "This mentor still has a planned or active mentorship.";
+		default -> "This email cannot become a coordinator.";
 		};
 	}
 
 	private static String newProgramRefusal(CoordinatorCandidateStatus status, String email) {
 		return switch (status) {
-			case ADMIN -> Texts.forRequest("error.programCoordinatorIsAdmin", email);
-			case REACTIVATABLE -> Texts.forRequest("error.programCoordinatorDeactivated", email);
-			default -> Texts.forRequest("error.programCoordinatorHasAccount", email);
+		case ADMIN -> Texts.forRequest("error.programCoordinatorIsAdmin", email);
+		case REACTIVATABLE -> Texts.forRequest("error.programCoordinatorDeactivated", email);
+		default -> Texts.forRequest("error.programCoordinatorHasAccount", email);
 		};
 	}
 
@@ -248,18 +253,15 @@ public class AdminCoordinatorService {
 	}
 
 	private AppUser requireAdmin(UUID actorId) {
-		AppUser actor = domainLookupService.requireUser(actorId);
-		if (!actor.has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin can manage coordinators.");
-		}
-		return actor;
+		return AdminAccess.requireAdmin(domainLookupService.requireUser(actorId));
 	}
 
 	private static String normalize(String email) {
 		return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
 	}
 
-	private static CoordinatorAccountResponse toResponse(AppUser user, CoordinatorCandidateStatus outcome) {
-		return new CoordinatorAccountResponse(user.getId(), user.getEmail(), user.getFullName(), user.getStatus(), outcome);
+	private static CoordinatorAccountResponse toResponse(AppUser user, @Nullable CoordinatorCandidateStatus outcome) {
+		return new CoordinatorAccountResponse(user.getId(), user.getEmail(), user.getFullName(), user.getStatus(),
+				outcome);
 	}
 }

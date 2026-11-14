@@ -37,6 +37,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.InstitutionDataSource;
 import com.dps.teknokent.domain.PeerDocumentVisibility;
@@ -122,7 +123,7 @@ class PeerMentorDocumentIntegrationTest {
 		otherMentor = peerMentor("Kemal Arslan", program);
 		mentee = student("Deniz Kaya", program);
 		otherProgramMentee = student("Ece Yılmaz", otherProgram);
-		when(objectStorage.get(anyString())).thenReturn(PDF);
+		when(objectStorage.require(anyString())).thenReturn(PDF);
 	}
 
 	@Test
@@ -194,9 +195,9 @@ class PeerMentorDocumentIntegrationTest {
 		MockMultipartFile script = new MockMultipartFile("file", "not-a.pdf", "application/pdf",
 				"<script>alert(1)</script>".getBytes(StandardCharsets.UTF_8));
 		mockMvc.perform(multipart(MINE).file(script)
-						.param("evidenceType", PeerEvidenceType.TRANSCRIPT.name())
-						.param("visibility", PeerDocumentVisibility.PROFILE.name())
-						.with(authentication(signedIn(mentor))))
+				.param("evidenceType", PeerEvidenceType.TRANSCRIPT.name())
+				.param("visibility", PeerDocumentVisibility.PROFILE.name())
+				.with(authentication(signedIn(mentor))))
 				.andExpect(status().isBadRequest());
 		assertThat(peerMentorDocumentRepository.findByUserIdOrderByCreatedAtAsc(mentor.getId())).isEmpty();
 	}
@@ -212,9 +213,9 @@ class PeerMentorDocumentIntegrationTest {
 		}
 		MockMultipartFile file = new MockMultipartFile("file", "cv.pdf", "application/pdf", PDF);
 		mockMvc.perform(multipart("/api/documents").file(file).param("kind", "peer-evidence")
-						.with(authentication(signedIn(mentor))))
+				.with(authentication(signedIn(mentor))))
 				.andExpect(status().isBadRequest());
-		assertThat(storedDocumentRepository.findByUserIdAndKind(mentor.getId(), "peer-evidence")).hasSize(1);
+		assertThat(storedDocumentRepository.findByUserIdAndKind(mentor.getId(), DocumentKind.PEER_EVIDENCE)).hasSize(1);
 		// Not even the owner's general file list carries it; the peer mentoring profile lists it.
 		mockMvc.perform(get("/api/documents").with(authentication(signedIn(mentor))))
 				.andExpect(status().isOk())
@@ -396,6 +397,7 @@ class PeerMentorDocumentIntegrationTest {
 
 	private static UsernamePasswordAuthenticationToken signedIn(AppUser user) {
 		return new UsernamePasswordAuthenticationToken(new AppUserPrincipal(
-				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), "peer-docs-test-uid"), null, List.of());
+				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), "peer-docs-test-uid"), null,
+				List.of());
 	}
 }

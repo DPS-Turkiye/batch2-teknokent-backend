@@ -1,9 +1,11 @@
 package com.dps.teknokent.dto.responses;
 
-import com.dps.teknokent.domain.ContactPreference;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
+import com.dps.teknokent.domain.ContactPreference;
 import com.dps.teknokent.entity.AppUser;
 
 // Separate from UserResponse, which backs /api/auth/me and the session cookie;
@@ -13,7 +15,7 @@ public record UserProfileResponse(
 		String fullName,
 		String email,
 		String jobTitle,
-		String phone,
+		@Nullable String phone,
 		String bio,
 		String linkedinUrl,
 		List<String> expertise,

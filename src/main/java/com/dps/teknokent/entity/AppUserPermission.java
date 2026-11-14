@@ -25,8 +25,8 @@ import lombok.Setter;
 
 /** One row per account and permission; a grant changes status in place rather than being deleted. */
 @Entity
-@Table(name = "app_user_permission",
-		uniqueConstraints = @UniqueConstraint(name = "uq_app_user_permission", columnNames = { "user_id", "permission" }))
+@Table(name = "app_user_permission", uniqueConstraints = @UniqueConstraint(name = "uq_app_user_permission", columnNames = {
+		"user_id", "permission" }))
 @Getter
 @Setter
 @NoArgsConstructor

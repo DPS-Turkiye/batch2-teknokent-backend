@@ -126,6 +126,90 @@ class TranscriptBotCapacityServiceTest {
 		assertThat(capacity.reservedWithinHour(TEN)).isEqualTo(2);
 	}
 
+	@Test
+	void saysOnlyThatEveryBotIsBusyWhenNoneFreesUpWithinADay() {
+		int twentyFiveHours = 25 * 60;
+		recorded(meeting("a", TEN, twentyFiveHours), meeting("b", TEN, twentyFiveHours),
+				meeting("c", TEN, twentyFiveHours));
+
+		assertThatThrownBy(() -> capacity.requireSlot(meeting("d", TEN.plusSeconds(20 * MINUTE), 30)))
+				.isInstanceOf(ConflictException.class)
+				.hasMessageContaining("3 kayıt botunun hepsi")
+				.hasMessageNotContaining("En erken");
+	}
+
+	@Test
+	void namesTheFirstStartThatReallyFitsNotJustTheFirstBotToLeave() {
+		TranscriptBotCapacityService twoBots = new TranscriptBotCapacityService(meetingRepository, 2);
+		recorded(meeting("a", TEN, 30), meeting("b", TEN, 60), meeting("c", TEN.plusSeconds(45 * MINUTE), 75));
+
+		// After "a" leaves at 10:35, "b" and "c" still overlap; only once "b" has left at 11:05 is a bot free.
+		String firstFit = MeetingSlotTimes.formatForPeople(TEN.plusSeconds(70 * MINUTE), AppLanguage.TR);
+		String firstToLeave = MeetingSlotTimes.formatForPeople(TEN.plusSeconds(40 * MINUTE), AppLanguage.TR);
+		assertThatThrownBy(() -> twoBots.requireSlot(meeting("d", TEN, 60)))
+				.isInstanceOf(ConflictException.class)
+				.hasMessageContaining(firstFit)
+				.hasMessageNotContaining(firstToLeave);
+	}
+
+	@Test
+	void aMeetingWithoutALengthIsCheckedAsOneHour() {
+		Instant quarterToEleven = TEN.plusSeconds(45 * MINUTE);
+		recorded(meeting("a", quarterToEleven, 60), meeting("b", quarterToEleven, 60),
+				meeting("c", quarterToEleven, 60));
+		Meeting withoutLength = meeting("d", TEN, 60);
+		withoutLength.setDurationMinutes(null);
+
+		assertThatThrownBy(() -> capacity.requireSlot(withoutLength)).isInstanceOf(ConflictException.class);
+	}
+
+	@Test
+	void aGuestCopyOfARoomThatAlreadyHasItsBotBookedNeedsNoSlotOfItsOwn() {
+		Meeting booked = meeting("a", TEN, 60);
+		booked.setId(UUID.randomUUID());
+		recorded(booked, meeting("b", TEN, 60), meeting("c", TEN, 60));
+
+		assertThatCode(() -> capacity.requireSlot(meeting("a", TEN, 60))).doesNotThrowAnyException();
+	}
+
+	@Test
+	void leavesAMeetingThatIsOverOrHasNoTimeAlone() {
+		Meeting completed = meeting("a", TEN, 60);
+		completed.setStatus(MeetingStatus.COMPLETED);
+
+		capacity.requireSlot(completed);
+		capacity.requireSlot(meeting("b", TEN, 60), null, 60);
+
+		verify(meetingRepository, never())
+				.findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(any(), any(), any());
+	}
+
+	@Test
+	void meetingsHoursAwayOnEitherSideDoNotCount() {
+		List<Meeting> recorded = List.of(meeting("a", TEN.minusSeconds(5 * 3600), 60),
+				meeting("b", TEN.plusSeconds(5 * 3600), 60));
+
+		assertThat(TranscriptBotCapacityService.peak(recorded, TEN, TEN.plusSeconds(3600), null)).isZero();
+	}
+
+	@Test
+	void meetingsWithoutALinkAreEachTheirOwnRoom() {
+		Meeting first = meeting("a", TEN, 60);
+		first.setId(UUID.randomUUID());
+		first.setMeetLink(null);
+		Meeting second = meeting("b", TEN, 60);
+		second.setId(UUID.randomUUID());
+		second.setMeetLink("  ");
+
+		assertThat(TranscriptBotCapacityService.peak(List.of(first, second), TEN, TEN.plusSeconds(3600), null))
+				.isEqualTo(2);
+	}
+
+	@Test
+	void reportsTheConfiguredNumberOfBots() {
+		assertThat(capacity.capacity()).isEqualTo(3);
+	}
+
 	private void recorded(Meeting... meetings) {
 		when(meetingRepository.findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(
 				eq(MeetingStatus.SCHEDULED), any(), any())).thenReturn(List.of(meetings));

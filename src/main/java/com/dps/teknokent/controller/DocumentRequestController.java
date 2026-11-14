@@ -73,14 +73,15 @@ public class DocumentRequestController {
 	public DocumentRequestUploadResponse attachUpload(
 			@PathVariable UUID itemId,
 			@Valid @RequestBody AttachDocumentRequestUploadRequest request) {
-		return documentRequestService.attachUpload(itemId, request);
+		return documentRequestService.attachUpload(itemId, new AttachDocumentRequestUploadRequest(
+				CurrentActor.resolve(request.actorId()), request.storedDocumentId()));
 	}
 
 	@DeleteMapping("/uploads/{uploadId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteUpload(
 			@PathVariable UUID uploadId,
-			@RequestParam UUID actorId) {
-		documentRequestService.deleteUpload(uploadId, actorId);
+			@RequestParam(required = false) UUID actorId) {
+		documentRequestService.deleteUpload(uploadId, CurrentActor.resolve(actorId));
 	}
 }

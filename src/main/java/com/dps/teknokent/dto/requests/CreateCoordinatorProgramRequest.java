@@ -6,7 +6,6 @@ import java.util.UUID;
 
 import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.dto.requests.ReplaceProgramPhasesRequest.PhaseInput;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.validation.Valid;

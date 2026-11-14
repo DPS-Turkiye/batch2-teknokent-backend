@@ -2,14 +2,16 @@ package com.dps.teknokent.security;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /** What office hours keep from a verified LTI 1.3 resource-link launch. */
 public record LtiLaunchClaims(
 		String issuer,
 		String subject,
 		String fullName,
-		String email,
+		@Nullable String email,
 		String contextId,
-		String contextLabel,
-		String contextTitle,
+		@Nullable String contextLabel,
+		@Nullable String contextTitle,
 		List<String> roles) {
 }

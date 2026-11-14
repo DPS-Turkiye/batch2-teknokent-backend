@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MentorPoolStatus;
 
 public final class MentorPoolResponse {
@@ -13,9 +15,9 @@ public final class MentorPoolResponse {
 
 	/** A mentor in the pool, or an invite link nobody has signed up with yet (then mentorId is null). */
 	public record Row(
-			UUID mentorId,
-			UUID inviteId,
-			String fullName,
+			@Nullable UUID mentorId,
+			@Nullable UUID inviteId,
+			@Nullable String fullName,
 			String email,
 			MentorPoolStatus status,
 			List<String> expertise,
@@ -23,8 +25,8 @@ public final class MentorPoolResponse {
 			int activeTeams,
 			int capacity,
 			Instant since,
-			Instant expiresAt,
-			String inviteCode) {
+			@Nullable Instant expiresAt,
+			@Nullable String inviteCode) {
 	}
 
 	/** The "Uzmanlık doğrulama" pop-up for a mentor waiting for the coordinator's decision. */
@@ -37,9 +39,9 @@ public final class MentorPoolResponse {
 			boolean viaInvite,
 			boolean emailVerified,
 			String linkedinUrl,
-			String invitedBy,
+			@Nullable String invitedBy,
 			List<String> expertise,
-			String availability,
+			@Nullable String availability,
 			int capacity) {
 	}
 }

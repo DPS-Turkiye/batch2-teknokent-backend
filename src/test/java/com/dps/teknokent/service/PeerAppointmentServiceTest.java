@@ -72,7 +72,8 @@ class PeerAppointmentServiceTest {
 
 		List<AppointmentResponse> result = service.appointments(zeynep.getId());
 
-		assertThat(result).extracting(AppointmentResponse::requestId).containsExactly(asMentor.getId(), asMentee.getId());
+		assertThat(result).extracting(AppointmentResponse::requestId).containsExactly(asMentor.getId(),
+				asMentee.getId());
 		AppointmentResponse mentoring = result.get(0);
 		assertThat(mentoring.kind()).isEqualTo(AppointmentKind.PEER_MENTORING);
 		assertThat(mentoring.side()).isEqualTo(UserRole.MENTOR);

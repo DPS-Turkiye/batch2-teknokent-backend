@@ -66,7 +66,8 @@ public class PeerMentorDraftService {
 					jsonMapper.readValue(stored.getPayload(), PeerMentorProfileDraft.class), stored.getUpdatedAt()));
 		} catch (JacksonException exception) {
 			// Only the id: the payload is the student's own text.
-			log.warn("Unreadable peer-mentor draft for user {}: {}", stored.getUserId(), exception.getClass().getSimpleName());
+			log.warn("Unreadable peer-mentor draft for user {}: {}", stored.getUserId(),
+					exception.getClass().getSimpleName());
 			return Optional.empty();
 		}
 	}

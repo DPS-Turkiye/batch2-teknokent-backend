@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -38,12 +39,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.AppLanguage;
-import com.dps.teknokent.domain.ProcessingConsentPurpose;
-import com.dps.teknokent.domain.ProcessingConsentSource;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.InstitutionDataSource;
 import com.dps.teknokent.domain.MeetingMode;
+import com.dps.teknokent.domain.MeetingProposalStatus;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorLanguage;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -58,20 +59,24 @@ import com.dps.teknokent.domain.PeerMentorSkill;
 import com.dps.teknokent.domain.PeerReportStatus;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.PlatformFeedbackKind;
+import com.dps.teknokent.domain.ProcessingConsentPurpose;
+import com.dps.teknokent.domain.ProcessingConsentSource;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserDeletionCleanupKind;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.AppUserIdentity;
+import com.dps.teknokent.entity.DataProcessingConsent;
 import com.dps.teknokent.entity.InstitutionPerson;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MeetingProposal;
+import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationItem;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationRun;
 import com.dps.teknokent.entity.Notification;
-import com.dps.teknokent.entity.DataProcessingConsent;
 import com.dps.teknokent.entity.OnboardingDraft;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.PeerActivity;
@@ -82,6 +87,7 @@ import com.dps.teknokent.entity.PeerMentorDocument;
 import com.dps.teknokent.entity.PeerWeeklyReport;
 import com.dps.teknokent.entity.PlatformFeedback;
 import com.dps.teknokent.entity.StoredDocument;
+import com.dps.teknokent.entity.StudentInterest;
 import com.dps.teknokent.entity.TeamMembership;
 import com.dps.teknokent.entity.UserDeletionAudit;
 import com.dps.teknokent.entity.UserDeletionCleanup;
@@ -97,6 +103,7 @@ import com.dps.teknokent.service.NotificationService;
 import com.dps.teknokent.service.ObjectStorage;
 import com.dps.teknokent.service.UserDeletionCleanupService;
 import com.dps.teknokent.service.UserDeletionService;
+import com.dps.teknokent.util.MeetingSlotTimes;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -284,12 +291,14 @@ class UserDeletionIntegrationTest {
 		String email = target.getEmail();
 		user(UserRole.MENTOR, "Ahmet Yılmaz", null);
 		AppUser reader = user(UserRole.MENTEE, "Other Person", null);
-		Notification about = notificationService.create(reader, "Ahmet Yılmaz sent a message", "From Ahmet Yılmaz", null);
+		Notification about = notificationService.create(reader, "Ahmet Yılmaz sent a message", "From Ahmet Yılmaz",
+				null);
 		flushAndClear();
 
 		delete(admin, target.getId(), email).andExpect(status().isOk());
 
-		assertThat(entityManager.find(Notification.class, about.getId()).getTitle()).isEqualTo("Ahmet Yılmaz sent a message");
+		assertThat(entityManager.find(Notification.class, about.getId()).getTitle())
+				.isEqualTo("Ahmet Yılmaz sent a message");
 	}
 
 	// "Ali Can" inside "Mehmet Ali Can" is another person's name; inside "Alican" it is no name at all.
@@ -334,7 +343,8 @@ class UserDeletionIntegrationTest {
 
 		delete(admin, mentor.getId(), email).andExpect(status().isOk());
 
-		MentorshipRequestRecommendationItem kept = entityManager.find(MentorshipRequestRecommendationItem.class, item.getId());
+		MentorshipRequestRecommendationItem kept = entityManager.find(MentorshipRequestRecommendationItem.class,
+				item.getId());
 		assertThat(kept.getRank()).isEqualTo(1);
 		assertThat(kept.getMentorName()).isEqualTo(AppUser.DELETED_FULL_NAME);
 		assertThat(kept.getProfessionalTitle()).isEmpty();
@@ -417,7 +427,8 @@ class UserDeletionIntegrationTest {
 		join(founder, startup);
 		StoredDocument deck = document(founder.getId(), startup.getId(), DocumentKind.PITCH_DECK, null);
 		Meeting held = meeting(startup, mentor, Instant.now().minus(5, ChronoUnit.DAYS), MeetingStatus.COMPLETED);
-		StoredDocument meetingFile = document(founder.getId(), startup.getId(), DocumentKind.MEETING_FILE, held.getId());
+		StoredDocument meetingFile = document(founder.getId(), startup.getId(), DocumentKind.MEETING_FILE,
+				held.getId());
 		Meeting planned = meeting(startup, mentor, Instant.now().plus(5, ChronoUnit.DAYS), MeetingStatus.SCHEDULED);
 		flushAndClear();
 
@@ -432,7 +443,8 @@ class UserDeletionIntegrationTest {
 		assertThat(entityManager.find(StoredDocument.class, meetingFile.getId())).isNotNull();
 		assertThat(entityManager.find(Meeting.class, held.getId()).getStatus()).isEqualTo(MeetingStatus.COMPLETED);
 		assertThat(entityManager.find(Meeting.class, planned.getId()).getStatus()).isEqualTo(MeetingStatus.CANCELLED);
-		assertThat(count("select count(n) from Notification n where n.recipient.id = :id", mentor.getId())).isEqualTo(1);
+		assertThat(count("select count(n) from Notification n where n.recipient.id = :id", mentor.getId()))
+				.isEqualTo(1);
 	}
 
 	// ---------------------------------------------------------------- signing up again
@@ -513,7 +525,7 @@ class UserDeletionIntegrationTest {
 
 		delete(admin, target.getId(), email).andExpect(status().isOk());
 
-		assertThat(appUserService.findAll(null, null)).noneMatch(row -> row.id().equals(target.getId()));
+		assertThat(appUserService.findAll(admin.getId(), null, null)).noneMatch(row -> row.id().equals(target.getId()));
 	}
 
 	// ---------------------------------------------------------------- who may, and whom
@@ -569,9 +581,12 @@ class UserDeletionIntegrationTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(UserDeletionService.CODE_ADMIN));
 
-		assertThat(userRepository.findById(admin.getId()).orElseThrow().getStatus()).isEqualTo(UserAccountStatus.APPROVED);
-		assertThat(userRepository.findById(otherAdmin.getId()).orElseThrow().getFirebaseUid()).isEqualTo("other-admin-uid");
-		assertThat(userRepository.findById(alsoAdmin.getId()).orElseThrow().getFirebaseUid()).isEqualTo("mentor-admin-uid");
+		assertThat(userRepository.findById(admin.getId()).orElseThrow().getStatus())
+				.isEqualTo(UserAccountStatus.APPROVED);
+		assertThat(userRepository.findById(otherAdmin.getId()).orElseThrow().getFirebaseUid())
+				.isEqualTo("other-admin-uid");
+		assertThat(userRepository.findById(alsoAdmin.getId()).orElseThrow().getFirebaseUid())
+				.isEqualTo("mentor-admin-uid");
 		assertThat(auditRepository.findByDeletedUserId(otherAdmin.getId())).isEmpty();
 		assertThat(auditRepository.findByDeletedUserId(alsoAdmin.getId())).isEmpty();
 	}
@@ -588,7 +603,8 @@ class UserDeletionIntegrationTest {
 		assertUntouched(target);
 
 		// Case and surrounding spaces do not matter.
-		delete(admin, target.getId(), "  " + target.getEmail().toUpperCase() + " ").andExpect(status().isOk());
+		delete(admin, target.getId(), "  " + target.getEmail().toUpperCase(Locale.ROOT) + " ")
+				.andExpect(status().isOk());
 	}
 
 	@Test
@@ -647,13 +663,15 @@ class UserDeletionIntegrationTest {
 				.andExpect(jsonPath("$.cleanupPending").value(true));
 
 		// The account is gone all the same; only the outside leftovers wait.
-		assertThat(userRepository.findById(target.getId()).orElseThrow().getStatus()).isEqualTo(UserAccountStatus.DELETED);
+		assertThat(userRepository.findById(target.getId()).orElseThrow().getStatus())
+				.isEqualTo(UserAccountStatus.DELETED);
 		UserDeletionAudit audit = auditRepository.findByDeletedUserId(target.getId()).getFirst();
 		assertThat(audit.getCleanupCompletedAt()).isNull();
 		entityManager.clear();
 		List<UserDeletionCleanup> waiting = cleanupRepository.findByAuditIdOrderByCreatedAtAsc(audit.getId());
 		assertThat(waiting).extracting(UserDeletionCleanup::getKind)
-				.containsExactlyInAnyOrder(UserDeletionCleanupKind.FIREBASE_LOGIN, UserDeletionCleanupKind.STORED_OBJECT);
+				.containsExactlyInAnyOrder(UserDeletionCleanupKind.FIREBASE_LOGIN,
+						UserDeletionCleanupKind.STORED_OBJECT);
 		assertThat(waiting).allSatisfy(job -> {
 			assertThat(job.getAttempts()).isEqualTo(1);
 			assertThat(job.getNextAttemptAt()).isAfter(Instant.now());
@@ -794,6 +812,164 @@ class UserDeletionIntegrationTest {
 		String snapshot = entityManager.find(PeerWeeklyReport.class, sentWeek.getId()).getSummarySnapshot();
 		assertThat(snapshot).doesNotContain(target.getId().toString(), "Ayşe", "Hedef listesi")
 				.contains("Deniz Arslan", "\"meetings\":2");
+	}
+
+	// ---------------------------------------------------------------- what is still open with them
+
+	@Test
+	void aRequestThePersonSentIsWithdrawnTheirTeamGoesOnAndTheMentorIsToldOnce() throws Exception {
+		AppUser member = user(UserRole.MENTEE, "Deniz Kaya", UID);
+		String email = member.getEmail();
+		AppUser founder = user(UserRole.MENTEE, "Team Founder", null);
+		AppUser mentor = user(UserRole.MENTOR, "Their Mentor", null);
+		Organization startup = organization("Going On", founder);
+		join(founder, startup);
+		join(member, startup);
+		MentorshipRequest waiting = request(member, startup, mentor, MentorshipRequestStatus.PENDING);
+		MentorshipRequest moreInfo = request(member, startup, mentor, MentorshipRequestStatus.MORE_INFO_REQUESTED);
+		MentorshipRequest answered = request(member, startup, mentor, MentorshipRequestStatus.DECLINED);
+		flushAndClear();
+
+		delete(admin, member.getId(), email).andExpect(status().isOk());
+
+		assertThat(entityManager.find(MentorshipRequest.class, waiting.getId()).getStatus())
+				.isEqualTo(MentorshipRequestStatus.WITHDRAWN);
+		assertThat(entityManager.find(MentorshipRequest.class, moreInfo.getId()).getStatus())
+				.isEqualTo(MentorshipRequestStatus.WITHDRAWN);
+		assertThat(entityManager.find(MentorshipRequest.class, answered.getId()).getStatus())
+				.isEqualTo(MentorshipRequestStatus.DECLINED);
+		// A member who was not the founder leaves the team as it was.
+		Organization after = entityManager.find(Organization.class, startup.getId());
+		assertThat(after.getFounder().getId()).isEqualTo(founder.getId());
+		assertThat(after.getArchivedAt()).isNull();
+		List<Notification> told = entityManager.createQuery(
+				"select n from Notification n where n.recipient.id = :id", Notification.class)
+				.setParameter("id", mentor.getId())
+				.getResultList();
+		assertThat(told).hasSize(1);
+		assertThat(told.getFirst().getHref()).isEqualTo("/mentor-dashboard");
+		assertThat(told.getFirst().getBody()).doesNotContain("Deniz");
+	}
+
+	@Test
+	void aMentorsWaitingMeetingProposalIsWithdrawnAndOnlyApprovedTeamMembersAreTold() throws Exception {
+		AppUser mentor = user(UserRole.MENTOR, "Mert Demir", UID);
+		String email = mentor.getEmail();
+		AppUser founder = user(UserRole.MENTEE, "Ayla Yurt", null);
+		AppUser waitingMember = user(UserRole.MENTEE, "Waiting Member", null);
+		waitingMember.setStatus(UserAccountStatus.PENDING);
+		Organization startup = organization("Shared Startup", founder);
+		join(founder, startup);
+		join(waitingMember, startup);
+		MeetingProposal waiting = proposal(startup, mentor, MeetingProposalStatus.PENDING);
+		MeetingProposal declined = proposal(startup, mentor, MeetingProposalStatus.DECLINED);
+		flushAndClear();
+
+		delete(admin, mentor.getId(), email).andExpect(status().isOk());
+
+		assertThat(entityManager.find(MeetingProposal.class, waiting.getId()).getStatus())
+				.isEqualTo(MeetingProposalStatus.WITHDRAWN);
+		assertThat(entityManager.find(MeetingProposal.class, declined.getId()).getStatus())
+				.isEqualTo(MeetingProposalStatus.DECLINED);
+		List<Notification> told = entityManager.createQuery(
+				"select n from Notification n where n.recipient.id = :id", Notification.class)
+				.setParameter("id", founder.getId())
+				.getResultList();
+		assertThat(told).hasSize(1);
+		assertThat(told.getFirst().getHref()).isEqualTo("/mentorships");
+		assertThat(count("select count(n) from Notification n where n.recipient.id = :id", waitingMember.getId()))
+				.isZero();
+	}
+
+	// A program's syllabus and a meeting's file are used by other people; a loose file of the person's is not.
+	@Test
+	void aProgramsFileAndAMeetingsFileStayWhileAnUnattachedFileOfThePersonGoes() throws Exception {
+		AppUser target = user(UserRole.MENTOR, "Mert Demir", UID);
+		String email = target.getEmail();
+		StoredDocument syllabus = document(target.getId(), null, DocumentKind.SYLLABUS, null);
+		StoredDocument weeklyProgram = document(target.getId(), null, DocumentKind.WEEKLY_PROGRAM, null);
+		StoredDocument meetingFile = document(target.getId(), null, DocumentKind.MEETING_FILE, UUID.randomUUID());
+		StoredDocument loose = document(target.getId(), null, DocumentKind.OTHER, null);
+		flushAndClear();
+
+		delete(admin, target.getId(), email).andExpect(status().isOk());
+
+		assertThat(entityManager.find(StoredDocument.class, syllabus.getId())).isNotNull();
+		assertThat(entityManager.find(StoredDocument.class, weeklyProgram.getId())).isNotNull();
+		assertThat(entityManager.find(StoredDocument.class, meetingFile.getId())).isNotNull();
+		assertThat(entityManager.find(StoredDocument.class, loose.getId())).isNull();
+		verify(objectStorage).delete(loose.getS3Key());
+		verify(objectStorage, never()).delete(syllabus.getS3Key());
+		verify(objectStorage, never()).delete(weeklyProgram.getS3Key());
+		verify(objectStorage, never()).delete(meetingFile.getS3Key());
+	}
+
+	@Test
+	void aMentorsProfileAndAStudentsInterestsGoWithTheirAccountsAndNobodyElses() throws Exception {
+		AppUser mentor = user(UserRole.MENTOR, "Mert Demir", UID);
+		String mentorEmail = mentor.getEmail();
+		mentorProfile(mentor);
+		AppUser otherMentor = user(UserRole.MENTOR, "Other Mentor", null);
+		mentorProfile(otherMentor);
+		AppUser student = user(UserRole.MENTEE, "Selin Arı", null);
+		String studentEmail = student.getEmail();
+		StudentInterest interest = new StudentInterest(student.getId());
+		interest.setGoal("Erasmus ve staj");
+		interest.setUpdatedAt(Instant.now());
+		entityManager.persist(interest);
+		flushAndClear();
+
+		delete(admin, mentor.getId(), mentorEmail).andExpect(status().isOk());
+		delete(admin, student.getId(), studentEmail).andExpect(status().isOk());
+
+		assertThat(entityManager.find(MentorProfile.class, mentor.getId())).isNull();
+		assertThat(languagesOf(mentor)).isZero();
+		assertThat(entityManager.find(StudentInterest.class, student.getId())).isNull();
+		assertThat(entityManager.find(MentorProfile.class, otherMentor.getId())).isNotNull();
+		assertThat(languagesOf(otherMentor)).isEqualTo(1);
+	}
+
+	// "Can" is a name and an everyday word: replacing it would rewrite sentences that are not about the person.
+	@Test
+	void aNameTooShortToTellFromOrdinaryWordsIsLeftInOtherPeoplesNotifications() throws Exception {
+		AppUser target = user(UserRole.MENTOR, "Can", UID);
+		String email = target.getEmail();
+		AppUser reader = user(UserRole.MENTEE, "Other Person", null);
+		Notification note = notificationService.create(reader, "Can sent a message", "Can you join on Monday?", null);
+		flushAndClear();
+
+		delete(admin, target.getId(), email).andExpect(status().isOk());
+
+		Notification kept = entityManager.find(Notification.class, note.getId());
+		assertThat(kept.getTitle()).isEqualTo("Can sent a message");
+		assertThat(kept.getBody()).isEqualTo("Can you join on Monday?");
+	}
+
+	// Teams from before membership history was kept have no join dates; the oldest account leads then.
+	@Test
+	void aTeamWithoutRecordedJoinDatesPassesToItsOldestAccount() throws Exception {
+		AppUser founder = user(UserRole.MENTEE, "Founder Person", UID);
+		String email = founder.getEmail();
+		AppUser newer = user(UserRole.MENTEE, "Ali Newer", null);
+		AppUser older = user(UserRole.MENTEE, "Zeynep Older", null);
+		Organization startup = organization("Old Startup", founder);
+		for (AppUser member : List.of(founder, newer, older)) {
+			member.setOrganization(startup);
+			userRepository.saveAndFlush(member);
+		}
+		entityManager.createNativeQuery("update app_user set created_at = :then where id = :id")
+				.setParameter("then", Instant.now().minus(400, ChronoUnit.DAYS))
+				.setParameter("id", older.getId())
+				.executeUpdate();
+		flushAndClear();
+
+		delete(admin, founder.getId(), email).andExpect(status().isOk());
+
+		assertThat(entityManager.find(Organization.class, startup.getId()).getFounder().getId())
+				.isEqualTo(older.getId());
+		assertThat(count("select count(n) from Notification n where n.recipient.id = :id", older.getId()))
+				.isEqualTo(1);
+		assertThat(count("select count(n) from Notification n where n.recipient.id = :id", newer.getId())).isZero();
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -961,7 +1137,7 @@ class UserDeletionIntegrationTest {
 		document.setId(UUID.randomUUID());
 		document.setUserId(userId);
 		document.setOrganizationId(organizationId);
-		document.setKind(kind.value());
+		document.setKind(kind);
 		document.setOriginalFilename("file.pdf");
 		document.setContentType("application/pdf");
 		document.setSizeBytes(10);
@@ -981,9 +1157,9 @@ class UserDeletionIntegrationTest {
 		request.setRequestedForName(organization.getName());
 		request.setSupportArea("Go to market");
 		request.setSummary("We need help");
-		request.setUrgency(MentorshipRequestUrgency.values()[0]);
-		request.setMentorshipFormat(MentorshipRequestFormat.values()[0]);
-		request.setMeetingMode(MeetingMode.values()[0]);
+		request.setUrgency(MentorshipRequestUrgency.THIS_WEEK);
+		request.setMentorshipFormat(MentorshipRequestFormat.SINGLE_MEETING);
+		request.setMeetingMode(MeetingMode.ONLINE);
 		request.setStatus(status);
 		entityManager.persist(request);
 		return request;
@@ -1015,8 +1191,46 @@ class UserDeletionIntegrationTest {
 		mentorship.setMentor(mentor);
 		mentorship.setOrganization(organization);
 		mentorship.setStatus(MentorshipStatus.ACTIVE);
-		mentorship.setStartDate(LocalDate.now().minusDays(10));
+		mentorship.setStartDate(LocalDate.now(MeetingSlotTimes.APP_ZONE).minusDays(10));
 		entityManager.persist(mentorship);
 		return mentorship;
+	}
+
+	private MeetingProposal proposal(Organization organization, AppUser mentor, MeetingProposalStatus status) {
+		MeetingProposal proposal = new MeetingProposal();
+		proposal.setId(UUID.randomUUID());
+		proposal.setOrganization(organization);
+		proposal.setMentor(mentor);
+		proposal.setProposedBy(mentor.getId());
+		proposal.setScheduledAt(Instant.now().plus(3, ChronoUnit.DAYS));
+		proposal.setDurationMinutes(45);
+		proposal.setStatus(status);
+		entityManager.persist(proposal);
+		return proposal;
+	}
+
+	private void mentorProfile(AppUser mentor) {
+		MentorProfile profile = new MentorProfile();
+		profile.setUser(mentor);
+		profile.setInitials("MD");
+		profile.setProfessionalTitle("Mentor");
+		profile.setCompany("Teknokent");
+		profile.setAvailabilityLabel("Mentorluğa açık");
+		profile.setResponseTimeLabel("~48 saat");
+		profile.setMeetingMode("Online");
+		profile.setCommunicationPreference("Mesajlaşma");
+		profile.setMentoringStyle("İşbirlikçi");
+		profile.setFitLabel("Yüksek");
+		profile.setExperienceLevel("10 yıl");
+		profile.setSectorExperience("SaaS");
+		profile.setStartupStages("MVP");
+		profile.getLanguages().add(MentorLanguage.TURKISH);
+		entityManager.persist(profile);
+	}
+
+	private long languagesOf(AppUser mentor) {
+		return ((Number) entityManager.createNativeQuery("select count(*) from mentor_language where mentor_id = :id")
+				.setParameter("id", mentor.getId())
+				.getSingleResult()).longValue();
 	}
 }

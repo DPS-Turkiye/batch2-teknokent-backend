@@ -18,6 +18,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.Texts;
 
@@ -60,13 +61,14 @@ public class ProgramCoordinatorService {
 			NewCoordinatorInput invite) {
 		requireAdmin(actorId);
 		Program program = programService.requireManagedProgram(actorId, programId);
-		AdminCoordinatorService.CheckedInvite checked =
-				adminCoordinatorService.checkNewProgramCoordinator(actorId, invite.email(), invite.fullName());
+		AdminCoordinatorService.CheckedInvite checked = adminCoordinatorService.checkNewProgramCoordinator(actorId,
+				invite.email(), invite.fullName());
 		if (checked.existing() != null
 				&& ProgramCoordination.coordinates(program, checked.existing().getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("This coordinator already runs the program.");
 		}
-		return attach(actorId, program, adminCoordinatorService.coordinatorForNewProgram(actorId, checked, program.getName()));
+		return attach(actorId, program,
+				adminCoordinatorService.coordinatorForNewProgram(actorId, checked, program.getName()));
 	}
 
 	private List<CoordinatorProgramResponse.CoordinatorRef> attach(UUID actorId, Program program, AppUser user) {
@@ -107,9 +109,7 @@ public class ProgramCoordinatorService {
 
 	/** The admin assigns and changes a program's coordinators; coordinators only see them. */
 	private void requireAdmin(UUID actorId) {
-		if (!programService.requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin changes a program's coordinators.");
-		}
+		AdminAccess.requireAdmin(appUserRepository.findById(actorId).orElse(null));
 	}
 
 	private List<CoordinatorProgramResponse.CoordinatorRef> refs(Program program) {

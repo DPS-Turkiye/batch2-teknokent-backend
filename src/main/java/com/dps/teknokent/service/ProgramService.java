@@ -17,8 +17,8 @@ import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
-import com.dps.teknokent.dto.responses.OrganizationProgramsResponse.OrganizationProgramResponse;
 import com.dps.teknokent.dto.responses.OrganizationProgramsResponse;
+import com.dps.teknokent.dto.responses.OrganizationProgramsResponse.OrganizationProgramResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.ProgramDetailResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
@@ -41,6 +41,7 @@ import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.TextUtils;
@@ -63,13 +64,9 @@ public class ProgramService {
 	private final ProgramEligibilityService programEligibilityService;
 	private final EditionService editionService;
 
-
 	@Transactional
 	public ProgramResponse create(UUID actorId, String name) {
-		AppUser actor = requireActor(actorId);
-		if (!actor.has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin creates programs.");
-		}
+		AppUser actor = AdminAccess.requireAdmin(requireActor(actorId));
 		String trimmed = TextUtils.trim(name);
 		if (trimmed == null || trimmed.isBlank()) {
 			throw new InvalidRequestException("A program name is required.");
@@ -262,7 +259,8 @@ public class ProgramService {
 			notificationService.create(
 					runner,
 					Texts.get(runner, "notification.inviteAnswered.title"),
-					Texts.get(runner, accepted ? "notification.inviteAccepted.body" : "notification.inviteDeclined.body",
+					Texts.get(runner,
+							accepted ? "notification.inviteAccepted.body" : "notification.inviteDeclined.body",
 							mentor.getFullName()),
 					"/programs");
 		}
@@ -291,7 +289,8 @@ public class ProgramService {
 		notificationService.create(
 				applicant,
 				Texts.get(applicant, "notification.joinRequestAnswered.title"),
-				Texts.get(applicant, accepted ? "notification.joinRequestAccepted.body" : "notification.joinRequestDeclined.body",
+				Texts.get(applicant,
+						accepted ? "notification.joinRequestAccepted.body" : "notification.joinRequestDeclined.body",
 						program.getName()),
 				"/mentor-dashboard");
 	}

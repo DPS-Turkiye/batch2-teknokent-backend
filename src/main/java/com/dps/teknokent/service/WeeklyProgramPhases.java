@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns the weeks read from a weekly program into phases: consecutive week ranges, in order. The AI's own ranges are
  * used when they fit the weeks; otherwise consecutive weeks with the same phase name are grouped. Pure, so the
@@ -21,7 +23,7 @@ final class WeeklyProgramPhases {
 	private WeeklyProgramPhases() {
 	}
 
-	record Range(String name, String expectedOutput, int firstWeek, int lastWeek) {
+	record Range(String name, @Nullable String expectedOutput, int firstWeek, int lastWeek) {
 	}
 
 	/** {@code rebuilt}: the AI's ranges were not used. {@code merged}: phases past the limit were folded in. */
@@ -29,18 +31,15 @@ final class WeeklyProgramPhases {
 	}
 
 	/**
-	 * @param proposed the AI's phases, as returned
+	 * @param proposed   the AI's phases, as returned
 	 * @param weekPhases each read week's number and the phase name the AI gave it (null when it gave none)
 	 */
-	static Result group(List<Range> proposed, SortedMap<Integer, String> weekPhases) {
+	static Result group(List<Range> proposed, SortedMap<Integer, @Nullable String> weekPhases) {
 		if (weekPhases.isEmpty()) {
 			return new Result(List.of(), false, false);
 		}
-		List<Range> phases = fits(proposed, weekPhases) ? sorted(proposed) : null;
-		boolean rebuilt = phases == null;
-		if (rebuilt) {
-			phases = byWeekName(weekPhases, outputsByName(proposed));
-		}
+		boolean rebuilt = !fits(proposed, weekPhases);
+		List<Range> phases = rebuilt ? byWeekName(weekPhases, outputsByName(proposed)) : sorted(proposed);
 		if (phases.size() <= MAX_PHASES) {
 			return new Result(phases, rebuilt && !phases.isEmpty(), false);
 		}
@@ -51,7 +50,7 @@ final class WeeklyProgramPhases {
 	}
 
 	/** Ordered, non-overlapping ranges that cover every read week exactly once. */
-	private static boolean fits(List<Range> proposed, SortedMap<Integer, String> weekPhases) {
+	private static boolean fits(List<Range> proposed, SortedMap<Integer, @Nullable String> weekPhases) {
 		if (proposed.isEmpty()) {
 			return false;
 		}
@@ -71,7 +70,8 @@ final class WeeklyProgramPhases {
 	 * Consecutive weeks with the same phase name form one phase. A week without a name stays in the phase before
 	 * it (the first weeks join the first named phase); with no names at all there are no phases.
 	 */
-	private static List<Range> byWeekName(SortedMap<Integer, String> weekPhases, Map<String, String> outputs) {
+	private static List<Range> byWeekName(SortedMap<Integer, @Nullable String> weekPhases,
+			Map<String, String> outputs) {
 		String carried = weekPhases.values().stream().filter(Objects::nonNull).findFirst().orElse(null);
 		if (carried == null) {
 			return List.of();
@@ -94,7 +94,10 @@ final class WeeklyProgramPhases {
 			first = week.getKey();
 			last = week.getKey();
 		}
-		phases.add(new Range(name, outputs.get(key(name)), first, last));
+		// Set by the loop, which runs at least once: carried came from one of the weeks.
+		if (name != null) {
+			phases.add(new Range(name, outputs.get(key(name)), first, last));
+		}
 		return phases;
 	}
 

@@ -53,20 +53,21 @@ class ProgramAnnouncementControllerTest {
 	@Test
 	void aCoordinatorPostsAndReadsAndAMemberReadsTheirs() throws Exception {
 		ProgramAnnouncementResponse announcement = new ProgramAnnouncementResponse(
-				UUID.randomUUID(), PROGRAM_ID, "METU Stars 2026", "Elif Demir", "Atölye bugün 16:00'da", Instant.now(), 42, 28);
+				UUID.randomUUID(), PROGRAM_ID, "METU Stars 2026", "Elif Demir", "Atölye bugün 16:00'da", Instant.now(),
+				42, 28);
 		when(announcementService.post(eq(SIGNED_IN_ID), eq(PROGRAM_ID), any(PostProgramAnnouncementRequest.class)))
 				.thenReturn(announcement);
 		when(announcementService.coordinatorList(SIGNED_IN_ID, PROGRAM_ID)).thenReturn(List.of(announcement));
 		when(announcementService.mine(SIGNED_IN_ID)).thenReturn(List.of(announcement));
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/announcements", PROGRAM_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"body\":\"Atölye bugün 16:00'da\"}")
-						.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"body\":\"Atölye bugün 16:00'da\"}")
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.teamCount").value(42));
 		mockMvc.perform(get("/api/coordinator/programs/{id}/announcements", PROGRAM_ID)
-						.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isOk());
 		mockMvc.perform(get("/api/program-announcements").with(authentication(signedIn(UserRole.MENTEE))))
 				.andExpect(status().isOk())
@@ -76,9 +77,9 @@ class ProgramAnnouncementControllerTest {
 	@Test
 	void aBlankAnnouncementIsRejected() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/{id}/announcements", PROGRAM_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"body\":\"\"}")
-						.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"body\":\"\"}")
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(announcementService);
 	}

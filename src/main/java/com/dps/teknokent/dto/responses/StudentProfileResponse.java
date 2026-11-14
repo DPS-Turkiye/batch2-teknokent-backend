@@ -5,15 +5,17 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.entity.MentorProfile;
 
 /** A student mentor's studies, shown to mentees; absent for mentors who are not students. */
 public record StudentProfileResponse(
-		String department,
-		String studyYear,
+		@Nullable String department,
+		@Nullable String studyYear,
 		List<String> strongCourses,
 		List<String> projects,
-		String erasmus) {
+		@Nullable String erasmus) {
 
 	/** The words matching compares with a student's request: department, year, courses, projects, Erasmus. */
 	public String matchingText() {
@@ -26,7 +28,7 @@ public record StudentProfileResponse(
 		return parts.stream().filter(Objects::nonNull).collect(Collectors.joining("\n"));
 	}
 
-	public static StudentProfileResponse fromEntity(MentorProfile profile) {
+	public static @Nullable StudentProfileResponse fromEntity(MentorProfile profile) {
 		boolean empty = profile.getDepartment() == null && profile.getStudyYear() == null
 				&& profile.getErasmus() == null && profile.getStrongCourses().isEmpty()
 				&& profile.getProjects().isEmpty();

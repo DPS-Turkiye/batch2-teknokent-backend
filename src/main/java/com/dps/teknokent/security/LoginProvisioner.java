@@ -4,6 +4,8 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 
+import org.jspecify.annotations.Nullable;
+
 /** Finds or creates the Firebase login for an address, so an admin can hand someone an account. */
 public interface LoginProvisioner {
 
@@ -41,7 +43,7 @@ public interface LoginProvisioner {
 	 * marks a login created here as verified, for a provider that vouches for the address; an existing login keeps
 	 * whatever it has.
 	 */
-	String customToken(String uid, String email, String displayName, boolean emailVerified);
+	String customToken(String uid, String email, @Nullable String displayName, boolean emailVerified);
 
 	/**
 	 * The uid of the Firebase login that uses {@code email} right now, empty when there is none; a 502 when Firebase

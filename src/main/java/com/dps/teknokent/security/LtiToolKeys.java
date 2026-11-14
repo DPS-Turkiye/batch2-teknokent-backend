@@ -66,7 +66,8 @@ public class LtiToolKeys {
 			RSAPublicKey publicKey = (RSAPublicKey) factory
 					.generatePublic(new RSAPublicKeySpec(privateKey.getModulus(), privateKey.getPublicExponent()));
 			return rsaKey(publicKey, privateKey);
-		} catch (NoSuchAlgorithmException | InvalidKeySpecException | IllegalArgumentException | ClassCastException exception) {
+		} catch (NoSuchAlgorithmException | InvalidKeySpecException | IllegalArgumentException
+				| ClassCastException exception) {
 			throw new IllegalStateException("LTI_TOOL_PRIVATE_KEY is not a PKCS#8 RSA private key.", exception);
 		}
 	}

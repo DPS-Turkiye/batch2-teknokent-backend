@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.entity.Organization;
 
@@ -16,14 +18,14 @@ public record OrganizationResponse(
 		String solution,
 		String currentSolution,
 		String targetUser,
-		String sector,
-		String maturity,
-		String programLevel,
+		@Nullable String sector,
+		@Nullable String maturity,
+		@Nullable String programLevel,
 		List<String> supportAreas,
 		String statusVersion,
 		String statusSummary,
 		Integer completionPercent,
-		String fundingStage,
+		@Nullable String fundingStage,
 		Integer foundedYear,
 		String mvpUrl,
 		UserAccountStatus approvalStatus,

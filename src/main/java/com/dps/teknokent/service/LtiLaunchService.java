@@ -1,10 +1,8 @@
 package com.dps.teknokent.service;
 
 import java.net.URI;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +27,8 @@ import com.dps.teknokent.repository.OfficeHoursEnrollmentRepository;
 import com.dps.teknokent.repository.OfficeHoursUserRepository;
 import com.dps.teknokent.security.LtiLaunchClaims;
 import com.dps.teknokent.security.LtiLaunchVerifier;
+import com.dps.teknokent.util.EmailDomains;
+import com.dps.teknokent.util.RandomTokens;
 
 /**
  * The two LTI 1.3 steps behind "open office hours" in a Moodle course: the OIDC login initiation (we answer with
@@ -40,8 +40,6 @@ public class LtiLaunchService {
 
 	static final String INSTRUCTOR_ROLE = "http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor";
 	static final String LEARNER_ROLE = "http://purl.imsglobal.org/vocab/lis/v2/membership#Learner";
-
-	private static final SecureRandom RANDOM = new SecureRandom();
 
 	private final LtiProperties properties;
 	private final LtiLoginStateStore stateStore;
@@ -87,8 +85,8 @@ public class LtiLaunchService {
 		if (!sameOrigin(request.targetLinkUri(), properties.toolLaunchUrl())) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The launch is not for this tool.");
 		}
-		String state = randomToken();
-		String nonce = randomToken();
+		String state = RandomTokens.urlSafe(32);
+		String nonce = RandomTokens.urlSafe(32);
 		stateStore.save(state, nonce);
 
 		UriComponentsBuilder url = UriComponentsBuilder.fromUriString(properties.platformAuthUrl())
@@ -124,7 +122,7 @@ public class LtiLaunchService {
 				.orElseThrow(() -> new IllegalStateException("The office-hours user was not saved."));
 		user.setFullName(claims.fullName());
 		if (claims.email() != null && !claims.email().isBlank()) {
-			user.setEmail(claims.email().trim().toLowerCase());
+			user.setEmail(EmailDomains.normalizeEmail(claims.email()));
 		}
 		user.setLastLaunchAt(now);
 		userRepository.save(user);
@@ -155,7 +153,8 @@ public class LtiLaunchService {
 		if (roles.contains(LEARNER_ROLE)) {
 			return OfficeHoursRole.STUDENT;
 		}
-		throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Office hours are for a course's instructors and students.");
+		throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+				"Office hours are for a course's instructors and students.");
 	}
 
 	/** The target link must point at this tool: same scheme, host and port as the configured launch URL. */
@@ -193,9 +192,4 @@ public class LtiLaunchService {
 				: claims.contextId();
 	}
 
-	private static String randomToken() {
-		byte[] bytes = new byte[32];
-		RANDOM.nextBytes(bytes);
-		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-	}
 }

@@ -1,12 +1,5 @@
 package com.dps.teknokent.service;
 
-import java.util.List;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -14,48 +7,55 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
-import com.dps.teknokent.util.JsonSchemaUtils;
 import com.dps.teknokent.util.JsonUtils;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingReportServiceTest {
 
-  @Mock
-  private AiProviderClient aiProviderClient;
+	@Mock
+	private AiProviderClient aiProviderClient;
 
-  private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
+	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
 
-  private MeetingReportService service() {
-    return new MeetingReportService(
-        aiProviderClient,
-        new LocalPiiRedactionService(),
-        jsonUtils,
-        new JsonSchemaUtils(jsonUtils));
-  }
+	private MeetingReportService service() {
+		return new MeetingReportService(
+				aiProviderClient,
+				new LocalPiiRedactionService(),
+				jsonUtils);
+	}
 
-  @Test
-  void masksContactDetailsBeforeSendingTheTranscriptToTheAiProvider() {
-    when(aiProviderClient.resolveReportModel()).thenReturn("openai/gpt-4o-mini");
-    when(aiProviderClient.generateMeetingReport(any(), any()))
-        .thenReturn(jsonUtils.readTree("{\"title\":\"Sprint\",\"summary\":\"Ozet\"}"));
+	@Test
+	void masksContactDetailsBeforeSendingTheTranscriptToTheAiProvider() {
+		when(aiProviderClient.resolveReportModel()).thenReturn("openai/gpt-4o-mini");
+		when(aiProviderClient.generateMeetingReport(any(), any()))
+				.thenReturn(jsonUtils.readTree("{\"title\":\"Sprint\",\"summary\":\"Ozet\"}"));
 
-    service().generate(
-        List.of(new TranscriptSegmentResponse("s1", "Ayşe", "Bana ada@example.com adresinden yaz", "00:10")));
+		service().generate(
+				List.of(new TranscriptSegmentResponse("s1", "Ayşe", "Bana ada@example.com adresinden yaz", "00:10")));
 
-    ArgumentCaptor<String> transcript = ArgumentCaptor.forClass(String.class);
-    verify(aiProviderClient).generateMeetingReport(transcript.capture(), any());
-    assertThat(transcript.getValue()).doesNotContain("ada@example.com");
-    assertThat(transcript.getValue()).contains("Ayşe", "adresinden yaz");
-  }
+		ArgumentCaptor<String> transcript = ArgumentCaptor.forClass(String.class);
+		verify(aiProviderClient).generateMeetingReport(transcript.capture(), any());
+		assertThat(transcript.getValue()).doesNotContain("ada@example.com");
+		assertThat(transcript.getValue()).contains("Ayşe", "adresinden yaz");
+	}
 
-  @Test
-  void rejectsEmptyTranscriptWithoutCallingTheAiProvider() {
-    assertThatThrownBy(() -> service().generate(List.of()))
-        .isInstanceOf(InvalidRequestException.class);
+	@Test
+	void rejectsEmptyTranscriptWithoutCallingTheAiProvider() {
+		assertThatThrownBy(() -> service().generate(List.of()))
+				.isInstanceOf(InvalidRequestException.class);
 
-    verify(aiProviderClient, never()).generateMeetingReport(any(), any());
-  }
+		verify(aiProviderClient, never()).generateMeetingReport(any(), any());
+	}
 }

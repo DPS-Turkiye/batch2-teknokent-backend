@@ -1,9 +1,24 @@
 {
   "editor.formatOnSave": true,
   "[java]": {
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "redhat.java",
+    "editor.insertSpaces": false,
+    "editor.tabSize": 4,
+    "editor.detectIndentation": false,
+    "editor.rulers": [120]
   },
+  "java.format.settings.url": "config/eclipse-formatter.xml",
+  "java.format.settings.profile": "Teknokent",
+  "java.completion.importOrder": ["#", "java", "javax", "org", "com", ""],
+  "java.sources.organizeImports.starThreshold": 99,
+  "java.sources.organizeImports.staticStarThreshold": 99,
+  "java.checkstyle.configuration": "${workspaceFolder}/config/checkstyle.xml",
+  "java.checkstyle.version": "14.4.0",
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
-  "files.trimFinalNewlines": true
+  "files.trimFinalNewlines": true,
+  "search.exclude": {
+    "**/target": true
+  }
 }

@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.BadgeCode;
 import com.dps.teknokent.domain.BadgeKind;
 import com.dps.teknokent.domain.BadgeSource;
@@ -15,7 +17,7 @@ public record BadgeAwardResponse(
 		BadgeCode code,
 		BadgeKind kind,
 		UUID programId,
-		String programName,
+		@Nullable String programName,
 		BadgeStatus status,
 		BadgeSource source,
 		Instant awardedAt,
@@ -23,7 +25,7 @@ public record BadgeAwardResponse(
 		Instant revokedAt,
 		String reason) {
 
-	public static BadgeAwardResponse of(UserBadge award, String programName) {
+	public static BadgeAwardResponse of(UserBadge award, @Nullable String programName) {
 		return new BadgeAwardResponse(award.getId(), award.getBadgeCode(), award.getBadgeCode().kind(),
 				award.getProgramId(), programName, award.getStatus(), award.getSource(), award.getAwardedAt(),
 				award.getExpiresAt(), award.getRevokedAt(), award.getReason());

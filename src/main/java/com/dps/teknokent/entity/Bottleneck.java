@@ -49,13 +49,27 @@ public class Bottleneck {
 	}
 
 	public void apply(UpdateBottleneckRequest request, AppUser requestedOwner) {
-		if (request.ownerId() != null) owner = requestedOwner;
-		if (request.title() != null) title = TextUtils.trim(request.title());
-		if (request.description() != null) description = TextUtils.normalizeOptional(request.description());
-		if (request.severity() != null) severity = request.severity();
-		if (request.status() != null) status = request.status();
-		if (request.targetResolutionDate() != null) targetResolutionDate = request.targetResolutionDate();
-		if (request.resolutionNotes() != null) resolutionNotes = TextUtils.normalizeOptional(request.resolutionNotes());
+		if (request.ownerId() != null) {
+			owner = requestedOwner;
+		}
+		if (request.title() != null) {
+			title = TextUtils.trim(request.title());
+		}
+		if (request.description() != null) {
+			description = TextUtils.normalizeOptional(request.description());
+		}
+		if (request.severity() != null) {
+			severity = request.severity();
+		}
+		if (request.status() != null) {
+			status = request.status();
+		}
+		if (request.targetResolutionDate() != null) {
+			targetResolutionDate = request.targetResolutionDate();
+		}
+		if (request.resolutionNotes() != null) {
+			resolutionNotes = TextUtils.normalizeOptional(request.resolutionNotes());
+		}
 	}
 
 	@Id

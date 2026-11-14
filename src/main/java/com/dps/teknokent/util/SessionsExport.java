@@ -5,6 +5,8 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
 
 /** The program's sessions report as a file for İŞKUR: one row per mentor, then one per mentee. */
@@ -44,7 +46,7 @@ public final class SessionsExport {
 		return List.of(role, text(row.name()), text(row.email()), row.sessions(), hours, row.days());
 	}
 
-	private static String text(String value) {
+	private static String text(@Nullable String value) {
 		return value == null ? "" : value;
 	}
 }

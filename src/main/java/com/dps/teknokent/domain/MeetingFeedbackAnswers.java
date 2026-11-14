@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Both feedback forms store the qualities a person picks as fixed Turkish texts in {@code benefits}, then any
  * free-text note as one more entry. The texts mirror the frontend's {@code MEETING_FEEDBACK_BENEFITS} (mentee form)
@@ -32,7 +34,7 @@ public final class MeetingFeedbackAnswers {
 			"Motivasyonu yüksek",
 			"Saygılı");
 
-	public record Split(List<String> qualities, String note) {
+	public record Split(List<String> qualities, @Nullable String note) {
 	}
 
 	private MeetingFeedbackAnswers() {

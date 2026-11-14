@@ -1,25 +1,27 @@
 package com.dps.teknokent.service;
 
-import java.util.List;
-import java.util.ArrayList;
-import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
-import com.dps.teknokent.entity.OrganizationPendingMember;
-import com.dps.teknokent.dto.requests.OnboardingTeamMemberRequest;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
+import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.StartupMaturity;
 import com.dps.teknokent.domain.StartupProgramLevel;
 import com.dps.teknokent.domain.StartupSector;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateStartupRequest;
+import com.dps.teknokent.dto.requests.OnboardingTeamMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterFounderRequest;
 import com.dps.teknokent.dto.requests.RegisterMemberRequest;
 import com.dps.teknokent.dto.requests.RegisterMentorRequest;
@@ -28,31 +30,30 @@ import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.OrganizationPendingMember;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.OnboardingDraftRepository;
+import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramMentorInviteRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
-import com.dps.teknokent.entity.ProgramTeamInvite;
-import com.dps.teknokent.repository.ProgramTeamInviteRepository;
-import com.dps.teknokent.domain.ProgramMentorInvitedBy;
-import com.dps.teknokent.domain.ProgramMentorStatus;
-import com.dps.teknokent.domain.ProgramStatus;
-import com.dps.teknokent.entity.ProgramMentor;
-import com.dps.teknokent.entity.ProgramMentorInvite;
-import com.dps.teknokent.repository.ProgramMentorInviteRepository;
-import com.dps.teknokent.repository.ProgramMentorRepository;
-import com.dps.teknokent.util.Texts;
 
 @Service
 @RequiredArgsConstructor
@@ -448,7 +449,7 @@ public class RegistrationService {
 			String phone,
 			UserRole role,
 			UserAccountStatus status,
-			Organization organization) {
+			@Nullable Organization organization) {
 		AppUser user = new AppUser();
 		user.setEmail(email);
 		user.setFullName(TextUtils.trim(fullName));

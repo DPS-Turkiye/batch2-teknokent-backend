@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.ProcessingConsentSource;
+import com.dps.teknokent.domain.ProfileType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -40,11 +41,11 @@ import com.dps.teknokent.security.FirebaseIdentity;
 import com.dps.teknokent.security.FirebaseTokenVerifier;
 import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.service.NativeProfileParserService;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 /** Someone an admin deleted signs up again with the same address and reads their CV in the signup wizard. */
 @SpringBootTest
@@ -84,11 +85,11 @@ class CvPreviewAfterResignupIntegrationTest {
 		when(loginProvisioner.uidForEmail(anyString())).thenReturn(Optional.empty());
 
 		mockMvc.perform(post("/api/admin/users/{id}/delete", deleted.getId())
-						.with(authentication(new UsernamePasswordAuthenticationToken(new AppUserPrincipal(
-								admin.getId(), admin.getEmail(), admin.getRole(), admin.getStatus(), "uid-of-the-admin"),
-								null, List.of())))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"confirmEmail\":\"" + email + "\"}"))
+				.with(authentication(new UsernamePasswordAuthenticationToken(new AppUserPrincipal(
+						admin.getId(), admin.getEmail(), admin.getRole(), admin.getStatus(), "uid-of-the-admin"),
+						null, List.of())))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"confirmEmail\":\"" + email + "\"}"))
 				.andExpect(status().isOk());
 
 		// Same address, proven to be theirs, on a login Firebase made anew.
@@ -96,7 +97,7 @@ class CvPreviewAfterResignupIntegrationTest {
 		when(firebaseTokenVerifier.verify(NEW_TOKEN))
 				.thenReturn(Optional.of(new FirebaseIdentity(NEW_UID, email, true)));
 		ObjectNode profile = JsonNodeFactory.instance.objectNode().put("current_role", "Founder");
-		when(nativeProfileParserService.parse(any(), anyString(), anyString()))
+		when(nativeProfileParserService.parse(any(), any(ProfileType.class), any()))
 				.thenReturn(new NativeProfileParserService.ParseResult(
 						profile, JsonNodeFactory.instance.objectNode(), JsonNodeFactory.instance.objectNode()));
 	}

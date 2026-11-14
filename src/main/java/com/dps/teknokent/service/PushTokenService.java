@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,7 +43,7 @@ public class PushTokenService {
 		pushTokenRepository.deleteByTokenAndUserId(TextUtils.trim(token), userId);
 	}
 
-	private static String truncate(String value) {
+	private static @Nullable String truncate(@Nullable String value) {
 		return value == null || value.length() <= USER_AGENT_LIMIT ? value : value.substring(0, USER_AGENT_LIMIT);
 	}
 }

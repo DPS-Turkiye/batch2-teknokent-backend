@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.ProgramType;
-import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.AdminAcademicResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.AppUserIdentity;
@@ -21,6 +20,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserIdentityRepository;
 import com.dps.teknokent.repository.InstitutionAdvisingRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
+import com.dps.teknokent.security.AdminAccess;
 
 import lombok.RequiredArgsConstructor;
 
@@ -89,10 +89,7 @@ public class AdminAcademicService {
 	}
 
 	private void requireAdmin(UUID actorId) {
-		AppUser actor = domainLookupService.requireUser(actorId);
-		if (!actor.has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin can list academicians.");
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(actorId));
 	}
 
 	private static String key(String institution, String persistentId) {

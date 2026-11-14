@@ -2,13 +2,14 @@ package com.dps.teknokent.dto.requests;
 
 import java.util.UUID;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.dps.teknokent.domain.MeetingAssistantShareKind;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import tools.jackson.databind.JsonNode;
 
 public record PublishMeetingAssistantShareRequest(
 		UUID actorId,
-		@NotBlank String kind,
+		@NotNull MeetingAssistantShareKind kind,
 		JsonNode transcript,
 		JsonNode report) {
 }

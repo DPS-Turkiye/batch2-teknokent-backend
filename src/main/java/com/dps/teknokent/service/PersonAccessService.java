@@ -6,10 +6,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
@@ -33,6 +31,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.TeamMembershipRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.ProgramCoordination;
 
 import lombok.RequiredArgsConstructor;
@@ -63,12 +62,12 @@ public class PersonAccessService {
 	private final AppUserRepository appUserRepository;
 
 	/** A declined or withdrawn request no longer ties a mentor to the startup. */
-	private static final Set<MentorshipRequestStatus> LIVE_REQUESTS = EnumSet.of(MentorshipRequestStatus.PENDING,
+	static final Set<MentorshipRequestStatus> LIVE_REQUESTS = EnumSet.of(MentorshipRequestStatus.PENDING,
 			MentorshipRequestStatus.MORE_INFO_REQUESTED, MentorshipRequestStatus.COUNTER_PROPOSED,
 			MentorshipRequestStatus.ACCEPTED);
 
 	/** A completed or cancelled mentorship no longer opens the mentor to the startup (as in program matching). */
-	private static final Set<MentorshipStatus> ONGOING_MENTORSHIPS = EnumSet.of(MentorshipStatus.PLANNED,
+	static final Set<MentorshipStatus> ONGOING_MENTORSHIPS = EnumSet.of(MentorshipStatus.PLANNED,
 			MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
 
 	@Transactional(readOnly = true)
@@ -97,10 +96,7 @@ public class PersonAccessService {
 	/** The account list: approved admins only. */
 	@Transactional(readOnly = true)
 	public void requireAdmin(UUID actorId) {
-		AppUser actor = domainLookupService.requireUser(actorId);
-		if (actor.getStatus() != UserAccountStatus.APPROVED || !actor.has(UserRole.ADMIN)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only an admin can list accounts");
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(actorId));
 	}
 
 	private boolean related(AppUser actor, AppUser person) {

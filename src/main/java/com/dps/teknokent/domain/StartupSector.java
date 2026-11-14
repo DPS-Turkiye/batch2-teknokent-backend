@@ -1,5 +1,7 @@
 package com.dps.teknokent.domain;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.TextUtils;
 
@@ -26,21 +28,29 @@ public enum StartupSector {
 
 	// Lenient: an unrecognized value reads back as null rather than failing the
 	// whole row, so a future option-list change never breaks reading old data.
-	public static StartupSector fromOrNull(String raw) {
+	public static @Nullable StartupSector fromOrNull(@Nullable String raw) {
 		String normalized = TextUtils.normalizeOptional(raw);
-		if (normalized == null) return null;
+		if (normalized == null) {
+			return null;
+		}
 		for (StartupSector sector : values()) {
-			if (sector.value.equals(normalized)) return sector;
+			if (sector.value.equals(normalized)) {
+				return sector;
+			}
 		}
 		return null;
 	}
 
 	// Strict: for request validation, where an unrecognized value is the client's error.
-	public static StartupSector requireValidOrNull(String raw) {
+	public static @Nullable StartupSector requireValidOrNull(@Nullable String raw) {
 		String normalized = TextUtils.normalizeOptional(raw);
-		if (normalized == null) return null;
+		if (normalized == null) {
+			return null;
+		}
 		StartupSector match = fromOrNull(raw);
-		if (match == null) throw new InvalidRequestException("Unknown sector: " + normalized);
+		if (match == null) {
+			throw new InvalidRequestException("Unknown sector: " + normalized);
+		}
 		return match;
 	}
 }

@@ -14,9 +14,6 @@ import com.dps.teknokent.entity.MentorProfile;
 public interface MentorProfileRepository extends JpaRepository<MentorProfile, UUID> {
 
 	@EntityGraph(attributePaths = "user")
-	List<MentorProfile> findAllByOrderBySortOrderAsc();
-
-	@EntityGraph(attributePaths = "user")
 	List<MentorProfile> findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus status);
 
 	@EntityGraph(attributePaths = "user")

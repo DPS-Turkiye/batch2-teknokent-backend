@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessagingException;
@@ -57,6 +58,7 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 		Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
 		RealtimeIdentity identity = identityOf(sessionAttributes);
 		if (meetingId == null
+				|| sessionAttributes == null
 				|| identity == null
 				|| !isAccountStillAllowed(identity, sessionAttributes)
 				|| !isAllowed(meetingId, identity, sessionAttributes)) {
@@ -87,7 +89,8 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 		}
 		Instant signedInAt = signedInAt(identity, sessionAttributes);
 		if (signedInAt == null
-				|| !meetingRoomAccessService.isStillMemberOf(identity.userId(), identity.organizationId(), signedInAt)) {
+				|| !meetingRoomAccessService.isStillMemberOf(identity.userId(), identity.organizationId(),
+						signedInAt)) {
 			return false;
 		}
 		accountCheck.passed(now);
@@ -98,7 +101,7 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 	 * The sign-in the token was issued for. A reconnect opens a new socket after a revoke, so the socket's own start
 	 * would let a revoked sign-in back in; it is only the fallback for a token that does not carry the sign-in.
 	 */
-	private static Instant signedInAt(RealtimeIdentity identity, Map<String, Object> sessionAttributes) {
+	private static @Nullable Instant signedInAt(RealtimeIdentity identity, Map<String, Object> sessionAttributes) {
 		if (identity.signedInAt() != null) {
 			return identity.signedInAt();
 		}
@@ -124,7 +127,7 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 		}
 	}
 
-	private UUID meetingIdOf(String destination) {
+	private @Nullable UUID meetingIdOf(@Nullable String destination) {
 		if (destination == null) {
 			return null;
 		}
@@ -148,7 +151,7 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 		}
 	}
 
-	private String inboundMeetingId(String path) {
+	private @Nullable String inboundMeetingId(String path) {
 		for (String suffix : MeetingRoomDestinations.INBOUND_SUFFIXES) {
 			if (path.endsWith(suffix)) {
 				return path.substring(0, path.length() - suffix.length());
@@ -157,7 +160,7 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 		return null;
 	}
 
-	private RealtimeIdentity identityOf(Map<String, Object> sessionAttributes) {
+	private @Nullable RealtimeIdentity identityOf(@Nullable Map<String, Object> sessionAttributes) {
 		if (sessionAttributes == null) {
 			return null;
 		}
@@ -167,7 +170,7 @@ public class MeetingRoomAccessInterceptor implements ChannelInterceptor {
 
 	private static final class AccountCheck {
 
-		private volatile Instant passedAt;
+		private volatile @Nullable Instant passedAt;
 
 		private boolean isFresh(Instant now) {
 			Instant last = passedAt;

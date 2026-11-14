@@ -24,71 +24,84 @@ import com.dps.teknokent.service.DashboardService;
 @Import(SecurityConfig.class)
 class DashboardControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+	@Autowired
+	private MockMvc mockMvc;
 
-    @MockitoBean
-    private DashboardService dashboardService;
+	@MockitoBean
+	private DashboardService dashboardService;
 
-    @Test
-    void requiresAuthenticationForDashboardSummary() throws Exception {
-        mockMvc.perform(get("/api/dashboard/summary"))
-                .andExpect(status().isUnauthorized());
-    }
+	@Test
+	void requiresAuthenticationForDashboardSummary() throws Exception {
+		mockMvc.perform(get("/api/dashboard/summary"))
+				.andExpect(status().isUnauthorized());
+	}
 
-    // A session without a startup sends a blank id; that must not read as "the whole platform".
-    @Test
-    void refusesADashboardSummaryWithoutAnOrganization() throws Exception {
-        mockMvc.perform(get("/api/dashboard/summary").with(user("test-user")))
-                .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/dashboard/summary").param("organizationId", "").with(user("test-user")))
-                .andExpect(status().isBadRequest());
+	// A session without a startup sends a blank id; that must not read as "the whole platform".
+	@Test
+	void refusesADashboardSummaryWithoutAnOrganization() throws Exception {
+		mockMvc.perform(get("/api/dashboard/summary").with(user("test-user")))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(get("/api/dashboard/summary").param("organizationId", "").with(user("test-user")))
+				.andExpect(status().isBadRequest());
 
-        verifyNoInteractions(dashboardService);
-    }
+		verifyNoInteractions(dashboardService);
+	}
 
-    @Test
-    void returnsDashboardSummaryForSpecificOrganization() throws Exception {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+	@Test
+	void returnsDashboardSummaryForSpecificOrganization() throws Exception {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-        when(dashboardService.getSummary(organizationId)).thenReturn(new DashboardSummaryResponse(
-                7,
-                3,
-                1,
-                2,
-                4
-        ));
+		when(dashboardService.getSummary(organizationId, null)).thenReturn(new DashboardSummaryResponse(
+				7,
+				3,
+				1,
+				2,
+				4));
 
-        mockMvc.perform(get("/api/dashboard/summary")
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.activeMentorships").value(7))
-                .andExpect(jsonPath("$.openBottlenecks").value(3))
-                .andExpect(jsonPath("$.highSeverityBottlenecks").value(1))
-                .andExpect(jsonPath("$.overdueActions").value(2))
-                .andExpect(jsonPath("$.upcomingMeetings").value(4));
-    }
+		mockMvc.perform(get("/api/dashboard/summary")
+				.param("organizationId", organizationId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.activeMentorships").value(7))
+				.andExpect(jsonPath("$.openBottlenecks").value(3))
+				.andExpect(jsonPath("$.highSeverityBottlenecks").value(1))
+				.andExpect(jsonPath("$.overdueActions").value(2))
+				.andExpect(jsonPath("$.upcomingMeetings").value(4));
+	}
 
-    @Test
-    void returnsCompleteSummaryPayload() throws Exception {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
-        when(dashboardService.getSummary(organizationId)).thenReturn(new DashboardSummaryResponse(
-                9,
-                5,
-                3,
-                6,
-                2
-        ));
+	@Test
+	void passesTheNamedCallerOnForTheTeamCheck() throws Exception {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+		UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000033");
+		when(dashboardService.getSummary(organizationId, actorId))
+				.thenReturn(new DashboardSummaryResponse(1, 0, 0, 0, 0));
 
-        mockMvc.perform(get("/api/dashboard/summary")
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.activeMentorships").value(9))
-                .andExpect(jsonPath("$.openBottlenecks").value(5))
-                .andExpect(jsonPath("$.highSeverityBottlenecks").value(3))
-                .andExpect(jsonPath("$.overdueActions").value(6))
-                .andExpect(jsonPath("$.upcomingMeetings").value(2));
-    }
+		mockMvc.perform(get("/api/dashboard/summary")
+				.param("organizationId", organizationId.toString())
+				.param("actorId", actorId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.activeMentorships").value(1));
+	}
+
+	@Test
+	void returnsCompleteSummaryPayload() throws Exception {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+		when(dashboardService.getSummary(organizationId, null)).thenReturn(new DashboardSummaryResponse(
+				9,
+				5,
+				3,
+				6,
+				2));
+
+		mockMvc.perform(get("/api/dashboard/summary")
+				.param("organizationId", organizationId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.activeMentorships").value(9))
+				.andExpect(jsonPath("$.openBottlenecks").value(5))
+				.andExpect(jsonPath("$.highSeverityBottlenecks").value(3))
+				.andExpect(jsonPath("$.overdueActions").value(6))
+				.andExpect(jsonPath("$.upcomingMeetings").value(2));
+	}
 }

@@ -1,5 +1,7 @@
 package com.dps.teknokent.domain;
 
+import java.util.Locale;
+
 import com.dps.teknokent.exception.InvalidRequestException;
 
 public enum MentorshipWorkspaceTab {
@@ -12,7 +14,7 @@ public enum MentorshipWorkspaceTab {
 			throw new InvalidRequestException("tab is required");
 		}
 		try {
-			return MentorshipWorkspaceTab.valueOf(value.trim().toUpperCase());
+			return MentorshipWorkspaceTab.valueOf(value.trim().toUpperCase(Locale.ROOT));
 		} catch (IllegalArgumentException exception) {
 			throw new InvalidRequestException(
 					"tab must be one of: active, requests, history");

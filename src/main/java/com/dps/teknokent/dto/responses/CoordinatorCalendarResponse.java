@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
 
 /** The coordinator's Takvim for a date range: mentorship meetings, program events and deadlines. */
@@ -16,8 +18,10 @@ public record CoordinatorCalendarResponse(
 		Summary summary,
 		int recordingCapacity) {
 
-	/** {@code id} is the meeting's id for MEETING and the program event's id otherwise.
-	 * {@code recordingLoad}: most meeting rooms the transcript bot records at once during a MEETING, platform-wide. */
+	/**
+	 * {@code id} is the meeting's id for MEETING and the program event's id otherwise.
+	 * {@code recordingLoad}: most meeting rooms the transcript bot records at once during a MEETING, platform-wide.
+	 */
 	public record Item(
 			UUID id,
 			CoordinatorAgendaKind kind,
@@ -25,18 +29,18 @@ public record CoordinatorCalendarResponse(
 			Instant startsAt,
 			Instant endsAt,
 			UUID programId,
-			String programName,
-			UUID mentorshipId,
-			UUID mentorId,
-			String mentorName,
-			UUID organizationId,
-			String organizationName,
-			String topic,
-			Integer sequence,
-			String meetLink,
-			String description,
+			@Nullable String programName,
+			@Nullable UUID mentorshipId,
+			@Nullable UUID mentorId,
+			@Nullable String mentorName,
+			@Nullable UUID organizationId,
+			@Nullable String organizationName,
+			@Nullable String topic,
+			@Nullable Integer sequence,
+			@Nullable String meetLink,
+			@Nullable String description,
 			boolean conflict,
-			Integer recordingLoad) {
+			@Nullable Integer recordingLoad) {
 	}
 
 	/** Meetings of one mentor that overlap in time. */

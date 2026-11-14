@@ -118,7 +118,8 @@ class StudentProfileCompletionServiceTest {
 		when(interests.findById(STUDENT)).thenReturn(Optional.of(saved));
 
 		assertThat(service.forAdvisor(ADVISOR, STUDENT)).isEqualTo(new AdviseeProfileResponse(
-				new AdviseeProfileResponse.Interests(List.of(PeerTopicCategory.CAREER_INTERNSHIP), List.of("fixture-cv")),
+				new AdviseeProfileResponse.Interests(List.of(PeerTopicCategory.CAREER_INTERNSHIP),
+						List.of("fixture-cv")),
 				"Yaz stajı bulmak"));
 	}
 

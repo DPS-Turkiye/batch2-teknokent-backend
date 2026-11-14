@@ -8,15 +8,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.TeamChangeStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
-import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.ProgramTeamMoveResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.DocumentRequestItem;
@@ -38,6 +35,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramTeamMoveRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.Texts;
 
@@ -256,9 +254,6 @@ public class ProgramTeamMoveService {
 	}
 
 	private AppUser requireAdmin(UUID actorId) {
-		return appUserRepository.findById(actorId)
-				.filter(user -> user.getStatus() == UserAccountStatus.APPROVED && user.has(UserRole.ADMIN))
-				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
-						Texts.forRequest("error.teamMoveAdminOnly")));
+		return AdminAccess.requireAdmin(appUserRepository.findById(actorId).orElse(null));
 	}
 }

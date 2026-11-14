@@ -45,7 +45,8 @@ class PeerMentorDocumentTeknokentIntegrationTest {
 						.param("actorId", actorId),
 				post("/api/peer-mentoring/profile/links")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"url\":\"https://example.com\",\"visibility\":\"PROFILE\",\"actorId\":\"" + actorId + "\"}"),
+						.content("{\"url\":\"https://example.com\",\"visibility\":\"PROFILE\",\"actorId\":\"" + actorId
+								+ "\"}"),
 				patch("/api/peer-mentoring/profile/documents/{id}", id)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"visibility\":\"PROFILE\",\"actorId\":\"" + actorId + "\"}"),
