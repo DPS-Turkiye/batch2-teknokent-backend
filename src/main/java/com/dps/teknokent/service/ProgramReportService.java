@@ -279,7 +279,8 @@ public class ProgramReportService {
 		}
 		List<Double> questionAverages = new ArrayList<>();
 		for (int question = 0; question < sums.size(); question++) {
-			questionAverages.add(counts.get(question) == 0 ? null : round((double) sums.get(question) / counts.get(question)));
+			questionAverages
+					.add(counts.get(question) == 0 ? null : round((double) sums.get(question) / counts.get(question)));
 		}
 		return new ProgramMeetingRatingsResponse(
 				programId,

@@ -1,19 +1,19 @@
 package com.dps.teknokent.security;
 
-import java.security.SecureRandom;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.RandomTokens;
 import com.dps.teknokent.util.Texts;
 import com.google.firebase.auth.ActionCodeSettings;
 import com.google.firebase.auth.AuthErrorCode;
@@ -36,8 +36,6 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	private static final int MAX_USERS_PER_LOOKUP = 100;
 
 	private final FirebaseAuth firebaseAuth;
-
-	private static final SecureRandom RANDOM = new SecureRandom();
 
 	public FirebaseLoginProvisioner(FirebaseAuth firebaseAuth) {
 		this.firebaseAuth = firebaseAuth;
@@ -77,10 +75,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		if (login.isEmailVerified()) {
 			return;
 		}
-		byte[] secret = new byte[32];
-		RANDOM.nextBytes(secret);
-		firebaseAuth.updateUser(new UserRecord.UpdateRequest(login.getUid())
-				.setPassword(Base64.getUrlEncoder().withoutPadding().encodeToString(secret)));
+		firebaseAuth.updateUser(new UserRecord.UpdateRequest(login.getUid()).setPassword(RandomTokens.urlSafe(32)));
 		firebaseAuth.revokeRefreshTokens(login.getUid());
 		log.warn("Locked out an unverified Firebase login before linking it to a coordinator: {}", login.getUid());
 	}
@@ -91,7 +86,8 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	 * instead of the generic server-error text.
 	 */
 	private static ResponseStatusException loginUnavailable(String email, FirebaseAuthException exception) {
-		log.error("Could not get a Firebase login for {}: {} {}", email, exception.getErrorCode(), exception.getMessage());
+		log.error("Could not get a Firebase login for {}: {} {}", email, exception.getErrorCode(),
+				exception.getMessage());
 		return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
 				Texts.forRequest("error.coordinatorLoginFailed", exception.getErrorCode()), exception);
 	}
@@ -131,7 +127,8 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 			throw linkUnavailable(email, exception);
 		}
 		if (link == null) {
-			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase returned no verification link.");
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+					"Firebase returned no verification link.");
 		}
 		return link;
 	}
@@ -161,7 +158,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	@FunctionalInterface
 	private interface LinkRequest {
-		String generate(String email, ActionCodeSettings settings) throws FirebaseAuthException;
+		String generate(String email, @Nullable ActionCodeSettings settings) throws FirebaseAuthException;
 	}
 
 	/**
@@ -173,7 +170,8 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		List<UserIdentifier> identifiers = uids.stream().distinct().<UserIdentifier>map(UidIdentifier::new).toList();
 		Map<String, Boolean> answers = new HashMap<>();
 		for (int from = 0; from < identifiers.size(); from += MAX_USERS_PER_LOOKUP) {
-			List<UserIdentifier> batch = identifiers.subList(from, Math.min(from + MAX_USERS_PER_LOOKUP, identifiers.size()));
+			List<UserIdentifier> batch = identifiers.subList(from,
+					Math.min(from + MAX_USERS_PER_LOOKUP, identifiers.size()));
 			try {
 				for (UserRecord user : firebaseAuth.getUsers(batch).getUsers()) {
 					answers.put(user.getUid(), Arrays.stream(user.getProviderData())
@@ -188,7 +186,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	/** Signed locally with the service account's private key, so no extra Google permission is needed. */
 	@Override
-	public String customToken(String uid, String email, String displayName, boolean emailVerified) {
+	public String customToken(String uid, String email, @Nullable String displayName, boolean emailVerified) {
 		ensureLogin(uid, email, displayName, emailVerified);
 		try {
 			return firebaseAuth.createCustomToken(uid);
@@ -197,7 +195,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		}
 	}
 
-	private void ensureLogin(String uid, String email, String displayName, boolean emailVerified) {
+	private void ensureLogin(String uid, String email, @Nullable String displayName, boolean emailVerified) {
 		try {
 			firebaseAuth.getUser(uid);
 			return;

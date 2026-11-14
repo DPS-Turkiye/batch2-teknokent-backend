@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerActivityType;
 
 public record PeerActivityResponse(
@@ -13,7 +15,7 @@ public record PeerActivityResponse(
 		String title,
 		int durationMinutes,
 		UUID menteeId,
-		String menteeName,
+		@Nullable String menteeName,
 		String description,
 		Instant createdAt) {
 }

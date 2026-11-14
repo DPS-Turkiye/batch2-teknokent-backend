@@ -38,8 +38,8 @@ import jakarta.persistence.EntityManager;
 @Transactional
 class MeetingRescheduleFlowTest {
 
-	private static final Instant PLANNED = Instant.now().plus(Duration.ofDays(2)).truncatedTo(ChronoUnit.MINUTES);
-	private static final Instant NEW_TIME = PLANNED.plus(Duration.ofDays(1));
+	private final Instant planned = Instant.now().plus(Duration.ofDays(2)).truncatedTo(ChronoUnit.MINUTES);
+	private final Instant proposedTime = planned.plus(Duration.ofDays(1));
 
 	@Autowired
 	private MeetingProposalService proposals;
@@ -73,7 +73,7 @@ class MeetingRescheduleFlowTest {
 		meeting = new Meeting();
 		meeting.setOrganization(team);
 		meeting.setMentor(mentor);
-		meeting.setScheduledAt(PLANNED);
+		meeting.setScheduledAt(planned);
 		meeting.setDurationMinutes(45);
 		meeting.setAgenda("Go-to-market");
 		meeting.setStatus(MeetingStatus.SCHEDULED);
@@ -84,12 +84,12 @@ class MeetingRescheduleFlowTest {
 	@Test
 	void aNewTimeMovesTheMeetingOnlyOnceBothSidesSayYes() {
 		MeetingProposalResponse proposed = proposals.proposeReschedule(mentor.getId(), meeting.getId(),
-				new RescheduleMeetingRequest(null, NEW_TIME, null));
+				new RescheduleMeetingRequest(null, proposedTime, null));
 
 		assertThat(proposed.status()).isEqualTo(MeetingProposalStatus.PENDING);
 		assertThat(proposed.mentorAcceptedAt()).isNotNull(); // proposing is the mentor's yes
 		assertThat(proposed.durationMinutes()).isEqualTo(45); // kept when not given
-		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(PLANNED);
+		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(planned);
 
 		assertThat(proposals.accept(mentor.getId(), proposed.id()).status()).isEqualTo(MeetingProposalStatus.PENDING);
 
@@ -98,7 +98,7 @@ class MeetingRescheduleFlowTest {
 		assertThat(confirmed.status()).isEqualTo(MeetingProposalStatus.CONFIRMED);
 		assertThat(confirmed.meetingId()).isEqualTo(meeting.getId()); // moved, not a second meeting
 		Meeting moved = reloadedMeeting();
-		assertThat(moved.getScheduledAt()).isEqualTo(NEW_TIME);
+		assertThat(moved.getScheduledAt()).isEqualTo(proposedTime);
 		assertThat(moved.getDurationMinutes()).isEqualTo(45);
 		assertThat(moved.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
 		assertThat(hrefsFor(member)).contains("/mentorships?tab=active"); // every member hears the meeting moved
@@ -109,13 +109,13 @@ class MeetingRescheduleFlowTest {
 	@Test
 	void aTeamWithALeadAnswersThroughTheLeadOnly() {
 		MeetingProposalResponse proposed = proposals.proposeReschedule(mentor.getId(), meeting.getId(),
-				new RescheduleMeetingRequest(null, NEW_TIME, 60));
+				new RescheduleMeetingRequest(null, proposedTime, 60));
 
 		assertThat(hrefsFor(lead)).isNotEmpty();
 		assertThat(hrefsFor(member)).isEmpty();
 		assertThatThrownBy(() -> proposals.accept(member.getId(), proposed.id()))
 				.isInstanceOf(InvalidRequestException.class);
-		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(PLANNED);
+		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(planned);
 
 		assertThat(proposals.accept(lead.getId(), proposed.id()).status()).isEqualTo(MeetingProposalStatus.CONFIRMED);
 		assertThat(reloadedMeeting().getDurationMinutes()).isEqualTo(60);
@@ -124,17 +124,17 @@ class MeetingRescheduleFlowTest {
 	@Test
 	void anyMemberMayProposeAndTheMentorConfirms() {
 		MeetingProposalResponse proposed = proposals.proposeReschedule(member.getId(), meeting.getId(),
-				new RescheduleMeetingRequest(null, NEW_TIME, null));
+				new RescheduleMeetingRequest(null, proposedTime, null));
 
 		assertThat(proposed.teamAcceptedAt()).isNotNull();
 		assertThat(proposed.teamResponderName()).isEqualTo(member.getFullName());
 		assertThat(proposals.accept(mentor.getId(), proposed.id()).status()).isEqualTo(MeetingProposalStatus.CONFIRMED);
-		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(NEW_TIME);
+		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(proposedTime);
 	}
 
 	@Test
 	void outsidersPastTimesAndASecondOpenProposalAreRefused() {
-		RescheduleMeetingRequest newTime = new RescheduleMeetingRequest(null, NEW_TIME, null);
+		RescheduleMeetingRequest newTime = new RescheduleMeetingRequest(null, proposedTime, null);
 		assertThatThrownBy(() -> proposals.proposeReschedule(outsider.getId(), meeting.getId(), newTime))
 				.isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> proposals.proposeReschedule(mentor.getId(), meeting.getId(),
@@ -147,26 +147,27 @@ class MeetingRescheduleFlowTest {
 				.isInstanceOf(ConflictException.class);
 		assertThatThrownBy(() -> proposals.accept(outsider.getId(), proposed.id()))
 				.isInstanceOf(InvalidRequestException.class);
-		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(PLANNED);
+		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(planned);
 	}
 
 	@Test
 	void aDeclinedTimeLeavesTheMeetingAndTellsTheProposerWhy() {
 		MeetingProposalResponse proposed = proposals.proposeReschedule(lead.getId(), meeting.getId(),
-				new RescheduleMeetingRequest(null, NEW_TIME, null));
+				new RescheduleMeetingRequest(null, proposedTime, null));
 
 		MeetingProposalResponse declined = proposals.decline(mentor.getId(), proposed.id(),
 				new DeclineMeetingProposalRequest(null, "Out of office that week"));
 
 		assertThat(declined.status()).isEqualTo(MeetingProposalStatus.DECLINED);
 		assertThat(declined.declineReason()).isEqualTo("Out of office that week");
-		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(PLANNED);
+		assertThat(reloadedMeeting().getScheduledAt()).isEqualTo(planned);
 		assertThat(notifications.findByRecipientIdOrderByCreatedAtDesc(lead.getId()))
 				.extracting(Notification::getBody)
 				.anyMatch(body -> body.contains("Out of office that week"));
 		// Declined is final; the next new time is a new proposal, allowed again now.
 		assertThat(proposals.proposeReschedule(mentor.getId(), meeting.getId(),
-				new RescheduleMeetingRequest(null, NEW_TIME, null)).status()).isEqualTo(MeetingProposalStatus.PENDING);
+				new RescheduleMeetingRequest(null, proposedTime, null)).status())
+				.isEqualTo(MeetingProposalStatus.PENDING);
 	}
 
 	private Meeting reloadedMeeting() {

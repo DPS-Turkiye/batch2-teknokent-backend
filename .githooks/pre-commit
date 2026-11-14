@@ -1,0 +1,39 @@
+#!/bin/sh
+# Formats the staged Java files before they are committed, as lint-staged does in the web repo.
+# CI runs the same check (./mvnw verify), so `git commit --no-verify` only postpones it.
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.java')
+[ -n "$staged" ] || exit 0
+
+# ./mvnw runs Maven in Docker. Without it the commit goes through unformatted rather than being blocked.
+if [ "${MVNW_IN_DOCKER-}" != "1" ] && ! docker info >/dev/null 2>&1; then
+  echo "pre-commit: Docker is not running, so the staged Java files were not formatted." >&2
+  echo "pre-commit: run ./mvnw spotless:apply before pushing; CI rejects unformatted code." >&2
+  exit 0
+fi
+
+# A file with unstaged edits too is formatted but not re-staged: staging it would commit those edits as well.
+partly_staged=$(git diff --name-only --diff-filter=ACMR -- '*.java')
+
+# Spotless takes regular expressions matched against the whole path.
+patterns=$(printf '%s\n' "$staged" | sed -e 's/[.[\*^$+?(){}|]/\\&/g' -e 's/^/.*/' | paste -sd, -)
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if ! ./mvnw -B -q -ntp spotless:apply "-DspotlessFiles=$patterns"; then
+  echo "pre-commit: formatting failed; see the output above." >&2
+  exit 1
+fi
+
+left_unstaged=""
+for file in $staged; do
+  if printf '%s\n' "$partly_staged" | grep -qxF "$file"; then
+    left_unstaged="$left_unstaged $file"
+  else
+    git add -- "$file"
+  fi
+done
+
+if [ -n "$left_unstaged" ]; then
+  echo "pre-commit: formatted but not staged, because these have other unstaged changes:$left_unstaged" >&2
+fi
+exit 0

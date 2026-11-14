@@ -10,11 +10,7 @@ import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(
-		prefix = "app.notifications.reminders",
-		name = "enabled",
-		havingValue = "true",
-		matchIfMissing = true)
+@ConditionalOnProperty(prefix = "app.notifications.reminders", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class NotificationReminderScheduler {
 
 	private final NotificationReminderService reminderService;
@@ -23,9 +19,8 @@ public class NotificationReminderScheduler {
 
 	@Scheduled(fixedDelayString = "${app.notifications.reminders.interval-ms:60000}")
 	public void sendDueReminders() {
+		reminderService.sendDueReminders();
 		Instant now = Instant.now();
-		reminderService.remindUpcomingMeetings(now);
-		reminderService.remindTaskDeadlines(now);
 		officeHoursReminderService.remindUpcomingMeetings(now);
 		officeHoursMailOutbox.deliverDue(now);
 	}

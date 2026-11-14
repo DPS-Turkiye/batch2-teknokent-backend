@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -77,7 +78,8 @@ public class ProgramAnnouncementService {
 	@Transactional(readOnly = true)
 	public List<ProgramAnnouncementResponse> coordinatorList(UUID actorId, UUID programId) {
 		Program program = programService.requireManagedProgram(actorId, programId);
-		return responses(announcementRepository.findByProgramIdOrderByCreatedAtDesc(programId), Map.of(programId, program));
+		return responses(announcementRepository.findByProgramIdOrderByCreatedAtDesc(programId),
+				Map.of(programId, program));
 	}
 
 	/** The announcements of every program the viewer's team is in, or that they mentor in. */
@@ -102,7 +104,8 @@ public class ProgramAnnouncementService {
 		return responses(announcementRepository.findByProgramIdInOrderByCreatedAtDesc(programs.keySet()), programs);
 	}
 
-	private List<ProgramAnnouncementResponse> responses(List<ProgramAnnouncement> announcements, Map<UUID, Program> programs) {
+	private List<ProgramAnnouncementResponse> responses(List<ProgramAnnouncement> announcements,
+			Map<UUID, Program> programs) {
 		Map<UUID, Audience> audiences = new HashMap<>();
 		Map<UUID, String> authors = appUserRepository
 				.findAllById(announcements.stream().map(ProgramAnnouncement::getAuthorId).distinct().toList()).stream()
@@ -131,7 +134,7 @@ public class ProgramAnnouncementService {
 		return new Audience(organizationIds.size(), members, appUserRepository.findAllById(mentorIds));
 	}
 
-	private String nameOf(UUID userId) {
+	private @Nullable String nameOf(UUID userId) {
 		return appUserRepository.findById(userId).map(AppUser::getFullName).orElse(null);
 	}
 
@@ -140,7 +143,8 @@ public class ProgramAnnouncementService {
 	}
 
 	private static ProgramAnnouncementResponse response(
-			ProgramAnnouncement announcement, Program program, String authorName, Audience audience) {
+			ProgramAnnouncement announcement, @Nullable Program program, @Nullable String authorName,
+			Audience audience) {
 		return new ProgramAnnouncementResponse(
 				announcement.getId(),
 				announcement.getProgramId(),

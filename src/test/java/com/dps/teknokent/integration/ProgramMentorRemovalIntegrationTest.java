@@ -59,6 +59,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.MenteeProgramService;
+import com.dps.teknokent.util.MeetingSlotTimes;
 
 /** An admin takes a mentor out of a program: the mentor leaves its pool, what already began there goes on. */
 @SpringBootTest
@@ -210,7 +211,7 @@ class ProgramMentorRemovalIntegrationTest {
 		running.setOrganization(team);
 		running.setProgram(program);
 		running.setStatus(MentorshipStatus.ACTIVE);
-		running.setStartDate(LocalDate.now().minusDays(1));
+		running.setStartDate(LocalDate.now(MeetingSlotTimes.APP_ZONE).minusDays(1));
 		running = mentorshipRepository.saveAndFlush(running);
 		Meeting booked = new Meeting();
 		booked.setOrganization(team);
@@ -267,8 +268,8 @@ class ProgramMentorRemovalIntegrationTest {
 		remove(admin, program, mentor).andExpect(status().isOk());
 
 		mockMvc.perform(post(ASSIGN, program.getId(), mentor.getId())
-						.param("actorId", admin.getId().toString())
-						.with(httpBasic("test", "test")))
+				.param("actorId", admin.getId().toString())
+				.with(httpBasic("test", "test")))
 				.andExpect(status().isNoContent());
 
 		assertThat(membership(program, mentor).getStatus()).isEqualTo(ProgramMentorStatus.ACCEPTED);
@@ -363,8 +364,8 @@ class ProgramMentorRemovalIntegrationTest {
 	@Test
 	void aSignedInCoordinatorCannotActAsTheAdmin() throws Exception {
 		mockMvc.perform(post(REMOVE, program.getId(), mentor.getId())
-						.param("actorId", admin.getId().toString())
-						.with(authentication(signedIn(coordinator))))
+				.param("actorId", admin.getId().toString())
+				.with(authentication(signedIn(coordinator))))
 				.andExpect(status().isForbidden());
 
 		assertNothingRemoved();
@@ -373,7 +374,7 @@ class ProgramMentorRemovalIntegrationTest {
 	@Test
 	void signedOutCallsAreRefused() throws Exception {
 		mockMvc.perform(post(REMOVE, program.getId(), mentor.getId())
-						.param("actorId", admin.getId().toString()))
+				.param("actorId", admin.getId().toString()))
 				.andExpect(status().isUnauthorized());
 
 		assertNothingRemoved();

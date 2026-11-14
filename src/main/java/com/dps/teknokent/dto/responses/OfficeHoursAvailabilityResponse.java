@@ -27,7 +27,8 @@ public record OfficeHoursAvailabilityResponse(
 	public record DateOff(UUID id, LocalDate startsOn, LocalDate endsOn, String reason) {
 
 		public static DateOff fromEntity(OfficeHoursException exception) {
-			return new DateOff(exception.getId(), exception.getStartsOn(), exception.getEndsOn(), exception.getReason());
+			return new DateOff(exception.getId(), exception.getStartsOn(), exception.getEndsOn(),
+					exception.getReason());
 		}
 	}
 }

@@ -3,7 +3,11 @@ package com.dps.teknokent.entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.DocumentKind;
+import com.dps.teknokent.domain.DocumentKindConverter;
+
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -27,8 +31,9 @@ public class StoredDocument {
 	@Column(name = "organization_id")
 	private UUID organizationId;
 
+	@Convert(converter = DocumentKindConverter.class)
 	@Column(nullable = false, length = 32)
-	private String kind;
+	private DocumentKind kind;
 
 	@Column(name = "original_filename", nullable = false)
 	private String originalFilename;

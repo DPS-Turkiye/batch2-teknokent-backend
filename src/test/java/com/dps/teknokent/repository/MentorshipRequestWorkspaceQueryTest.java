@@ -63,9 +63,12 @@ class MentorshipRequestWorkspaceQueryTest {
 
 	@Test
 	void requestsTab_paginatesWithDatabaseLimit() {
-		MentorshipRequest first = persistRequest("A", MentorshipRequestStatus.PENDING, Instant.parse("2026-09-11T10:00:00Z"));
-		MentorshipRequest second = persistRequest("B", MentorshipRequestStatus.PENDING, Instant.parse("2026-09-10T10:00:00Z"));
-		MentorshipRequest third = persistRequest("C", MentorshipRequestStatus.PENDING, Instant.parse("2026-09-09T10:00:00Z"));
+		MentorshipRequest first = persistRequest("A", MentorshipRequestStatus.PENDING,
+				Instant.parse("2026-09-11T10:00:00Z"));
+		MentorshipRequest second = persistRequest("B", MentorshipRequestStatus.PENDING,
+				Instant.parse("2026-09-10T10:00:00Z"));
+		MentorshipRequest third = persistRequest("C", MentorshipRequestStatus.PENDING,
+				Instant.parse("2026-09-09T10:00:00Z"));
 		entityManager.flush();
 		entityManager.createNativeQuery("UPDATE mentorship_request SET created_at = ? WHERE id = ?")
 				.setParameter(1, java.sql.Timestamp.from(Instant.parse("2026-09-11T10:00:00Z")))
@@ -96,8 +99,10 @@ class MentorshipRequestWorkspaceQueryTest {
 
 	@Test
 	void activeTab_onlyReturnsAcceptedWithOpenMeeting() {
-		MentorshipRequest active = persistRequest("Active", MentorshipRequestStatus.ACCEPTED, Instant.parse("2026-09-11T09:00:00Z"));
-		MentorshipRequest ended = persistRequest("Ended", MentorshipRequestStatus.ACCEPTED, Instant.parse("2026-09-10T09:00:00Z"));
+		MentorshipRequest active = persistRequest("Active", MentorshipRequestStatus.ACCEPTED,
+				Instant.parse("2026-09-11T09:00:00Z"));
+		MentorshipRequest ended = persistRequest("Ended", MentorshipRequestStatus.ACCEPTED,
+				Instant.parse("2026-09-10T09:00:00Z"));
 		persistMeeting(active, MeetingStatus.SCHEDULED, Instant.parse("2026-09-11T11:30:00Z"), 60);
 		persistMeeting(ended, MeetingStatus.COMPLETED, Instant.parse("2026-09-10T10:00:00Z"), 45);
 		entityManager.flush();

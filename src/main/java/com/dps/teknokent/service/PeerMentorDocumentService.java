@@ -8,11 +8,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -83,6 +85,7 @@ public class PeerMentorDocumentService {
 	private final PlatformTransactionManager transactionManager;
 
 	/** The file of one piece of evidence: what the download endpoint streams. */
+	@SuppressWarnings("ArrayRecordComponent") // Carries a file's bytes to the controller; never compared or hashed.
 	public record DocumentContent(String filename, String contentType, byte[] bytes) {
 	}
 
@@ -113,7 +116,7 @@ public class PeerMentorDocumentService {
 		} catch (IOException error) {
 			throw new InvalidRequestException("The uploaded file could not be read.");
 		}
-		StoredDocumentResponse stored = documentService.store(mentor.getId(), null, DocumentKind.PEER_EVIDENCE.value(),
+		StoredDocumentResponse stored = documentService.store(mentor.getId(), null, DocumentKind.PEER_EVIDENCE,
 				file.getOriginalFilename(), file.getContentType(), bytes);
 		PeerMentorDocument row = newRow(mentor.getId(), evidenceType, visibility);
 		row.setDocumentId(stored.id());
@@ -146,21 +149,19 @@ public class PeerMentorDocumentService {
 	 * storage hiccup leaves an orphaned object rather than a record pointing at nothing.
 	 */
 	public void delete(UUID actorId, UUID documentId) {
-		String s3Key = new TransactionTemplate(transactionManager).execute(status -> {
+		Optional<String> s3Key = new TransactionTemplate(transactionManager).execute(status -> {
 			AppUser mentor = requirePeerMentor(actorId);
 			PeerMentorDocument row = ownRow(mentor.getId(), documentId);
 			peerMentorDocumentRepository.delete(row);
 			if (row.getDocumentId() == null) {
-				return null;
+				return Optional.<String>empty();
 			}
 			return storedDocumentRepository.findById(row.getDocumentId()).map(file -> {
 				storedDocumentRepository.delete(file);
 				return file.getS3Key();
-			}).orElse(null);
+			});
 		});
-		if (s3Key != null) {
-			deleteObject(s3Key);
-		}
+		s3Key.ifPresent(this::deleteObject);
 	}
 
 	/** What the caller may see of this mentor's evidence; not found if they may see none of it. */
@@ -191,7 +192,8 @@ public class PeerMentorDocumentService {
 			throw notFound(documentId);
 		}
 		StoredDocument file = requireFile(row);
-		return new DocumentContent(file.getOriginalFilename(), file.getContentType(), objectStorage.get(file.getS3Key()));
+		return new DocumentContent(file.getOriginalFilename(), file.getContentType(),
+				objectStorage.require(file.getS3Key()));
 	}
 
 	private enum Access {
@@ -239,10 +241,16 @@ public class PeerMentorDocumentService {
 		Map<UUID, StoredDocument> files = fileIds.isEmpty() ? Map.of()
 				: storedDocumentRepository.findAllById(fileIds).stream()
 						.collect(Collectors.toMap(StoredDocument::getId, Function.identity()));
+		// A row whose file is gone is left out.
 		return rows.stream()
-				.filter(row -> row.getDocumentId() == null || files.containsKey(row.getDocumentId()))
-				.map(row -> row.getDocumentId() == null ? PeerMentorDocumentResponse.ofLink(row)
-						: PeerMentorDocumentResponse.ofFile(row, files.get(row.getDocumentId())))
+				.flatMap(row -> {
+					if (row.getDocumentId() == null) {
+						return Stream.of(PeerMentorDocumentResponse.ofLink(row));
+					}
+					StoredDocument file = files.get(row.getDocumentId());
+					return file == null ? Stream.<PeerMentorDocumentResponse>empty()
+							: Stream.of(PeerMentorDocumentResponse.ofFile(row, file));
+				})
 				.toList();
 	}
 
@@ -329,7 +337,8 @@ public class PeerMentorDocumentService {
 	private AppUser requirePeerMentor(UUID actorId) {
 		AppUser user = domainLookupService.requireUser(actorId);
 		if (!user.has(UserRole.MENTOR) || !isStudent(user)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.peerMentoringStudentsOnly"));
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					Texts.forRequest("error.peerMentoringStudentsOnly"));
 		}
 		return user;
 	}

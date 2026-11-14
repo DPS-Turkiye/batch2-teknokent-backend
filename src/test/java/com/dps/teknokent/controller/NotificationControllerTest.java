@@ -85,12 +85,12 @@ class NotificationControllerTest {
 				.thenReturn(new NotificationPreferencesResponse(false, true, true, true, false, true));
 
 		mockMvc.perform(put("/api/notifications/preferences")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{ "messages": false, "meetingReminders": true, "meetingChanges": true,
-								  "newTasks": true, "taskDeadlines": false, "startupActivity": true }
-								"""))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "messages": false, "meetingReminders": true, "meetingChanges": true,
+						  "newTasks": true, "taskDeadlines": false, "startupActivity": true }
+						"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.messages").value(false))
 				.andExpect(jsonPath("$.taskDeadlines").value(false));
@@ -99,11 +99,11 @@ class NotificationControllerTest {
 	@Test
 	void rejectsPreferencesWithAMissingChoice() throws Exception {
 		mockMvc.perform(put("/api/notifications/preferences")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{ "messages": false }
-								"""))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "messages": false }
+						"""))
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(notificationPreferenceService);
@@ -112,12 +112,12 @@ class NotificationControllerTest {
 	@Test
 	void registersAPushTokenWithTheBrowsersUserAgent() throws Exception {
 		mockMvc.perform(post("/api/notifications/push-tokens")
-						.with(authentication(signedIn()))
-						.header(HttpHeaders.USER_AGENT, "Mozilla/5.0 (iPhone)")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{ "token": "fcm-token" }
-								"""))
+				.with(authentication(signedIn()))
+				.header(HttpHeaders.USER_AGENT, "Mozilla/5.0 (iPhone)")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "token": "fcm-token" }
+						"""))
 				.andExpect(status().isNoContent());
 
 		verify(pushTokenService).register(USER_ID, "fcm-token", "Mozilla/5.0 (iPhone)");
@@ -126,11 +126,11 @@ class NotificationControllerTest {
 	@Test
 	void rejectsABlankPushToken() throws Exception {
 		mockMvc.perform(post("/api/notifications/push-tokens")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{ "token": " " }
-								"""))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "token": " " }
+						"""))
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(pushTokenService);
@@ -139,11 +139,11 @@ class NotificationControllerTest {
 	@Test
 	void unregistersThePushTokenOnSignOut() throws Exception {
 		mockMvc.perform(delete("/api/notifications/push-tokens")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{ "token": "fcm-token" }
-								"""))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "token": "fcm-token" }
+						"""))
 				.andExpect(status().isNoContent());
 
 		verify(pushTokenService).unregister(USER_ID, "fcm-token");

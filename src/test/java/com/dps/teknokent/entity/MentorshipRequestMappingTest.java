@@ -1,7 +1,10 @@
 package com.dps.teknokent.entity;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -12,8 +15,6 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class MentorshipRequestMappingTest {
 
@@ -93,7 +94,7 @@ class MentorshipRequestMappingTest {
 		AppUser user = new AppUser();
 		user.setId(UUID.randomUUID());
 		user.setFullName(fullName);
-		user.setEmail(fullName.toLowerCase().replace(' ', '.') + "@example.com");
+		user.setEmail(fullName.toLowerCase(Locale.ROOT).replace(' ', '.') + "@example.com");
 		return user;
 	}
 

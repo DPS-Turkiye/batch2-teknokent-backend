@@ -13,7 +13,8 @@ public class LocalPiiRedactionService {
 	private static final Map<String, Pattern> PATTERNS = new LinkedHashMap<>();
 	static {
 		PATTERNS.put("email", Pattern.compile("(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b"));
-		PATTERNS.put("phone", Pattern.compile("(?<!\\d)(?:\\+?90[ .-]?)?(?:\\(?0?5\\d{2}\\)?[ .-]?)?\\d{3}[ .-]?\\d{2}[ .-]?\\d{2}(?!\\d)"));
+		PATTERNS.put("phone", Pattern
+				.compile("(?<!\\d)(?:\\+?90[ .-]?)?(?:\\(?0?5\\d{2}\\)?[ .-]?)?\\d{3}[ .-]?\\d{2}[ .-]?\\d{2}(?!\\d)"));
 		PATTERNS.put("turkish_id", Pattern.compile("(?<!\\d)[1-9]\\d{10}(?!\\d)"));
 	}
 
@@ -23,7 +24,7 @@ public class LocalPiiRedactionService {
 		for (Map.Entry<String, Pattern> entry : PATTERNS.entrySet()) {
 			Matcher matcher = entry.getValue().matcher(redacted);
 			int count = 0;
-			StringBuffer output = new StringBuffer();
+			StringBuilder output = new StringBuilder();
 			while (matcher.find()) {
 				count++;
 				matcher.appendReplacement(output, "[REDACTED_" + entry.getKey().toUpperCase(Locale.ROOT) + "]");
@@ -35,5 +36,6 @@ public class LocalPiiRedactionService {
 		return new RedactionResult(redacted, counts, counts.values().stream().mapToInt(Integer::intValue).sum());
 	}
 
-	public record RedactionResult(String text, Map<String, Integer> redactedByType, int totalRedacted) {}
+	public record RedactionResult(String text, Map<String, Integer> redactedByType, int totalRedacted) {
+	}
 }

@@ -2,6 +2,8 @@ package com.dps.teknokent.dto.responses;
 
 import java.time.Instant;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.BadgeCode;
 
 /**
@@ -9,6 +11,7 @@ import com.dps.teknokent.domain.BadgeCode;
  * {@code target} count sessions, minutes or feedback depending on the badge; {@code average} is only set for
  * {@code WELL_RATED}, which also needs {@code averageTarget}.
  */
-public record AchievementProgressResponse(BadgeCode code, boolean earned, Instant awardedAt, int current, int target,
-		Double average, Double averageTarget) {
+public record AchievementProgressResponse(BadgeCode code, boolean earned, @Nullable Instant awardedAt, int current,
+		int target,
+		@Nullable Double average, @Nullable Double averageTarget) {
 }

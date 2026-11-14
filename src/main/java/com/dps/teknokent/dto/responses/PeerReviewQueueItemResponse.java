@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerReportKind;
 import com.dps.teknokent.domain.PeerReportStatus;
 
@@ -16,11 +18,11 @@ public record PeerReviewQueueItemResponse(
 		UUID id,
 		UUID programId,
 		UUID mentorId,
-		String mentorName,
+		@Nullable String mentorName,
 		LocalDate day,
-		UUID menteeId,
-		String menteeName,
-		Boolean coordinatorSupportNeeded,
+		@Nullable UUID menteeId,
+		@Nullable String menteeName,
+		@Nullable Boolean coordinatorSupportNeeded,
 		PeerReportStatus status,
 		Instant submittedAt) {
 }

@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.dto.requests.MeetingNoteDocumentMessage;
@@ -20,8 +21,13 @@ public class MeetingNoteDocumentService {
 	private final MeetingNoteDocumentStore documentStore;
 	private final MeetingRealtimePublisher realtimePublisher;
 
-	public MeetingNoteDocumentResponse findDocument(UUID meetingId, UUID organizationId) {
-		if (!meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId)) {
+	/**
+	 * The collaborative note's stored state, and whether this reader should seed it from the last snapshot.
+	 *
+	 * @param callerId who reads; null only on the proxy's service credentials when it names nobody
+	 */
+	public MeetingNoteDocumentResponse findDocument(UUID meetingId, UUID organizationId, @Nullable UUID callerId) {
+		if (!meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId, callerId)) {
 			throw new ResourceNotFoundException("Meeting not found: " + meetingId);
 		}
 

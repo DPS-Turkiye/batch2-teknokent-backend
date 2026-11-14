@@ -3,6 +3,7 @@ package com.dps.teknokent.config;
 import java.time.Instant;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
@@ -32,7 +33,7 @@ public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
 		String token = UriComponentsBuilder.fromUri(request.getURI()).build()
 				.getQueryParams()
 				.getFirst("token");
-		RealtimeIdentity identity = realtimeTokenService.verify(token);
+		RealtimeIdentity identity = token == null ? null : realtimeTokenService.verify(token);
 		if (identity == null) {
 			response.setStatusCode(HttpStatus.UNAUTHORIZED);
 			return false;
@@ -48,6 +49,6 @@ public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
 			ServerHttpRequest request,
 			ServerHttpResponse response,
 			WebSocketHandler handler,
-			Exception exception) {
+			@Nullable Exception exception) {
 	}
 }

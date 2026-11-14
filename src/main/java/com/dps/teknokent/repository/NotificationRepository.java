@@ -14,7 +14,9 @@ import com.dps.teknokent.entity.Notification;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
 	List<Notification> findByRecipientIdOrderByCreatedAtDesc(UUID recipientId);
+
 	Optional<Notification> findByIdAndRecipientId(UUID id, UUID recipientId);
+
 	long countByRecipientIdAndReadAtIsNull(UUID recipientId);
 
 	@Modifying

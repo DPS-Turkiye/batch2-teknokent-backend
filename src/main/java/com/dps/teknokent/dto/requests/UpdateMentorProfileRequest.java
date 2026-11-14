@@ -1,14 +1,14 @@
 package com.dps.teknokent.dto.requests;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.Valid;
 import java.util.List;
 
 import com.dps.teknokent.domain.MeetingFrequency;
 import com.dps.teknokent.domain.MentorLanguage;
 import com.dps.teknokent.domain.PrepFileRequirement;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;

@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.AppointmentKind;
 import com.dps.teknokent.domain.AppointmentStatus;
 import com.dps.teknokent.domain.PeerTopicCategory;
@@ -18,17 +20,17 @@ public record AppointmentResponse(
 		AppointmentKind kind,
 		UserRole side,
 		AppointmentStatus status,
-		PeerTopicCategory category,
+		@Nullable PeerTopicCategory category,
 		String topic,
 		Counterpart counterpart,
 		Instant startsAt,
 		Instant endsAt,
-		String place,
+		@Nullable String place,
 		String onlineUrl,
-		Time alternative,
-		String rejectReason) {
+		@Nullable Time alternative,
+		@Nullable String rejectReason) {
 
-	public record Counterpart(UUID userId, String fullName, String title, String department) {
+	public record Counterpart(UUID userId, String fullName, @Nullable String title, @Nullable String department) {
 	}
 
 	public record Time(Instant startsAt, Instant endsAt) {

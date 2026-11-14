@@ -12,16 +12,16 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.InviteMeetingGuestRequest;
 import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
-import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
+import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.MeetingService;
 
@@ -88,29 +88,35 @@ public class MeetingController {
 		return meetingService.confirmHeld(id, CurrentActor.resolve(mentorId), false);
 	}
 
+	/**
+	 * A bearer caller is always themselves. On the proxy's service credentials {@code actorId} names the caller;
+	 * the proxy does not send it yet, and without it the service relies on the proxy's own check.
+	 */
 	@PatchMapping("/{id}")
 	public MeetingResponse update(
 			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId,
 			@Valid @RequestBody UpdateMeetingRequest request) {
-		return meetingService.update(id, request);
+		return meetingService.update(id, CurrentActor.resolveOptional(actorId), request);
 	}
 
 	@GetMapping("/{id}/room")
-	public List<MeetingResponse> findRoom(@PathVariable UUID id) {
-		return meetingService.findRoom(id);
+	public List<MeetingResponse> findRoom(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return meetingService.findRoom(id, CurrentActor.resolveOptional(actorId));
 	}
 
 	@PostMapping("/{id}/guests")
 	@ResponseStatus(HttpStatus.CREATED)
 	public MeetingResponse inviteGuest(
 			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId,
 			@RequestBody InviteMeetingGuestRequest request) {
-		return meetingService.inviteGuest(id, request);
+		return meetingService.inviteGuest(id, CurrentActor.resolveOptional(actorId), request);
 	}
 
 	@DeleteMapping("/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void delete(@PathVariable UUID id) {
-		meetingService.deleteRoom(id);
+	public void delete(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		meetingService.deleteRoom(id, CurrentActor.resolveOptional(actorId));
 	}
 }

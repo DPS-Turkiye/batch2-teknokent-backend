@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Clock;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,7 +42,8 @@ public class DataProcessingConsentService {
 	 * <p>Only a person signed in with Firebase can consent. The shared service credentials stand for nobody, so a
 	 * consent arriving on them is refused rather than stored without a name.
 	 */
-	public DataProcessingConsent record(ConsentAnswer answer, ProcessingConsentSource source, UUID subjectUserId) {
+	public DataProcessingConsent record(ConsentAnswer answer, ProcessingConsentSource source,
+			@Nullable UUID subjectUserId) {
 		answer.requireAccepted();
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		Object principal = authentication == null ? null : authentication.getPrincipal();

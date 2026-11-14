@@ -61,7 +61,8 @@ public class MentorAvailabilitySummaryService {
 				exceptionRepository.findByMentorIdAndEndsOnGreaterThanEqualOrderByStartsOnAsc(mentorId, today).stream()
 						.map(dayOff -> new PersonSummaryResponse.DayOff(dayOff.getStartsOn(), dayOff.getEndsOn()))
 						.toList(),
-				slotRepository.findTop20ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(mentorId, now).stream()
+				slotRepository.findTop20ByMentorIdAndRuleIsNullAndStartsAtAfterOrderByStartsAtAsc(mentorId, now)
+						.stream()
 						.filter(slot -> !meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentorId,
 								slot.getStartsAt(), MeetingStatus.SCHEDULED))
 						.limit(EXTRA_SLOT_LIMIT)

@@ -27,58 +27,59 @@ import com.dps.teknokent.service.AuthEmailService;
 @Import(SecurityConfig.class)
 class AuthEmailControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+	@Autowired
+	private MockMvc mockMvc;
 
-    @MockitoBean
-    private AuthEmailService authEmailService;
+	@MockitoBean
+	private AuthEmailService authEmailService;
 
-    @Test
-    void mailsTheVerificationLinkToTheSignedInFirebaseAddress() throws Exception {
-        mockMvc.perform(post("/api/auth/register/verification-email")
-                        .with(authentication(firebaseLogin("mentor@bilkent.edu.tr"))))
-                .andExpect(status().isNoContent());
+	@Test
+	void mailsTheVerificationLinkToTheSignedInFirebaseAddress() throws Exception {
+		mockMvc.perform(post("/api/auth/register/verification-email")
+				.with(authentication(firebaseLogin("mentor@bilkent.edu.tr"))))
+				.andExpect(status().isNoContent());
 
-        verify(authEmailService).sendVerification("mentor@bilkent.edu.tr");
-    }
+		verify(authEmailService).sendVerification("mentor@bilkent.edu.tr");
+	}
 
-    @Test
-    void sendsNoVerificationMailWithoutAFirebaseSignIn() throws Exception {
-        mockMvc.perform(post("/api/auth/register/verification-email").with(user("proxy")))
-                .andExpect(status().isForbidden());
+	@Test
+	void sendsNoVerificationMailWithoutAFirebaseSignIn() throws Exception {
+		mockMvc.perform(post("/api/auth/register/verification-email").with(user("proxy")))
+				.andExpect(status().isForbidden());
 
-        verifyNoInteractions(authEmailService);
-    }
+		verifyNoInteractions(authEmailService);
+	}
 
-    @Test
-    void takesAPasswordResetOnlyThroughTheProxyLogin() throws Exception {
-        mockMvc.perform(post("/api/auth/password-reset")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\": \"mentor@metu.edu.tr\"}"))
-                .andExpect(status().isUnauthorized());
+	@Test
+	void takesAPasswordResetOnlyThroughTheProxyLogin() throws Exception {
+		mockMvc.perform(post("/api/auth/password-reset")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\": \"mentor@metu.edu.tr\"}"))
+				.andExpect(status().isUnauthorized());
 
-        mockMvc.perform(post("/api/auth/password-reset")
-                        .with(user("proxy"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\": \"mentor@metu.edu.tr\"}"))
-                .andExpect(status().isNoContent());
+		mockMvc.perform(post("/api/auth/password-reset")
+				.with(user("proxy"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\": \"mentor@metu.edu.tr\"}"))
+				.andExpect(status().isNoContent());
 
-        verify(authEmailService).sendPasswordReset("mentor@metu.edu.tr");
-    }
+		verify(authEmailService).sendPasswordReset("mentor@metu.edu.tr");
+	}
 
-    @Test
-    void refusesAResetForSomethingThatIsNotAnAddress() throws Exception {
-        mockMvc.perform(post("/api/auth/password-reset")
-                        .with(user("proxy"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\": \"not-an-address\"}"))
-                .andExpect(status().isBadRequest());
+	@Test
+	void refusesAResetForSomethingThatIsNotAnAddress() throws Exception {
+		mockMvc.perform(post("/api/auth/password-reset")
+				.with(user("proxy"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\": \"not-an-address\"}"))
+				.andExpect(status().isBadRequest());
 
-        verifyNoInteractions(authEmailService);
-    }
+		verifyNoInteractions(authEmailService);
+	}
 
-    private static UsernamePasswordAuthenticationToken firebaseLogin(String email) {
-        return new UsernamePasswordAuthenticationToken(
-                new FirebaseIdentity("uid-1", email, true), null, List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
-    }
+	private static UsernamePasswordAuthenticationToken firebaseLogin(String email) {
+		return new UsernamePasswordAuthenticationToken(
+				new FirebaseIdentity("uid-1", email, true), null,
+				List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+	}
 }

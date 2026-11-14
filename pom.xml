@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.1.1</version>
+		<version>4.1.2</version>
 		<relativePath/>
 	</parent>
 	<groupId>com.dps</groupId>
@@ -16,7 +15,50 @@
 
 	<properties>
 		<java.version>25</java.version>
-		<jacoco.version>0.8.15</jacoco.version>
+		<!-- Any compiler warning fails the build; see maven-compiler-plugin below. -->
+		<maven.compiler.failOnWarning>true</maven.compiler.failOnWarning>
+		<maven.compiler.showWarnings>true</maven.compiler.showWarnings>
+
+		<archunit.version>1.5.1</archunit.version>
+		<awssdk.version>2.59.1</awssdk.version>
+		<firebase-admin.version>9.12.0</firebase-admin.version>
+		<pdfbox.version>3.0.8</pdfbox.version>
+		<springdoc.version>3.2.0</springdoc.version>
+
+		<checkstyle.version>14.4.0</checkstyle.version>
+		<error-prone.version>2.52.0</error-prone.version>
+		<exec-maven-plugin.version>3.7.0</exec-maven-plugin.version>
+		<jacoco.version>0.8.16</jacoco.version>
+		<maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
+		<spotless.version>3.11.0</spotless.version>
+
+		<!--
+			Error Prone runs with its default checks, and every warning fails the build. A check is turned off here only
+			when it cannot apply to this code base; say why. One line, because javac takes the plugin and its flags as a
+			single argument.
+			  StringSplitter       asks for Guava's Splitter, which is not a dependency of this project
+			  ImmutableEnumChecker asks for Guava's immutable collection types on enum fields
+			NullAway (an Error Prone plugin) checks every package whose package-info.java is @NullMarked: everything in
+			main except entity and dto/requests. @Value fields are filled by Spring after construction.
+		-->
+		<error-prone.flags>-XepDisableWarningsInGeneratedCode -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:ExcludedFieldAnnotations=org.springframework.beans.factory.annotation.Value -Xep:StringSplitter:OFF -Xep:ImmutableEnumChecker:OFF</error-prone.flags>
+		<!--
+			Tests only:
+			  UnusedVariable       calls a Mockito @Mock field unused when only @InjectMocks reads it; Checkstyle's
+			                       UnusedLocalVariable still covers local variables
+			  NullAway             tests share their packages with main, so they are null-marked too, and they pass
+			                       null on purpose to check how the code handles it
+		-->
+		<error-prone.test-flags>-Xep:UnusedVariable:OFF -Xep:NullAway:OFF</error-prone.test-flags>
+
+		<!--
+			Coverage floors for `./mvnw verify`, set just under what the suite measures. A change that drops coverage
+			below one fails the build. Raise them as coverage grows; never lower one to make a change pass.
+		-->
+		<coverage.minimum.instruction>0.95</coverage.minimum.instruction>
+		<coverage.minimum.branch>0.89</coverage.minimum.branch>
+		<coverage.minimum.line>0.96</coverage.minimum.line>
+		<coverage.minimum.method>0.92</coverage.minimum.method>
 	</properties>
 
 	<dependencies>
@@ -47,7 +89,7 @@
 		<dependency>
 			<groupId>org.apache.pdfbox</groupId>
 			<artifactId>pdfbox</artifactId>
-			<version>3.0.8</version>
+			<version>${pdfbox.version}</version>
 		</dependency>
 
 		<dependency>
@@ -75,7 +117,7 @@
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>3.1.0</version>
+			<version>${springdoc.version}</version>
 		</dependency>
 
 		<!-- Verifies the signed LTI 1.3 launch token from Moodle against its public keys (brings Nimbus JOSE). -->
@@ -86,17 +128,17 @@
 		<dependency>
 			<groupId>com.google.firebase</groupId>
 			<artifactId>firebase-admin</artifactId>
-			<version>9.10.0</version>
+			<version>${firebase-admin.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>s3</artifactId>
-			<version>2.54.7</version>
+			<version>${awssdk.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>sesv2</artifactId>
-			<version>2.54.7</version>
+			<version>${awssdk.version}</version>
 		</dependency>
 
 		<dependency>
@@ -124,6 +166,13 @@
 			<artifactId>h2</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Checks which layer may use which (ArchitectureTest). -->
+		<dependency>
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit-junit5</artifactId>
+			<version>${archunit.version}</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -145,24 +194,61 @@
 					</execution>
 					<execution>
 						<id>jacoco-report-after-test</id>
-						<phase>test</phase>
 						<goals>
 							<goal>report</goal>
 						</goals>
+						<phase>test</phase>
+					</execution>
+					<!-- The coverage floor, like `thresholds` in the web repo's vitest config. -->
+					<execution>
+						<id>jacoco-coverage-floor</id>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<phase>verify</phase>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>INSTRUCTION</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.minimum.instruction}</minimum>
+										</limit>
+										<limit>
+											<counter>BRANCH</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.minimum.branch}</minimum>
+										</limit>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.minimum.line}</minimum>
+										</limit>
+										<limit>
+											<counter>METHOD</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.minimum.method}</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>exec-maven-plugin</artifactId>
-				<version>3.6.1</version>
+				<version>${exec-maven-plugin.version}</version>
 				<executions>
 					<execution>
 						<id>jacoco-console-summary-after-test</id>
-						<phase>test</phase>
 						<goals>
 							<goal>exec</goal>
 						</goals>
+						<phase>test</phase>
 						<configuration>
 							<executable>sh</executable>
 							<arguments>
@@ -179,19 +265,151 @@ fi
 					</execution>
 				</executions>
 			</plugin>
+			<!--
+				Formatting, the Prettier of this repo. `./mvnw spotless:apply` rewrites files; `verify` fails on any
+				file that is not formatted. The Java profile is shared with VS Code (config/eclipse-formatter.xml).
+			-->
+			<plugin>
+				<groupId>com.diffplug.spotless</groupId>
+				<artifactId>spotless-maven-plugin</artifactId>
+				<version>${spotless.version}</version>
+				<configuration>
+					<java>
+						<!-- Static imports, then java, javax, org, com, then everything else: VS Code's default order. -->
+						<importOrder>
+							<order>\#,java,javax,org,com,</order>
+						</importOrder>
+						<removeUnusedImports/>
+						<eclipse>
+							<file>${project.basedir}/config/eclipse-formatter.xml</file>
+						</eclipse>
+					</java>
+					<!-- This file: elements in Maven's standard order, tabs, nothing re-sorted alphabetically. -->
+					<pom>
+						<sortPom>
+							<nrOfIndentSpace>-1</nrOfIndentSpace>
+							<expandEmptyElements>false</expandEmptyElements>
+							<spaceBeforeCloseEmptyElement>false</spaceBeforeCloseEmptyElement>
+							<keepBlankLines>true</keepBlankLines>
+							<sortDependencies/>
+							<sortPlugins/>
+							<sortProperties>false</sortProperties>
+							<sortModules>false</sortModules>
+							<sortExecutions>false</sortExecutions>
+						</sortPom>
+					</pom>
+					<!--
+						Configuration and scripts: no trailing spaces, one newline at the end. Not listed on purpose:
+						SQL migrations (Flyway checks their checksum, so an applied one must never change), i18n
+						.properties (a trailing space is part of the text) and Markdown (two trailing spaces are a
+						line break).
+					-->
+					<formats>
+						<format>
+							<includes>
+								<include>*.yml</include>
+								<include>.github/**/*.yml</include>
+								<include>.githooks/*</include>
+								<include>.vscode/*.json</include>
+								<include>config/**/*.xml</include>
+								<include>dev/**/*.sh</include>
+								<include>Makefile</include>
+								<include>src/**/*.yml</include>
+								<include>src/**/*.json</include>
+							</includes>
+							<trimTrailingWhitespace/>
+							<endWithNewline/>
+						</format>
+					</formats>
+				</configuration>
+				<executions>
+					<execution>
+						<id>spotless-check</id>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<phase>verify</phase>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Lint rules that need no types (config/checkstyle.xml), for main and test code. `verify` fails on any. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-checkstyle-plugin</artifactId>
+				<version>${maven-checkstyle-plugin.version}</version>
+				<configuration>
+					<configLocation>${project.basedir}/config/checkstyle.xml</configLocation>
+					<includeTestSourceDirectory>true</includeTestSourceDirectory>
+					<consoleOutput>true</consoleOutput>
+					<violationSeverity>warning</violationSeverity>
+					<linkXRef>false</linkXRef>
+				</configuration>
+				<dependencies>
+					<dependency>
+						<groupId>com.puppycrawl.tools</groupId>
+						<artifactId>checkstyle</artifactId>
+						<version>${checkstyle.version}</version>
+					</dependency>
+				</dependencies>
+				<executions>
+					<execution>
+						<id>checkstyle-check</id>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<phase>verify</phase>
+					</execution>
+				</executions>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
 					<release>${java.version}</release>
 					<parameters>true</parameters>
+					<!--
+						Zero warnings, like the web repo's ESLint run: javac's own lint and Error Prone
+						both fail the build. Two lint groups are off: `processing` reports every annotation no
+						processor claims (all of Spring's), and `serial` wants a serialVersionUID on exceptions that
+						are never serialized. Error Prone needs the flags in .mvn/jvm.config.
+					-->
+					<compilerArgs>
+						<arg>-Xlint:all,-processing,-serial</arg>
+						<arg>-XDcompilePolicy=simple</arg>
+						<arg>--should-stop=ifError=FLOW</arg>
+						<arg>-Xplugin:ErrorProne ${error-prone.flags}</arg>
+					</compilerArgs>
 					<annotationProcessorPaths>
 						<path>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
 						</path>
+						<path>
+							<groupId>com.google.errorprone</groupId>
+							<artifactId>error_prone_core</artifactId>
+							<version>${error-prone.version}</version>
+						</path>
+						<path>
+							<groupId>com.uber.nullaway</groupId>
+							<artifactId>nullaway</artifactId>
+							<version>0.14.3</version>
+						</path>
 					</annotationProcessorPaths>
 				</configuration>
+				<executions>
+					<!-- The same arguments as above, plus the test-only Error Prone flags. -->
+					<execution>
+						<id>default-testCompile</id>
+						<configuration>
+							<compilerArgs combine.self="override">
+								<arg>-Xlint:all,-processing,-serial</arg>
+								<arg>-XDcompilePolicy=simple</arg>
+								<arg>--should-stop=ifError=FLOW</arg>
+								<arg>-Xplugin:ErrorProne ${error-prone.flags} ${error-prone.test-flags}</arg>
+							</compilerArgs>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

@@ -1,8 +1,8 @@
 package com.dps.teknokent.service;
 
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.Test;
 
 class LocalPiiRedactionServiceTest {
 	private final LocalPiiRedactionService service = new LocalPiiRedactionService();

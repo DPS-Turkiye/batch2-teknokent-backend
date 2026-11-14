@@ -13,6 +13,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,8 +31,8 @@ import com.dps.teknokent.dto.responses.TrainingModuleResponse;
 import com.dps.teknokent.dto.responses.TrainingQuizResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
-import com.dps.teknokent.entity.TrainingModule;
 import com.dps.teknokent.entity.TrainingAttempt;
+import com.dps.teknokent.entity.TrainingModule;
 import com.dps.teknokent.entity.TrainingProgress;
 import com.dps.teknokent.entity.TrainingQuestion;
 import com.dps.teknokent.entity.UserBadge;
@@ -40,10 +41,10 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.TrainingAttemptRepository;
-import com.dps.teknokent.repository.TrainingProgressRepository;
-import com.dps.teknokent.repository.UserBadgeRepository;
 import com.dps.teknokent.repository.TrainingModuleRepository;
+import com.dps.teknokent.repository.TrainingProgressRepository;
 import com.dps.teknokent.repository.TrainingQuestionRepository;
+import com.dps.teknokent.repository.UserBadgeRepository;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -135,10 +136,10 @@ public class TrainingService {
 	@Transactional
 	public StudentTrainingResponse videoWatched(UUID actorId) {
 		Context context = context(domainLookupService.requireUser(actorId));
-		if (context.state() != TrainingState.VIDEO && context.state() != TrainingState.QUIZ) {
+		TrainingModule module = context.module();
+		if (module == null || (context.state() != TrainingState.VIDEO && context.state() != TrainingState.QUIZ)) {
 			throw new InvalidRequestException(Texts.forRequest("error.trainingNotOpen"));
 		}
-		TrainingModule module = context.module();
 		if (!progress.existsByModuleIdAndUserIdAndVersion(module.getId(), context.student().getId(),
 				module.getCurrentVersion())) {
 			TrainingProgress watched = new TrainingProgress();
@@ -155,7 +156,7 @@ public class TrainingService {
 	/** The questions in a fresh order, options shuffled, without the correct ones; only once the video counts. */
 	@Transactional(readOnly = true)
 	public TrainingQuizResponse quiz(UUID actorId) {
-		Context context = requireQuizOpen(context(domainLookupService.requireUser(actorId)));
+		OpenQuiz context = requireQuizOpen(context(domainLookupService.requireUser(actorId)));
 		List<TrainingQuizResponse.Question> shuffled = new ArrayList<>(currentQuestions(context.module()).stream()
 				.map(question -> {
 					List<TrainingQuizResponse.Option> options = new ArrayList<>();
@@ -163,7 +164,8 @@ public class TrainingService {
 						options.add(new TrainingQuizResponse.Option(index, question.options().get(index)));
 					}
 					Collections.shuffle(options, RANDOM);
-					return new TrainingQuizResponse.Question(question.getId(), question.getText(), List.copyOf(options));
+					return new TrainingQuizResponse.Question(question.getId(), question.getText(),
+							List.copyOf(options));
 				})
 				.toList());
 		Collections.shuffle(shuffled, RANDOM);
@@ -176,7 +178,7 @@ public class TrainingService {
 	 */
 	@Transactional
 	public TrainingAttemptResponse submit(UUID actorId, int version, Map<UUID, Integer> answers) {
-		Context context = requireQuizOpen(context(domainLookupService.requireUser(actorId)));
+		OpenQuiz context = requireQuizOpen(context(domainLookupService.requireUser(actorId)));
 		TrainingModule module = context.module();
 		if (version != module.getCurrentVersion()) {
 			throw new ConflictException(Texts.forRequest("error.trainingChanged"));
@@ -219,17 +221,24 @@ public class TrainingService {
 		return new TrainingAttemptResponse(score, passed, after);
 	}
 
-	private Context requireQuizOpen(Context context) {
-		if (context.state() != TrainingState.QUIZ) {
+	private OpenQuiz requireQuizOpen(Context context) {
+		Program program = context.program();
+		TrainingModule module = context.module();
+		if (context.state() != TrainingState.QUIZ || program == null || module == null) {
 			throw new InvalidRequestException(Texts.forRequest("error.trainingNotOpen"));
 		}
-		if (attemptsInWindow(context).size() >= ATTEMPTS_PER_WINDOW) {
+		if (attemptsInWindow(module, context.student()).size() >= ATTEMPTS_PER_WINDOW) {
 			throw new ConflictException(Texts.forRequest("error.trainingNoAttemptsLeft"));
 		}
-		return context;
+		return new OpenQuiz(context.student(), program, module);
 	}
 
-	private record Context(AppUser student, Program program, TrainingModule module, TrainingState state) {
+	/** Program and module are set in every state but NOT_AVAILABLE, where either may be missing. */
+	private record Context(AppUser student, @Nullable Program program, @Nullable TrainingModule module,
+			TrainingState state) {
+	}
+
+	private record OpenQuiz(AppUser student, Program program, TrainingModule module) {
 	}
 
 	/** The student's peer program, its published training and where the student stands with it. */
@@ -259,28 +268,29 @@ public class TrainingService {
 	}
 
 	private StudentTrainingResponse studentView(Context context) {
+		Program program = context.program();
 		TrainingModule module = context.module();
-		if (context.state() == TrainingState.NOT_AVAILABLE) {
+		if (context.state() == TrainingState.NOT_AVAILABLE || program == null || module == null) {
 			return new StudentTrainingResponse(TrainingState.NOT_AVAILABLE,
-					context.program() == null ? null : context.program().getId(),
-					context.program() == null ? null : context.program().getName(), null, null, false, 0, null, null,
+					program == null ? null : program.getId(),
+					program == null ? null : program.getName(), null, null, false, 0, null, null,
 					PASS_MARK, QUESTION_COUNT);
 		}
-		List<TrainingAttempt> recent = attemptsInWindow(context);
+		List<TrainingAttempt> recent = attemptsInWindow(module, context.student());
 		int left = Math.max(0, ATTEMPTS_PER_WINDOW - recent.size());
 		Instant next = left > 0 || recent.isEmpty() ? null : recent.getFirst().getSubmittedAt().plus(ATTEMPT_WINDOW);
 		Integer lastScore = attempts.findByModuleIdAndUserIdAndVersionOrderBySubmittedAtDesc(module.getId(),
 				context.student().getId(), module.getCurrentVersion()).stream()
 				.findFirst().map(TrainingAttempt::getScore).orElse(null);
-		return new StudentTrainingResponse(context.state(), context.program().getId(), context.program().getName(),
+		return new StudentTrainingResponse(context.state(), program.getId(), program.getName(),
 				module.getCurrentVersion(), module.getVideoId(), context.state() == TrainingState.QUIZ, left, next,
 				lastScore, PASS_MARK, QUESTION_COUNT);
 	}
 
 	/** Oldest first; the window counts every try at this program's training, whatever its version. */
-	private List<TrainingAttempt> attemptsInWindow(Context context) {
-		return attempts.findByModuleIdAndUserIdAndSubmittedAtAfterOrderBySubmittedAtAsc(context.module().getId(),
-				context.student().getId(), Instant.now().minus(ATTEMPT_WINDOW));
+	private List<TrainingAttempt> attemptsInWindow(TrainingModule module, AppUser student) {
+		return attempts.findByModuleIdAndUserIdAndSubmittedAtAfterOrderBySubmittedAtAsc(module.getId(),
+				student.getId(), Instant.now().minus(ATTEMPT_WINDOW));
 	}
 
 	private List<TrainingQuestion> currentQuestions(TrainingModule module) {
@@ -288,7 +298,7 @@ public class TrainingService {
 	}
 
 	/** The id of a YouTube video link (watch, youtu.be, embed, shorts or nocookie), the only host the page embeds. */
-	static Optional<String> youtubeId(String link) {
+	static Optional<String> youtubeId(@Nullable String link) {
 		Matcher matcher = YOUTUBE_ID.matcher(link == null ? "" : link.trim());
 		return matcher.matches() ? Optional.of(matcher.group(1)) : Optional.empty();
 	}

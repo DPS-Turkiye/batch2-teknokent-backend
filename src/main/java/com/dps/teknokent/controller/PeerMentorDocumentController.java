@@ -1,12 +1,8 @@
 package com.dps.teknokent.controller;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.http.CacheControl;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -30,12 +26,16 @@ import com.dps.teknokent.dto.requests.UpdatePeerMentorDocumentRequest;
 import com.dps.teknokent.dto.responses.PeerMentorDocumentResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.PeerMentorDocumentService;
+import com.dps.teknokent.util.Downloads;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-/** The peer mentor's evidence, files and links (wizard step "Belgeler ve kanıtlar"); ODTÜ only, like all of /api/peer-mentoring. */
+/**
+ * The peer mentor's evidence, files and links (wizard step "Belgeler ve kanıtlar"); ODTÜ only, like all of
+ * /api/peer-mentoring.
+ */
 @RestController
 @RequestMapping("/api/peer-mentoring")
 @RequiredArgsConstructor
@@ -87,20 +87,11 @@ public class PeerMentorDocumentController {
 		return peerMentorDocumentService.ofMentor(CurrentActor.resolve(actorId), mentorId);
 	}
 
-	/** Always an attachment with nosniff, so an uploaded file is never rendered in the app's origin. */
 	@GetMapping("/documents/{documentId}/content")
 	public ResponseEntity<byte[]> content(@PathVariable UUID documentId,
 			@RequestParam(required = false) UUID actorId) {
 		PeerMentorDocumentService.DocumentContent content = peerMentorDocumentService
 				.content(CurrentActor.resolve(actorId), documentId);
-		return ResponseEntity.ok()
-				.contentType(MediaType.parseMediaType(content.contentType()))
-				.header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-						.filename(content.filename(), StandardCharsets.UTF_8)
-						.build()
-						.toString())
-				.header("X-Content-Type-Options", "nosniff")
-				.cacheControl(CacheControl.noStore().cachePrivate())
-				.body(content.bytes());
+		return Downloads.attachment(content.bytes(), content.filename(), content.contentType());
 	}
 }

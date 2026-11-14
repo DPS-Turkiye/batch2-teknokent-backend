@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerReportStatus;
 
 /**
@@ -14,8 +16,8 @@ import com.dps.teknokent.domain.PeerReportStatus;
  */
 public record PeerWeeklyReportResponse(
 		LocalDate weekStart,
-		UUID id,
-		PeerReportStatus status,
+		@Nullable UUID id,
+		@Nullable PeerReportStatus status,
 		boolean editable,
 		Instant opensAt,
 		Instant deadline,
@@ -23,10 +25,10 @@ public record PeerWeeklyReportResponse(
 		List<PeerReportWeekResponse.Day> days,
 		int dailyRequired,
 		int dailySent,
-		String needsObserved,
-		String growth,
-		String nextWeekPlan,
-		Instant submittedAt,
-		String revisionNote,
-		Instant updatedAt) {
+		@Nullable String needsObserved,
+		@Nullable String growth,
+		@Nullable String nextWeekPlan,
+		@Nullable Instant submittedAt,
+		@Nullable String revisionNote,
+		@Nullable Instant updatedAt) {
 }

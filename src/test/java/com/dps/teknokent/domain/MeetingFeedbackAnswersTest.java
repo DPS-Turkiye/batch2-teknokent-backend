@@ -11,7 +11,8 @@ class MeetingFeedbackAnswersTest {
 	@Test
 	void separatesAMenteesChosenBenefitsFromTheirNote() {
 		var split = MeetingFeedbackAnswers.split(List.of(
-				"Önceliklerimi netleştirmek", "Kaynak / bağlantı önerileri", "Bir sonraki görüşmede finansmanı konuşalım."), MeetingFeedbackSide.MENTEE);
+				"Önceliklerimi netleştirmek", "Kaynak / bağlantı önerileri",
+				"Bir sonraki görüşmede finansmanı konuşalım."), MeetingFeedbackSide.MENTEE);
 
 		assertThat(split.qualities()).containsExactly("Önceliklerimi netleştirmek", "Kaynak / bağlantı önerileri");
 		assertThat(split.note()).isEqualTo("Bir sonraki görüşmede finansmanı konuşalım.");
@@ -55,8 +56,10 @@ class MeetingFeedbackAnswersTest {
 	// Each side is read against its own form: a one-word mentee note that matches a mentor quality is still a note.
 	@Test
 	void readsEachSideAgainstItsOwnFormsQualities() {
-		var mentee = MeetingFeedbackAnswers.split(List.of("Yeni bir bakış açısı kazanmak", "Saygılı"), MeetingFeedbackSide.MENTEE);
-		var mentor = MeetingFeedbackAnswers.split(List.of("Saygılı", "Somut aksiyonlar belirlemek"), MeetingFeedbackSide.MENTOR);
+		var mentee = MeetingFeedbackAnswers.split(List.of("Yeni bir bakış açısı kazanmak", "Saygılı"),
+				MeetingFeedbackSide.MENTEE);
+		var mentor = MeetingFeedbackAnswers.split(List.of("Saygılı", "Somut aksiyonlar belirlemek"),
+				MeetingFeedbackSide.MENTOR);
 
 		assertThat(mentee.qualities()).containsExactly("Yeni bir bakış açısı kazanmak");
 		assertThat(mentee.note()).isEqualTo("Saygılı");

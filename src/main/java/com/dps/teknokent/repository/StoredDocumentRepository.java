@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.entity.StoredDocument;
 
 public interface StoredDocumentRepository extends JpaRepository<StoredDocument, UUID> {
@@ -13,5 +14,5 @@ public interface StoredDocumentRepository extends JpaRepository<StoredDocument, 
 
 	List<StoredDocument> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
-	List<StoredDocument> findByUserIdAndKind(UUID userId, String kind);
+	List<StoredDocument> findByUserIdAndKind(UUID userId, DocumentKind kind);
 }

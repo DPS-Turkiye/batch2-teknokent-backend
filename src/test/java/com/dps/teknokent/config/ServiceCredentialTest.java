@@ -46,4 +46,19 @@ class ServiceCredentialTest {
 	void rejectsAPasswordThatOnlySharesAPrefix() throws Exception {
 		mockMvc.perform(get(UNMAPPED_PATH).with(httpBasic("test", "tes"))).andExpect(status().isUnauthorized());
 	}
+
+	// An address of its own, so the other tests' failures and this one's block do not meet.
+	@Test
+	void anAddressThatKeepsGuessingIsShutOutEvenWithTheRightPassword() throws Exception {
+		for (int i = 0; i < 20; i++) {
+			mockMvc.perform(get(UNMAPPED_PATH).with(httpBasic("test", "guess-" + i))
+					.header("X-Forwarded-For", "203.0.113.250"))
+					.andExpect(status().isUnauthorized());
+		}
+
+		mockMvc.perform(get(UNMAPPED_PATH).with(httpBasic("test", "test")).header("X-Forwarded-For", "203.0.113.250"))
+				.andExpect(status().isTooManyRequests());
+		mockMvc.perform(get(UNMAPPED_PATH).with(httpBasic("test", "test")).header("X-Forwarded-For", "203.0.113.251"))
+				.andExpect(status().isNotFound());
+	}
 }

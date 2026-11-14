@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.PlatformFeedbackKind;
 import com.dps.teknokent.domain.ProgramType;
@@ -21,8 +23,8 @@ public record PlatformFeedbackResponse(
 		UserRole authorRole,
 		Instant createdAt,
 		Instant readAt,
-		UUID programId,
-		String programName,
+		@Nullable UUID programId,
+		@Nullable String programName,
 		ProgramType programType) {
 
 	public static PlatformFeedbackResponse from(PlatformFeedback feedback) {

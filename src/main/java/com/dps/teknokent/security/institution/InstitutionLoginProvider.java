@@ -6,7 +6,8 @@ import java.util.Set;
 import com.dps.teknokent.domain.UserRole;
 
 /**
- * One institution's own sign-in (SAML, CAS, OIDC or plain OAuth; ODTÜ's protocol is not known yet). Everything after it is
+ * One institution's own sign-in (SAML, CAS, OIDC or plain OAuth; ODTÜ's protocol is not known yet). Everything after it
+ * is
  * shared: {@code InstitutionLoginService} links the account and hands the browser a Firebase custom token.
  */
 public interface InstitutionLoginProvider {
@@ -32,7 +33,9 @@ public interface InstitutionLoginProvider {
 		return true;
 	}
 
-	/** Permissions beyond what the record gives. Only the dev stub has any: it stands in for badges until they exist. */
+	/**
+	 * Permissions beyond what the record gives. Only the dev stub has any: it stands in for badges until they exist.
+	 */
 	default Set<UserRole> extraGrants(String persistentId) {
 		return Set.of();
 	}

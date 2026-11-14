@@ -55,7 +55,8 @@ public class ProgramRosterService {
 						|| !EmailDomains.matches(email, program.getEligibleEmailDomain()))
 				.toList();
 		if (!refused.isEmpty()) {
-			throw new InvalidRequestException(Texts.forRequest("error.programRosterRefused", String.join(", ", refused)));
+			throw new InvalidRequestException(
+					Texts.forRequest("error.programRosterRefused", String.join(", ", refused)));
 		}
 		eligibleEmailRepository.findByProgramIdAndEmailIn(programId, emails)
 				.forEach(existing -> emails.remove(existing.getEmail()));
@@ -84,7 +85,9 @@ public class ProgramRosterService {
 	private List<ProgramEligibleEmailResponse> rows(UUID programId) {
 		List<ProgramEligibleEmail> rows = eligibleEmailRepository.findByProgramIdOrderByEmailAsc(programId);
 		Set<String> registered = rows.isEmpty() ? Set.of()
-				: Set.copyOf(appUserRepository.findRegisteredEmails(rows.stream().map(ProgramEligibleEmail::getEmail).toList()));
-		return rows.stream().map(row -> ProgramEligibleEmailResponse.of(row, registered.contains(row.getEmail()))).toList();
+				: Set.copyOf(appUserRepository
+						.findRegisteredEmails(rows.stream().map(ProgramEligibleEmail::getEmail).toList()));
+		return rows.stream().map(row -> ProgramEligibleEmailResponse.of(row, registered.contains(row.getEmail())))
+				.toList();
 	}
 }

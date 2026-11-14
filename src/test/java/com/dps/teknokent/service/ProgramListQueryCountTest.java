@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
@@ -74,12 +73,12 @@ class ProgramListQueryCountTest {
 		assertThat(largeQueries).isLessThanOrEqualTo(11);
 	}
 
-	private long countQueries(Supplier<?> call) {
+	private long countQueries(Runnable call) {
 		entityManager.flush();
 		entityManager.clear();
 		Statistics statistics = entityManager.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
 		statistics.clear();
-		call.get();
+		call.run();
 		return statistics.getPrepareStatementCount();
 	}
 

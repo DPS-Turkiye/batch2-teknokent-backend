@@ -51,12 +51,24 @@ public class ActionItem {
 	}
 
 	public void apply(UpdateActionItemRequest request, AppUser requestedOwner) {
-		if (request.ownerId() != null) owner = requestedOwner;
-		if (request.title() != null) title = TextUtils.trim(request.title());
-		if (request.description() != null) description = TextUtils.normalizeOptional(request.description());
-		if (request.status() != null) status = request.status();
-		if (request.dueDate() != null) dueDate = request.dueDate();
-		if (request.completionNotes() != null) completionNotes = TextUtils.normalizeOptional(request.completionNotes());
+		if (request.ownerId() != null) {
+			owner = requestedOwner;
+		}
+		if (request.title() != null) {
+			title = TextUtils.trim(request.title());
+		}
+		if (request.description() != null) {
+			description = TextUtils.normalizeOptional(request.description());
+		}
+		if (request.status() != null) {
+			status = request.status();
+		}
+		if (request.dueDate() != null) {
+			dueDate = request.dueDate();
+		}
+		if (request.completionNotes() != null) {
+			completionNotes = TextUtils.normalizeOptional(request.completionNotes());
+		}
 	}
 
 	@Id

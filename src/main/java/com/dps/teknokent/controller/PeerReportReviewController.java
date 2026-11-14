@@ -3,6 +3,7 @@ package com.dps.teknokent.controller;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -64,7 +65,7 @@ public class PeerReportReviewController {
 	/** Approves the week, and with it the week's sent daily and meeting reports. */
 	@PostMapping("/weeks/{reportId}/approve")
 	public PeerReviewedReportResponse approveWeeklyReport(@PathVariable UUID reportId,
-			@RequestBody(required = false) PeerReportReviewActorRequest request) {
+			@Valid @RequestBody(required = false) PeerReportReviewActorRequest request) {
 		return reviewService.approveWeek(actor(request), reportId);
 	}
 
@@ -74,7 +75,7 @@ public class PeerReportReviewController {
 		return reviewService.requestWeekRevision(CurrentActor.resolve(request.actorId()), reportId, request.note());
 	}
 
-	private static UUID actor(PeerReportReviewActorRequest request) {
+	private static UUID actor(@Nullable PeerReportReviewActorRequest request) {
 		return CurrentActor.resolve(request == null ? null : request.actorId());
 	}
 }

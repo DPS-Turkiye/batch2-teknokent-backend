@@ -16,6 +16,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -26,10 +27,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.MeetingProposalStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.NotificationCategory;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.DeclineMeetingProposalRequest;
@@ -41,16 +44,17 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingProposal;
 import com.dps.teknokent.entity.Mentorship;
-import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingProposalRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.service.CoordinatorMentorshipService.Scoped;
+import com.dps.teknokent.util.MeetingSlotTimes;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingProposalServiceTest {
@@ -107,7 +111,8 @@ class MeetingProposalServiceTest {
 		assertThat(response.status()).isEqualTo(MeetingProposalStatus.PENDING);
 		assertThat(response.programName()).isEqualTo("METU Stars 2026");
 		assertThat(response.proposedByName()).isEqualTo("Elif Demir");
-		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE), anyString(), anyString(),
+		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE), anyString(),
+				anyString(),
 				eq("/mentor-dashboard"));
 		verify(notificationService).create(eq(lead), eq(NotificationCategory.MEETING_CHANGE), anyString(), anyString(),
 				eq("/dashboard"));
@@ -338,13 +343,360 @@ class MeetingProposalServiceTest {
 				new RescheduleMeetingRequest(null, nextWeek, 30));
 		assertThat(proposed.teamAcceptedAt()).isNotNull();
 		assertThat(proposed.mentorAcceptedAt()).isNull();
-		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE), anyString(), anyString(),
+		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE), anyString(),
+				anyString(),
 				eq("/mentor-dashboard"));
 
 		when(proposalRepository.existsByReplacesMeetingIdAndStatus(meeting.getId(), MeetingProposalStatus.PENDING))
 				.thenReturn(true);
 		assertThatThrownBy(() -> service.proposeReschedule(member.getId(), meeting.getId(),
 				new RescheduleMeetingRequest(null, nextWeek, 30))).isInstanceOf(ConflictException.class);
+	}
+
+	@Test
+	void refusesAProposalForAMentorshipThatIsNoLongerOpen() {
+		mentorship.setStatus(MentorshipStatus.COMPLETED);
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+
+		assertThatThrownBy(() -> service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, null, null)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(proposalRepository, never()).save(any());
+	}
+
+	@Test
+	void aCoordinatorsNewTimeForAMeetingChecksTheBotSlotAndSaysItIsANewTime() {
+		Meeting meeting = scheduledMeeting();
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+
+		MeetingProposalResponse response = service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, "  Yeni saat  ", meeting.getId()));
+
+		assertThat(response.replacesMeetingId()).isEqualTo(meeting.getId());
+		assertThat(response.agenda()).isEqualTo("Yeni saat");
+		assertThat(response.mentorshipId()).isEqualTo(mentorship.getId());
+		verify(meetingService).requireTranscriptBotSlot(meeting, nextWeek, 45);
+		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Koordinatörden yeni saat önerisi"), anyString(), eq("/mentor-dashboard"));
+	}
+
+	@Test
+	void aCoordinatorCanOnlyMoveAPlannedMeetingOfTheSameMentorAndTeam() {
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+		Meeting anotherMentors = scheduledMeeting();
+		anotherMentors.setMentor(user("Başka Mentor", UserRole.MENTOR));
+		Meeting anotherTeams = scheduledMeeting();
+		anotherTeams.setOrganization(organization());
+		Meeting withoutMentor = scheduledMeeting();
+		withoutMentor.setMentor(null);
+		Meeting cancelled = scheduledMeeting();
+		cancelled.setStatus(MeetingStatus.CANCELLED);
+
+		for (Meeting refused : List.of(anotherMentors, anotherTeams, withoutMentor, cancelled)) {
+			when(meetingRepository.findById(refused.getId())).thenReturn(Optional.of(refused));
+			assertThatThrownBy(() -> service.propose(coordinator.getId(), mentorship.getId(),
+					new ProposeMeetingRequest(null, nextWeek, 45, null, refused.getId())))
+					.isInstanceOf(InvalidRequestException.class);
+		}
+		assertThatThrownBy(() -> service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, null, UUID.randomUUID())))
+				.isInstanceOf(ResourceNotFoundException.class);
+		verify(proposalRepository, never()).save(any());
+		verify(meetingService, never()).requireTranscriptBotSlot(any(), any(), any());
+	}
+
+	@Test
+	void aNewTimeIsOnlyForAPlannedMeetingThatHasAMentor() {
+		Meeting cancelled = scheduledMeeting();
+		cancelled.setStatus(MeetingStatus.CANCELLED);
+		Meeting withoutMentor = scheduledMeeting();
+		withoutMentor.setMentor(null);
+		when(meetingRepository.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+		when(meetingRepository.findById(withoutMentor.getId())).thenReturn(Optional.of(withoutMentor));
+
+		assertThatThrownBy(() -> service.proposeReschedule(mentor.getId(), cancelled.getId(),
+				new RescheduleMeetingRequest(null, nextWeek, null))).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.proposeReschedule(lead.getId(), withoutMentor.getId(),
+				new RescheduleMeetingRequest(null, nextWeek, null))).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.proposeReschedule(mentor.getId(), UUID.randomUUID(),
+				new RescheduleMeetingRequest(null, nextWeek, null))).isInstanceOf(ResourceNotFoundException.class);
+		verify(proposalRepository, never()).save(any());
+	}
+
+	@Test
+	void theCoordinatorSeesOneMentorshipsProposalsWithoutAnAnswerButton() {
+		MeetingProposal proposal = pending(null);
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+		when(proposalRepository.findByMentorshipIdOrderByCreatedAtDesc(mentorship.getId()))
+				.thenReturn(List.of(proposal));
+
+		List<MeetingProposalResponse> listed = service.coordinatorList(coordinator.getId(), null, mentorship.getId());
+
+		assertThat(listed).singleElement().satisfies(item -> {
+			assertThat(item.id()).isEqualTo(proposal.getId());
+			assertThat(item.programName()).isEqualTo("METU Stars 2026");
+			assertThat(item.canRespond()).isFalse();
+		});
+		verify(programService, never()).requireCoordinatorOrAdmin(any());
+	}
+
+	@Test
+	void theCoordinatorSeesEveryProposalInTheProgramsTheyManage() {
+		MeetingProposal proposal = pending(null);
+		when(programService.requireCoordinatorOrAdmin(coordinator.getId())).thenReturn(coordinator);
+		when(programService.managedPrograms(coordinator)).thenReturn(List.of(program));
+		when(programService.scopeOf(coordinator.getId(), List.of(program), program.getId()))
+				.thenReturn(List.of(program));
+		when(proposalRepository.findByProgramIdInOrderByCreatedAtDesc(Set.of(program.getId())))
+				.thenReturn(List.of(proposal));
+
+		List<MeetingProposalResponse> listed = service.coordinatorList(coordinator.getId(), program.getId(), null);
+
+		assertThat(listed).singleElement().satisfies(item -> {
+			assertThat(item.programName()).isEqualTo("METU Stars 2026");
+			assertThat(item.mentorName()).isEqualTo("Ayşe Demir");
+			assertThat(item.organizationName()).isEqualTo("Lumen");
+		});
+	}
+
+	@Test
+	void aCoordinatorWithNoProgramInScopeSeesNoProposals() {
+		when(programService.requireCoordinatorOrAdmin(coordinator.getId())).thenReturn(coordinator);
+		when(programService.managedPrograms(coordinator)).thenReturn(List.of());
+		when(programService.scopeOf(coordinator.getId(), List.of(), null)).thenReturn(List.of());
+
+		assertThat(service.coordinatorList(coordinator.getId(), null, null)).isEmpty();
+		verify(proposalRepository, never()).findByProgramIdInOrderByCreatedAtDesc(any());
+	}
+
+	@Test
+	void theTeamLeadSeesTheTeamsOpenProposalsAndAReschedulesHasNoProgram() {
+		lead.setOrganization(lumen);
+		MeetingProposal reschedule = pending(UUID.randomUUID());
+		reschedule.setMentorship(null);
+		reschedule.setProgramId(null);
+		reschedule.setProposedBy(mentor.getId());
+		reschedule.setMentorAcceptedAt(Instant.now());
+		when(proposalRepository.findByStatusAndOrganizationIdOrderByScheduledAtAsc(
+				MeetingProposalStatus.PENDING, lumen.getId())).thenReturn(List.of(reschedule));
+
+		List<MeetingProposalResponse> mine = service.mine(lead.getId());
+
+		assertThat(mine).singleElement().satisfies(item -> {
+			assertThat(item.canRespond()).isTrue();
+			assertThat(item.programName()).isNull();
+			assertThat(item.mentorshipId()).isNull();
+			assertThat(item.proposedByName()).isEqualTo("Ayşe Demir");
+		});
+		verify(proposalRepository, never()).findByStatusAndMentorIdOrderByScheduledAtAsc(any(), any());
+	}
+
+	@Test
+	void anAccountThatNeitherMentorsNorIsInATeamHasNoProposals() {
+		assertThat(service.mine(coordinator.getId())).isEmpty();
+
+		verify(proposalRepository, never()).findByStatusAndMentorIdOrderByScheduledAtAsc(any(), any());
+		verify(proposalRepository, never()).findByStatusAndOrganizationIdOrderByScheduledAtAsc(any(), any());
+	}
+
+	@Test
+	void theTeamLeadCanAnswerFirstAndASecondYesFromThemChangesNothing() {
+		MeetingProposal proposal = pending(null);
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		MeetingProposalResponse first = service.accept(lead.getId(), proposal.getId());
+		Instant firstYes = proposal.getTeamAcceptedAt();
+		MeetingProposalResponse second = service.accept(lead.getId(), proposal.getId());
+
+		assertThat(first.status()).isEqualTo(MeetingProposalStatus.PENDING);
+		assertThat(first.canRespond()).isFalse();
+		assertThat(first.teamResponderName()).isEqualTo("Deniz Ak");
+		assertThat(firstYes).isNotNull();
+		assertThat(second.teamAcceptedAt()).isEqualTo(firstYes);
+		assertThat(second.status()).isEqualTo(MeetingProposalStatus.PENDING);
+		verify(meetingService, never()).create(any());
+	}
+
+	@Test
+	void anyMemberAnswersForATeamWithoutALead() {
+		lumen.setFounder(null);
+		MeetingProposal proposal = pending(null);
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		MeetingProposalResponse response = service.accept(member.getId(), proposal.getId());
+
+		assertThat(response.teamAcceptedAt()).isNotNull();
+		assertThat(response.teamResponderName()).isEqualTo("Can Er");
+	}
+
+	@Test
+	void aProposalForATeamWithoutALeadAsksEveryMember() {
+		lumen.setFounder(null);
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+
+		service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, "Tanışma", null));
+
+		verify(notificationService).create(eq(lead), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Koordinatörden görüşme önerisi"), anyString(), eq("/dashboard"));
+		verify(notificationService).create(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Koordinatörden görüşme önerisi"), anyString(), eq("/dashboard"));
+	}
+
+	@Test
+	void aDeclineWithABlankReasonTellsTheProposerWithoutOne() {
+		MeetingProposal proposal = pending(null);
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		MeetingProposalResponse response = service.decline(lead.getId(), proposal.getId(),
+				new DeclineMeetingProposalRequest(null, "   "));
+
+		assertThat(response.status()).isEqualTo(MeetingProposalStatus.DECLINED);
+		assertThat(response.declineReason()).isNull();
+		assertThat(response.declinedByName()).isEqualTo("Deniz Ak");
+		verify(notificationService).create(coordinator, NotificationCategory.MEETING_CHANGE,
+				"Görüşme önerisi reddedildi",
+				"Deniz Ak · Ayşe Demir ↔ Lumen · " + MeetingSlotTimes.formatForPeople(nextWeek, AppLanguage.TR),
+				"/coordinator/mentorships?mentorship=" + mentorship.getId());
+	}
+
+	@Test
+	void aTeamMemberWhoseNewTimeIsDeclinedIsSentBackToTheTeamDashboard() {
+		MeetingProposal proposal = pending(UUID.randomUUID());
+		proposal.setMentorship(null);
+		proposal.setProgramId(null);
+		proposal.setProposedBy(member.getId());
+		proposal.setTeamAcceptedAt(Instant.now());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		service.decline(mentor.getId(), proposal.getId(), new DeclineMeetingProposalRequest(null, "Uygun değilim"));
+
+		verify(notificationService).create(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme önerisi reddedildi"), anyString(), eq("/dashboard"));
+	}
+
+	@Test
+	void anAdminWhoProposedIsSentToTheMentorshipWhenItIsDeclined() {
+		AppUser admin = user("Sistem Yöneticisi", UserRole.ADMIN);
+		MeetingProposal proposal = pending(null);
+		proposal.setProposedBy(admin.getId());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+		when(appUserRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
+
+		service.decline(mentor.getId(), proposal.getId(), new DeclineMeetingProposalRequest(null, null));
+
+		verify(notificationService).create(eq(admin), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme önerisi reddedildi"), anyString(),
+				eq("/coordinator/mentorships?mentorship=" + mentorship.getId()));
+	}
+
+	@Test
+	void theCoordinatorWithdrawsAPendingProposal() {
+		MeetingProposal proposal = pending(null);
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		service.withdraw(coordinator.getId(), proposal.getId());
+
+		assertThat(proposal.getStatus()).isEqualTo(MeetingProposalStatus.WITHDRAWN);
+		verify(coordinatorMentorshipService).requireManagedMentorship(coordinator.getId(), mentorship.getId());
+		verify(proposalRepository).save(proposal);
+		verify(notificationService, never()).create(any(), any(), anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aCoordinatorWhoDoesNotManageTheMentorshipCannotWithdrawItsProposal() {
+		AppUser stranger = user("Başka Koordinatör", UserRole.COORDINATOR);
+		MeetingProposal proposal = pending(null);
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+		when(coordinatorMentorshipService.requireManagedMentorship(stranger.getId(), mentorship.getId()))
+				.thenThrow(new InvalidRequestException("not yours"));
+
+		assertThatThrownBy(() -> service.withdraw(stranger.getId(), proposal.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(proposal.getStatus()).isEqualTo(MeetingProposalStatus.PENDING);
+		verify(proposalRepository, never()).save(any());
+	}
+
+	@Test
+	void aNewTimeBetweenTheTwoSidesIsNotTheCoordinatorsToWithdrawOrRemind() {
+		MeetingProposal proposal = pending(UUID.randomUUID());
+		proposal.setMentorship(null);
+		proposal.setProposedBy(mentor.getId());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		assertThatThrownBy(() -> service.withdraw(coordinator.getId(), proposal.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.remind(coordinator.getId(), proposal.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(proposal.getStatus()).isEqualTo(MeetingProposalStatus.PENDING);
+		assertThat(proposal.getRemindedAt()).isNull();
+		verify(proposalRepository, never()).save(any());
+	}
+
+	@Test
+	void aProposalThatIsAlreadyClosedCannotBeWithdrawn() {
+		MeetingProposal proposal = pending(null);
+		proposal.setStatus(MeetingProposalStatus.CONFIRMED);
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		assertThatThrownBy(() -> service.withdraw(coordinator.getId(), proposal.getId()))
+				.isInstanceOf(ConflictException.class);
+		assertThat(proposal.getStatus()).isEqualTo(MeetingProposalStatus.CONFIRMED);
+	}
+
+	@Test
+	void aRescheduleOfAMeetingCancelledMeanwhileBooksANewMeetingWithTheProposalsAgenda() {
+		Meeting cancelled = scheduledMeeting();
+		Instant original = cancelled.getScheduledAt();
+		cancelled.setStatus(MeetingStatus.CANCELLED);
+		MeetingProposal proposal = pending(cancelled.getId());
+		proposal.setAgenda("Finansal model");
+		proposal.setMentorAcceptedAt(Instant.now());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+		when(meetingRepository.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+		UUID bookedId = UUID.randomUUID();
+		MeetingResponse created = meetingResponse(bookedId);
+		when(meetingService.create(any())).thenReturn(created);
+
+		MeetingProposalResponse response = service.accept(lead.getId(), proposal.getId());
+
+		assertThat(response.status()).isEqualTo(MeetingProposalStatus.CONFIRMED);
+		assertThat(response.meetingId()).isEqualTo(bookedId);
+		assertThat(cancelled.getScheduledAt()).isEqualTo(original);
+		ArgumentCaptor<CreateMeetingRequest> booked = ArgumentCaptor.forClass(CreateMeetingRequest.class);
+		verify(meetingService).create(booked.capture());
+		assertThat(booked.getValue().agenda()).isEqualTo("Finansal model");
+		assertThat(booked.getValue().organizationId()).isEqualTo(lumen.getId());
+		assertThat(booked.getValue().durationMinutes()).isEqualTo(45);
+		verify(meetingRepository, never()).save(any());
+		verify(notificationService, never()).create(any(), any(), eq("Görüşme yeni saate taşındı"), anyString(),
+				anyString());
+	}
+
+	@Test
+	void aConfirmedRescheduleTellsEveryTeamMemberTheMeetingMoved() {
+		Meeting existing = scheduledMeeting();
+		MeetingProposal proposal = pending(existing.getId());
+		proposal.setMentorAcceptedAt(Instant.now());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+		when(meetingRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+		service.accept(lead.getId(), proposal.getId());
+
+		assertThat(existing.getDurationMinutes()).isEqualTo(45);
+		verify(meetingRepository).save(existing);
+		verify(notificationService).create(eq(lead), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme yeni saate taşındı"), anyString(), eq("/mentorships?tab=active"));
+		verify(notificationService).create(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme yeni saate taşındı"), anyString(), eq("/mentorships?tab=active"));
+		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme onaylandı"), anyString(), eq("/mentor-dashboard/calendar"));
 	}
 
 	private Meeting scheduledMeeting() {

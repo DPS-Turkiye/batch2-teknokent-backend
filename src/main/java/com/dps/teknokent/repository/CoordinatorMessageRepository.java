@@ -10,6 +10,8 @@ import com.dps.teknokent.entity.CoordinatorMessage;
 
 public interface CoordinatorMessageRepository extends JpaRepository<CoordinatorMessage, UUID> {
 	List<CoordinatorMessage> findByConversationIdOrderByCreatedAtAsc(UUID conversationId);
+
 	long countByConversationId(UUID conversationId);
+
 	long countByConversationIdAndCreatedAtAfter(UUID conversationId, Instant after);
 }

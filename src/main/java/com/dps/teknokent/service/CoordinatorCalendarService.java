@@ -6,6 +6,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,6 +14,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,35 +72,39 @@ public class CoordinatorCalendarService {
 						(first, second) -> first));
 
 		// A meeting is shown under the program it was held in, also after its team moved to another one.
-		List<Meeting> meetings = new ArrayList<>();
-		Map<UUID, Program> programOf = new HashMap<>();
+		record Placed(Meeting meeting, Program program) {
+		}
+		List<Placed> placed = new ArrayList<>();
+		Set<UUID> seen = new HashSet<>();
 		for (Program program : scope) {
 			for (UUID organizationId : CoordinatorProgramService.activityTeams(snapshot, program)) {
 				for (Meeting meeting : snapshot.meetingsByOrganization().getOrDefault(organizationId, List.of())) {
 					Instant at = meeting.getScheduledAt();
 					if (meeting.getStatus() != MeetingStatus.CANCELLED && at != null
 							&& !at.isBefore(rangeStart) && at.isBefore(rangeEnd)
-							&& !programOf.containsKey(meeting.getId())
+							&& !seen.contains(meeting.getId())
 							&& CoordinatorProgramService.countsIn(meeting, program, snapshot)) {
-						programOf.put(meeting.getId(), program);
-						meetings.add(meeting);
+						seen.add(meeting.getId());
+						placed.add(new Placed(meeting, program));
 					}
 				}
 			}
 		}
-		List<CoordinatorCalendarResponse.Conflict> conflicts = conflicts(meetings);
+		List<CoordinatorCalendarResponse.Conflict> conflicts = conflicts(placed.stream().map(Placed::meeting).toList());
 		Set<UUID> conflicting = conflicts.stream()
 				.flatMap(conflict -> conflict.meetingIds().stream())
 				.collect(Collectors.toSet());
 
 		List<Meeting> recorded = transcriptBotCapacity.recordedAround(rangeStart, rangeEnd);
 		List<CoordinatorCalendarResponse.Item> items = new ArrayList<>();
-		for (Meeting meeting : meetings) {
-			Program program = programOf.get(meeting.getId());
+		for (Placed entry : placed) {
+			Meeting meeting = entry.meeting();
+			Program program = entry.program();
 			UUID mentorId = meeting.getMentor() == null ? null : meeting.getMentor().getId();
 			CoordinatorMentorshipResponse mentorship = mentorId == null
 					? null
-					: mentorshipOfPair.get(CoordinatorProgramService.pairKey(mentorId, meeting.getOrganization().getId()));
+					: mentorshipOfPair
+							.get(CoordinatorProgramService.pairKey(mentorId, meeting.getOrganization().getId()));
 			items.add(new CoordinatorCalendarResponse.Item(
 					meeting.getId(),
 					CoordinatorAgendaKind.MEETING,
@@ -127,7 +133,8 @@ public class CoordinatorCalendarService {
 		for (ProgramEvent event : events) {
 			items.add(new CoordinatorCalendarResponse.Item(
 					event.getId(),
-					event.getKind() == ProgramEventKind.DEADLINE ? CoordinatorAgendaKind.DEADLINE : CoordinatorAgendaKind.EVENT,
+					event.getKind() == ProgramEventKind.DEADLINE ? CoordinatorAgendaKind.DEADLINE
+							: CoordinatorAgendaKind.EVENT,
 					event.getTitle(),
 					event.getStartsAt(),
 					event.getEndsAt(),
@@ -156,7 +163,8 @@ public class CoordinatorCalendarService {
 				to,
 				items,
 				conflicts,
-				new CoordinatorCalendarResponse.Summary(meetings.size(), events.size() - deadlines, deadlines, unscheduledRisky),
+				new CoordinatorCalendarResponse.Summary(placed.size(), events.size() - deadlines, deadlines,
+						unscheduledRisky),
 				transcriptBotCapacity.capacity());
 	}
 
@@ -196,12 +204,13 @@ public class CoordinatorCalendarService {
 	}
 
 	/** The meeting's number within its mentor–team pair, counting every earlier meeting that was not cancelled. */
-	private static Integer sequence(Meeting meeting, Snapshot snapshot) {
+	private static @Nullable Integer sequence(Meeting meeting, Snapshot snapshot) {
 		if (meeting.getMentor() == null) {
 			return null;
 		}
 		UUID mentorId = meeting.getMentor().getId();
-		return (int) snapshot.meetingsByOrganization().getOrDefault(meeting.getOrganization().getId(), List.of()).stream()
+		return (int) snapshot.meetingsByOrganization().getOrDefault(meeting.getOrganization().getId(), List.of())
+				.stream()
 				.filter(other -> other.getStatus() != MeetingStatus.CANCELLED
 						&& other.getScheduledAt() != null
 						&& !other.getScheduledAt().isAfter(meeting.getScheduledAt())

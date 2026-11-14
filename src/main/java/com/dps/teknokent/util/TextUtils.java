@@ -6,6 +6,9 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
+import org.springframework.lang.Contract;
+
 public final class TextUtils {
 
 	private TextUtils() {
@@ -13,7 +16,7 @@ public final class TextUtils {
 
 	// Mutable on purpose: assigned to @ElementCollection fields, and Hibernate's
 	// clear() on merge throws on an immutable list.
-	public static List<String> normalizedList(List<String> values) {
+	public static List<String> normalizedList(@Nullable List<String> values) {
 		return values == null ? new ArrayList<>()
 				: values.stream()
 						.map(TextUtils::normalizeOptional)
@@ -22,20 +25,21 @@ public final class TextUtils {
 						.collect(Collectors.toCollection(ArrayList::new));
 	}
 
-	public static String trim(String value) {
+	@Contract("null -> null; !null -> !null")
+	public static @Nullable String trim(@Nullable String value) {
 		return value == null ? null : value.trim();
 	}
 
-	public static String nullToEmpty(String value) {
+	public static String nullToEmpty(@Nullable String value) {
 		return value == null ? "" : value;
 	}
 
-	public static String normalizeOptional(String value) {
+	public static @Nullable String normalizeOptional(@Nullable String value) {
 		return value == null || value.isBlank() ? null : value.trim();
 	}
 
 	/** Up to two uppercase letters for a mentor avatar; mentor_profile.initials is VARCHAR(8). */
-	public static String initials(String fullName) {
+	public static String initials(@Nullable String fullName) {
 		if (fullName == null || fullName.isBlank()) {
 			return "?";
 		}
@@ -54,11 +58,11 @@ public final class TextUtils {
 	 * auto-capitalisation — has to be folded first. Locale.ROOT because Turkish
 	 * would turn "i" into "İ".
 	 */
-	public static String normalizeInviteCode(String value) {
+	public static String normalizeInviteCode(@Nullable String value) {
 		return nullToEmpty(trim(value)).toUpperCase(Locale.ROOT);
 	}
 
-	public static String normalizeForComparison(String value) {
+	public static String normalizeForComparison(@Nullable String value) {
 		return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", "");
 	}
 }

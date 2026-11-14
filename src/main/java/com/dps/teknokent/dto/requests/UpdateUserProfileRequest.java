@@ -1,8 +1,10 @@
 package com.dps.teknokent.dto.requests;
 
-import com.dps.teknokent.domain.ContactPreference;
 import java.util.List;
 import java.util.UUID;
+
+import com.dps.teknokent.domain.ContactPreference;
+import com.dps.teknokent.util.ValidationPatterns;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -17,7 +19,7 @@ public record UpdateUserProfileRequest(
 		@Size(max = 255) String jobTitle,
 		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone,
 		@Size(max = 5000) String bio,
-		@Size(max = 255) String linkedinUrl,
+		@Size(max = 255) @Pattern(regexp = ValidationPatterns.WEB_LINK, message = ValidationPatterns.WEB_LINK_MESSAGE) String linkedinUrl,
 		List<@Size(max = 255) String> expertise,
 		// Left out, the stored preferences are kept.
 		@Size(max = 4) List<@NotNull ContactPreference> contactPreferences) {

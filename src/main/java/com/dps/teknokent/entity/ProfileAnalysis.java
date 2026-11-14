@@ -6,10 +6,15 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
+import com.dps.teknokent.domain.ProfileAnalysisStatus;
+import com.dps.teknokent.domain.ProfileType;
+import com.dps.teknokent.domain.ProfileTypeConverter;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -24,7 +29,7 @@ import lombok.Setter;
 public class ProfileAnalysis {
 
 	public static ProfileAnalysis fromParsedProfile(
-			UUID organizationId, UUID appUserId, String sourceFilename, String profileType, String parsedProfile,
+			UUID organizationId, UUID appUserId, String sourceFilename, ProfileType profileType, String parsedProfile,
 			String redactionSummary, String ocrSummary, Instant now) {
 		ProfileAnalysis analysis = new ProfileAnalysis();
 		analysis.id = UUID.randomUUID();
@@ -41,17 +46,16 @@ public class ProfileAnalysis {
 	}
 
 	public static ProfileAnalysis fromManualProfile(
-			UUID organizationId, UUID appUserId, CreateManualProfileRequest request, String serializedProfile,
-			Instant now) {
+			UUID organizationId, UUID appUserId, ProfileType profileType, String serializedProfile, Instant now) {
 		ProfileAnalysis analysis = new ProfileAnalysis();
 		analysis.id = UUID.randomUUID();
 		analysis.organizationId = organizationId;
 		analysis.appUserId = appUserId;
 		analysis.sourceFilename = "manual-entry";
-		analysis.profileType = request.profileType();
+		analysis.profileType = profileType;
 		analysis.parsedProfile = serializedProfile;
 		analysis.confirmedProfile = serializedProfile;
-		analysis.status = "CONFIRMED";
+		analysis.status = ProfileAnalysisStatus.CONFIRMED;
 		analysis.confirmedAt = now;
 		analysis.createdAt = now;
 		return analysis;
@@ -59,7 +63,7 @@ public class ProfileAnalysis {
 
 	public void confirm(String serializedProfile, Instant now) {
 		confirmedProfile = serializedProfile;
-		status = "CONFIRMED";
+		status = ProfileAnalysisStatus.CONFIRMED;
 		confirmedAt = now;
 	}
 
@@ -75,8 +79,10 @@ public class ProfileAnalysis {
 	@Column(name = "source_filename", nullable = false)
 	private String sourceFilename;
 
-	@Column(name = "profile_type", nullable = false)
-	private String profileType;
+	// VARCHAR(40) holding the lowercase wire value ("mentee"); V10's partial index filters on it.
+	@Convert(converter = ProfileTypeConverter.class)
+	@Column(name = "profile_type", nullable = false, length = 40)
+	private ProfileType profileType;
 
 	@Column(name = "parsed_profile", nullable = false, columnDefinition = "TEXT")
 	private String parsedProfile;
@@ -84,8 +90,9 @@ public class ProfileAnalysis {
 	@Column(name = "confirmed_profile", columnDefinition = "TEXT")
 	private String confirmedProfile;
 
-	@Column(nullable = false)
-	private String status = "DRAFT";
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private ProfileAnalysisStatus status = ProfileAnalysisStatus.DRAFT;
 
 	@Column(name = "confirmed_at")
 	private Instant confirmedAt;

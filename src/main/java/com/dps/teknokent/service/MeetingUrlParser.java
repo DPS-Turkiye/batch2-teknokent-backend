@@ -7,51 +7,53 @@ import java.util.regex.Pattern;
 
 public final class MeetingUrlParser {
 
-  public record Parsed(String platform, String nativeMeetingId) {}
+	public record Parsed(String platform, String nativeMeetingId) {
+	}
 
-  private static final Pattern GMEET = Pattern.compile("^[a-z]{3}-[a-z]{4}-[a-z]{3}$");
+	private static final Pattern GMEET = Pattern.compile("^[a-z]{3}-[a-z]{4}-[a-z]{3}$");
 
-  private MeetingUrlParser() {}
+	private MeetingUrlParser() {
+	}
 
-  public static Optional<Parsed> tryParse(String raw) {
-    if (raw == null || raw.isBlank()) {
-      return Optional.empty();
-    }
-    try {
-      return Optional.of(parse(raw));
-    } catch (RuntimeException ignored) {
-      return Optional.empty();
-    }
-  }
+	public static Optional<Parsed> tryParse(String raw) {
+		if (raw == null || raw.isBlank()) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.of(parse(raw));
+		} catch (RuntimeException ignored) {
+			return Optional.empty();
+		}
+	}
 
-  /**
-   * The link the provider's bot is sent to. Built from the parsed code, not the link as typed, so the bot joins the
-   * meeting the access check ran on even when the host only contains "meet.google.com".
-   */
-  public static String canonicalUrl(Parsed parsed) {
-    return "https://meet.google.com/" + parsed.nativeMeetingId();
-  }
+	/**
+	 * The link the provider's bot is sent to. Built from the parsed code, not the link as typed, so the bot joins the
+	 * meeting the access check ran on even when the host only contains "meet.google.com".
+	 */
+	public static String canonicalUrl(Parsed parsed) {
+		return "https://meet.google.com/" + parsed.nativeMeetingId();
+	}
 
-  public static Parsed parse(String raw) {
-    String input = raw.trim();
-    String lower = input.toLowerCase(Locale.ROOT);
+	public static Parsed parse(String raw) {
+		String input = raw.trim();
+		String lower = input.toLowerCase(Locale.ROOT);
 
-    if (GMEET.matcher(lower).matches()) {
-      return new Parsed("google_meet", lower);
-    }
+		if (GMEET.matcher(lower).matches()) {
+			return new Parsed("google_meet", lower);
+		}
 
-    URI uri = URI.create(input);
-    String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+		URI uri = URI.create(input);
+		String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
 
-    if (host.contains("meet.google.com")) {
-      String[] parts = uri.getPath().split("/");
-      String code = parts[parts.length - 1].toLowerCase(Locale.ROOT);
-      if (!GMEET.matcher(code).matches()) {
-        throw new IllegalArgumentException("Invalid Google Meet link");
-      }
-      return new Parsed("google_meet", code);
-    }
+		if (host.contains("meet.google.com")) {
+			String[] parts = uri.getPath().split("/");
+			String code = parts[parts.length - 1].toLowerCase(Locale.ROOT);
+			if (!GMEET.matcher(code).matches()) {
+				throw new IllegalArgumentException("Invalid Google Meet link");
+			}
+			return new Parsed("google_meet", code);
+		}
 
-    throw new IllegalArgumentException("Unsupported meeting link");
-  }
+		throw new IllegalArgumentException("Unsupported meeting link");
+	}
 }

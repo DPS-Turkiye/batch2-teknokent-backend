@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -23,6 +24,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
 import com.dps.teknokent.domain.Edition;
+import com.dps.teknokent.filter.BasicLoginThrottleFilter;
 import com.dps.teknokent.filter.EditionPathFilter;
 import com.dps.teknokent.filter.RateLimitingFilter;
 import com.dps.teknokent.security.FirebaseBearerFilter;
@@ -101,13 +103,13 @@ public class SecurityConfig {
 	PasswordEncoder serviceCredentialEncoder() {
 		return new PasswordEncoder() {
 			@Override
-			public String encode(CharSequence rawPassword) {
-				return rawPassword.toString();
+			public @Nullable String encode(@Nullable CharSequence rawPassword) {
+				return rawPassword == null ? null : rawPassword.toString();
 			}
 
 			@Override
-			public boolean matches(CharSequence rawPassword, String encodedPassword) {
-				return encodedPassword != null && MessageDigest.isEqual(
+			public boolean matches(@Nullable CharSequence rawPassword, @Nullable String encodedPassword) {
+				return rawPassword != null && encodedPassword != null && MessageDigest.isEqual(
 						rawPassword.toString().getBytes(StandardCharsets.UTF_8),
 						encodedPassword.getBytes(StandardCharsets.UTF_8));
 			}
@@ -167,7 +169,8 @@ public class SecurityConfig {
 				.httpBasic(Customizer.withDefaults())
 				.cors(Customizer.withDefaults())
 				// Not a bean: as one, Spring Boot would also register it as a servlet filter outside this chain.
-				.addFilterBefore(new EditionPathFilter(Edition.parse(edition), jsonMapper), CorsFilter.class);
+				.addFilterBefore(new EditionPathFilter(Edition.parse(edition), jsonMapper), CorsFilter.class)
+				.addFilterBefore(new BasicLoginThrottleFilter(), BasicAuthenticationFilter.class);
 
 		FirebaseBearerFilter bearerFilter = firebaseBearerFilter.getIfAvailable();
 		if (bearerFilter != null) {

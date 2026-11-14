@@ -1,9 +1,5 @@
 package com.dps.teknokent.controller;
 
-import com.dps.teknokent.dto.responses.ProgramEligibleEmailResponse;
-
-import com.dps.teknokent.service.ProgramRosterService;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -46,15 +42,17 @@ import com.dps.teknokent.dto.requests.CreateProgramEventRequest;
 import com.dps.teknokent.dto.requests.ExtractSyllabusPhasesRequest;
 import com.dps.teknokent.dto.requests.NewCoordinatorInput;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
+import com.dps.teknokent.dto.responses.ProgramEligibleEmailResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
-import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.MentorPoolService;
 import com.dps.teknokent.service.ProgramApprovalService;
-import com.dps.teknokent.service.ProgramMatchingService;
+import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
+import com.dps.teknokent.service.ProgramMatchingService;
+import com.dps.teknokent.service.ProgramRosterService;
 import com.dps.teknokent.service.SyllabusPhaseService;
 
 @WebMvcTest(CoordinatorProgramController.class)
@@ -97,8 +95,8 @@ class CoordinatorProgramControllerTest {
 		when(coordinatorProgramService.list(ACTOR_ID)).thenReturn(List.of(summary()));
 
 		mockMvc.perform(get("/api/coordinator/programs")
-						.param("actorId", ACTOR_ID.toString())
-						.with(user("test-user")))
+				.param("actorId", ACTOR_ID.toString())
+				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].name").value("METU Stars 2026"))
 				.andExpect(jsonPath("$[0].lifecycle").value("ACTIVE"));
@@ -109,8 +107,8 @@ class CoordinatorProgramControllerTest {
 		when(coordinatorProgramService.list(SIGNED_IN_ID)).thenReturn(List.of());
 
 		mockMvc.perform(get("/api/coordinator/programs")
-						.param("actorId", ACTOR_ID.toString())
-						.with(authentication(signedIn())))
+				.param("actorId", ACTOR_ID.toString())
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 
 		verify(coordinatorProgramService).list(SIGNED_IN_ID);
@@ -119,9 +117,9 @@ class CoordinatorProgramControllerTest {
 	@Test
 	void rejectsAProgramUpdateWithoutAName() throws Exception {
 		mockMvc.perform(put("/api/coordinator/programs/{id}", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"name\":\" \"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"name\":\" \"}"))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(coordinatorProgramService);
 	}
@@ -134,19 +132,19 @@ class CoordinatorProgramControllerTest {
 						"Keşif", "Rapor", LocalDate.of(2026, 11, 3), null)), List.of(), 18));
 
 		mockMvc.perform(post("/api/coordinator/programs/syllabus/phases")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + ACTOR_ID + "\",\"documentId\":\"" + documentId
-								+ "\",\"startDate\":\"2026-11-03\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + ACTOR_ID + "\",\"documentId\":\"" + documentId
+						+ "\",\"startDate\":\"2026-11-03\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.pageCount").value(18))
 				.andExpect(jsonPath("$.phases[0].name").value("Keşif"))
 				.andExpect(jsonPath("$.phases[0].startDate").value("2026-11-03"));
 
 		mockMvc.perform(post("/api/coordinator/programs/syllabus/phases")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
 				.andExpect(status().isBadRequest());
 		verify(syllabusPhaseService).extract(eq(SIGNED_IN_ID), any(ExtractSyllabusPhasesRequest.class));
 	}
@@ -156,9 +154,9 @@ class CoordinatorProgramControllerTest {
 		String phases = String.join(",", Collections.nCopies(13, "{\"name\":\"Faz\"}"));
 
 		mockMvc.perform(put("/api/coordinator/programs/{id}/phases", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"phases\":[" + phases + "]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"phases\":[" + phases + "]}"))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(coordinatorProgramService);
 	}
@@ -166,16 +164,17 @@ class CoordinatorProgramControllerTest {
 	@Test
 	void createsAnEvent() throws Exception {
 		Instant startsAt = Instant.parse("2026-10-17T20:59:00Z");
-		when(coordinatorProgramService.createEvent(eq(SIGNED_IN_ID), eq(PROGRAM_ID), any(CreateProgramEventRequest.class)))
+		when(coordinatorProgramService.createEvent(eq(SIGNED_IN_ID), eq(PROGRAM_ID),
+				any(CreateProgramEventRequest.class)))
 				.thenReturn(new ProgramEventResponse(UUID.randomUUID(), PROGRAM_ID, "Ara Rapor Teslimi",
 						ProgramEventKind.DEADLINE, startsAt, null, null));
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/events", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{ "title": "Ara Rapor Teslimi", "kind": "DEADLINE", "startsAt": "2026-10-17T20:59:00Z" }
-								"""))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "title": "Ara Rapor Teslimi", "kind": "DEADLINE", "startsAt": "2026-10-17T20:59:00Z" }
+						"""))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.kind").value("DEADLINE"));
 	}
@@ -185,7 +184,7 @@ class CoordinatorProgramControllerTest {
 		UUID eventId = UUID.randomUUID();
 
 		mockMvc.perform(delete("/api/coordinator/programs/{id}/events/{eventId}", PROGRAM_ID, eventId)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().isNoContent());
 
 		verify(coordinatorProgramService).deleteEvent(SIGNED_IN_ID, PROGRAM_ID, eventId);
@@ -195,7 +194,7 @@ class CoordinatorProgramControllerTest {
 	@Test
 	void noLongerListsEveryCoordinatorAsACandidate() throws Exception {
 		mockMvc.perform(get("/api/coordinator/programs/{id}/coordinators/candidates", PROGRAM_ID)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().is4xxClientError());
 		verifyNoInteractions(programCoordinatorService);
 	}
@@ -203,9 +202,9 @@ class CoordinatorProgramControllerTest {
 	@Test
 	void addsACoordinatorByIdOrInvitesOneByEmailButNeverBoth() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/{id}/coordinators", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"invite\":{\"fullName\":\"Yeni Kişi\",\"email\":\"yeni@x.org\"}}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"invite\":{\"fullName\":\"Yeni Kişi\",\"email\":\"yeni@x.org\"}}"))
 				.andExpect(status().isOk());
 		verify(programCoordinatorService).invite(SIGNED_IN_ID, PROGRAM_ID,
 				new NewCoordinatorInput("Yeni Kişi", "yeni@x.org"));
@@ -214,9 +213,9 @@ class CoordinatorProgramControllerTest {
 				"{\"userId\":\"" + UUID.randomUUID() + "\",\"invite\":{\"fullName\":\"Y\",\"email\":\"y@x.org\"}}",
 				"{\"invite\":{\"fullName\":\"Y\",\"email\":\"not-an-email\"}}")) {
 			mockMvc.perform(post("/api/coordinator/programs/{id}/coordinators", PROGRAM_ID)
-							.with(authentication(signedIn()))
-							.contentType(MediaType.APPLICATION_JSON)
-							.content(body))
+					.with(authentication(signedIn()))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(body))
 					.andExpect(status().isBadRequest());
 		}
 		verify(programCoordinatorService, never()).add(any(), any(), any());
@@ -230,22 +229,22 @@ class CoordinatorProgramControllerTest {
 				new CoordinatorProgramResponse.CoordinatorRef(other, "Burcu Şen", false)));
 
 		mockMvc.perform(put("/api/coordinator/programs/{id}/archive", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"archived\":true}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"archived\":true}"))
 				.andExpect(status().isOk());
 		verify(coordinatorProgramService).setArchived(SIGNED_IN_ID, PROGRAM_ID, true);
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/coordinators", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"userId\":\"" + other + "\",\"actorId\":\"" + ACTOR_ID + "\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"userId\":\"" + other + "\",\"actorId\":\"" + ACTOR_ID + "\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[1].fullName").value("Burcu Şen"))
 				.andExpect(jsonPath("$[0].owner").value(true));
 
 		mockMvc.perform(delete("/api/coordinator/programs/{id}/coordinators/{userId}", PROGRAM_ID, other)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programCoordinatorService).remove(SIGNED_IN_ID, PROGRAM_ID, other);
 	}
@@ -254,29 +253,30 @@ class CoordinatorProgramControllerTest {
 	void managesTheProgramListAsTheSignedInUser() throws Exception {
 		UUID entryId = UUID.fromString("00000000-0000-0000-0000-0000000000e1");
 		when(programRosterService.add(eq(SIGNED_IN_ID), eq(PROGRAM_ID), any())).thenReturn(List.of(
-				new ProgramEligibleEmailResponse(entryId, "e1@metu.edu.tr", Instant.parse("2026-11-07T10:00:00Z"), false)));
+				new ProgramEligibleEmailResponse(entryId, "e1@metu.edu.tr", Instant.parse("2026-11-07T10:00:00Z"),
+						false)));
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/eligible-emails", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"emails\":[\"e1@metu.edu.tr\"]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"emails\":[\"e1@metu.edu.tr\"]}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].email").value("e1@metu.edu.tr"))
 				.andExpect(jsonPath("$[0].registered").value(false));
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/eligible-emails", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"emails\":[]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"emails\":[]}"))
 				.andExpect(status().isBadRequest());
 
 		mockMvc.perform(get("/api/coordinator/programs/{id}/eligible-emails", PROGRAM_ID)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programRosterService).list(SIGNED_IN_ID, PROGRAM_ID);
 
 		mockMvc.perform(delete("/api/coordinator/programs/{id}/eligible-emails/{entryId}", PROGRAM_ID, entryId)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programRosterService).remove(SIGNED_IN_ID, PROGRAM_ID, entryId);
 	}
@@ -290,68 +290,68 @@ class CoordinatorProgramControllerTest {
 				 "teams":[{"teamName":"Kavşak","leadEmail":"%s"}]}
 				""";
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(body.formatted("deniz@kavsak.co")))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body.formatted("deniz@kavsak.co")))
 				.andExpect(status().isCreated());
 		verify(programLaunchService).create(eq(SIGNED_IN_ID), any());
 
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(body.formatted("can@tohum")))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body.formatted("can@tohum")))
 				.andExpect(status().isBadRequest());
 	}
 
 	@Test
 	void anAdminLaunchesADraftAndAProgramNeedsATypeAndACoordinator() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/{id}/launch", PROGRAM_ID)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(coordinatorProgramService).launch(SIGNED_IN_ID, PROGRAM_ID);
 
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"name\":\"ODTÜ Akran\",\"coordinatorIds\":[\"00000000-0000-0000-0000-0000000000c2\"]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"name\":\"ODTÜ Akran\",\"coordinatorIds\":[\"00000000-0000-0000-0000-0000000000c2\"]}"))
 				.andExpect(status().isBadRequest());
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\",\"coordinatorIds\":[]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\",\"coordinatorIds\":[]}"))
 				.andExpect(status().isBadRequest());
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
-								+ "\"coordinatorIds\":[\"00000000-0000-0000-0000-0000000000c2\"]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+						+ "\"coordinatorIds\":[\"00000000-0000-0000-0000-0000000000c2\"]}"))
 				.andExpect(status().isCreated());
 	}
 
 	@Test
 	void aProgramCanStartWithInvitedCoordinatorsWhoseEmailsAreChecked() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
-								+ "\"newCoordinators\":[{\"fullName\":\"Yeni Kişi\",\"email\":\"yeni@teknokent.org\"}]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+						+ "\"newCoordinators\":[{\"fullName\":\"Yeni Kişi\",\"email\":\"yeni@teknokent.org\"}]}"))
 				.andExpect(status().isCreated());
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
-								+ "\"newCoordinators\":[{\"fullName\":\"Yeni Kişi\",\"email\":\"not-an-email\"}]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+						+ "\"newCoordinators\":[{\"fullName\":\"Yeni Kişi\",\"email\":\"not-an-email\"}]}"))
 				.andExpect(status().isBadRequest());
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
-								+ "\"newCoordinators\":[{\"fullName\":\" \",\"email\":\"yeni@teknokent.org\"}]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\","
+						+ "\"newCoordinators\":[{\"fullName\":\" \",\"email\":\"yeni@teknokent.org\"}]}"))
 				.andExpect(status().isBadRequest());
 		mockMvc.perform(post("/api/coordinator/programs")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\",\"newCoordinators\":[null]}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"type\":\"PEER_MENTORING\",\"name\":\"ODTÜ Akran\",\"newCoordinators\":[null]}"))
 				.andExpect(status().isBadRequest());
 		verify(programLaunchService, times(1)).create(eq(SIGNED_IN_ID), any());
 	}
@@ -362,12 +362,12 @@ class CoordinatorProgramControllerTest {
 		UUID organizationId = UUID.randomUUID();
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/teams/{inviteId}/send-code", PROGRAM_ID, inviteId)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programLaunchService).sendCode(SIGNED_IN_ID, PROGRAM_ID, inviteId);
 
 		mockMvc.perform(get("/api/coordinator/programs/{id}/team-details/{organizationId}", PROGRAM_ID, organizationId)
-						.with(authentication(signedIn())))
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programLaunchService).teamDetail(SIGNED_IN_ID, PROGRAM_ID, organizationId);
 	}
@@ -375,23 +375,23 @@ class CoordinatorProgramControllerTest {
 	@Test
 	void invitesAMentorByEmailAndDecidesAsTheSignedInUser() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/{id}/mentors", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"email\":\"cagri@yilmazfinans.com\",\"actorId\":\"" + ACTOR_ID + "\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"cagri@yilmazfinans.com\",\"actorId\":\"" + ACTOR_ID + "\"}"))
 				.andExpect(status().isOk());
 		verify(mentorPoolService).invite(SIGNED_IN_ID, PROGRAM_ID, "cagri@yilmazfinans.com");
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/mentors", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"email\":\"cagri@yilmaz\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"cagri@yilmaz\"}"))
 				.andExpect(status().isBadRequest());
 
 		UUID mentorId = UUID.randomUUID();
 		mockMvc.perform(post("/api/coordinator/programs/{id}/mentors/{mentorId}/decision", PROGRAM_ID, mentorId)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"accepted\":true}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"accepted\":true}"))
 				.andExpect(status().isOk());
 		verify(mentorPoolService).decide(SIGNED_IN_ID, PROGRAM_ID, mentorId, true);
 	}
@@ -400,26 +400,26 @@ class CoordinatorProgramControllerTest {
 	void decidesApplicantsAndStartupsOfTheProgramAsTheSignedInUser() throws Exception {
 		UUID person = UUID.randomUUID();
 		mockMvc.perform(post("/api/coordinator/programs/{id}/approvals/people/{userId}", PROGRAM_ID, person)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"accepted\":true}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"accepted\":true}"))
 				.andExpect(status().isOk());
 		verify(programApprovalService).decidePerson(SIGNED_IN_ID, PROGRAM_ID, person, true);
 
 		UUID startup = UUID.randomUUID();
 		mockMvc.perform(post("/api/coordinator/programs/{id}/approvals/startups/{organizationId}", PROGRAM_ID,
-						startup)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"accepted\":false}"))
+				startup)
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"accepted\":false}"))
 				.andExpect(status().isOk());
 		verify(programApprovalService).decideStartup(SIGNED_IN_ID, PROGRAM_ID, startup, false);
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/approvals/startups/{organizationId}", PROGRAM_ID,
-						startup)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{}"))
+				startup)
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
 				.andExpect(status().isBadRequest());
 	}
 
@@ -428,38 +428,40 @@ class CoordinatorProgramControllerTest {
 		UUID team = UUID.randomUUID();
 		UUID mentor = UUID.randomUUID();
 		mockMvc.perform(post("/api/coordinator/programs/{id}/matching", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"organizationId\":\"" + team + "\",\"mentorId\":\"" + mentor + "\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"organizationId\":\"" + team + "\",\"mentorId\":\"" + mentor + "\"}"))
 				.andExpect(status().isOk());
 		verify(programMatchingService).match(SIGNED_IN_ID, PROGRAM_ID, team, mentor);
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/matching", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"organizationId\":\"" + team + "\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"organizationId\":\"" + team + "\"}"))
 				.andExpect(status().isBadRequest());
 	}
 
 	@Test
 	void archivingNeedsAnAnswer() throws Exception {
 		mockMvc.perform(put("/api/coordinator/programs/{id}/archive", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(coordinatorProgramService);
 	}
 
 	private static UsernamePasswordAuthenticationToken signedIn() {
 		return new UsernamePasswordAuthenticationToken(
-				new AppUserPrincipal(SIGNED_IN_ID, "elif@tekno.test", UserRole.COORDINATOR, UserAccountStatus.APPROVED, "uid"),
+				new AppUserPrincipal(SIGNED_IN_ID, "elif@tekno.test", UserRole.COORDINATOR, UserAccountStatus.APPROVED,
+						"uid"),
 				null, List.of());
 	}
 
 	private static CoordinatorProgramResponse summary() {
 		return new CoordinatorProgramResponse(
-				PROGRAM_ID, "METU Stars 2026", ProgramStatus.ACTIVE, ProgramLifecycle.ACTIVE, ProgramType.STARTUP_MENTORING,
+				PROGRAM_ID, "METU Stars 2026", ProgramStatus.ACTIVE, ProgramLifecycle.ACTIVE,
+				ProgramType.STARTUP_MENTORING,
 				null, null, null,
 				ACTOR_ID, "Elif Demir", 42, 28, 3, 64, 6, 5, 4, null, List.of(), null, null);
 	}

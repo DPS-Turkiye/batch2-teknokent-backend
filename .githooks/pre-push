@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs the gate CI runs before anything is pushed: a build with zero warnings, the tests, the format and lint
+# checks and the coverage floor. The web repo's pre-push hook does the same with typecheck and tests.
+
+# ./mvnw runs Maven in Docker. Without it the push goes through and CI is the check.
+if [ "${MVNW_IN_DOCKER-}" != "1" ] && ! docker info >/dev/null 2>&1; then
+  echo "pre-push: Docker is not running, so ./mvnw verify was skipped. CI will run it." >&2
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+echo "pre-push: running ./mvnw verify (a few minutes)..." >&2
+if ! ./mvnw -B -q -ntp verify; then
+  echo "pre-push: ./mvnw verify failed, so nothing was pushed. Fix the errors above and push again." >&2
+  exit 1
+fi

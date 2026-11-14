@@ -4,8 +4,6 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +18,7 @@ import com.dps.teknokent.dto.responses.ProgramMeetingRatingsResponse;
 import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.ProgramReportService;
+import com.dps.teknokent.util.Downloads;
 import com.dps.teknokent.util.SessionsExport;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -78,12 +77,7 @@ public class ProgramReportController {
 			@RequestParam(defaultValue = "XLSX") SessionsExport.Format format,
 			@RequestParam(required = false) UUID actorId) {
 		ProgramSessionsResponse report = programReportService.sessions(CurrentActor.resolve(actorId), id, from, to);
-		return ResponseEntity.ok()
-				.header(HttpHeaders.CONTENT_TYPE, SessionsExport.contentType(format))
-				.header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-						.filename(SessionsExport.filename(report, format))
-						.build()
-						.toString())
-				.body(SessionsExport.write(report, format));
+		return Downloads.attachment(SessionsExport.write(report, format), SessionsExport.filename(report, format),
+				SessionsExport.contentType(format));
 	}
 }

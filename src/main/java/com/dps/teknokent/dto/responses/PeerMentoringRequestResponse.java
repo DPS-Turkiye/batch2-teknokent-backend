@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.PeerTopicCategory;
 
@@ -14,13 +16,13 @@ public record PeerMentoringRequestResponse(
 		UUID id,
 		Person mentor,
 		Person mentee,
-		PeerTopicCategory category,
+		@Nullable PeerTopicCategory category,
 		String message,
 		MentorshipRequestStatus status,
 		Instant createdAt,
-		/** When the mentor accepted: the mentorship's start date; null until then. */
+		/* When the mentor accepted: the mentorship's start date; null until then. */
 		Instant acceptedAt) {
 
-	public record Person(UUID userId, String fullName, String department) {
+	public record Person(UUID userId, String fullName, @Nullable String department) {
 	}
 }

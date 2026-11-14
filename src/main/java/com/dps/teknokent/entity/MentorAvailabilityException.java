@@ -17,8 +17,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "mentor_availability_exception", uniqueConstraints = @UniqueConstraint(
-		name = "uq_mentor_availability_exception", columnNames = {"mentor_id", "starts_on", "ends_on"}))
+@Table(name = "mentor_availability_exception", uniqueConstraints = @UniqueConstraint(name = "uq_mentor_availability_exception", columnNames = {
+		"mentor_id", "starts_on", "ends_on" }))
 @Getter
 @Setter
 @NoArgsConstructor

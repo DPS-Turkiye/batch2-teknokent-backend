@@ -3,6 +3,8 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -16,6 +18,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.BottleneckSeverity;
 import com.dps.teknokent.domain.BottleneckStatus;
@@ -30,154 +34,182 @@ import com.dps.teknokent.repository.BottleneckRepository;
 @ExtendWith(MockitoExtension.class)
 class BottleneckServiceTest {
 
-    @Mock
-    private BottleneckRepository bottleneckRepository;
+	@Mock
+	private BottleneckRepository bottleneckRepository;
 
-    @Mock
-    private DomainLookupService domainLookupService;
+	@Mock
+	private DomainLookupService domainLookupService;
 
-    @InjectMocks
-    private BottleneckService bottleneckService;
+	@Mock
+	private StartupAccessService startupAccessService;
 
-    @Test
-    void findByOrganization_returnsBottlenecksForOrganizationOrderedByCreationDate() {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        Organization organization = organization(organizationId, "Teknokent");
-        AppUser owner = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "Ayşe Yılmaz");
+	@InjectMocks
+	private BottleneckService bottleneckService;
 
-        Bottleneck bottleneck = new Bottleneck();
-        bottleneck.setId(UUID.fromString("00000000-0000-0000-0000-000000000301"));
-        bottleneck.setOrganization(organization);
-        bottleneck.setOwner(owner);
-        bottleneck.setTitle("Kullanıcı akışı takılıp kaldı");
-        bottleneck.setDescription("Kayıt sonrası onay akışı bozuldu");
-        bottleneck.setSeverity(BottleneckSeverity.HIGH);
-        bottleneck.setStatus(BottleneckStatus.OPEN);
-        bottleneck.setTargetResolutionDate(LocalDate.of(2026, 9, 30));
-        bottleneck.setCreatedAt(Instant.parse("2026-08-20T09:00:00Z"));
-        bottleneck.setUpdatedAt(Instant.parse("2026-08-20T09:30:00Z"));
+	@Test
+	void findByOrganization_returnsBottlenecksForOrganizationOrderedByCreationDate() {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		Organization organization = organization(organizationId, "Teknokent");
+		AppUser owner = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "Ayşe Yılmaz");
 
-        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
-        when(bottleneckRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId)).thenReturn(List.of(bottleneck));
+		Bottleneck bottleneck = new Bottleneck();
+		bottleneck.setId(UUID.fromString("00000000-0000-0000-0000-000000000301"));
+		bottleneck.setOrganization(organization);
+		bottleneck.setOwner(owner);
+		bottleneck.setTitle("Kullanıcı akışı takılıp kaldı");
+		bottleneck.setDescription("Kayıt sonrası onay akışı bozuldu");
+		bottleneck.setSeverity(BottleneckSeverity.HIGH);
+		bottleneck.setStatus(BottleneckStatus.OPEN);
+		bottleneck.setTargetResolutionDate(LocalDate.of(2026, 9, 30));
+		bottleneck.setCreatedAt(Instant.parse("2026-08-20T09:00:00Z"));
+		bottleneck.setUpdatedAt(Instant.parse("2026-08-20T09:30:00Z"));
 
-        var result = bottleneckService.findByOrganization(organizationId);
+		when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+		when(bottleneckRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId))
+				.thenReturn(List.of(bottleneck));
 
-        assertThat(result).hasSize(1);
-        assertThat(result.getFirst().id()).isEqualTo(bottleneck.getId());
-        assertThat(result.getFirst().organizationId()).isEqualTo(organizationId);
-        assertThat(result.getFirst().title()).isEqualTo("Kullanıcı akışı takılıp kaldı");
-        assertThat(result.getFirst().severity()).isEqualTo(BottleneckSeverity.HIGH);
-    }
+		var result = bottleneckService.findByOrganization(organizationId, owner.getId());
 
-    @Test
-    void create_createsBottleneckWithOpenStatus() {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000201");
-        Organization organization = organization(organizationId, "Teknokent");
-        AppUser owner = user(ownerId, "Ayşe Yılmaz");
+		assertThat(result).hasSize(1);
+		assertThat(result.getFirst().id()).isEqualTo(bottleneck.getId());
+		assertThat(result.getFirst().organizationId()).isEqualTo(organizationId);
+		assertThat(result.getFirst().title()).isEqualTo("Kullanıcı akışı takılıp kaldı");
+		assertThat(result.getFirst().severity()).isEqualTo(BottleneckSeverity.HIGH);
+	}
 
-        CreateBottleneckRequest request = new CreateBottleneckRequest(
-                ownerId,
-                "Kullanıcı akışı takılıp kaldı",
-                "Kayıt sonrası onay akışı bozuldu",
-                BottleneckSeverity.HIGH,
-                LocalDate.of(2026, 9, 30));
+	@Test
+	void create_createsBottleneckWithOpenStatus() {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		Organization organization = organization(organizationId, "Teknokent");
+		AppUser owner = user(ownerId, "Ayşe Yılmaz");
 
-        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
-        when(domainLookupService.requireUser(ownerId)).thenReturn(owner);
-        when(bottleneckRepository.saveAndFlush(any(Bottleneck.class))).thenAnswer(invocation -> {
-            Bottleneck saved = invocation.getArgument(0);
-            saved.setId(UUID.fromString("00000000-0000-0000-0000-000000000302"));
-            saved.setCreatedAt(Instant.parse("2026-08-20T10:00:00Z"));
-            saved.setUpdatedAt(Instant.parse("2026-08-20T10:15:00Z"));
-            return saved;
-        });
+		CreateBottleneckRequest request = new CreateBottleneckRequest(
+				ownerId,
+				"Kullanıcı akışı takılıp kaldı",
+				"Kayıt sonrası onay akışı bozuldu",
+				BottleneckSeverity.HIGH,
+				LocalDate.of(2026, 9, 30));
 
-        var result = bottleneckService.create(organizationId, request);
+		when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+		when(domainLookupService.requireUser(ownerId)).thenReturn(owner);
+		when(bottleneckRepository.saveAndFlush(any(Bottleneck.class))).thenAnswer(invocation -> {
+			Bottleneck saved = invocation.getArgument(0);
+			saved.setId(UUID.fromString("00000000-0000-0000-0000-000000000302"));
+			saved.setCreatedAt(Instant.parse("2026-08-20T10:00:00Z"));
+			saved.setUpdatedAt(Instant.parse("2026-08-20T10:15:00Z"));
+			return saved;
+		});
 
-        assertThat(result.id()).isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000302"));
-        assertThat(result.ownerId()).isEqualTo(ownerId);
-        assertThat(result.ownerName()).isEqualTo("Ayşe Yılmaz");
-        assertThat(result.title()).isEqualTo("Kullanıcı akışı takılıp kaldı");
-        assertThat(result.status()).isEqualTo(BottleneckStatus.OPEN);
-    }
+		var result = bottleneckService.create(organizationId, ownerId, request);
 
-    @Test
-    void update_updatesBottleneckFields() {
-        UUID bottleneckId = UUID.fromString("00000000-0000-0000-0000-000000000301");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		assertThat(result.id()).isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000302"));
+		assertThat(result.ownerId()).isEqualTo(ownerId);
+		assertThat(result.ownerName()).isEqualTo("Ayşe Yılmaz");
+		assertThat(result.title()).isEqualTo("Kullanıcı akışı takılıp kaldı");
+		assertThat(result.status()).isEqualTo(BottleneckStatus.OPEN);
+	}
 
-        Organization organization = organization(organizationId, "Teknokent");
-        AppUser oldOwner = user(UUID.fromString("00000000-0000-0000-0000-000000000202"), "Mehmet Demir");
-        AppUser newOwner = user(ownerId, "Ayşe Yılmaz");
+	@Test
+	void update_updatesBottleneckFields() {
+		UUID bottleneckId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000201");
 
-        Bottleneck bottleneck = new Bottleneck();
-        bottleneck.setId(bottleneckId);
-        bottleneck.setOrganization(organization);
-        bottleneck.setOwner(oldOwner);
-        bottleneck.setTitle("Kullanıcı akışı takılıp kaldı");
-        bottleneck.setDescription("Başlangıçta problem vardı");
-        bottleneck.setSeverity(BottleneckSeverity.HIGH);
-        bottleneck.setStatus(BottleneckStatus.OPEN);
-        bottleneck.setTargetResolutionDate(LocalDate.of(2026, 9, 30));
-        bottleneck.setResolutionNotes(null);
-        bottleneck.setCreatedAt(Instant.parse("2026-08-20T09:00:00Z"));
-        bottleneck.setUpdatedAt(Instant.parse("2026-08-20T09:30:00Z"));
+		Organization organization = organization(organizationId, "Teknokent");
+		AppUser oldOwner = user(UUID.fromString("00000000-0000-0000-0000-000000000202"), "Mehmet Demir");
+		AppUser newOwner = user(ownerId, "Ayşe Yılmaz");
 
-        UpdateBottleneckRequest request = new UpdateBottleneckRequest(
-                ownerId,
-                "İş akışı düzeltildi",
-                "Kullanıcı geri bildirimi sonrası düzeltildi",
-                BottleneckSeverity.MEDIUM,
-                BottleneckStatus.IN_PROGRESS,
-                LocalDate.of(2026, 10, 5),
-                "İlk müdahale tamamlandı");
+		Bottleneck bottleneck = new Bottleneck();
+		bottleneck.setId(bottleneckId);
+		bottleneck.setOrganization(organization);
+		bottleneck.setOwner(oldOwner);
+		bottleneck.setTitle("Kullanıcı akışı takılıp kaldı");
+		bottleneck.setDescription("Başlangıçta problem vardı");
+		bottleneck.setSeverity(BottleneckSeverity.HIGH);
+		bottleneck.setStatus(BottleneckStatus.OPEN);
+		bottleneck.setTargetResolutionDate(LocalDate.of(2026, 9, 30));
+		bottleneck.setResolutionNotes(null);
+		bottleneck.setCreatedAt(Instant.parse("2026-08-20T09:00:00Z"));
+		bottleneck.setUpdatedAt(Instant.parse("2026-08-20T09:30:00Z"));
 
-        when(bottleneckRepository.findById(bottleneckId)).thenReturn(Optional.of(bottleneck));
-        when(domainLookupService.requireUser(ownerId)).thenReturn(newOwner);
-        when(bottleneckRepository.saveAndFlush(bottleneck)).thenReturn(bottleneck);
+		UpdateBottleneckRequest request = new UpdateBottleneckRequest(
+				ownerId,
+				"İş akışı düzeltildi",
+				"Kullanıcı geri bildirimi sonrası düzeltildi",
+				BottleneckSeverity.MEDIUM,
+				BottleneckStatus.IN_PROGRESS,
+				LocalDate.of(2026, 10, 5),
+				"İlk müdahale tamamlandı");
 
-        var result = bottleneckService.update(bottleneckId, request);
+		when(bottleneckRepository.findById(bottleneckId)).thenReturn(Optional.of(bottleneck));
+		when(domainLookupService.requireUser(ownerId)).thenReturn(newOwner);
+		when(bottleneckRepository.saveAndFlush(bottleneck)).thenReturn(bottleneck);
 
-        assertThat(result.title()).isEqualTo("İş akışı düzeltildi");
-        assertThat(result.ownerId()).isEqualTo(ownerId);
-        assertThat(result.severity()).isEqualTo(BottleneckSeverity.MEDIUM);
-        assertThat(result.status()).isEqualTo(BottleneckStatus.IN_PROGRESS);
-        assertThat(result.resolutionNotes()).isEqualTo("İlk müdahale tamamlandı");
-    }
+		var result = bottleneckService.update(bottleneckId, ownerId, request);
 
-    @Test
-    void update_throwsWhenBottleneckDoesNotExist() {
-        UUID bottleneckId = UUID.fromString("00000000-0000-0000-0000-000000000999");
+		assertThat(result.title()).isEqualTo("İş akışı düzeltildi");
+		assertThat(result.ownerId()).isEqualTo(ownerId);
+		assertThat(result.severity()).isEqualTo(BottleneckSeverity.MEDIUM);
+		assertThat(result.status()).isEqualTo(BottleneckStatus.IN_PROGRESS);
+		assertThat(result.resolutionNotes()).isEqualTo("İlk müdahale tamamlandı");
+	}
 
-        when(bottleneckRepository.findById(bottleneckId)).thenReturn(Optional.empty());
+	@Test
+	void update_throwsWhenBottleneckDoesNotExist() {
+		UUID bottleneckId = UUID.fromString("00000000-0000-0000-0000-000000000999");
 
-        UpdateBottleneckRequest request = new UpdateBottleneckRequest(
-                null,
-                "Yeni başlık",
-                null,
-                null,
-                BottleneckStatus.RESOLVED,
-                null,
-                "Sorun çözüldü");
+		when(bottleneckRepository.findById(bottleneckId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> bottleneckService.update(bottleneckId, request))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Bottleneck not found: " + bottleneckId);
-    }
+		UpdateBottleneckRequest request = new UpdateBottleneckRequest(
+				null,
+				"Yeni başlık",
+				null,
+				null,
+				BottleneckStatus.RESOLVED,
+				null,
+				"Sorun çözüldü");
 
-    private static Organization organization(UUID id, String name) {
-        Organization organization = new Organization();
-        organization.setId(id);
-        organization.setName(name);
-        return organization;
-    }
+		assertThatThrownBy(() -> bottleneckService.update(bottleneckId, UUID.randomUUID(), request))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessageContaining("Bottleneck not found: " + bottleneckId);
+	}
 
-    private static AppUser user(UUID id, String fullName) {
-        AppUser user = new AppUser();
-        user.setId(id);
-        user.setFullName(fullName);
-        return user;
-    }
+	@Test
+	void refusesSomeoneOutsideTheStartup() {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID outsider = UUID.fromString("00000000-0000-0000-0000-000000000299");
+		Organization organization = organization(organizationId, "Teknokent");
+		Bottleneck bottleneck = new Bottleneck();
+		bottleneck.setId(UUID.fromString("00000000-0000-0000-0000-000000000301"));
+		bottleneck.setOrganization(organization);
+		when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+		when(bottleneckRepository.findById(bottleneck.getId())).thenReturn(Optional.of(bottleneck));
+		when(startupAccessService.requireTeamOrStaff(outsider, organizationId))
+				.thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN));
+
+		assertThatThrownBy(() -> bottleneckService.findByOrganization(organizationId, outsider))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> bottleneckService.create(organizationId, outsider, new CreateBottleneckRequest(
+				null, "Başlık", null, BottleneckSeverity.LOW, null)))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> bottleneckService.update(bottleneck.getId(), outsider, new UpdateBottleneckRequest(
+				null, "Başlık", null, null, BottleneckStatus.RESOLVED, null, null)))
+				.isInstanceOf(ResponseStatusException.class);
+		verify(bottleneckRepository, never()).saveAndFlush(any(Bottleneck.class));
+	}
+
+	private static Organization organization(UUID id, String name) {
+		Organization organization = new Organization();
+		organization.setId(id);
+		organization.setName(name);
+		return organization;
+	}
+
+	private static AppUser user(UUID id, String fullName) {
+		AppUser user = new AppUser();
+		user.setId(id);
+		user.setFullName(fullName);
+		return user;
+	}
 }

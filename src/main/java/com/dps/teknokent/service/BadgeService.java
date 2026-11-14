@@ -14,6 +14,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +50,7 @@ import com.dps.teknokent.repository.TrainingAttemptRepository;
 import com.dps.teknokent.repository.TrainingModuleRepository;
 import com.dps.teknokent.repository.TrainingProgressRepository;
 import com.dps.teknokent.repository.UserBadgeRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -120,7 +122,7 @@ public class BadgeService {
 				.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
 				.forEach(membership -> others.add(membership.getMentorId()));
 		users.findAllById(others).forEach(user -> people.putIfAbsent(user.getId(), user));
-		Map<UUID, GateBadgeRowResponse.Training> training = trainingOf(program, people.keySet());
+		Map<UUID, GateBadgeRowResponse.Training> training = trainingOf(program.getId(), people.keySet());
 		return people.values().stream()
 				.map(person -> row(person, program, latest.get(person.getId()),
 						training.getOrDefault(person.getId(), GateBadgeRowResponse.Training.NONE)))
@@ -132,9 +134,7 @@ public class BadgeService {
 	/** The admin's Öğrenciler list: everyone in a peer program, with their gate badge state there. */
 	@Transactional(readOnly = true)
 	public List<GateBadgeRowResponse> students(UUID actorId, GateBadgeState state) {
-		if (!domainLookupService.requireUser(actorId).has(UserRole.ADMIN)) {
-			throw new InvalidRequestException(Texts.forRequest("error.badgeAdminOnly"));
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(actorId), "error.badgeAdminOnly");
 		Map<UUID, Program> peerPrograms = programs.findByProgramType(ProgramType.PEER_MENTORING).stream()
 				.collect(Collectors.toMap(Program::getId, Function.identity()));
 		List<UserBadge> gateAwards = awards.findByBadgeCodeOrderByAwardedAtDesc(GATE);
@@ -161,7 +161,7 @@ public class BadgeService {
 				.collect(Collectors.groupingBy(GateBadgeRowResponse::programId));
 		return byProgram.entrySet().stream()
 				.flatMap(entry -> {
-					Map<UUID, GateBadgeRowResponse.Training> training = trainingOf(peerPrograms.get(entry.getKey()),
+					Map<UUID, GateBadgeRowResponse.Training> training = trainingOf(entry.getKey(),
 							entry.getValue().stream().map(GateBadgeRowResponse::userId).toList());
 					return entry.getValue().stream().map(row -> withTraining(row,
 							training.getOrDefault(row.userId(), GateBadgeRowResponse.Training.NONE)));
@@ -172,11 +172,11 @@ public class BadgeService {
 	}
 
 	/** Watched, tries and best score on the program's current training version, for those who started it. */
-	private Map<UUID, GateBadgeRowResponse.Training> trainingOf(Program program, Collection<UUID> userIds) {
+	private Map<UUID, GateBadgeRowResponse.Training> trainingOf(UUID programId, Collection<UUID> userIds) {
 		if (userIds.isEmpty()) {
 			return Map.of();
 		}
-		return trainingModules.findByProgramId(program.getId()).map(module -> {
+		return trainingModules.findByProgramId(programId).map(module -> {
 			int version = module.getCurrentVersion();
 			Set<UUID> watched = trainingProgress.findByModuleIdAndVersionAndUserIdIn(module.getId(), version, userIds)
 					.stream().map(TrainingProgress::getUserId).collect(Collectors.toSet());
@@ -240,13 +240,14 @@ public class BadgeService {
 	 * The one way a badge is awarded, by hand now and by rules later: the award row, the permission a gate badge
 	 * gives, the program membership that makes a peer mentor discoverable there, and the notification.
 	 */
-	UserBadge award(AppUser holder, BadgeCode code, Program program, BadgeSource source, UUID awardedBy) {
+	UserBadge award(AppUser holder, BadgeCode code, @Nullable Program program, BadgeSource source,
+			@Nullable UUID awardedBy) {
 		return award(holder, code, program, source, awardedBy, true);
 	}
 
 	/** As above; {@code announce = false} awards without a notification (the achievement back-fill). */
-	UserBadge award(AppUser holder, BadgeCode code, Program program, BadgeSource source, UUID awardedBy,
-			boolean announce) {
+	UserBadge award(AppUser holder, BadgeCode code, @Nullable Program program, BadgeSource source,
+			@Nullable UUID awardedBy, boolean announce) {
 		Instant now = Instant.now();
 		UserBadge award = new UserBadge();
 		award.setId(UUID.randomUUID());
@@ -336,7 +337,8 @@ public class BadgeService {
 		}
 	}
 
-	private void notify(AppUser holder, String key, BadgeCode code, Program program, String reason) {
+	private void notify(AppUser holder, String key, BadgeCode code, @Nullable Program program,
+			@Nullable String reason) {
 		String badge = Texts.get(holder, "badge.name." + code.name());
 		String programName = program == null ? "" : program.getName();
 		notificationService.create(holder, NotificationCategory.BADGE, Texts.get(holder, key + ".title"),
@@ -382,7 +384,7 @@ public class BadgeService {
 		return actor.has(UserRole.ADMIN) ? BadgeSource.ADMIN : BadgeSource.COORDINATOR;
 	}
 
-	private UserBadge activeGate(UUID userId, UUID programId) {
+	private @Nullable UserBadge activeGate(UUID userId, UUID programId) {
 		return awards.findFirstByUserIdAndBadgeCodeAndProgramIdAndStatus(userId, GATE, programId, BadgeStatus.ACTIVE)
 				.orElse(null);
 	}
@@ -399,11 +401,11 @@ public class BadgeService {
 				: programs.findAllById(ids).stream().collect(Collectors.toMap(Program::getId, Program::getName));
 	}
 
-	private static GateBadgeRowResponse row(AppUser person, Program program, UserBadge award) {
+	private static GateBadgeRowResponse row(AppUser person, Program program, @Nullable UserBadge award) {
 		return row(person, program, award, GateBadgeRowResponse.Training.NONE);
 	}
 
-	private static GateBadgeRowResponse row(AppUser person, Program program, UserBadge award,
+	private static GateBadgeRowResponse row(AppUser person, Program program, @Nullable UserBadge award,
 			GateBadgeRowResponse.Training training) {
 		return new GateBadgeRowResponse(person.getId(), person.getFullName(), person.getEmail(), program.getId(),
 				program.getName(), GateBadgeState.of(award == null ? null : award.getStatus()),

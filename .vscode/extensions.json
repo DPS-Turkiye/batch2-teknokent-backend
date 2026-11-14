@@ -1,5 +1,5 @@
 {
-  "recommendations": ["redhat.java"],
+  "recommendations": ["redhat.java", "shengchen.vscode-checkstyle"],
   "unwantedRecommendations": [
     "vmware.vscode-spring-boot",
     "vmware.vscode-boot-dev-pack",

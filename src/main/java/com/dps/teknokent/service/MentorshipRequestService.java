@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -17,21 +18,24 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestMessageType;
+import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipWorkspaceTab;
 import com.dps.teknokent.domain.NotificationCategory;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.AcceptProposedSlotRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
-import com.dps.teknokent.dto.requests.RecommendationEvidenceSubmission;
-import com.dps.teknokent.dto.requests.RecommendationSnapshotSubmission;
 import com.dps.teknokent.dto.requests.DecideMentorshipRequest;
 import com.dps.teknokent.dto.requests.PostMentorMessageRequest;
-import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
+import com.dps.teknokent.dto.requests.RecommendationEvidenceSubmission;
+import com.dps.teknokent.dto.requests.RecommendationSnapshotSubmission;
 import com.dps.teknokent.dto.requests.ReplyToMentorshipRequest;
 import com.dps.teknokent.dto.requests.ScheduleMentorshipRequest;
+import com.dps.teknokent.dto.requests.UpdatePlannedSessionsRequest;
 import com.dps.teknokent.dto.requests.WithdrawMentorshipRequest;
+import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
@@ -39,30 +43,27 @@ import com.dps.teknokent.dto.responses.MentorshipRequestMessageResponse;
 import com.dps.teknokent.dto.responses.MentorshipRequestResponse;
 import com.dps.teknokent.dto.responses.PageResponse;
 import com.dps.teknokent.dto.responses.RecommendationSnapshotResponse;
-import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.MentorshipRequestMessage;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationItem;
 import com.dps.teknokent.entity.MentorshipRequestRecommendationRun;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.RecommendationEvidenceSnapshot;
-import com.dps.teknokent.entity.MentorAvailabilitySlot;
-import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
 import com.dps.teknokent.repository.MentorshipRequestMessageRepository;
-import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestRecommendationRunRepository;
+import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.MentorshipRequestWorkspaceQuery;
-import com.dps.teknokent.repository.MeetingRepository;
-import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProposedSlots;
 import com.dps.teknokent.util.TextUtils;
-import com.dps.teknokent.entity.Organization;
-import com.dps.teknokent.domain.UserAccountStatus;
-import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -154,7 +155,8 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException(Texts.forRequest("error.startupNotApproved"));
 		}
 		Optional<UUID> programId = menteeProgramService.programOf(organization);
-		if (programId.isPresent() && !menteeProgramService.acceptedMentorIds(programId.get()).contains(mentor.getId())) {
+		if (programId.isPresent()
+				&& !menteeProgramService.acceptedMentorIds(programId.get()).contains(mentor.getId())) {
 			throw new InvalidRequestException(Texts.forRequest("error.mentorOutsideProgram"));
 		}
 		MentorshipRequest mentorshipRequest = MentorshipRequest.fromRequest(request, requester, organization, mentor);
@@ -170,7 +172,8 @@ public class MentorshipRequestService {
 		mailService.sendAfterCommit(
 				mentor.getEmail(),
 				title,
-				Texts.get(mentor, "mail.newRequest.body", mentor.getFullName(), body, mailService.link("/mentor-dashboard")));
+				Texts.get(mentor, "mail.newRequest.body", mentor.getFullName(), body,
+						mailService.link("/mentor-dashboard")));
 		return toResponse(savedRequest);
 	}
 
@@ -276,7 +279,8 @@ public class MentorshipRequestService {
 				request.getMentor(),
 				NotificationCategory.MESSAGE,
 				Texts.get(request.getMentor(),
-					isReplyingToInfoRequest ? "notification.infoReplied.title" : "notification.startupMessage.title"),
+						isReplyingToInfoRequest ? "notification.infoReplied.title"
+								: "notification.startupMessage.title"),
 				Texts.get(request.getMentor(), "notification.sentMessage.body", request.getRequester().getFullName()),
 				"/mentor-dashboard");
 		return toResponse(mentorshipRequestRepository.saveAndFlush(request));
@@ -353,7 +357,8 @@ public class MentorshipRequestService {
 				.stream()
 				.filter(slot -> !meetingRepository.existsByMentorIdAndScheduledAtAndStatus(
 						request.getMentor().getId(), slot.getStartsAt(), MeetingStatus.SCHEDULED))
-				.map(slot -> new MentorAvailabilitySlotResponse(slot.getId(), slot.getStartsAt(), slot.getDurationMinutes(), false))
+				.map(slot -> new MentorAvailabilitySlotResponse(slot.getId(), slot.getStartsAt(),
+						slot.getDurationMinutes(), false))
 				.toList();
 	}
 
@@ -411,7 +416,8 @@ public class MentorshipRequestService {
 		boolean selectedMentorMatches = snapshot.recommendations().stream()
 				.anyMatch(item -> item.selected() && item.mentorId().equals(request.getMentor().getId()));
 		Set<Integer> ranks = snapshot.recommendations().stream().map(item -> item.rank()).collect(Collectors.toSet());
-		Set<UUID> mentorIds = snapshot.recommendations().stream().map(item -> item.mentorId()).collect(Collectors.toSet());
+		Set<UUID> mentorIds = snapshot.recommendations().stream().map(item -> item.mentorId())
+				.collect(Collectors.toSet());
 		if (selectedCount != 1 || !selectedMentorMatches) {
 			throw new InvalidRequestException("Recommendation snapshot must select the request mentor exactly once");
 		}
@@ -426,12 +432,13 @@ public class MentorshipRequestService {
 			throw new InvalidRequestException("Recommendation snapshot contains an unknown mentor");
 		}
 
-		MentorshipRequestRecommendationRun run =
-				MentorshipRequestRecommendationRun.fromSubmission(request, snapshot);
+		MentorshipRequestRecommendationRun run = MentorshipRequestRecommendationRun.fromSubmission(request, snapshot);
 
 		List<MentorshipRequestRecommendationItem> items = snapshot.recommendations().stream()
 				.map(submission -> {
-					MentorProfileResponse canonicalMentor = canonicalMentors.get(submission.mentorId());
+					MentorProfileResponse canonicalMentor = Objects.requireNonNull(
+							canonicalMentors.get(submission.mentorId()),
+							"every snapshot mentor was checked to be a known mentor above");
 					return MentorshipRequestRecommendationItem.fromSubmission(
 							run, submission, domainLookupService.requireUser(submission.mentorId()), canonicalMentor,
 							submission.evidence().stream()
@@ -493,7 +500,7 @@ public class MentorshipRequestService {
 	 * An accept that names no time (the quick accept on the mentor home) books the first time the mentee picked
 	 * that is still ahead and free on the mentor's calendar, so the mentee isn't asked to pick again.
 	 */
-	private Instant firstOpenPreferredSlot(MentorshipRequest request) {
+	private @Nullable Instant firstOpenPreferredSlot(MentorshipRequest request) {
 		Instant now = Instant.now();
 		return ProposedSlots.preferred(request.getRequesterMessage()).stream()
 				.map(MeetingSlotTimes::parseMachineSlot)
@@ -505,7 +512,7 @@ public class MentorshipRequestService {
 				.orElse(null);
 	}
 
-	private void ensureMeetingForAccepted(MentorshipRequest request, Instant scheduledAt) {
+	private void ensureMeetingForAccepted(MentorshipRequest request, @Nullable Instant scheduledAt) {
 		Meeting meeting = meetingRepository.findByMentorshipRequestId(request.getId()).orElse(null);
 		if (meeting == null) {
 			if (scheduledAt == null) {
@@ -531,7 +538,8 @@ public class MentorshipRequestService {
 				.stream()
 				.map(MentorshipRequestMessageResponse::fromEntity)
 				.toList();
-		RecommendationSnapshotResponse recommendationSnapshot = recommendationRunRepository.findByRequestId(request.getId())
+		RecommendationSnapshotResponse recommendationSnapshot = recommendationRunRepository
+				.findByRequestId(request.getId())
 				.map(RecommendationSnapshotResponse::fromEntity)
 				.orElse(null);
 		return MentorshipRequestResponse.fromEntity(request, messages, recommendationSnapshot);

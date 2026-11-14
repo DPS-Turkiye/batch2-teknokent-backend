@@ -1,5 +1,9 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -11,10 +15,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dps.teknokent.domain.MeetingRoomEventType;
 import com.dps.teknokent.dto.requests.MeetingPresenceMessage;
 import com.dps.teknokent.dto.responses.MeetingRoomEvent;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingPresenceServiceTest {

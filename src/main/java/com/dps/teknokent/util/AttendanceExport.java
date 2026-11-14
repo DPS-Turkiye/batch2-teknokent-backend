@@ -4,6 +4,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.dto.responses.ProgramAttendanceReportResponse;
 
 /** The weekly attendance report as a file: one row per participant, one column per week, then each week's rate. */
@@ -27,7 +29,8 @@ public final class AttendanceExport {
 
 		List<List<Object>> rows = new ArrayList<>();
 		for (ProgramAttendanceReportResponse.Participant person : report.participants()) {
-			List<Object> row = new ArrayList<>(List.of(text(person.name()), text(person.email()), text(person.teamName())));
+			List<Object> row = new ArrayList<>(
+					List.of(text(person.name()), text(person.email()), text(person.teamName())));
 			person.attended().forEach(attended -> row.add(attended ? "Evet" : "Hayır"));
 			row.add(person.attendedWeeks());
 			rows.add(row);
@@ -42,7 +45,7 @@ public final class AttendanceExport {
 				: TableExport.xlsx("Katılım", headers, rows);
 	}
 
-	private static String text(String value) {
+	private static String text(@Nullable String value) {
 		return value == null ? "" : value;
 	}
 }

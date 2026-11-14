@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -74,6 +75,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramActivity;
@@ -93,8 +95,10 @@ public class CoordinatorProgramService {
 
 	// Same definitions as the admin overview: PLANNED or ACTIVE means the team has a mentor.
 	private static final Set<MentorshipStatus> MATCHED = EnumSet.of(MentorshipStatus.ACTIVE, MentorshipStatus.PLANNED);
-	private static final List<BottleneckStatus> OPEN_BOTTLENECKS = List.of(BottleneckStatus.OPEN, BottleneckStatus.IN_PROGRESS);
-	private static final List<ActionItemStatus> CLOSED_ACTIONS = List.of(ActionItemStatus.COMPLETED, ActionItemStatus.CANCELLED);
+	private static final List<BottleneckStatus> OPEN_BOTTLENECKS = List.of(BottleneckStatus.OPEN,
+			BottleneckStatus.IN_PROGRESS);
+	private static final List<ActionItemStatus> CLOSED_ACTIONS = List.of(ActionItemStatus.COMPLETED,
+			ActionItemStatus.CANCELLED);
 	private static final int RISKY_TOPIC_LIMIT = 3;
 	private static final int AWAITING_TEAM_LIMIT = 5;
 	private static final int UPCOMING_EVENT_LIMIT = 6;
@@ -132,7 +136,8 @@ public class CoordinatorProgramService {
 	 * Risky once the team has gone {@code staleAfterDays} without meeting its mentor; needs follow-up once
 	 * the target meeting interval has passed or the team has an open bottleneck or overdue action.
 	 */
-	public static HealthBucket classify(long daysSinceContact, boolean hasOpenIssue, int meetingFrequencyDays, int staleAfterDays) {
+	public static HealthBucket classify(long daysSinceContact, boolean hasOpenIssue, int meetingFrequencyDays,
+			int staleAfterDays) {
 		if (daysSinceContact >= staleAfterDays) {
 			return HealthBucket.RISKY;
 		}
@@ -231,12 +236,15 @@ public class CoordinatorProgramService {
 				kept.add(input.id());
 			}
 		}
-		programPhaseRepository.deleteAll(saved.values().stream().filter(phase -> !kept.contains(phase.getId())).toList());
+		programPhaseRepository
+				.deleteAll(saved.values().stream().filter(phase -> !kept.contains(phase.getId())).toList());
 		// Positions are unique per program and Hibernate runs inserts before updates; parking the kept phases on
 		// negative positions first lets every row take its new place without a collision.
 		int parked = -1;
-		for (UUID id : kept) {
-			saved.get(id).setPosition(parked--);
+		for (ProgramPhase phase : saved.values()) {
+			if (kept.contains(phase.getId())) {
+				phase.setPosition(parked--);
+			}
 		}
 		programPhaseRepository.flush();
 		List<ProgramPhase> phases = new ArrayList<>();
@@ -244,9 +252,11 @@ public class CoordinatorProgramService {
 		int position = 0;
 		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
 			// The same id sent twice keeps the phase once; the second becomes a new phase.
-			boolean keeps = input.id() != null && kept.contains(input.id()) && placed.add(input.id());
-			ProgramPhase phase = keeps ? saved.get(input.id()) : new ProgramPhase();
-			if (!keeps) {
+			ProgramPhase phase = input.id() != null && kept.contains(input.id()) && placed.add(input.id())
+					? saved.get(input.id())
+					: null;
+			if (phase == null) {
+				phase = new ProgramPhase();
 				phase.setId(UUID.randomUUID());
 				phase.setProgramId(programId);
 			}
@@ -268,23 +278,24 @@ public class CoordinatorProgramService {
 		if (documentId == null || documentId.equals(program.getSyllabusDocumentId())) {
 			return;
 		}
-		storedDocumentRepository.findById(documentId)
+		boolean ownProgramFile = storedDocumentRepository.findById(documentId)
 				.filter(document -> actorId.equals(document.getUserId()) && isProgramFile(document.getKind()))
-				.orElseThrow(() -> new ResourceNotFoundException("Syllabus not found: " + documentId));
+				.isPresent();
+		if (!ownProgramFile) {
+			throw new ResourceNotFoundException("Syllabus not found: " + documentId);
+		}
 		program.setSyllabusDocumentId(documentId);
 		programRepository.save(program);
 	}
 
-	private static boolean isProgramFile(String kind) {
-		return DocumentKind.WEEKLY_PROGRAM.value().equals(kind) || DocumentKind.SYLLABUS.value().equals(kind);
+	private static boolean isProgramFile(DocumentKind kind) {
+		return kind == DocumentKind.WEEKLY_PROGRAM || kind == DocumentKind.SYLLABUS;
 	}
 
 	/** Taslak → Aktif. Only an admin launches, and only a program with an approved coordinator to run it. */
 	@Transactional
 	public CoordinatorProgramResponse.Detail launch(UUID actorId, UUID programId) {
-		if (!requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin launches a program.");
-		}
+		AdminAccess.requireAdmin(requireCoordinatorOrAdmin(actorId));
 		Program program = requireManagedProgram(actorId, programId);
 		if (program.getStatus() != ProgramStatus.DRAFT) {
 			throw new InvalidRequestException("This program has already been launched.");
@@ -413,7 +424,8 @@ public class CoordinatorProgramService {
 		int overdue = organizationIds.isEmpty()
 				? 0
 				: actionItemRepository
-						.findByOrganizationIdInAndStatusNotInAndDueDateBefore(organizationIds, CLOSED_ACTIONS, snapshot.today())
+						.findByOrganizationIdInAndStatusNotInAndDueDateBefore(organizationIds, CLOSED_ACTIONS,
+								snapshot.today())
 						.size();
 		Instant slowAfter = snapshot.now().minus(SLOW_REPLY_DAYS, ChronoUnit.DAYS);
 		int slowMentors = organizationIds.isEmpty()
@@ -435,7 +447,7 @@ public class CoordinatorProgramService {
 				slowMentors);
 	}
 
-	private static CoordinatorOverviewResponse.NextMeeting nextMeeting(List<Meeting> meetings, Instant now) {
+	private static CoordinatorOverviewResponse.@Nullable NextMeeting nextMeeting(List<Meeting> meetings, Instant now) {
 		Meeting next = meetings.stream()
 				.filter(meeting -> meeting.getStatus() == MeetingStatus.SCHEDULED
 						&& meeting.getScheduledAt() != null
@@ -525,13 +537,13 @@ public class CoordinatorProgramService {
 	}
 
 	private List<CoordinatorOverviewResponse.PendingMentor> pendingMentors(List<Program> scope, Snapshot snapshot) {
-		List<ProgramMentor> pending = new ArrayList<>();
-		Map<UUID, Program> programById = new HashMap<>();
+		record Waiting(ProgramMentor membership, Program program) {
+		}
+		List<Waiting> pending = new ArrayList<>();
 		for (Program program : scope) {
-			programById.put(program.getId(), program);
 			for (ProgramMentor membership : snapshot.mentors().getOrDefault(program.getId(), List.of())) {
 				if (membership.getStatus() == ProgramMentorStatus.PENDING) {
-					pending.add(membership);
+					pending.add(new Waiting(membership, program));
 				}
 			}
 		}
@@ -539,13 +551,15 @@ public class CoordinatorProgramService {
 			return List.of();
 		}
 		Map<UUID, AppUser> mentors = appUserRepository
-				.findAllById(pending.stream().map(ProgramMentor::getMentorId).collect(Collectors.toSet()))
+				.findAllById(pending.stream().map(waiting -> waiting.membership().getMentorId())
+						.collect(Collectors.toSet()))
 				.stream()
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		return pending.stream()
-				.map(membership -> {
+				.map(waiting -> {
+					ProgramMentor membership = waiting.membership();
+					Program program = waiting.program();
 					AppUser mentor = mentors.get(membership.getMentorId());
-					Program program = programById.get(membership.getProgramId());
 					LocalDate since = membership.getCreatedAt() == null
 							? snapshot.today()
 							: membership.getCreatedAt().atZone(MeetingSlotTimes.APP_ZONE).toLocalDate();
@@ -673,13 +687,14 @@ public class CoordinatorProgramService {
 		return Math.toIntExact(people + mentors + startups + teamChanges);
 	}
 
-	private CoordinatorProgramResponse.Syllabus syllabusOf(Program program) {
+	private CoordinatorProgramResponse.@Nullable Syllabus syllabusOf(Program program) {
 		if (program.getSyllabusDocumentId() == null) {
 			return null;
 		}
 		return storedDocumentRepository.findById(program.getSyllabusDocumentId())
 				.map(document -> new CoordinatorProgramResponse.Syllabus(
-						document.getId(), document.getOriginalFilename(), document.getSizeBytes(), document.getCreatedAt(),
+						document.getId(), document.getOriginalFilename(), document.getSizeBytes(),
+						document.getCreatedAt(),
 						document.getKind()))
 				.orElse(null);
 	}
@@ -690,9 +705,10 @@ public class CoordinatorProgramService {
 		Map<UUID, AppUser> users = appUserRepository.findAllById(ids).stream()
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		return ids.stream()
-				.filter(id -> users.containsKey(id) && users.get(id).has(UserRole.COORDINATOR))
-				.map(id -> new CoordinatorProgramResponse.CoordinatorRef(
-						id, users.get(id).getFullName(), id.equals(program.getCreatedBy())))
+				.map(users::get)
+				.filter(user -> user != null && user.has(UserRole.COORDINATOR))
+				.map(user -> new CoordinatorProgramResponse.CoordinatorRef(
+						user.getId(), user.getFullName(), user.getId().equals(program.getCreatedBy())))
 				.toList();
 	}
 
@@ -746,16 +762,17 @@ public class CoordinatorProgramService {
 			}
 			UUID organizationId = mentorship.getOrganization().getId();
 			List<Bottleneck> openIssues = snapshot.openBottlenecks().getOrDefault(organizationId, List.of());
-			boolean hasOpenIssue = !openIssues.isEmpty() || snapshot.overdueActionOrganizations().contains(organizationId);
+			boolean hasOpenIssue = !openIssues.isEmpty()
+					|| snapshot.overdueActionOrganizations().contains(organizationId);
 			HealthBucket bucket = classify(
 					daysSinceContact(mentorship, snapshot),
 					hasOpenIssue,
 					program.getMeetingFrequencyDays(),
 					program.getStaleAfterDays());
 			switch (bucket) {
-				case HEALTHY -> healthy++;
-				case FOLLOW_UP -> followUp++;
-				case RISKY -> risky++;
+			case HEALTHY -> healthy++;
+			case FOLLOW_UP -> followUp++;
+			case RISKY -> risky++;
 			}
 			if (bucket != HealthBucket.HEALTHY) {
 				for (Bottleneck issue : openIssues) {
@@ -811,7 +828,8 @@ public class CoordinatorProgramService {
 
 	private List<ProgramStartup> awaitingMatch(Program program, List<ProgramStartup> startups, Snapshot snapshot) {
 		return startups.stream()
-				.filter(startup -> mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId()).stream()
+				.filter(startup -> mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId())
+						.stream()
 						.noneMatch(mentorship -> MATCHED.contains(mentorship.getStatus())))
 				.toList();
 	}
@@ -893,7 +911,8 @@ public class CoordinatorProgramService {
 				.map(item -> item.getOrganization().getId())
 				.collect(Collectors.toSet());
 		return new Snapshot(today, now, coordinators, phases, teams, mentors, organizations, mentorships,
-				lastMeeting, meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
+				lastMeeting,
+				meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
 				openBottlenecks, overdue, formerTeams);
 	}
 
@@ -939,7 +958,8 @@ public class CoordinatorProgramService {
 	/** Program Ayarları belong to the program's coordinators; an admin only views them. */
 	public Program requireSettingsEditor(UUID actorId, UUID programId) {
 		if (requireCoordinatorOrAdmin(actorId).has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("An admin views program settings; the program's coordinators change them.");
+			throw new InvalidRequestException(
+					"An admin views program settings; the program's coordinators change them.");
 		}
 		return requireEditableProgram(actorId, programId);
 	}
@@ -1040,7 +1060,7 @@ public class CoordinatorProgramService {
 		return organization == null ? Texts.forRequest("label.team") : organization.getName();
 	}
 
-	private static String blankToNull(String value) {
+	private static @Nullable String blankToNull(@Nullable String value) {
 		return value == null || value.isBlank() ? null : value.trim();
 	}
 

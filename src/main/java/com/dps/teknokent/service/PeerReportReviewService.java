@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -137,7 +138,7 @@ public class PeerReportReviewService {
 	 * Only the week is reviewed, so its days and meeting reports open with it: while the week is still the mentor's
 	 * (not sent, or sent back) they stay closed.
 	 */
-	private void requireWeekReadable(UUID mentorId, UUID programId, LocalDate day, UUID reportId) {
+	private void requireWeekReadable(UUID mentorId, UUID programId, @Nullable LocalDate day, UUID reportId) {
 		boolean readable = day != null && weeklyReportRepository
 				.findByMentorIdAndWeekStart(mentorId, calendar.weekStartOf(day))
 				.filter(week -> Objects.equals(week.getProgramId(), programId))
@@ -180,7 +181,7 @@ public class PeerReportReviewService {
 		return weeklyResponse(PeerReportAccess.savedOrConflict(() -> weeklyReportRepository.saveAndFlush(week)));
 	}
 
-	private void decide(PeerWeeklyReport week, Reviewer reviewer, PeerReportStatus outcome, String note) {
+	private void decide(PeerWeeklyReport week, Reviewer reviewer, PeerReportStatus outcome, @Nullable String note) {
 		if (statuses.ofWeek(week) != PeerReportStatus.IN_REVIEW) {
 			throw new ConflictException(Texts.forRequest("error.peerReportNotInReview"));
 		}
@@ -203,7 +204,8 @@ public class PeerReportReviewService {
 				.forEach(report -> record(report, reviewer, PeerReportStatus.APPROVED, null));
 	}
 
-	private void record(PeerReportReview report, Reviewer reviewer, PeerReportStatus outcome, String note) {
+	private void record(PeerReportReview report, Reviewer reviewer, PeerReportStatus outcome,
+			@Nullable String note) {
 		Instant now = calendar.now();
 		report.setStatus(outcome);
 		report.setReviewedAt(now);
@@ -221,7 +223,7 @@ public class PeerReportReviewService {
 	 * A sent report of a program the reviewer runs, not their own; a draft, one back with its mentor, a stranger's
 	 * report or a missing id is not found.
 	 */
-	private <R extends PeerReportReview> R reviewable(Reviewer reviewer, R report, UUID reportId) {
+	private <R extends PeerReportReview> R reviewable(Reviewer reviewer, @Nullable R report, UUID reportId) {
 		if (report == null || !READABLE.contains(report.getStatus()) || !reviewer.mayReview(programOf(report))
 				|| reviewer.user().getId().equals(mentorOf(report))) {
 			throw new ResourceNotFoundException("Peer report not found: " + reportId);
@@ -231,19 +233,19 @@ public class PeerReportReviewService {
 
 	private static UUID programOf(PeerReportReview report) {
 		return switch (report) {
-			case PeerMeetingReport meeting -> meeting.getProgramId();
-			case PeerDailyReport daily -> daily.getProgramId();
-			case PeerWeeklyReport weekly -> weekly.getProgramId();
-			default -> throw new IllegalStateException("Unknown report level: " + report.getClass());
+		case PeerMeetingReport meeting -> meeting.getProgramId();
+		case PeerDailyReport daily -> daily.getProgramId();
+		case PeerWeeklyReport weekly -> weekly.getProgramId();
+		default -> throw new IllegalStateException("Unknown report level: " + report.getClass());
 		};
 	}
 
 	private static UUID mentorOf(PeerReportReview report) {
 		return switch (report) {
-			case PeerMeetingReport meeting -> meeting.getMentorId();
-			case PeerDailyReport daily -> daily.getMentorId();
-			case PeerWeeklyReport weekly -> weekly.getMentorId();
-			default -> throw new IllegalStateException("Unknown report level: " + report.getClass());
+		case PeerMeetingReport meeting -> meeting.getMentorId();
+		case PeerDailyReport daily -> daily.getMentorId();
+		case PeerWeeklyReport weekly -> weekly.getMentorId();
+		default -> throw new IllegalStateException("Unknown report level: " + report.getClass());
 		};
 	}
 
@@ -252,7 +254,8 @@ public class PeerReportReviewService {
 		Meeting meeting = meetingRepository.findById(report.getMeetingId())
 				.orElseThrow(() -> new ResourceNotFoundException("Peer report not found: " + report.getId()));
 		return new PeerReviewedReportResponse(PeerReportKind.MEETING, report.getId(), report.getProgramId(),
-				mentorOf(mentor), meetingReports.response(mentor, meeting, report, scopeOf(report.getProgramId())), null,
+				mentorOf(mentor), meetingReports.response(mentor, meeting, report, scopeOf(report.getProgramId())),
+				null,
 				null);
 	}
 

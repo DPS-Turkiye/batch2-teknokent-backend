@@ -3,17 +3,19 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingStatus;
-import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.Organization;
 
 public record MeetingResponse(
 		UUID id,
-		UUID mentorshipRequestId,
+		@Nullable UUID mentorshipRequestId,
 		UUID organizationId,
 		String organizationName,
-		UUID mentorId,
-		String mentorName,
+		@Nullable UUID mentorId,
+		@Nullable String mentorName,
 		Instant scheduledAt,
 		Integer durationMinutes,
 		String agenda,

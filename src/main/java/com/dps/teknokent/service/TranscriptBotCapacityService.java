@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -100,7 +101,7 @@ public class TranscriptBotCapacityService {
 	 * The earliest later start where the meeting fits. A slot only frees up when another bot leaves the room, so
 	 * the candidates are the moments right after each other recorded meeting's bot has gone.
 	 */
-	private Instant nextFreeStart(List<Meeting> recorded, Meeting self, Instant start, Duration length) {
+	private @Nullable Instant nextFreeStart(List<Meeting> recorded, Meeting self, Instant start, Duration length) {
 		return recorded.stream()
 				.map(other -> endOf(other).plus(BOT_PADDING.multipliedBy(2)))
 				.filter(candidate -> candidate.isAfter(start) && candidate.isBefore(start.plus(SEARCH_AHEAD)))
@@ -114,7 +115,7 @@ public class TranscriptBotCapacityService {
 	 * The most bots in rooms at one moment while {@code self}'s bot would be in its room, leaving out
 	 * {@code self}'s own room. Every bot is counted from {@link #BOT_PADDING} before its meeting to as long after.
 	 */
-	static int peak(List<Meeting> recorded, Instant meetingStart, Instant meetingEnd, Meeting self) {
+	static int peak(List<Meeting> recorded, Instant meetingStart, Instant meetingEnd, @Nullable Meeting self) {
 		Instant start = meetingStart.minus(BOT_PADDING);
 		Instant end = meetingEnd.plus(BOT_PADDING);
 		String ownRoom = self == null ? null : room(self);

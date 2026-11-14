@@ -11,8 +11,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -25,16 +28,23 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.BadgeCode;
+import com.dps.teknokent.domain.BadgeSource;
+import com.dps.teknokent.domain.BadgeStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.TrainingState;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.SaveTrainingRequest;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.TrainingAttempt;
 import com.dps.teknokent.entity.TrainingModule;
 import com.dps.teknokent.entity.TrainingQuestion;
+import com.dps.teknokent.entity.UserBadge;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramRepository;
@@ -43,16 +53,6 @@ import com.dps.teknokent.repository.TrainingModuleRepository;
 import com.dps.teknokent.repository.TrainingProgressRepository;
 import com.dps.teknokent.repository.TrainingQuestionRepository;
 import com.dps.teknokent.repository.UserBadgeRepository;
-import com.dps.teknokent.domain.BadgeCode;
-import com.dps.teknokent.domain.BadgeSource;
-import com.dps.teknokent.domain.BadgeStatus;
-import com.dps.teknokent.domain.TrainingState;
-import com.dps.teknokent.entity.TrainingAttempt;
-import com.dps.teknokent.entity.UserBadge;
-import com.dps.teknokent.exception.ConflictException;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 
 @ExtendWith(MockitoExtension.class)
 class TrainingServiceTest {
@@ -92,7 +92,9 @@ class TrainingServiceTest {
 			stored.add(call.getArgument(0));
 			return call.getArgument(0);
 		});
-		lenient().when(questions.findByModuleIdAndVersionOrderByPositionAsc(any(), org.mockito.ArgumentMatchers.anyInt()))
+		lenient()
+				.when(questions.findByModuleIdAndVersionOrderByPositionAsc(any(),
+						org.mockito.ArgumentMatchers.anyInt()))
 				.thenAnswer(call -> stored.stream()
 						.filter(question -> question.getVersion() == (int) call.getArgument(1))
 						.toList());

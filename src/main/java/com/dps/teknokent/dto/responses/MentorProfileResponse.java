@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingFrequency;
 import com.dps.teknokent.domain.MentorLanguage;
 import com.dps.teknokent.domain.PrepFileRequirement;
@@ -27,12 +29,12 @@ public record MentorProfileResponse(
 		List<String> specialties,
 		List<String> recommendationReasons,
 		List<MentorEvidenceResponse> recommendationEvidence,
-		Integer menteeCapacity,
+		@Nullable Integer menteeCapacity,
 		String about,
 		int defaultMeetingDurationMinutes,
 		int meetingBufferMinutes,
-		MeetingFrequency meetingFrequency,
-		PrepFileRequirement prepFileRequirement,
+		@Nullable MeetingFrequency meetingFrequency,
+		@Nullable PrepFileRequirement prepFileRequirement,
 		List<MentorLanguage> languages,
 		long activeMenteeCount,
 		long completedMentorshipCount,
@@ -40,7 +42,7 @@ public record MentorProfileResponse(
 		List<MentorProgramResponse> programs,
 		List<MentorExperienceResponse> experiences,
 		List<String> offerings,
-		StudentProfileResponse studentProfile,
+		@Nullable StudentProfileResponse studentProfile,
 		List<MentorEducationResponse> educations) {
 
 	/** Without schools, for callers that build a response from parts. */
@@ -49,11 +51,12 @@ public record MentorProfileResponse(
 			String communicationPreference, String mentoringStyle, String fitLabel, String experienceLevel,
 			String sectorExperience, String startupStages, List<String> specialties,
 			List<String> recommendationReasons, List<MentorEvidenceResponse> recommendationEvidence,
-			Integer menteeCapacity, String about, int defaultMeetingDurationMinutes, int meetingBufferMinutes,
-			MeetingFrequency meetingFrequency, PrepFileRequirement prepFileRequirement, List<MentorLanguage> languages,
+			@Nullable Integer menteeCapacity, String about, int defaultMeetingDurationMinutes, int meetingBufferMinutes,
+			@Nullable MeetingFrequency meetingFrequency, @Nullable PrepFileRequirement prepFileRequirement,
+			List<MentorLanguage> languages,
 			long activeMenteeCount, long completedMentorshipCount, List<String> programNames,
 			List<MentorProgramResponse> programs, List<MentorExperienceResponse> experiences, List<String> offerings,
-			StudentProfileResponse studentProfile) {
+			@Nullable StudentProfileResponse studentProfile) {
 		this(id, fullName, email, initials, professionalTitle, company, availabilityLabel, responseTimeLabel,
 				meetingMode, communicationPreference, mentoringStyle, fitLabel, experienceLevel, sectorExperience,
 				startupStages, specialties, recommendationReasons, recommendationEvidence, menteeCapacity, about,
@@ -68,8 +71,9 @@ public record MentorProfileResponse(
 			String communicationPreference, String mentoringStyle, String fitLabel, String experienceLevel,
 			String sectorExperience, String startupStages, List<String> specialties,
 			List<String> recommendationReasons, List<MentorEvidenceResponse> recommendationEvidence,
-			Integer menteeCapacity, String about, int defaultMeetingDurationMinutes, int meetingBufferMinutes,
-			MeetingFrequency meetingFrequency, PrepFileRequirement prepFileRequirement, List<MentorLanguage> languages,
+			@Nullable Integer menteeCapacity, String about, int defaultMeetingDurationMinutes, int meetingBufferMinutes,
+			@Nullable MeetingFrequency meetingFrequency, @Nullable PrepFileRequirement prepFileRequirement,
+			List<MentorLanguage> languages,
 			long activeMenteeCount, long completedMentorshipCount, List<String> programNames,
 			List<MentorProgramResponse> programs, List<MentorExperienceResponse> experiences, List<String> offerings) {
 		this(id, fullName, email, initials, professionalTitle, company, availabilityLabel, responseTimeLabel,

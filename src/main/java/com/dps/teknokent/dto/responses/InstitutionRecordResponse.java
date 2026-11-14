@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.StudyLevel;
 import com.dps.teknokent.entity.InstitutionPerson;
@@ -22,19 +24,20 @@ public record InstitutionRecordResponse(
 		StudyLevel programLevel,
 		String academicTitle,
 		boolean iskurParticipant,
-		Advisor advisor,
+		@Nullable Advisor advisor,
 		Instant syncedAt) {
 
-	public record Advisor(UUID userId, String fullName, String academicTitle) {
+	public record Advisor(@Nullable UUID userId, String fullName, String academicTitle) {
 	}
 
-	public static InstitutionRecordResponse of(InstitutionPerson person, InstitutionPerson advisor) {
+	public static InstitutionRecordResponse of(InstitutionPerson person, @Nullable InstitutionPerson advisor) {
 		return new InstitutionRecordResponse(List.copyOf(person.kinds()), person.getFullName(), person.getEmail(),
 				person.getFaculty(), person.getDepartmentName(), person.getClassYear(), person.getProgramLevel(),
 				person.getAcademicTitle(), person.isIskurParticipant(),
-				advisor == null ? null : new Advisor(
-						advisor.getUser() == null ? null : advisor.getUser().getId(),
-						advisor.getFullName(), advisor.getAcademicTitle()),
+				advisor == null ? null
+						: new Advisor(
+								advisor.getUser() == null ? null : advisor.getUser().getId(),
+								advisor.getFullName(), advisor.getAcademicTitle()),
 				person.getSyncedAt());
 	}
 }

@@ -3,14 +3,17 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,9 +31,9 @@ import com.dps.teknokent.dto.provider.ProviderRunningBot;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
+import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.repository.MeetingRepository;
-import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -61,11 +64,55 @@ class MeetingTranscriptBotWatchdogTest {
 	}
 
 	private MeetingTranscriptBotWatchdog watchdogWith(AiFeatures aiFeatures) {
-		AssistantService assistantService =
-				new AssistantService(providerClient, meetingReportService, null, null, aiFeatures);
+		return watchdogWith(aiFeatures, Runnable::run);
+	}
+
+	private MeetingTranscriptBotWatchdog watchdogWith(AiFeatures aiFeatures, Executor reportExecutor) {
+		AssistantService assistantService = new AssistantService(providerClient, meetingReportService, null, null,
+				aiFeatures, meetingService);
 		return new MeetingTranscriptBotWatchdog(
 				meetingRepository, meetingService, assistantService, shareService, transcriptCleanupService,
-				aiFeatures);
+				aiFeatures, reportExecutor);
+	}
+
+	@Test
+	void aMeetingThatCannotBeClosedDoesNotKeepTheOthersOpen() {
+		Meeting broken = meeting(now.minus(20, ChronoUnit.MINUTES), 60);
+		Meeting other = meeting(now.minus(20, ChronoUnit.MINUTES), 60);
+		other.setId(UUID.randomUUID());
+		other.setMeetLink("https://meet.google.com/ddd-eeee-fff");
+		liveMeetings(broken, other);
+		runningBots();
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenThrow(new IllegalStateException("database down"));
+		when(meetingService.markBotStopped("ddd-eeee-fff")).thenReturn(List.of(other.getId()));
+		when(providerClient.getTranscript("google_meet", "ddd-eeee-fff"))
+				.thenReturn(new ProviderTranscriptResponse(List.of()));
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
+
+		verify(meetingService).markBotStopped("ddd-eeee-fff");
+		verify(shareService).storeGeneratedTranscript(other.getId(), List.of());
+	}
+
+	@Test
+	void writesTheTranscriptAndReportOffTheSchedulerThread() {
+		List<Runnable> queued = new ArrayList<>();
+		watchdog = watchdogWith(TestAiFeatures.allOn(), queued::add);
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		providerTranscript();
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+		when(meetingReportService.generate(any())).thenReturn(report());
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
+
+		verify(providerClient, never()).getTranscript(any(), any());
+		verify(meetingReportService, never()).generate(any());
+
+		queued.forEach(Runnable::run);
+
+		verify(shareService).storeGeneratedTranscript(eq(meetingId), any());
+		verify(shareService).storeGeneratedReport(meetingId, report());
 	}
 
 	@Test
@@ -103,8 +150,8 @@ class MeetingTranscriptBotWatchdogTest {
 		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
 		runningBots();
 		providerTranscript();
-		List<TranscriptSegmentResponse> cleaned =
-				List.of(new TranscriptSegmentResponse("s1", "Arya", "Düzeltilmiş metin", "00:00"));
+		List<TranscriptSegmentResponse> cleaned = List
+				.of(new TranscriptSegmentResponse("s1", "Arya", "Düzeltilmiş metin", "00:00"));
 		when(transcriptCleanupService.clean(any())).thenReturn(cleaned);
 		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
 		when(meetingReportService.generate(any())).thenReturn(report());
@@ -211,6 +258,147 @@ class MeetingTranscriptBotWatchdogTest {
 		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
 
 		verify(shareService, never()).storeGeneratedTranscript(any(), any());
+		verify(shareService, never()).storeGeneratedReport(any(), any());
+	}
+
+	@Test
+	void closesTheMeetingWhenTheProviderSaysTheBotHasFinished() {
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots(new ProviderRunningBot("google_meet", "aaa-bbbb-ccc", "running"));
+		when(providerClient.getBot("google_meet", "aaa-bbbb-ccc"))
+				.thenReturn(details(" Completed ", List.of("Sudenaz Yılmaz")));
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
+	}
+
+	@Test
+	void stillClosesTheMeetingWhenTheLeftoverBotCannotBeStopped() {
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		providerTranscript();
+		doThrow(new IllegalStateException("provider down")).when(providerClient).stopBot("google_meet", "aaa-bbbb-ccc");
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
+
+		verify(shareService).storeGeneratedTranscript(eq(meetingId), any());
+	}
+
+	@Test
+	void countsNothingAndFetchesNoTranscriptWhenNoMeetingWasLeftToClose() {
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of());
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isZero();
+
+		verify(providerClient, never()).getTranscript(any(), any());
+		verify(shareService, never()).storeGeneratedTranscript(any(), any());
+	}
+
+	@Test
+	void closesEveryTeamsCopyOfAGroupSessionAndStoresTheTranscriptOnEach() {
+		UUID guestCopyId = UUID.randomUUID();
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		providerTranscript();
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId, guestCopyId));
+		when(meetingReportService.generate(any())).thenReturn(report());
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(2);
+
+		verify(shareService).storeGeneratedTranscript(eq(meetingId), any());
+		verify(shareService).storeGeneratedTranscript(eq(guestCopyId), any());
+		verify(shareService).storeGeneratedReport(meetingId, report());
+		verify(shareService).storeGeneratedReport(guestCopyId, report());
+		verify(meetingReportService).generate(any());
+	}
+
+	@Test
+	void keepsWaitingWhenTheBotsDetailsCannotBeRead() {
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots(new ProviderRunningBot("google_meet", "aaa-bbbb-ccc", "running"));
+		when(providerClient.getBot("google_meet", "aaa-bbbb-ccc")).thenThrow(new IllegalStateException("timeout"));
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isZero();
+
+		verify(meetingService, never()).markBotStopped(any());
+		verify(providerClient, never()).stopBot(any(), any());
+	}
+
+	@Test
+	void skipsMeetingsWhoseLinkTheBotCouldNotHaveJoined() {
+		Meeting withoutLink = meeting(now.minus(20, ChronoUnit.MINUTES), 60);
+		withoutLink.setMeetLink(" ");
+		Meeting anotherSite = meeting(now.minus(20, ChronoUnit.MINUTES), 60);
+		anotherSite.setMeetLink("https://zoom.us/j/123456");
+		liveMeetings(withoutLink, anotherSite);
+		runningBots();
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isZero();
+
+		verify(providerClient, never()).getRunningBots();
+		verify(meetingService, never()).markBotStopped(any());
+	}
+
+	@Test
+	void treatsAMeetingWithoutALengthAsOneHourWhenJudgingItsSlot() {
+		Meeting meeting = meeting(now.minus(50, ChronoUnit.MINUTES), 60);
+		meeting.setDurationMinutes(null);
+		liveMeetings(meeting);
+		runningBots(new ProviderRunningBot("google_meet", "aaa-bbbb-ccc", "running"));
+		when(providerClient.getBot("google_meet", "aaa-bbbb-ccc"))
+				.thenReturn(details("active", List.of("Sudenaz Yılmaz")));
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isZero();
+		assertThat(watchdog.closeFinishedMeetings(now.plus(13, ChronoUnit.MINUTES))).isEqualTo(1);
+	}
+
+	@Test
+	void aGroupSessionsBotStaysUntilItsLongestSeatEnds() {
+		Meeting shortSeat = meeting(now.minus(50, ChronoUnit.MINUTES), 30);
+		Meeting longSeat = meeting(now.minus(50, ChronoUnit.MINUTES), 120);
+		longSeat.setId(UUID.randomUUID());
+		runningBots(new ProviderRunningBot("google_meet", "aaa-bbbb-ccc", "running"));
+		when(providerClient.getBot("google_meet", "aaa-bbbb-ccc"))
+				.thenReturn(details("active", List.of("Sudenaz Yılmaz")));
+
+		liveMeetings(shortSeat, longSeat);
+		assertThat(watchdog.closeFinishedMeetings(now)).isZero();
+		liveMeetings(longSeat, shortSeat);
+		assertThat(watchdog.closeFinishedMeetings(now)).isZero();
+
+		verify(meetingService, never()).markBotStopped(any());
+	}
+
+	@Test
+	void anEmptyTranscriptIsRecordedButNoReportIsWrittenFromIt() {
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		when(providerClient.getTranscript("google_meet", "aaa-bbbb-ccc"))
+				.thenReturn(new ProviderTranscriptResponse(List.of()));
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
+
+		verify(shareService).storeGeneratedTranscript(meetingId, List.of());
+		verify(meetingReportService, never()).generate(any());
+		verify(shareService, never()).storeGeneratedReport(any(), any());
+	}
+
+	@Test
+	void keepsTheTranscriptWhenTheReportCannotBeWritten() {
+		liveMeetings(meeting(now.minus(20, ChronoUnit.MINUTES), 60));
+		runningBots();
+		providerTranscript();
+		when(meetingService.markBotStopped("aaa-bbbb-ccc")).thenReturn(List.of(meetingId));
+		when(meetingReportService.generate(any())).thenThrow(new IllegalStateException("model down"));
+
+		assertThat(watchdog.closeFinishedMeetings(now)).isEqualTo(1);
+
+		verify(shareService).storeGeneratedTranscript(eq(meetingId), any());
 		verify(shareService, never()).storeGeneratedReport(any(), any());
 	}
 

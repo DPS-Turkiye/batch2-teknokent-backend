@@ -57,5 +57,6 @@ public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursM
 	@Query("update OfficeHoursMeeting m set m.instructorRemindedAt = null where m.id = :id")
 	int releaseInstructorReminder(@Param("id") UUID id);
 
-	List<OfficeHoursMeeting> findByInstructorIdAndScheduledAtAfterOrderByScheduledAtAsc(UUID instructorId, Instant after);
+	List<OfficeHoursMeeting> findByInstructorIdAndScheduledAtAfterOrderByScheduledAtAsc(UUID instructorId,
+			Instant after);
 }

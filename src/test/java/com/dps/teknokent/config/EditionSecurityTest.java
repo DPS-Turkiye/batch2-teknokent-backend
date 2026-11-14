@@ -1,13 +1,13 @@
 package com.dps.teknokent.config;
 
-import java.util.UUID;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.UUID;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -52,7 +52,8 @@ class EditionSecurityTest {
 		void keepsTheTeknokentEndpointsBehindTheirUsualChecks() throws Exception {
 			mockMvc.perform(get("/api/assistant/bots")).andExpect(status().isUnauthorized());
 			mockMvc.perform(post("/api/auth/register/mentor")).andExpect(status().isUnauthorized());
-			mockMvc.perform(post("/api/admin/users/" + UUID.randomUUID() + "/delete")).andExpect(status().isUnauthorized());
+			mockMvc.perform(post("/api/admin/users/" + UUID.randomUUID() + "/delete"))
+					.andExpect(status().isUnauthorized());
 		}
 	}
 
@@ -76,7 +77,8 @@ class EditionSecurityTest {
 		@Test
 		void closesUserDeletion() throws Exception {
 			String path = "/api/admin/users/" + UUID.randomUUID() + "/delete";
-			mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("{\"confirmEmail\":\"a@b.test\"}"))
+			mockMvc.perform(
+					post(path).contentType(MediaType.APPLICATION_JSON).content("{\"confirmEmail\":\"a@b.test\"}"))
 					.andExpect(status().isNotFound());
 			mockMvc.perform(post(path).with(httpBasic("test", "test"))
 					.contentType(MediaType.APPLICATION_JSON).content("{\"confirmEmail\":\"a@b.test\"}"))

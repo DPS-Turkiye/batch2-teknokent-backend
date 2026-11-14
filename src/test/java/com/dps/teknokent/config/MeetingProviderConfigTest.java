@@ -3,6 +3,7 @@ package com.dps.teknokent.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -10,19 +11,22 @@ import java.util.concurrent.CountDownLatch;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import com.sun.net.httpserver.HttpServer;
 
 class MeetingProviderConfigTest {
+
+	// 127.0.0.1 as bytes: the address itself, so nothing is looked up by name.
+	private static final byte[] LOOPBACK = { 127, 0, 0, 1 };
 
 	private final CountDownLatch release = new CountDownLatch(1);
 	private HttpServer silentProvider;
 
 	@BeforeEach
 	void startSilentProvider() throws Exception {
-		silentProvider = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		silentProvider = HttpServer.create(new InetSocketAddress(InetAddress.getByAddress(LOOPBACK), 0), 0);
 		silentProvider.createContext("/", exchange -> {
 			try {
 				release.await();

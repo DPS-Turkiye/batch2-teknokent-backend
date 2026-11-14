@@ -48,7 +48,8 @@ class CoordinatorNoteServiceTest {
 		when(noteRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 		when(appUserRepository.findById(elif)).thenReturn(Optional.of(user(elif, "Elif Demir")));
 
-		CoordinatorNoteResponse note = service.add(elif, mentorshipId, new AddCoordinatorNoteRequest(null, "  Nakit akışı riskli  "));
+		CoordinatorNoteResponse note = service.add(elif, mentorshipId,
+				new AddCoordinatorNoteRequest(null, "  Nakit akışı riskli  "));
 
 		verify(coordinatorMentorshipService).requireManagedMentorship(elif, mentorshipId);
 		assertThat(note.body()).isEqualTo("Nakit akışı riskli");

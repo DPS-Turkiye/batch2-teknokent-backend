@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,7 +70,7 @@ public class PeerWeeklyReportService {
 		}
 		PeerWeeklyReport report = weeklyRepository.findByMentorIdAndWeekStart(mentor.getId(), weekStart)
 				.orElseGet(() -> newReport(mentor, weekStart));
-		requireEditable(report);
+		PeerReportAccess.requireEditable(report.getStatus());
 		report.setNeedsObserved(PeerMeetingReportService.trimmed(request.needsObserved()));
 		report.setGrowth(PeerMeetingReportService.trimmed(request.growth()));
 		report.setNextWeekPlan(PeerMeetingReportService.trimmed(request.nextWeekPlan()));
@@ -89,7 +90,7 @@ public class PeerWeeklyReportService {
 		PeerDailyReportService.requireMonday(weekStart);
 		PeerWeeklyReport report = weeklyRepository.findByMentorIdAndWeekStart(mentor.getId(), weekStart)
 				.orElseThrow(() -> new ConflictException(Texts.forRequest("error.peerReportNotStarted")));
-		requireEditable(report);
+		PeerReportAccess.requireEditable(report.getStatus());
 		if (calendar.now().isBefore(calendar.weeklyOpensAt(weekStart))) {
 			throw new ConflictException(Texts.forRequest("error.peerWeeklyNotOpen"));
 		}
@@ -156,7 +157,7 @@ public class PeerWeeklyReportService {
 				meetings.size(),
 				activities.size(),
 				activities.stream().map(PeerActivity::getActivityType).distinct()
-						.sorted(Comparator.comparing(PeerActivityType::ordinal)).toList(),
+						.sorted(Comparator.comparingInt(PeerActivityType::ordinal)).toList(),
 				recorded,
 				skillCounts.entrySet().stream()
 						.sorted(Map.Entry.<PeerMentorSkill, Integer>comparingByValue().reversed()
@@ -166,15 +167,16 @@ public class PeerWeeklyReportService {
 				byMentee.values().stream().map(MenteeTally::outcome).toList());
 	}
 
-	private PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report) {
+	private PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart,
+			@Nullable PeerWeeklyReport report) {
 		return response(mentor, weekStart, report, PeerReportScope.MENTOR);
 	}
 
-	PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, PeerWeeklyReport report,
+	PeerWeeklyReportResponse response(AppUser mentor, LocalDate weekStart, @Nullable PeerWeeklyReport report,
 			PeerReportScope scope) {
 		PeerReportStatus status = report == null ? null : statuses.ofWeek(report);
 		boolean open = status == null || status.editable();
-		PeerWeeklySummary summary = !open && report.getSummarySnapshot() != null
+		PeerWeeklySummary summary = report != null && !open && report.getSummarySnapshot() != null
 				? jsonMapper.readValue(report.getSummarySnapshot(), PeerWeeklySummary.class)
 				: summary(mentor, weekStart, scope);
 		List<PeerReportWeekResponse.Day> days = dailyReports.days(mentor, weekStart, scope);
@@ -220,12 +222,6 @@ public class PeerWeeklyReportService {
 		return report;
 	}
 
-	private static void requireEditable(PeerWeeklyReport report) {
-		if (!report.getStatus().editable()) {
-			throw new ConflictException(Texts.forRequest("error.peerReportLocked"));
-		}
-	}
-
 	/** One mentee's line under "Görüşme çıktıları". */
 	private static final class MenteeTally {
 
@@ -240,7 +236,8 @@ public class PeerWeeklyReportService {
 		}
 
 		private void add(Meeting meeting, PeerMeetingReport report) {
-			reports.add(new PeerWeeklySummary.ReportRef(meeting.getId(), meeting.getScheduledAt(), report.getOutcome()));
+			reports.add(
+					new PeerWeeklySummary.ReportRef(meeting.getId(), meeting.getScheduledAt(), report.getOutcome()));
 			actionsTotal += report.getActions().size();
 			actionsDone += (int) report.getActions().stream().filter(action -> action.getDoneAt() != null).count();
 		}

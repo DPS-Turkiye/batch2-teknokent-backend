@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -179,7 +180,8 @@ public class TeamChangeService {
 		if (leader != null) {
 			String leaderKey = removed ? "notification.teamMemberRemoved" : "notification.teamMemberLeft";
 			notificationService.create(leader, Texts.get(leader, leaderKey + ".title", member.getFullName()),
-					Texts.get(leader, leaderKey + ".body", member.getFullName(), organization.getName()), "/startup/team");
+					Texts.get(leader, leaderKey + ".body", member.getFullName(), organization.getName()),
+					"/startup/team");
 		}
 	}
 
@@ -240,7 +242,7 @@ public class TeamChangeService {
 		taskHandoverService.markLeft(member, organization);
 	}
 
-	private void close(TeamChangeRequest request, TeamChangeStatus status, AppUser decidedBy) {
+	private void close(TeamChangeRequest request, TeamChangeStatus status, @Nullable AppUser decidedBy) {
 		request.setStatus(status);
 		request.setDecidedBy(decidedBy);
 		request.setDecidedAt(Instant.now());

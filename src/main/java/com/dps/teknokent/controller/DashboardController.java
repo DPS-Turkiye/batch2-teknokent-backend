@@ -1,12 +1,14 @@
 package com.dps.teknokent.controller;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.RequestParam;
 import java.util.UUID;
 
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.dps.teknokent.dto.responses.DashboardSummaryResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.DashboardService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,7 +23,9 @@ public class DashboardController {
 	private final DashboardService dashboardService;
 
 	@GetMapping("/summary")
-	public DashboardSummaryResponse getSummary(@RequestParam UUID organizationId) {
-		return dashboardService.getSummary(organizationId);
+	public DashboardSummaryResponse getSummary(
+			@RequestParam UUID organizationId,
+			@RequestParam(required = false) UUID actorId) {
+		return dashboardService.getSummary(organizationId, CurrentActor.resolveOptional(actorId));
 	}
 }

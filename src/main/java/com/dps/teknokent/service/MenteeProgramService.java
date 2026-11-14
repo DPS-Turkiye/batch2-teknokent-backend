@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,7 +73,7 @@ public class MenteeProgramService {
 	 * and a mentee outside every program.
 	 */
 	@Transactional(readOnly = true)
-	public Optional<Set<UUID>> reachableMentorIds(UUID actorId) {
+	public Optional<Set<UUID>> reachableMentorIds(@Nullable UUID actorId) {
 		if (actorId == null) {
 			return Optional.empty();
 		}

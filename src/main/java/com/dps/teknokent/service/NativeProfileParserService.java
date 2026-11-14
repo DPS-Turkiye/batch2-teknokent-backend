@@ -1,15 +1,27 @@
 package com.dps.teknokent.service;
 
+import static com.dps.teknokent.util.JsonSchema.arrayOf;
+import static com.dps.teknokent.util.JsonSchema.described;
+import static com.dps.teknokent.util.JsonSchema.enumOf;
+import static com.dps.teknokent.util.JsonSchema.nullableInteger;
+import static com.dps.teknokent.util.JsonSchema.nullableString;
+import static com.dps.teknokent.util.JsonSchema.object;
+import static com.dps.teknokent.util.JsonSchema.property;
+import static com.dps.teknokent.util.JsonSchema.string;
+import static com.dps.teknokent.util.JsonSchema.stringArray;
+
 import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.dps.teknokent.domain.OcrMode;
+import com.dps.teknokent.domain.ProfileType;
 import com.dps.teknokent.service.LocalPiiRedactionService.RedactionResult;
 import com.dps.teknokent.service.PdfDocumentTextExtractor.ExtractionResult;
 import com.dps.teknokent.util.JsonUtils;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 @Service
 public class NativeProfileParserService {
@@ -30,10 +42,11 @@ public class NativeProfileParserService {
 		this.jsonUtils = jsonUtils;
 	}
 
-	public ParseResult parse(byte[] pdfBytes, String profileType, String ocrMode) {
+	public ParseResult parse(byte[] pdfBytes, ProfileType profileType, OcrMode ocrMode) {
 		ExtractionResult extraction = textExtractor.extract(pdfBytes, ocrMode);
 		RedactionResult redaction = piiRedactionService.redact(extraction.text());
-		JsonNode profile = aiProviderClient.structuredProfile(profileType, redaction.text(), schema(profileType));
+		JsonNode profile = aiProviderClient.structuredProfile(profileType.value(), redaction.text(),
+				schema(profileType));
 
 		ObjectNode redactionSummary = jsonUtils.createObjectNode();
 		redactionSummary.put("mode", "local-before-ai");
@@ -41,131 +54,74 @@ public class NativeProfileParserService {
 		redactionSummary.set("redacted_by_type", jsonUtils.valueToTree(redaction.redactedByType()));
 
 		ObjectNode ocrSummary = jsonUtils.createObjectNode();
-		ocrSummary.put("mode", ocrMode);
+		ocrSummary.put("mode", ocrMode.wireValue());
 		ocrSummary.put("used", extraction.ocrUsed());
 		ocrSummary.put("page_count", extraction.pageCount());
 		ocrSummary.set("ocr_pages", jsonUtils.valueToTree(extraction.ocrPages()));
 		return new ParseResult(profile, redactionSummary, ocrSummary);
 	}
 
-	private JsonNode schema(String profileType) {
+	private static JsonNode schema(ProfileType profileType) {
 		return switch (profileType) {
-			case "mentee" -> objectSchema(List.of(
-					field("startup_name", nullableString()), field("startup_summary", nullableString()),
-					field("stage", nullableString()), field("business_model", nullableString()),
-					field("sectors", stringArray()), field("target_markets", stringArray()),
-					field("team_size", nullableInteger()), field("technologies", stringArray()),
-					field("current_bottlenecks", evidenceArray()), field("goals", evidenceArray()),
-					field("support_needs", stringArray()), field("missing_fields", stringArray()),
-					field("warnings", stringArray())));
-			case "individual_mentee" -> objectSchema(List.of(
-					field("full_name", nullableString()), field("professional_summary", nullableString()),
-					field("current_role", nullableString()), field("desired_role", nullableString()),
-					field("professional_functions", stringArray()), field("industries", stringArray()),
-					field("experience_level", nullableString()), field("years_of_experience", nullableInteger()),
-					field("technologies", stringArray()), field("projects", evidenceArray()),
-					field("achievement_highlights", evidenceArray()), field("languages", stringArray()),
-					field("career_goals", evidenceArray()), field("skills_to_develop", stringArray()),
-					field("support_needs", stringArray()), field("missing_fields", stringArray()),
-					field("warnings", stringArray())));
-			case "mentor" -> objectSchema(List.of(
-					field("full_name", nullableString()), field("professional_summary", nullableString()),
-					field("current_role", nullableString()), field("current_company", nullableString()),
-					field("experience_level", nullableString()), field("years_of_experience", nullableInteger()),
-					field("professional_functions", stringArray()), field("industries", stringArray()),
-					field("technologies", stringArray()), field("languages", stringArray()),
-					field("work_history", described(arrayOf(objectSchema(List.of(
-							field("title", string()), field("organization", nullableString()),
-							field("period", nullableString()), field("summary", nullableString())))),
-							"Every role the person held, including internships, part-time jobs, student club or "
-									+ "society roles and volunteer work, newest first")),
-					field("education", described(arrayOf(objectSchema(List.of(
-							field("school", string()), field("degree", nullableString()),
-							field("period", nullableString())))),
-							"Schools, newest first. degree holds the level and department, e.g. "
-									+ "\"Lisans, Bilgisayar Mühendisliği\", or \"Erasmus\" for an exchange "
-									+ "semester; period holds only the years or term, e.g. \"2022 – 2026\" or "
-									+ "\"2025 Güz\". Include exchange semesters and high school only if the CV "
-									+ "lists them")),
-					// Student mentors (İŞKUR) fill the studies card from these; professionals get null and [].
-					field("department", described(nullableString(),
-							"University department or major, only if the person is currently a student")),
-					field("study_year", described(nullableString(),
-							"Current class year of a student, exactly one of: " + String.join(", ", STUDY_YEARS))),
-					field("strong_courses", described(stringArray(),
-							"Courses the person lists as strong or did well in, as written, e.g. CENG 140")),
-					field("student_projects", described(stringArray(),
-							"Short titles of academic, personal or competition projects")),
-					field("exchange_experience", described(nullableString(),
-							"Erasmus, exchange or study abroad: school and term, e.g. TU Delft, Fall 2025")),
-					field("missing_fields", stringArray()), field("warnings", stringArray())));
-			default -> throw new IllegalArgumentException("Unsupported profile type: " + profileType);
+		case MENTEE -> object(
+				property("startup_name", nullableString()), property("startup_summary", nullableString()),
+				property("stage", nullableString()), property("business_model", nullableString()),
+				property("sectors", stringArray()), property("target_markets", stringArray()),
+				property("team_size", nullableInteger()), property("technologies", stringArray()),
+				property("current_bottlenecks", evidenceArray()), property("goals", evidenceArray()),
+				property("support_needs", stringArray()), property("missing_fields", stringArray()),
+				property("warnings", stringArray()));
+		case INDIVIDUAL_MENTEE -> object(
+				property("full_name", nullableString()), property("professional_summary", nullableString()),
+				property("current_role", nullableString()), property("desired_role", nullableString()),
+				property("professional_functions", stringArray()), property("industries", stringArray()),
+				property("experience_level", nullableString()), property("years_of_experience", nullableInteger()),
+				property("technologies", stringArray()), property("projects", evidenceArray()),
+				property("achievement_highlights", evidenceArray()), property("languages", stringArray()),
+				property("career_goals", evidenceArray()), property("skills_to_develop", stringArray()),
+				property("support_needs", stringArray()), property("missing_fields", stringArray()),
+				property("warnings", stringArray()));
+		case MENTOR -> object(
+				property("full_name", nullableString()), property("professional_summary", nullableString()),
+				property("current_role", nullableString()), property("current_company", nullableString()),
+				property("experience_level", nullableString()), property("years_of_experience", nullableInteger()),
+				property("professional_functions", stringArray()), property("industries", stringArray()),
+				property("technologies", stringArray()), property("languages", stringArray()),
+				property("work_history", described(arrayOf(object(
+						property("title", string()), property("organization", nullableString()),
+						property("period", nullableString()), property("summary", nullableString()))),
+						"Every role the person held, including internships, part-time jobs, student club or "
+								+ "society roles and volunteer work, newest first")),
+				property("education", described(arrayOf(object(
+						property("school", string()), property("degree", nullableString()),
+						property("period", nullableString()))),
+						"Schools, newest first. degree holds the level and department, e.g. "
+								+ "\"Lisans, Bilgisayar Mühendisliği\", or \"Erasmus\" for an exchange "
+								+ "semester; period holds only the years or term, e.g. \"2022 – 2026\" or "
+								+ "\"2025 Güz\". Include exchange semesters and high school only if the CV "
+								+ "lists them")),
+				// Student mentors (İŞKUR) fill the studies card from these; professionals get null and [].
+				property("department", described(nullableString(),
+						"University department or major, only if the person is currently a student")),
+				property("study_year", described(nullableString(),
+						"Current class year of a student, exactly one of: " + String.join(", ", STUDY_YEARS))),
+				property("strong_courses", described(stringArray(),
+						"Courses the person lists as strong or did well in, as written, e.g. CENG 140")),
+				property("student_projects", described(stringArray(),
+						"Short titles of academic, personal or competition projects")),
+				property("exchange_experience", described(nullableString(),
+						"Erasmus, exchange or study abroad: school and term, e.g. TU Delft, Fall 2025")),
+				property("missing_fields", stringArray()), property("warnings", stringArray()));
+		default -> throw new IllegalArgumentException("Unsupported profile type: " + profileType);
 		};
 	}
 
-	private JsonNode evidenceArray() {
-		return arrayOf(objectSchema(List.of(
-				field("claim", string()), field("page", nullableInteger()), field("quote", string()),
-				field("information_type", enumString("explicit", "inferred")))));
+	private static JsonNode evidenceArray() {
+		return arrayOf(object(
+				property("claim", string()), property("page", nullableInteger()), property("quote", string()),
+				property("information_type", enumOf("explicit", "inferred"))));
 	}
 
-	private JsonNode objectSchema(List<Field> fields) {
-		ObjectNode schema = jsonUtils.createObjectNode();
-		schema.put("type", "object");
-		schema.put("additionalProperties", false);
-		ObjectNode properties = schema.putObject("properties");
-		ArrayNode required = schema.putArray("required");
-		fields.forEach(field -> {
-			properties.set(field.name(), field.schema());
-			required.add(field.name());
-		});
-		return schema;
+	public record ParseResult(JsonNode profile, JsonNode redactionSummary, JsonNode ocrSummary) {
 	}
-
-	private JsonNode string() {
-		return jsonUtils.createObjectNode().put("type", "string");
-	}
-
-	private JsonNode nullableString() {
-		return typeUnion("string", "null");
-	}
-
-	private JsonNode nullableInteger() {
-		return typeUnion("integer", "null");
-	}
-
-	private JsonNode stringArray() {
-		return arrayOf(string());
-	}
-
-	private JsonNode arrayOf(JsonNode itemSchema) {
-		ObjectNode schema = jsonUtils.createObjectNode().put("type", "array");
-		schema.set("items", itemSchema);
-		return schema;
-	}
-
-	private JsonNode enumString(String... values) {
-		ObjectNode schema = jsonUtils.createObjectNode().put("type", "string");
-		ArrayNode allowed = schema.putArray("enum");
-		for (String value : values) allowed.add(value);
-		return schema;
-	}
-
-	private JsonNode described(JsonNode schema, String description) {
-		return ((ObjectNode) schema).put("description", description);
-	}
-
-	private JsonNode typeUnion(String... types) {
-		ObjectNode schema = jsonUtils.createObjectNode();
-		ArrayNode values = schema.putArray("type");
-		for (String type : types) values.add(type);
-		return schema;
-	}
-
-	private Field field(String name, JsonNode schema) {
-		return new Field(name, schema);
-	}
-
-	private record Field(String name, JsonNode schema) {}
-	public record ParseResult(JsonNode profile, JsonNode redactionSummary, JsonNode ocrSummary) {}
 }

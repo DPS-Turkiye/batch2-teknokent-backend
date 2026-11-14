@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -14,6 +13,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +41,7 @@ import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.ProgramMentorInviteRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.Texts;
 
@@ -48,7 +49,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Flow 03.1: a program's Mentor Havuzu. Mentors with an account get the existing program invitation and accept
- * it themselves; anyone else gets a signup link, emailed to them and copied for the coordinator, and signing up with it leaves them
+ * it themselves; anyone else gets a signup link, emailed to them and copied for the coordinator, and signing up with it
+ * leaves them
  * waiting for the coordinator, whose approval also approves the new account.
  */
 @Service
@@ -58,8 +60,8 @@ public class MentorPoolService {
 	static final Duration INVITE_VALIDITY = Duration.ofDays(7);
 	static final Duration EXPIRING_SOON = Duration.ofDays(2);
 	private static final Set<MentorshipStatus> MATCHED = EnumSet.of(MentorshipStatus.ACTIVE, MentorshipStatus.PLANNED);
-	private static final Set<ProgramMentorStatus> OPEN_MEMBERSHIPS =
-			EnumSet.of(ProgramMentorStatus.PENDING, ProgramMentorStatus.ACCEPTED);
+	private static final Set<ProgramMentorStatus> OPEN_MEMBERSHIPS = EnumSet.of(ProgramMentorStatus.PENDING,
+			ProgramMentorStatus.ACCEPTED);
 
 	private final CoordinatorProgramService coordinatorProgramService;
 	private final ProgramService programService;
@@ -74,7 +76,6 @@ public class MentorPoolService {
 	private final BadgeService badgeService;
 	private final EditionService editionService;
 
-
 	@Transactional(readOnly = true)
 	public List<MentorPoolResponse.Row> pool(UUID actorId, UUID programId) {
 		return rows(coordinatorProgramService.requireManagedProgram(actorId, programId));
@@ -84,7 +85,7 @@ public class MentorPoolService {
 	public List<MentorPoolResponse.Row> invite(UUID actorId, UUID programId, String rawEmail) {
 		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
 		ProgramDrafts.requireLaunched(program);
-		String email = rawEmail.trim().toLowerCase(Locale.ROOT);
+		String email = EmailDomains.normalizeEmail(rawEmail);
 		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(email);
 		if (existing.isPresent()) {
 			AppUser user = existing.get();
@@ -343,11 +344,12 @@ public class MentorPoolService {
 		if (!expiresAt.isAfter(now)) {
 			return MentorPoolStatus.INVITE_EXPIRED;
 		}
-		return expiresAt.isBefore(now.plus(EXPIRING_SOON)) ? MentorPoolStatus.INVITE_EXPIRING : MentorPoolStatus.INVITED;
+		return expiresAt.isBefore(now.plus(EXPIRING_SOON)) ? MentorPoolStatus.INVITE_EXPIRING
+				: MentorPoolStatus.INVITED;
 	}
 
 	/** The mentor's own limit when they set one, otherwise the program's default (flow 03.3). */
-	private static int capacityOf(MentorProfile profile, Program program) {
+	private static int capacityOf(@Nullable MentorProfile profile, Program program) {
 		return profile != null && profile.getMenteeCapacity() != null
 				? profile.getMenteeCapacity()
 				: program.getDefaultMentorCapacity();
@@ -355,7 +357,8 @@ public class MentorPoolService {
 
 	private ProgramMentor requireMembership(UUID programId, UUID mentorId) {
 		return programMentorRepository.findByProgramIdAndMentorId(programId, mentorId)
-				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorNotInProgram", mentorId)));
+				.orElseThrow(
+						() -> new ResourceNotFoundException(Texts.forRequest("error.mentorNotInProgram", mentorId)));
 	}
 
 	private ProgramMentor requireAwaitingApproval(UUID programId, UUID mentorId) {
@@ -369,7 +372,8 @@ public class MentorPoolService {
 
 	private ProgramMentorInvite requireOpenInvite(UUID programId, UUID inviteId) {
 		ProgramMentorInvite invite = inviteRepository.findByIdAndProgramId(inviteId, programId)
-				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorInviteNotFound", inviteId)));
+				.orElseThrow(
+						() -> new ResourceNotFoundException(Texts.forRequest("error.mentorInviteNotFound", inviteId)));
 		if (invite.getMentorId() != null) {
 			throw new InvalidRequestException(Texts.forRequest("error.mentorAlreadySignedUp"));
 		}

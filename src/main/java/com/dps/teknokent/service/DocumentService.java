@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -25,6 +26,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.util.PdfBytes;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +48,6 @@ public class DocumentService {
 			"pptx", "ppt/presentation.xml");
 	private static final Set<String> IMAGE_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
 	private static final Set<String> IMAGE_TYPES = Set.of("image/png", "image/jpeg", "image/webp");
-	private static final byte[] PDF_MAGIC = new byte[] { '%', 'P', 'D', 'F', '-' };
 	private static final Set<String> DANGEROUS_ARCHIVE_SUFFIXES = Set.of(
 			".js", ".jar", ".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".vbs", ".msi");
 	private static final int MAX_DOCX_ENTRIES = 2_000;
@@ -54,29 +55,32 @@ public class DocumentService {
 	private static final long MAX_DOCX_ENTRY_UNCOMPRESSED_BYTES = 20L * 1024L * 1024L;
 	private static final int MAX_DOCX_COMPRESSION_RATIO = 200;
 	private static final int ZIP_READ_BUFFER = 8 * 1024;
-	private static final int PDF_EOF_SCAN_BYTES = 4 * 1024;
 
 	private final AppUserRepository appUserRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final ObjectStorage objectStorage;
 	private final MeetingRepository meetingRepository;
 
-	public StoredDocumentResponse storeForUser(UUID userId, String kindValue, MultipartFile file) {
-		return storeForUser(userId, kindValue, file, null);
-	}
-
-	/** With a meetingId the file is attached to that meeting, which must be the uploader's startup's. */
-	public StoredDocumentResponse storeForUser(UUID userId, String kindValue, MultipartFile file, UUID meetingId) {
+	/**
+	 * {@code kindValue} is the kind as the upload form names it ("cv", "pitch-deck", ...); an unknown one is a 400.
+	 * With a meetingId the file is attached to that meeting, which must be the uploader's startup's.
+	 */
+	public StoredDocumentResponse storeForUser(@Nullable UUID userId, String kindValue, MultipartFile file,
+			@Nullable UUID meetingId) {
 		if (userId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
-		if (DocumentKind.PEER_EVIDENCE.value().equals(kindValue)) {
+		DocumentKind kind = DocumentKind.find(kindValue)
+				.orElseThrow(
+						() -> rejectUpload(userId, null, kindValue, file == null ? null : file.getOriginalFilename(),
+								file == null ? null : file.getSize(), "unknown-kind", "Unknown document kind."));
+		if (kind == DocumentKind.PEER_EVIDENCE) {
 			// Only the peer-mentoring profile stores these, with who may see them.
 			throw new InvalidRequestException("Peer mentor evidence is uploaded from the peer mentor profile.");
 		}
 		AppUser user = appUserRepository.findById(userId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-		boolean avatar = DocumentKind.AVATAR.value().equals(kindValue);
+		boolean avatar = kind == DocumentKind.AVATAR;
 		// A profile photo belongs to the person, so it is kept off the startup's file list.
 		UUID organizationId = avatar || user.getOrganization() == null ? null : user.getOrganization().getId();
 		if (meetingId != null) {
@@ -90,7 +94,7 @@ public class DocumentService {
 			StoredDocumentResponse stored = store(
 					user.getId(),
 					organizationId,
-					kindValue,
+					kind,
 					file.getOriginalFilename(),
 					file.getContentType(),
 					file.getBytes(),
@@ -116,17 +120,19 @@ public class DocumentService {
 	// on what stays; a failed cleanup is left for the next upload to finish.
 	private void removeOlderAvatars(UUID userId) {
 		List<StoredDocument> avatars = storedDocumentRepository
-				.findByUserIdAndKind(userId, DocumentKind.AVATAR.value());
-		StoredDocument newest = avatars.stream()
-				.max(Comparator.comparing(StoredDocument::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
-						.thenComparing(StoredDocument::getId))
-				.orElse(null);
-		List<StoredDocument> older = avatars.stream()
-				.filter(document -> document != newest)
-				.toList();
-		if (older.isEmpty()) {
+				.findByUserIdAndKind(userId, DocumentKind.AVATAR);
+		if (avatars.size() < 2) {
 			return;
 		}
+		UUID newestId = avatars.stream()
+				.max(Comparator
+						.comparing(StoredDocument::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+						.thenComparing(StoredDocument::getId))
+				.orElseThrow()
+				.getId();
+		List<StoredDocument> older = avatars.stream()
+				.filter(document -> !document.getId().equals(newestId))
+				.toList();
 		try {
 			storedDocumentRepository.deleteAll(older);
 		} catch (RuntimeException error) {
@@ -150,63 +156,59 @@ public class DocumentService {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
 		return storedDocumentRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
-				.filter(document -> !DocumentKind.PEER_EVIDENCE.value().equals(document.getKind()))
+				.filter(document -> document.getKind() != DocumentKind.PEER_EVIDENCE)
 				.map(StoredDocumentResponse::fromEntity)
 				.toList();
 	}
 
 	/** Another person's CV reads as missing, so its id reveals nothing. */
-	public byte[] readOwnCv(UUID userId, UUID documentId) {
+	public byte[] readOwnCv(@Nullable UUID userId, UUID documentId) {
 		if (userId == null) {
 			throw new InvalidRequestException("A signed-in user is required.");
 		}
 		StoredDocument document = storedDocumentRepository.findById(documentId)
-				.filter(found -> userId.equals(found.getUserId()) && DocumentKind.CV.value().equals(found.getKind()))
+				.filter(found -> userId.equals(found.getUserId()) && found.getKind() == DocumentKind.CV)
 				.orElseThrow(() -> new ResourceNotFoundException("CV not found: " + documentId));
-		return objectStorage.get(document.getS3Key());
+		return objectStorage.require(document.getS3Key());
 	}
 
 	public StoredDocumentResponse store(
 			UUID userId,
-			UUID organizationId,
-			String kindValue,
-			String originalFilename,
-			String contentType,
+			@Nullable UUID organizationId,
+			DocumentKind kind,
+			@Nullable String originalFilename,
+			@Nullable String contentType,
 			byte[] bytes) {
-		return store(userId, organizationId, kindValue, originalFilename, contentType, bytes, null);
+		return store(userId, organizationId, kind, originalFilename, contentType, bytes, null);
 	}
 
 	private StoredDocumentResponse store(
 			UUID userId,
-			UUID organizationId,
-			String kindValue,
-			String originalFilename,
-			String contentType,
+			@Nullable UUID organizationId,
+			DocumentKind kind,
+			@Nullable String originalFilename,
+			@Nullable String contentType,
 			byte[] bytes,
-			UUID meetingId) {
+			@Nullable UUID meetingId) {
+		String kindValue = kind.value();
 		Long fileSize = bytes == null ? null : (long) bytes.length;
 		if (bytes == null || bytes.length == 0) {
-			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "empty-file", "A file is required.");
-		}
-		DocumentKind kind;
-		try {
-			kind = DocumentKind.from(kindValue);
-		} catch (InvalidRequestException error) {
-			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "unknown-kind", error.getMessage());
+			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "empty-file",
+					"A file is required.");
 		}
 		if (bytes.length > kind.maxBytes()) {
-			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "size-limit", "The file is too large.");
+			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "size-limit",
+					"The file is too large.");
 		}
 		String filename = originalFilename == null ? "" : originalFilename.trim();
 		if (filename.isBlank()) {
-			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "missing-filename", "A file name is required.");
+			throw rejectUpload(userId, organizationId, kindValue, originalFilename, fileSize, "missing-filename",
+					"A file name is required.");
 		}
 		String extension = extensionOf(filename);
-		if (kind.imageOnly() && !IMAGE_EXTENSIONS.contains(extension)) {
-			throw new InvalidRequestException("Please upload a PNG, JPG, or WebP image.");
-		}
 		if (kind.pdfOnly() && !extension.equals("pdf")) {
-			throw rejectUpload(userId, organizationId, kindValue, filename, fileSize, "extension-not-pdf", "Please upload a PDF.");
+			throw rejectUpload(userId, organizationId, kindValue, filename, fileSize, "extension-not-pdf",
+					"Please upload a PDF.");
 		}
 		if (kind.imageOnly() && !IMAGE_EXTENSIONS.contains(extension)) {
 			throw rejectUpload(
@@ -216,7 +218,7 @@ public class DocumentService {
 					filename,
 					fileSize,
 					"extension-not-image",
-					"Please upload a PNG, JPG or WebP image.");
+					"Please upload a PNG, JPG, or WebP image.");
 		}
 		if (!kind.imageOnly() && !extension.equals("pdf") && !OFFICE_MAIN_PARTS.containsKey(extension)) {
 			throw rejectUpload(
@@ -229,11 +231,9 @@ public class DocumentService {
 					"Please upload a PDF, DOCX or XLSX file.");
 		}
 		String resolvedType = resolveContentType(contentType, extension);
-		if (kind.imageOnly() && !IMAGE_TYPES.contains(resolvedType)) {
-			throw new InvalidRequestException("Please upload a PNG, JPG, or WebP image.");
-		}
 		if (kind.pdfOnly() && !PDF_TYPES.contains(resolvedType)) {
-			throw rejectUpload(userId, organizationId, kindValue, filename, fileSize, "mime-not-pdf", "Please upload a PDF.");
+			throw rejectUpload(userId, organizationId, kindValue, filename, fileSize, "mime-not-pdf",
+					"Please upload a PDF.");
 		}
 		if (kind.imageOnly() && !IMAGE_TYPES.contains(resolvedType)) {
 			throw rejectUpload(
@@ -243,7 +243,7 @@ public class DocumentService {
 					filename,
 					fileSize,
 					"mime-not-image",
-					"Please upload a PNG, JPG or WebP image.");
+					"Please upload a PNG, JPG, or WebP image.");
 		}
 		if (!kind.pdfOnly() && !kind.imageOnly() && !DOC_TYPES.contains(resolvedType)) {
 			throw rejectUpload(
@@ -269,7 +269,7 @@ public class DocumentService {
 		document.setId(id);
 		document.setUserId(userId);
 		document.setOrganizationId(organizationId);
-		document.setKind(kind.value());
+		document.setKind(kind);
 		document.setOriginalFilename(filename);
 		document.setContentType(resolvedType);
 		document.setSizeBytes(bytes.length);
@@ -287,18 +287,18 @@ public class DocumentService {
 		return filename.substring(dot + 1).toLowerCase(Locale.ROOT);
 	}
 
-	private static String resolveContentType(String contentType, String extension) {
+	private static String resolveContentType(@Nullable String contentType, String extension) {
 		if (contentType != null && !contentType.isBlank() && !contentType.equals("application/octet-stream")) {
 			return contentType.toLowerCase(Locale.ROOT);
 		}
 		return switch (extension) {
-			case "docx" -> DOCX_TYPE;
-			case "xlsx" -> XLSX_TYPE;
-			case "pptx" -> PPTX_TYPE;
-			case "png" -> "image/png";
-			case "jpg", "jpeg" -> "image/jpeg";
-			case "webp" -> "image/webp";
-			default -> "application/pdf";
+		case "docx" -> DOCX_TYPE;
+		case "xlsx" -> XLSX_TYPE;
+		case "pptx" -> PPTX_TYPE;
+		case "png" -> "image/png";
+		case "jpg", "jpeg" -> "image/jpeg";
+		case "webp" -> "image/webp";
+		default -> "application/pdf";
 		};
 	}
 
@@ -312,13 +312,13 @@ public class DocumentService {
 
 	private void validateFileContent(
 			UUID userId,
-			UUID organizationId,
+			@Nullable UUID organizationId,
 			String kindValue,
 			String filename,
 			String extension,
 			byte[] bytes) {
 		if ("pdf".equals(extension)) {
-			if (!hasPdfSignature(bytes) || !hasPdfEofMarker(bytes)) {
+			if (!PdfBytes.looksComplete(bytes)) {
 				throw rejectUpload(
 						userId,
 						organizationId,
@@ -356,24 +356,6 @@ public class DocumentService {
 					"invalid-or-unsafe-" + extension,
 					"The uploaded " + extension.toUpperCase(Locale.ROOT) + " file is invalid.");
 		}
-	}
-
-	private static boolean hasPdfSignature(byte[] bytes) {
-		if (bytes.length < PDF_MAGIC.length) {
-			return false;
-		}
-		for (int index = 0; index < PDF_MAGIC.length; index++) {
-			if (bytes[index] != PDF_MAGIC[index]) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private static boolean hasPdfEofMarker(byte[] bytes) {
-		int scanLength = Math.min(bytes.length, PDF_EOF_SCAN_BYTES);
-		String tail = new String(bytes, bytes.length - scanLength, scanLength, java.nio.charset.StandardCharsets.ISO_8859_1);
-		return tail.contains("%%EOF");
 	}
 
 	private static boolean isSafeOfficeFile(byte[] bytes, String mainPart) {
@@ -461,11 +443,11 @@ public class DocumentService {
 	}
 
 	private InvalidRequestException rejectUpload(
-			UUID userId,
-			UUID organizationId,
+			@Nullable UUID userId,
+			@Nullable UUID organizationId,
 			String kindValue,
-			String filename,
-			Long sizeBytes,
+			@Nullable String filename,
+			@Nullable Long sizeBytes,
 			String reason,
 			String message) {
 		log.warn(

@@ -3,19 +3,21 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingProposalStatus;
 
 /** {@code canRespond} is from the viewer's side: the mentor, or the team lead, who has not answered yet. */
 public record MeetingProposalResponse(
 		UUID id,
-		UUID mentorshipId,
+		@Nullable UUID mentorshipId,
 		UUID programId,
-		String programName,
+		@Nullable String programName,
 		UUID mentorId,
 		String mentorName,
 		UUID organizationId,
 		String organizationName,
-		String proposedByName,
+		@Nullable String proposedByName,
 		Instant scheduledAt,
 		int durationMinutes,
 		String agenda,
@@ -23,8 +25,8 @@ public record MeetingProposalResponse(
 		MeetingProposalStatus status,
 		Instant mentorAcceptedAt,
 		Instant teamAcceptedAt,
-		String teamResponderName,
-		String declinedByName,
+		@Nullable String teamResponderName,
+		@Nullable String declinedByName,
 		String declineReason,
 		UUID meetingId,
 		Instant remindedAt,

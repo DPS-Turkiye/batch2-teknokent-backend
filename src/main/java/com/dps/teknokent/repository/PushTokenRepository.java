@@ -15,6 +15,7 @@ import com.dps.teknokent.entity.PushToken;
 
 public interface PushTokenRepository extends JpaRepository<PushToken, UUID> {
 	List<PushToken> findByUserId(UUID userId);
+
 	Optional<PushToken> findByToken(String token);
 
 	@Transactional

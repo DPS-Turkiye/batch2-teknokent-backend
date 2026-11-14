@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -23,7 +25,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.BadgeCode;
 import com.dps.teknokent.domain.BadgeSource;
@@ -31,14 +35,19 @@ import com.dps.teknokent.domain.BadgeStatus;
 import com.dps.teknokent.domain.GateBadgeState;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.PermissionSource;
+import com.dps.teknokent.domain.ProgramMentorInvitedBy;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.BadgeCatalogueResponse;
+import com.dps.teknokent.dto.responses.GateBadgeRowResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.AppUserPermission;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.TrainingModule;
+import com.dps.teknokent.entity.TrainingProgress;
 import com.dps.teknokent.entity.UserBadge;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -46,6 +55,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.UserBadgeRepository;
+import com.dps.teknokent.util.Texts;
 
 @ExtendWith(MockitoExtension.class)
 class BadgeServiceTest {
@@ -347,7 +357,8 @@ class BadgeServiceTest {
 	@Test
 	void theStudentListIsForAdminsOnly() {
 		assertThatThrownBy(() -> service.students(coordinator.getId(), null))
-				.isInstanceOf(InvalidRequestException.class);
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 	}
 
 	@Test
@@ -379,6 +390,198 @@ class BadgeServiceTest {
 		});
 	}
 
+	@Test
+	void theCatalogueListsEveryBadgeAndOnlyTheGateBadgeGivesAPermission() {
+		var catalogue = service.catalogue();
+
+		assertThat(catalogue).extracting(BadgeCatalogueResponse::code).containsExactly(BadgeCode.values());
+		assertThat(catalogue).filteredOn(badge -> badge.grants() != null)
+				.extracting(BadgeCatalogueResponse::code, BadgeCatalogueResponse::grants)
+				.containsExactly(tuple(BadgeCode.PEER_MENTOR, UserRole.MENTOR));
+	}
+
+	@Test
+	void theAdminsStudentListCoversEveryPeerProgramWithEachPersonsLatestBadgeThere() {
+		AppUser admin = user("Arya Admin", UserRole.ADMIN);
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		Program fall = program("İŞKUR 2026 Güz", ProgramType.PEER_MENTORING);
+		when(programs.findByProgramType(ProgramType.PEER_MENTORING)).thenReturn(List.of(iskur, fall));
+		AppUser withoutBadge = student(iskur);
+		withoutBadge.setFullName("ali Yeni");
+		AppUser fallStudent = student(fall);
+		fallStudent.setFullName("Bora Güz");
+		// Holds the badge without being one of the program's students.
+		AppUser mentorAccount = user("Ayşe Mentor", UserRole.MENTOR);
+		UserBadge awardedAgain = active(student, iskur);
+		UserBadge revokedEarlier = active(student, iskur);
+		revokedEarlier.setStatus(BadgeStatus.REVOKED);
+		UserBadge ofTheMentorAccount = active(mentorAccount, iskur);
+		UserBadge ofADeletedAccount = active(user("Silinen Hesap", UserRole.MENTEE), iskur);
+		UserBadge ofAProgramThatIsNoPeerProgram = active(mentorAccount,
+				program("Girişim 2026", ProgramType.STARTUP_MENTORING));
+		when(awards.findByBadgeCodeOrderByAwardedAtDesc(BadgeCode.PEER_MENTOR)).thenReturn(List.of(awardedAgain,
+				revokedEarlier, ofTheMentorAccount, ofADeletedAccount, ofAProgramThatIsNoPeerProgram));
+		when(users.findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(iskur.getId(), UserRole.MENTEE,
+				UserAccountStatus.APPROVED)).thenReturn(List.of(student, withoutBadge));
+		when(users.findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(fall.getId(), UserRole.MENTEE,
+				UserAccountStatus.APPROVED)).thenReturn(List.of(fallStudent));
+		when(users.findAllById(any())).thenReturn(List.of(student, mentorAccount));
+
+		var everyone = service.students(admin.getId(), null);
+
+		assertThat(everyone)
+				.extracting(GateBadgeRowResponse::fullName, GateBadgeRowResponse::programName,
+						GateBadgeRowResponse::state, GateBadgeRowResponse::awardId)
+				.containsExactly(
+						tuple("ali Yeni", "İŞKUR 2026 Bahar", GateBadgeState.NONE, null),
+						tuple("Ayşe Mentor", "İŞKUR 2026 Bahar", GateBadgeState.ACTIVE, ofTheMentorAccount.getId()),
+						tuple("Bora Güz", "İŞKUR 2026 Güz", GateBadgeState.NONE, null),
+						tuple("Zeynep Öğrenci", "İŞKUR 2026 Bahar", GateBadgeState.ACTIVE, awardedAgain.getId()));
+		assertThat(everyone).extracting(GateBadgeRowResponse::training)
+				.containsOnly(GateBadgeRowResponse.Training.NONE);
+
+		assertThat(service.students(admin.getId(), GateBadgeState.ACTIVE))
+				.extracting(GateBadgeRowResponse::fullName)
+				.containsExactly("Ayşe Mentor", "Zeynep Öğrenci");
+	}
+
+	@Test
+	void theAdminsStudentListShowsHowFarEachStudentGotInTheirProgramsTraining() {
+		AppUser admin = user("Arya Admin", UserRole.ADMIN);
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(programs.findByProgramType(ProgramType.PEER_MENTORING)).thenReturn(List.of(iskur));
+		when(users.findByProgramIdAndPermissionAndStatusOrderByCreatedAtAsc(iskur.getId(), UserRole.MENTEE,
+				UserAccountStatus.APPROVED)).thenReturn(List.of(student));
+		TrainingModule module = new TrainingModule();
+		module.setId(UUID.randomUUID());
+		module.setCurrentVersion(3);
+		when(trainingModules.findByProgramId(iskur.getId())).thenReturn(Optional.of(module));
+		TrainingProgress watched = new TrainingProgress();
+		watched.setUserId(student.getId());
+		when(trainingProgress.findByModuleIdAndVersionAndUserIdIn(eq(module.getId()), eq(3), any()))
+				.thenReturn(List.of(watched));
+
+		assertThat(service.students(admin.getId(), null)).singleElement().satisfies(row -> {
+			assertThat(row.state()).isEqualTo(GateBadgeState.NONE);
+			assertThat(row.training()).isEqualTo(new GateBadgeRowResponse.Training(true, 0, null));
+		});
+	}
+
+	@Test
+	void aMentorStillWaitingForApprovalIsNotOnTheRoster() {
+		AppUser invited = user("Can Davetli", UserRole.MENTOR);
+		ProgramMentor pending = new ProgramMentor();
+		pending.setMentorId(invited.getId());
+		pending.setStatus(ProgramMentorStatus.PENDING);
+		when(programMentors.findByProgramIdOrderByCreatedAtAsc(iskur.getId())).thenReturn(List.of(pending));
+
+		assertThat(service.roster(coordinator.getId(), iskur.getId(), null)).isEmpty();
+
+		verify(users).findAllById(Set.of());
+		verifyNoInteractions(trainingModules);
+	}
+
+	@Test
+	void awardingAcceptsAJoinRequestTheStudentHadWaitingInsteadOfAddingASecondMembership() {
+		ProgramMentor waiting = new ProgramMentor();
+		waiting.setId(UUID.randomUUID());
+		waiting.setProgramId(iskur.getId());
+		waiting.setMentorId(student.getId());
+		waiting.setStatus(ProgramMentorStatus.PENDING);
+		waiting.setInvitedBy(ProgramMentorInvitedBy.MENTOR);
+		when(programMentors.findByProgramIdAndMentorId(iskur.getId(), student.getId()))
+				.thenReturn(Optional.of(waiting));
+
+		service.awardGate(coordinator.getId(), iskur.getId(), student.getId());
+
+		verify(programMentors).save(waiting);
+		assertThat(waiting.getStatus()).isEqualTo(ProgramMentorStatus.ACCEPTED);
+		assertThat(waiting.getDecidedAt()).isNotNull();
+		assertThat(waiting.getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.MENTOR);
+	}
+
+	@Test
+	void awardingAnAlreadyAcceptedMentorLeavesTheirMembershipAsItIs() {
+		AppUser invited = user("Ayşe Mentor", UserRole.MENTOR);
+		when(domainLookupService.requireUser(invited.getId())).thenReturn(invited);
+		ProgramMentor accepted = new ProgramMentor();
+		accepted.setProgramId(iskur.getId());
+		accepted.setMentorId(invited.getId());
+		accepted.setStatus(ProgramMentorStatus.ACCEPTED);
+		when(programMentors.findByProgramIdAndMentorId(iskur.getId(), invited.getId()))
+				.thenReturn(Optional.of(accepted));
+
+		service.awardGate(coordinator.getId(), iskur.getId(), invited.getId());
+
+		verify(awards).save(any(UserBadge.class));
+		verify(programMentors, never()).save(any());
+		// A mentor account is sent to its own dashboard, not to the student pages.
+		verify(notificationService).create(eq(invited), eq(NotificationCategory.BADGE), anyString(), anyString(),
+				eq("/mentor-dashboard"));
+	}
+
+	@Test
+	void aMentorAccountIsPointedAtItsDashboardForANewAchievement() {
+		AppUser mentorAccount = user("Ayşe Mentor", UserRole.MENTOR);
+
+		service.award(mentorAccount, BadgeCode.SESSIONS_10, null, BadgeSource.RULE, null, true);
+
+		verify(notificationService).create(eq(mentorAccount), eq(NotificationCategory.BADGE), anyString(),
+				anyString(), eq("/mentor-dashboard"));
+		verify(users, never()).save(any());
+	}
+
+	@Test
+	void revokingWithoutAnyReasonIsRefused() {
+		UserBadge award = active(student, iskur);
+		when(awards.findById(award.getId())).thenReturn(Optional.of(award));
+
+		assertThatThrownBy(() -> service.revoke(coordinator.getId(), iskur.getId(), award.getId(), null))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage(Texts.forRequest("error.badgeRevokeReasonRequired"));
+		assertThat(award.getStatus()).isEqualTo(BadgeStatus.ACTIVE);
+		verify(awards, never()).save(any());
+		verifyNoInteractions(notificationService);
+	}
+
+	@Test
+	void nobodyRevokesTheirOwnBadge() {
+		UserBadge own = active(coordinator, iskur);
+		when(awards.findById(own.getId())).thenReturn(Optional.of(own));
+
+		assertThatThrownBy(() -> service.revoke(coordinator.getId(), iskur.getId(), own.getId(), "Artık gerekmiyor"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage(Texts.forRequest("error.badgeOwnAccount"));
+		assertThat(own.getStatus()).isEqualTo(BadgeStatus.ACTIVE);
+		verify(awards, never()).save(any());
+		verifyNoInteractions(notificationService);
+	}
+
+	@Test
+	void anAwardThatDoesNotExistCannotBeRevoked() {
+		UUID unknownId = UUID.randomUUID();
+		when(awards.findById(unknownId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.revoke(coordinator.getId(), iskur.getId(), unknownId, "x"))
+				.isInstanceOf(com.dps.teknokent.exception.ResourceNotFoundException.class)
+				.hasMessage(Texts.forRequest("error.badgeAwardNotFound"));
+	}
+
+	@Test
+	void anAchievementIsListedWithoutAProgramNameNextToAProgramsBadge() {
+		UserBadge achievement = active(student, iskur);
+		achievement.setBadgeCode(BadgeCode.FIRST_SESSION);
+		achievement.setProgramId(null);
+		UserBadge gate = active(student, iskur);
+		when(awards.findByUserIdOrderByAwardedAtDesc(student.getId())).thenReturn(List.of(achievement, gate));
+		when(programs.findAllById(List.of(iskur.getId()))).thenReturn(List.of(iskur));
+
+		assertThat(service.mine(student.getId()))
+				.extracting(award -> award.code(), award -> award.programName())
+				.containsExactly(tuple(BadgeCode.FIRST_SESSION, null),
+						tuple(BadgeCode.PEER_MENTOR, "İŞKUR 2026 Bahar"));
+	}
+
 	private UserBadge awardedThroughService() {
 		service.awardGate(coordinator.getId(), iskur.getId(), student.getId());
 		ArgumentCaptor<UserBadge> saved = ArgumentCaptor.forClass(UserBadge.class);
@@ -398,7 +601,7 @@ class BadgeServiceTest {
 		return award;
 	}
 
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // getField returns Object; the field is a List<AppUserPermission>.
 	private static AppUserPermission grant(AppUser user, UserRole permission) {
 		return ((List<AppUserPermission>) ReflectionTestUtils.getField(user, "permissions")).stream()
 				.filter(grant -> grant.getPermission() == permission)

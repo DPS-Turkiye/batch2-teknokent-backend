@@ -6,10 +6,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -20,6 +18,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.ProgramCoordination;
 
 import lombok.RequiredArgsConstructor;
@@ -45,9 +44,7 @@ public class CoordinatorSearchService {
 	/** With a {@code programId}, the coordinators who already run that program are left out. */
 	@Transactional(readOnly = true)
 	public List<CoordinatorSearchResult> search(UUID actorId, String query, UUID programId) {
-		if (!domainLookupService.requireUser(actorId).has(UserRole.ADMIN)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only an admin can search coordinators.");
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(actorId));
 		String prefix = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
 		if (prefix.length() < MIN_QUERY_LENGTH || prefix.length() > MAX_QUERY_LENGTH) {
 			throw new InvalidRequestException(
@@ -55,10 +52,10 @@ public class CoordinatorSearchService {
 		}
 		Set<UUID> excluded = programId == null ? Set.of() : Set.copyOf(currentCoordinators(programId));
 		return appUserRepository.findByPermissionAndStatusAndEmailPrefix(
-						UserRole.COORDINATOR,
-						UserAccountStatus.APPROVED,
-						escapeLike(prefix),
-						PageRequest.of(0, MAX_RESULTS + excluded.size()))
+				UserRole.COORDINATOR,
+				UserAccountStatus.APPROVED,
+				escapeLike(prefix),
+				PageRequest.of(0, MAX_RESULTS + excluded.size()))
 				.stream()
 				.filter(user -> !excluded.contains(user.getId()))
 				.limit(MAX_RESULTS)

@@ -58,8 +58,8 @@ public class UserDeletionCleanupService {
 	private void attempt(UserDeletionCleanup job) {
 		try {
 			switch (job.getKind()) {
-				case FIREBASE_LOGIN -> deleteLogin(job);
-				case STORED_OBJECT -> objectStorage.delete(job.getTarget());
+			case FIREBASE_LOGIN -> deleteLogin(job);
+			case STORED_OBJECT -> objectStorage.delete(job.getTarget());
 			}
 			cleanupRepository.deleteById(job.getId());
 		} catch (RuntimeException error) {
