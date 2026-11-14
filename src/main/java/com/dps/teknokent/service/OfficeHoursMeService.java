@@ -290,7 +290,8 @@ public class OfficeHoursMeService {
 					meeting == null ? null
 							: OfficeHoursTimeResponse.of(meeting.getScheduledAt(), meeting.getDurationMinutes()),
 					request.getRejectionReason(), request.getCreatedAt(),
-					allowedActions(request, bookingService.isAhead(meeting)));
+					allowedActions(request, bookingService.isAhead(meeting)),
+					OfficeHoursBookingService.cancellationOf(meeting));
 		}).toList();
 	}
 

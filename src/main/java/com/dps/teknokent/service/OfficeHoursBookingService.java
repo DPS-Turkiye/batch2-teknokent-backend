@@ -33,6 +33,7 @@ import com.dps.teknokent.dto.requests.CancelOfficeHoursMeetingRequest;
 import com.dps.teknokent.dto.requests.CreateOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.DecideOfficeHoursRequest;
 import com.dps.teknokent.dto.requests.ReplyOfficeHoursRequest;
+import com.dps.teknokent.dto.responses.OfficeHoursCancellationResponse;
 import com.dps.teknokent.dto.responses.OfficeHoursMeetingResponse;
 import com.dps.teknokent.dto.responses.OfficeHoursPersonResponse;
 import com.dps.teknokent.dto.responses.OfficeHoursRequestResponse;
@@ -383,6 +384,19 @@ public class OfficeHoursBookingService {
 	/** A booked meeting that is still on and has not started: the only kind either side may cancel. */
 	boolean isAhead(OfficeHoursMeeting meeting) {
 		return meeting != null && meeting.getCancelledAt() == null && meeting.getScheduledAt().isAfter(clock.instant());
+	}
+
+	/** How the meeting was called off, for the Menton screens, which name the side rather than the person. */
+	static OfficeHoursCancellationResponse cancellationOf(OfficeHoursMeeting meeting) {
+		if (meeting == null || meeting.getCancelledAt() == null) {
+			return null;
+		}
+		OfficeHoursRole by = OfficeHoursRole.INSTRUCTOR;
+		if (meeting.getStudentId().equals(meeting.getCancelledBy())) {
+			by = OfficeHoursRole.STUDENT;
+		}
+		return new OfficeHoursCancellationResponse(by, meeting.getCancellationReason(), meeting.getCancelledAt(),
+				isLateCancel(meeting.getScheduledAt(), meeting.getCancelledAt()));
 	}
 
 	/** Called off less than 24 hours before the start. Worked out from the times, so nothing else is stored. */

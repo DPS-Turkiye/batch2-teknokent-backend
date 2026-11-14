@@ -229,7 +229,8 @@ public class OfficeHoursStudentMeService {
 					request.getRejectionReason(), whileOn(meeting, where.getDefaultPlace()),
 					whileOn(meeting, where.getOnlineLink()),
 					request.getCreatedAt(), OfficeHoursRequestAction.allowedFor(OfficeHoursRole.STUDENT,
-							request.getStatus(), bookingService.isAhead(meeting)));
+							request.getStatus(), bookingService.isAhead(meeting)),
+					OfficeHoursBookingService.cancellationOf(meeting));
 		}).toList();
 	}
 

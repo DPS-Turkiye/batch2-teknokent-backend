@@ -205,6 +205,13 @@ class OfficeHoursStudentMeIntegrationTest {
 		assertThat(JsonPath.<String>read(mine, "$[0].status")).isEqualTo("CANCELLED");
 		assertThat(JsonPath.<Object>read(mine, "$[0].place")).isNull();
 		assertThat(JsonPath.<List<String>>read(mine, "$[0].allowedActions")).isEmpty();
+		assertThat(JsonPath.<String>read(mine, "$[0].cancellation.cancelledBy")).isEqualTo("STUDENT");
+		assertThat(JsonPath.<String>read(mine, "$[0].cancellation.reason")).isEqualTo("Hastayım");
+		String inbox = getAs(academician, "/api/office-hours/me/inbox");
+		assertThat(JsonPath.<String>read(inbox, "$[0].status")).isEqualTo("CANCELLED");
+		assertThat(JsonPath.<String>read(inbox, "$[0].cancellation.cancelledBy")).isEqualTo("STUDENT");
+		// The first open time is within a day, so this is a late cancel; a student needs no reason for one.
+		assertThat(JsonPath.<Boolean>read(inbox, "$[0].cancellation.late")).isTrue();
 		mockMvc.perform(get("/api/office-hours/me/meetings").param("actorId", academician.getId().toString())
 						.with(frontendServer()))
 				.andExpect(jsonPath("$.length()").value(0));

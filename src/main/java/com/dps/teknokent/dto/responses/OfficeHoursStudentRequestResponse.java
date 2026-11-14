@@ -14,6 +14,7 @@ import com.dps.teknokent.domain.OfficeHoursRequestStatus;
  * @param proposedTimes  the academician's other times while the request waits for the student
  * @param courseName     empty for a request made from Menton
  * @param allowedActions what the student may still do with it
+ * @param cancellation   how the meeting was called off; empty while it is on
  */
 public record OfficeHoursStudentRequestResponse(
 		UUID id,
@@ -29,7 +30,8 @@ public record OfficeHoursStudentRequestResponse(
 		String place,
 		String onlineLink,
 		Instant requestedAt,
-		List<OfficeHoursRequestAction> allowedActions) {
+		List<OfficeHoursRequestAction> allowedActions,
+		OfficeHoursCancellationResponse cancellation) {
 
 	/** Who the request went to, as ODTÜ's record names them. */
 	public record Academician(UUID id, String fullName, String academicTitle, String department) {

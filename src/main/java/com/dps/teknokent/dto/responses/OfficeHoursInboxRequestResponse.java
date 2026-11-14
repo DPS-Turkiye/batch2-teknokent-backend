@@ -14,6 +14,7 @@ import com.dps.teknokent.domain.OfficeHoursRole;
  * @param courseName     the course's title; empty for a request made from Menton
  * @param meeting        the booked time once accepted
  * @param allowedActions what the academician may still answer
+ * @param cancellation   how the meeting was called off; empty while it is on
  */
 public record OfficeHoursInboxRequestResponse(
 		UUID id,
@@ -28,7 +29,8 @@ public record OfficeHoursInboxRequestResponse(
 		OfficeHoursTimeResponse meeting,
 		String rejectionReason,
 		Instant requestedAt,
-		List<OfficeHoursRequestAction> allowedActions) {
+		List<OfficeHoursRequestAction> allowedActions,
+		OfficeHoursCancellationResponse cancellation) {
 
 	/** A question from the academician or the student's answer. */
 	public record Message(OfficeHoursRole author, String body, Instant sentAt) {
