@@ -1,8 +1,11 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,13 +20,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequest;
 import com.dps.teknokent.dto.responses.MentorshipResponse;
+import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.MentorshipService;
 
 @WebMvcTest(MentorshipController.class)
@@ -35,6 +42,36 @@ class MentorshipControllerTest {
 
 	@MockitoBean
 	private MentorshipService mentorshipService;
+
+	@Test
+	void aSignedInMentorActsAsThemselvesWhateverActorIdIsSent() throws Exception {
+		UUID mentorshipId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+		UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		UUID someoneElse = UUID.fromString("00000000-0000-0000-0000-000000000202");
+
+		mockMvc.perform(delete("/api/mentorships/{id}", mentorshipId)
+				.param("actorId", someoneElse.toString())
+				.with(authentication(new UsernamePasswordAuthenticationToken(
+						new AppUserPrincipal(mentorId, "mentor@tekno.com", UserRole.MENTOR,
+								UserAccountStatus.APPROVED, "uid"),
+						null, List.of()))))
+				.andExpect(status().isNoContent());
+
+		verify(mentorshipService).delete(mentorshipId, mentorId);
+	}
+
+	@Test
+	void findByIdPassesTheNamedCallerOnForTheAccessCheck() throws Exception {
+		UUID mentorshipId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+		UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+
+		mockMvc.perform(get("/api/mentorships/{id}", mentorshipId)
+				.param("actorId", actorId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk());
+
+		verify(mentorshipService).findById(mentorshipId, actorId);
+	}
 
 	@Test
 	void requiresAuthenticationForList() throws Exception {
@@ -92,19 +129,19 @@ class MentorshipControllerTest {
 				0, null, null));
 
 		mockMvc.perform(post("/api/mentorships")
-						.with(user("test-user"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "mentorId": "00000000-0000-0000-0000-000000000101",
-								  "organizationId": "00000000-0000-0000-0000-000000000201",
-								  "status": "PLANNED",
-								  "startDate": "2026-09-10",
-								  "endDate": "2026-11-10",
-								  "daysPerWeek": 1,
-								  "goals": "Define roadmap and validate product strategy"
-								}
-								"""))
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "mentorId": "00000000-0000-0000-0000-000000000101",
+						  "organizationId": "00000000-0000-0000-0000-000000000201",
+						  "status": "PLANNED",
+						  "startDate": "2026-09-10",
+						  "endDate": "2026-11-10",
+						  "daysPerWeek": 1,
+						  "goals": "Define roadmap and validate product strategy"
+						}
+						"""))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.id").value(mentorshipId.toString()))
 				.andExpect(jsonPath("$.mentorId").value(mentorId.toString()))
@@ -125,33 +162,33 @@ class MentorshipControllerTest {
 	@Test
 	void rejectsCreateMentorshipWhenStatusIsInvalid() throws Exception {
 		mockMvc.perform(post("/api/mentorships")
-						.with(user("test-user"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "mentorId": "00000000-0000-0000-0000-000000000101",
-								  "organizationId": "00000000-0000-0000-0000-000000000201",
-								  "status": "NOT_A_STATUS",
-								  "startDate": "2026-09-10",
-								  "goals": "Define roadmap and validate product strategy"
-								}
-								"""))
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "mentorId": "00000000-0000-0000-0000-000000000101",
+						  "organizationId": "00000000-0000-0000-0000-000000000201",
+						  "status": "NOT_A_STATUS",
+						  "startDate": "2026-09-10",
+						  "goals": "Define roadmap and validate product strategy"
+						}
+						"""))
 				.andExpect(status().isBadRequest());
 	}
 
 	@Test
 	void rejectsCreateMentorshipWhenRequiredFieldsAreMissing() throws Exception {
 		mockMvc.perform(post("/api/mentorships")
-						.with(user("test-user"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "mentorId": "00000000-0000-0000-0000-000000000101",
-								  "organizationId": "00000000-0000-0000-0000-000000000201",
-								  "status": "PLANNED",
-								  "startDate": null
-								}
-								"""))
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "mentorId": "00000000-0000-0000-0000-000000000101",
+						  "organizationId": "00000000-0000-0000-0000-000000000201",
+						  "status": "PLANNED",
+						  "startDate": null
+						}
+						"""))
 				.andExpect(status().isBadRequest());
 	}
 }

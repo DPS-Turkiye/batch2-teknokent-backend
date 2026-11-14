@@ -33,86 +33,86 @@ import com.dps.teknokent.service.EditionService;
 import com.dps.teknokent.service.InstitutionDirectoryService;
 
 @WebMvcTest(AuthMeController.class)
-@Import({SecurityConfig.class, EditionService.class})
+@Import({ SecurityConfig.class, EditionService.class })
 class AuthMeControllerTest {
 
-    private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000811");
+	private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000811");
 
-    @Autowired
-    private MockMvc mockMvc;
+	@Autowired
+	private MockMvc mockMvc;
 
-    @MockitoBean
-    private AppUserService appUserService;
+	@MockitoBean
+	private AppUserService appUserService;
 
-    @MockitoBean
-    private InstitutionDirectoryService institutionDirectoryService;
+	@MockitoBean
+	private InstitutionDirectoryService institutionDirectoryService;
 
-    @Test
-    void requiresAuthentication() throws Exception {
-        mockMvc.perform(get("/api/auth/me"))
-                .andExpect(status().isUnauthorized());
-    }
+	@Test
+	void requiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/auth/me"))
+				.andExpect(status().isUnauthorized());
+	}
 
-    @Test
-    void rejectsMachineCredentialsWithoutAppUser() throws Exception {
-        mockMvc.perform(get("/api/auth/me").with(user("test-user")))
-                .andExpect(status().isBadRequest());
-    }
+	@Test
+	void rejectsMachineCredentialsWithoutAppUser() throws Exception {
+		mockMvc.perform(get("/api/auth/me").with(user("test-user")))
+				.andExpect(status().isBadRequest());
+	}
 
-    @Test
-    void returnsSignedInUser() throws Exception {
-        UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
-        AppUserPrincipal principal = new AppUserPrincipal(
-                USER_ID, "ayse@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-1");
+	@Test
+	void returnsSignedInUser() throws Exception {
+		UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
+		AppUserPrincipal principal = new AppUserPrincipal(
+				USER_ID, "ayse@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-1");
 
-        when(appUserService.findSignedIn(USER_ID)).thenReturn(new UserResponse(
-                USER_ID,
-                "ayse@startup.com",
-                "Ayşe Demir",
-                UserRole.MENTEE,
-                UserAccountStatus.APPROVED,
-                organizationId,
-                "GreenLoop",
-                "Kurucu",
-                null,
-                false
-        ));
+		when(appUserService.findSignedIn(USER_ID)).thenReturn(new UserResponse(
+				USER_ID,
+				"ayse@startup.com",
+				"Ayşe Demir",
+				UserRole.MENTEE,
+				UserAccountStatus.APPROVED,
+				organizationId,
+				"GreenLoop",
+				"Kurucu",
+				null,
+				false));
 
-        mockMvc.perform(get("/api/auth/me")
-                        .with(authentication(UsernamePasswordAuthenticationToken.authenticated(
-                                principal, "firebase", List.of()))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(USER_ID.toString()))
-                .andExpect(jsonPath("$.email").value("ayse@startup.com"))
-                .andExpect(jsonPath("$.organizationId").value(organizationId.toString()))
-                .andExpect(jsonPath("$.permissions[0]").value("MENTEE"))
-                .andExpect(jsonPath("$.edition").value("TEKNOKENT"));
-    }
+		mockMvc.perform(get("/api/auth/me")
+				.with(authentication(UsernamePasswordAuthenticationToken.authenticated(
+						principal, "firebase", List.of()))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(USER_ID.toString()))
+				.andExpect(jsonPath("$.email").value("ayse@startup.com"))
+				.andExpect(jsonPath("$.organizationId").value(organizationId.toString()))
+				.andExpect(jsonPath("$.permissions[0]").value("MENTEE"))
+				.andExpect(jsonPath("$.edition").value("TEKNOKENT"));
+	}
 
-    @Test
-    void savesTheSignedInUsersLanguage() throws Exception {
-        mockMvc.perform(put("/api/auth/me/language")
-                        .with(authentication(signedIn()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"language\":\"en\"}"))
-                .andExpect(status().isNoContent());
+	@Test
+	void savesTheSignedInUsersLanguage() throws Exception {
+		mockMvc.perform(put("/api/auth/me/language")
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"language\":\"en\"}"))
+				.andExpect(status().isNoContent());
 
-        verify(appUserService).saveLanguage(USER_ID, AppLanguage.EN);
-    }
+		verify(appUserService).saveLanguage(USER_ID, AppLanguage.EN);
+	}
 
-    @Test
-    void rejectsALanguageTheAppDoesNotHave() throws Exception {
-        mockMvc.perform(put("/api/auth/me/language")
-                        .with(authentication(signedIn()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"language\":\"de\"}"))
-                .andExpect(status().isBadRequest());
+	@Test
+	void rejectsALanguageTheAppDoesNotHave() throws Exception {
+		mockMvc.perform(put("/api/auth/me/language")
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"language\":\"de\"}"))
+				.andExpect(status().isBadRequest());
 
-        verifyNoInteractions(appUserService);
-    }
+		verifyNoInteractions(appUserService);
+	}
 
-    private static UsernamePasswordAuthenticationToken signedIn() {
-        return UsernamePasswordAuthenticationToken.authenticated(new AppUserPrincipal(
-                USER_ID, "ayse@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-1"), "firebase", List.of());
-    }
+	private static UsernamePasswordAuthenticationToken signedIn() {
+		return UsernamePasswordAuthenticationToken.authenticated(new AppUserPrincipal(
+				USER_ID, "ayse@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-1"), "firebase",
+				List.of());
+	}
 }

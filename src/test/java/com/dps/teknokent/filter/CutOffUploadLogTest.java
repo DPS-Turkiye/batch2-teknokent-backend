@@ -49,11 +49,11 @@ class CutOffUploadLogTest {
 	void anUploadThatStopsArrivingIsLoggedWithHowMuchWasAnnounced(CapturedOutput output) throws Exception {
 		when(firebaseTokenVerifier.enabled()).thenReturn(true);
 		when(firebaseTokenVerifier.verify("token-of-someone-signing-up"))
-				.thenReturn(Optional.of(new FirebaseIdentity("uid-signing-up", "signing.up@example.com", false)));
+				.thenReturn(Optional.of(new FirebaseIdentity("uid-signing-up", "signing.up@example.com", true)));
 
 		try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), port)) {
 			OutputStream out = socket.getOutputStream();
-			out.write(("""
+			out.write("""
 					POST /api/profile-analyses/preview?consentAccepted=true&consentTextVersion=cv-1 HTTP/1.1\r
 					Host: localhost\r
 					Authorization: Bearer token-of-someone-signing-up\r
@@ -64,7 +64,8 @@ class CutOffUploadLogTest {
 					Content-Disposition: form-data; name="file"; filename="cv.pdf"\r
 					Content-Type: application/pdf\r
 					\r
-					%%PDF-1.4 and then nothing more""".formatted(ANNOUNCED_BYTES)).getBytes(StandardCharsets.ISO_8859_1));
+					%%PDF-1.4 and then nothing more""".formatted(ANNOUNCED_BYTES)
+					.getBytes(StandardCharsets.ISO_8859_1));
 			out.flush();
 		}
 

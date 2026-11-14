@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.ProgramLifecycle;
 
@@ -11,7 +13,7 @@ import com.dps.teknokent.domain.ProgramLifecycle;
 public record CoordinatorOverviewResponse(
 		List<ProgramOption> programs,
 		Metrics metrics,
-		NextMeeting nextMeeting,
+		@Nullable NextMeeting nextMeeting,
 		List<AgendaItem> agenda,
 		Actions actions) {
 
@@ -44,14 +46,14 @@ public record CoordinatorOverviewResponse(
 			String mentorTitle,
 			UUID organizationId,
 			String organizationName,
-			String founderName) {
+			@Nullable String founderName) {
 	}
 
 	/** {@code allDay} for action-item due dates, which have no time. */
 	public record AgendaItem(
 			CoordinatorAgendaKind kind,
 			String title,
-			String subtitle,
+			@Nullable String subtitle,
 			Instant at,
 			boolean allDay) {
 	}

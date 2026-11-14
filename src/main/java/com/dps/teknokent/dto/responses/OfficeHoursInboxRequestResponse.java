@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.OfficeHoursRequestAction;
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 import com.dps.teknokent.domain.OfficeHoursRole;
@@ -18,14 +20,14 @@ import com.dps.teknokent.domain.OfficeHoursRole;
 public record OfficeHoursInboxRequestResponse(
 		UUID id,
 		OfficeHoursRequestStatus status,
-		OfficeHoursStudentResponse student,
+		@Nullable OfficeHoursStudentResponse student,
 		String topic,
 		String note,
-		String courseName,
+		@Nullable String courseName,
 		List<OfficeHoursTimeResponse> requestedTimes,
 		List<OfficeHoursTimeResponse> proposedTimes,
 		List<Message> messages,
-		OfficeHoursTimeResponse meeting,
+		@Nullable OfficeHoursTimeResponse meeting,
 		String rejectionReason,
 		Instant requestedAt,
 		List<OfficeHoursRequestAction> allowedActions) {

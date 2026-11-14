@@ -75,7 +75,8 @@ class CoordinatorCalendarServiceTest {
 		Meeting afterIt = meeting(ahmet, vega, at(MONDAY.plusDays(3), 11, 0));
 		Meeting otherMentor = meeting(ayse, lumen, at(MONDAY.plusDays(2), 11, 15));
 
-		var conflicts = CoordinatorCalendarService.conflicts(List.of(first, overlapping, backToBack, afterIt, otherMentor));
+		var conflicts = CoordinatorCalendarService
+				.conflicts(List.of(first, overlapping, backToBack, afterIt, otherMentor));
 
 		assertThat(conflicts).singleElement().satisfies(conflict -> {
 			assertThat(conflict.mentorName()).isEqualTo("Ahmet Can");
@@ -120,9 +121,11 @@ class CoordinatorCalendarServiceTest {
 		stubScope(List.of(novaMeeting, vegaMeeting, earlier, cancelled, nextWeek));
 		UUID novaMentorshipId = UUID.randomUUID();
 		when(mentorshipService.list(COORDINATOR_ID, null)).thenReturn(List.of(
-				row(novaMentorshipId, ahmet, nova, "Teknik mimari", CoordinatorMentorshipHealth.FOLLOW_UP, Instant.now()),
+				row(novaMentorshipId, ahmet, nova, "Teknik mimari", CoordinatorMentorshipHealth.FOLLOW_UP,
+						Instant.now()),
 				row(UUID.randomUUID(), ayse, lumen, "Finansal model", CoordinatorMentorshipHealth.RISKY, null)));
-		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(eq(Set.of(PROGRAM_ID)), any(), any()))
+		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(eq(Set.of(PROGRAM_ID)), any(),
+				any()))
 				.thenReturn(List.of(
 						event("Ürün-Pazar Uyumu Atölyesi", ProgramEventKind.EVENT, at(MONDAY.plusDays(1), 16, 0)),
 						event("Ara rapor teslimi", ProgramEventKind.DEADLINE, at(MONDAY.plusDays(3), 23, 59))));

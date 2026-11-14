@@ -5,13 +5,13 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -28,6 +28,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.util.RandomTokens;
 import com.dps.teknokent.util.Texts;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -54,7 +55,6 @@ public class OtgLoginProvider implements InstitutionLoginProvider {
 	static final String SCOPE = "email";
 	private static final String ACCESS_DENIED = "access_denied";
 	private static final int MAX_CODE_LENGTH = 2048;
-	private static final SecureRandom RANDOM = new SecureRandom();
 
 	private final StringRedisTemplate redis;
 	private final RestClient http;
@@ -103,7 +103,7 @@ public class OtgLoginProvider implements InstitutionLoginProvider {
 	/** The PKCE verifier never leaves the backend: it waits in Redis under the state until the callback. */
 	@Override
 	public String startLogin(String state) {
-		String verifier = randomUrlSafe(48);
+		String verifier = RandomTokens.urlSafe(48);
 		redis.opsForValue().set(VERIFIER_KEY + state, verifier, VERIFIER_TTL);
 		// Values as variables, so each is strictly encoded (a "+" or "&" in one can never change the query).
 		return UriComponentsBuilder.fromUriString(authorizeUrl)
@@ -193,7 +193,7 @@ public class OtgLoginProvider implements InstitutionLoginProvider {
 		}
 	}
 
-	private static ResponseStatusException unavailable(String reason, Exception cause) {
+	private static ResponseStatusException unavailable(String reason, @Nullable Exception cause) {
 		log.warn("OTG login: {}", reason);
 		return new ResponseStatusException(HttpStatus.BAD_GATEWAY, Texts.forRequest("error.otgLoginFailed"), cause);
 	}
@@ -205,12 +205,6 @@ public class OtgLoginProvider implements InstitutionLoginProvider {
 		} catch (NoSuchAlgorithmException impossible) {
 			throw new IllegalStateException(impossible);
 		}
-	}
-
-	private static String randomUrlSafe(int bytes) {
-		byte[] random = new byte[bytes];
-		RANDOM.nextBytes(random);
-		return Base64.getUrlEncoder().withoutPadding().encodeToString(random);
 	}
 
 	private static String require(String name, String value) {
@@ -240,11 +234,15 @@ public class OtgLoginProvider implements InstitutionLoginProvider {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	record TokenResponse(@JsonProperty("access_token") String accessToken) {
+	record TokenResponse(@JsonProperty("access_token") @Nullable String accessToken) {
 	}
 
 	/** OTG's {@code /api/oauth/userinfo}; {@code name} may be null. */
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	record Userinfo(String sub, String email, @JsonProperty("email_verified") Boolean emailVerified, String name) {
+	record Userinfo(
+			@Nullable String sub,
+			@Nullable String email,
+			@JsonProperty("email_verified") @Nullable Boolean emailVerified,
+			@Nullable String name) {
 	}
 }

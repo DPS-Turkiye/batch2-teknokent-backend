@@ -1,33 +1,35 @@
 package com.dps.teknokent.service;
 
-import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
-import com.dps.teknokent.entity.OrganizationPendingMember;
-import com.dps.teknokent.dto.responses.OrganizationPendingMemberResponse;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.AppLanguage;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.DecideAccountStatusRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationMemberRequest;
 import com.dps.teknokent.dto.requests.UpdateUserProfileRequest;
 import com.dps.teknokent.dto.responses.AccountDecisionResponse;
 import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
+import com.dps.teknokent.dto.responses.OrganizationPendingMemberResponse;
 import com.dps.teknokent.dto.responses.UserProfileResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
-import com.dps.teknokent.domain.AppLanguage;
-import com.dps.teknokent.domain.UserAccountStatus;
-import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.OrganizationPendingMember;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.TextUtils;
@@ -53,25 +55,16 @@ public class AppUserService {
 	private final ProgramEligibilityService programEligibilityService;
 	private final MenteeProgramService menteeProgramService;
 	private final PersonAccessService personAccessService;
-
-	@Transactional(readOnly = true)
-	public List<UserResponse> findAll(UserRole role) {
-		return findAll(role, null);
-	}
+	private final StartupAccessService startupAccessService;
 
 	/** The admin's account list. */
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UUID actorId, UserRole role, UserAccountStatus status) {
 		personAccessService.requireAdmin(actorId);
-		return findAll(role, status);
-	}
-
-	@Transactional(readOnly = true)
-	public List<UserResponse> findAll(UserRole role, UserAccountStatus status) {
 		return appUserRepository.findByStatusNot(UserAccountStatus.DELETED).stream()
 				.filter(user -> role == null || user.has(role))
 				.filter(user -> status == null || user.getStatus() == status)
-				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
+				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase(Locale.ROOT)))
 				.map(UserResponse::fromEntity)
 				.toList();
 	}
@@ -153,7 +146,7 @@ public class AppUserService {
 	public List<OrganizationPendingMemberResponse> findPendingMembers(UUID organizationId, UUID actorId) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		AppUser actor = domainLookupService.requireUser(actorId);
-		boolean staff = actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR);
+		boolean staff = actor.has(UserRole.ADMIN) || startupAccessService.coordinates(actor, organizationId);
 		boolean teammate = actor.getOrganization() != null
 				&& actor.getOrganization().getId().equals(organization.getId());
 		if (!staff && !teammate) {
@@ -216,10 +209,7 @@ public class AppUserService {
 
 	@Transactional
 	public AccountDecisionResponse decideStatus(UUID userId, DecideAccountStatusRequest request) {
-		AppUser actor = domainLookupService.requireUser(request.actorId());
-		if (!actor.has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin can decide account status");
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(request.actorId()));
 		return decide(domainLookupService.requireUser(userId), request.status());
 	}
 
@@ -260,10 +250,7 @@ public class AppUserService {
 	 * no pool connection and a failure records nothing.
 	 */
 	public UserResponse revokeSignIns(UUID userId, UUID actorId) {
-		AppUser actor = domainLookupService.requireUser(actorId);
-		if (!actor.has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin can end someone's sign-ins");
-		}
+		AppUser actor = AdminAccess.requireAdmin(domainLookupService.requireUser(actorId));
 		AppUser target = domainLookupService.requireUser(userId);
 		loginProvisioner.revokeSignIns(target.getEmail());
 		Instant revokedAt = Instant.now();

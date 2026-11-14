@@ -3,6 +3,8 @@ package com.dps.teknokent.service;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.entity.PeerMeetingReport;
 
 /**
@@ -11,11 +13,11 @@ import com.dps.teknokent.entity.PeerMeetingReport;
  * programs never shows one program's mentees to the other's coordinator. A report without a program is bound too: it
  * shows only rows without one.
  */
-record PeerReportScope(boolean sentOnly, boolean bound, UUID programId) {
+record PeerReportScope(boolean sentOnly, boolean bound, @Nullable UUID programId) {
 
 	static final PeerReportScope MENTOR = new PeerReportScope(false, false, null);
 
-	static PeerReportScope reviewer(UUID programId) {
+	static PeerReportScope reviewer(@Nullable UUID programId) {
 		return new PeerReportScope(true, true, programId);
 	}
 
@@ -24,7 +26,7 @@ record PeerReportScope(boolean sentOnly, boolean bound, UUID programId) {
 	}
 
 	/** Whether a row of this program belongs to the view; the mentor's own view is bound to no program. */
-	boolean inProgram(UUID rowProgramId) {
+	boolean inProgram(@Nullable UUID rowProgramId) {
 		return !bound || Objects.equals(programId, rowProgramId);
 	}
 }

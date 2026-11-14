@@ -17,7 +17,8 @@ class ProgramAttendanceWindowTest {
 
 	@Test
 	void opensTheRunningWeekWithItsDays() {
-		var window = ProgramAttendanceService.window(program(ProgramStatus.ACTIVE, START, END), LocalDate.of(2026, 11, 12));
+		var window = ProgramAttendanceService.window(program(ProgramStatus.ACTIVE, START, END),
+				LocalDate.of(2026, 11, 12));
 
 		assertThat(window.state()).isEqualTo(AttendanceState.OPEN);
 		assertThat(window.week()).isEqualTo(2);
@@ -37,7 +38,8 @@ class ProgramAttendanceWindowTest {
 
 	@Test
 	void theFirstAndLastDaysAreInside() {
-		assertThat(ProgramAttendanceService.window(program(ProgramStatus.ACTIVE, START, END), START).week()).isEqualTo(1);
+		assertThat(ProgramAttendanceService.window(program(ProgramStatus.ACTIVE, START, END), START).week())
+				.isEqualTo(1);
 		assertThat(ProgramAttendanceService.window(program(ProgramStatus.ACTIVE, START, END), END).state())
 				.isEqualTo(AttendanceState.OPEN);
 	}

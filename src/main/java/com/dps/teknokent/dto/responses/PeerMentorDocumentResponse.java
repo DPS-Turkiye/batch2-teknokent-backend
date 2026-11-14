@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerDocumentVisibility;
 import com.dps.teknokent.domain.PeerEvidenceType;
 import com.dps.teknokent.entity.PeerMentorDocument;
@@ -16,10 +18,10 @@ public record PeerMentorDocumentResponse(
 		UUID id,
 		PeerEvidenceType evidenceType,
 		PeerDocumentVisibility visibility,
-		String url,
-		String originalFilename,
-		String contentType,
-		Long sizeBytes,
+		@Nullable String url,
+		@Nullable String originalFilename,
+		@Nullable String contentType,
+		@Nullable Long sizeBytes,
 		Instant createdAt) {
 
 	public static PeerMentorDocumentResponse ofLink(PeerMentorDocument row) {

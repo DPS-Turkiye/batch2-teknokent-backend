@@ -16,8 +16,8 @@ import lombok.Setter;
 
 /** One week of a program's plan; its dates come from the program's start and end (ProgramCalendar). */
 @Entity
-@Table(name = "program_week",
-		uniqueConstraints = @UniqueConstraint(name = "uq_program_week", columnNames = { "program_id", "week_number" }))
+@Table(name = "program_week", uniqueConstraints = @UniqueConstraint(name = "uq_program_week", columnNames = {
+		"program_id", "week_number" }))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -60,6 +60,7 @@ public class ProgramWeek {
 	}
 
 	public static String joined(List<String> lines) {
-		return lines == null ? "" : String.join("\n", lines.stream().map(String::trim).filter(l -> !l.isEmpty()).toList());
+		return lines == null ? ""
+				: String.join("\n", lines.stream().map(String::trim).filter(l -> !l.isEmpty()).toList());
 	}
 }

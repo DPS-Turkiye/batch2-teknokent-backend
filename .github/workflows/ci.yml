@@ -1,37 +1,51 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
+  # Every PR, not only those into main: stacked PRs target feature branches and would otherwise merge unchecked.
   pull_request:
+  push:
     branches:
       - main
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MVNW_M2_HOST_DIR: .ci/m2
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@v2.16.0
+        uses: step-security/harden-runner@v2.22.4
         with:
           egress-policy: audit
 
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Cache Maven dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .ci/m2
           key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: Run tests
-        run: ./mvnw -B clean test
-        env:
-          MVNW_M2_HOST_DIR: .ci/m2
+      - name: Format check
+        run: ./mvnw -B spotless:check
+
+      - name: Lint
+        run: ./mvnw -B checkstyle:check
+
+      # Compiles with zero warnings (javac lint and Error Prone), runs the tests and holds the coverage floor.
+      # The two checks above already ran, so they are skipped here.
+      - name: Build, test and coverage
+        run: ./mvnw -B clean verify -Dspotless.check.skip=true -Dcheckstyle.skip=true

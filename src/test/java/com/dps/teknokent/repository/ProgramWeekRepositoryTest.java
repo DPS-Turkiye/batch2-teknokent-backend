@@ -43,11 +43,10 @@ class ProgramWeekRepositoryTest {
 
 		assertThat(repository.findByProgramIdOrderByWeekNumberAsc(program.getId()))
 				.extracting(ProgramWeek::getTitle).containsExactly("Tanışma", "Prototip");
-		assertThat(repository.findByProgramIdAndWeekNumber(program.getId(), 3)).isPresent();
 
 		repository.deleteByProgramId(program.getId());
 		repository.flush();
-		assertThat(repository.existsByProgramId(program.getId())).isFalse();
+		assertThat(repository.findByProgramIdOrderByWeekNumberAsc(program.getId())).isEmpty();
 	}
 
 	private static ProgramWeek week(UUID programId, int number, String title) {

@@ -1,5 +1,15 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -13,6 +23,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -21,12 +33,12 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.InviteMeetingGuestRequest;
 import com.dps.teknokent.dto.requests.LogMeetingRequest;
+import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
-import com.dps.teknokent.entity.MeetingFeedback;
-import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.entity.Meeting;
+import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.ConflictException;
@@ -36,16 +48,6 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingFeedbackRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingServiceTest {
@@ -188,7 +190,8 @@ class MeetingServiceTest {
 	@Test
 	void confirmHeldRefusesAnotherMentorAFutureMeetingAndACancelledOne() {
 		Meeting past = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null, MeetingStatus.SCHEDULED);
-		Meeting future = heldCandidate(mentorId, Instant.now().plus(1, ChronoUnit.HOURS), null, MeetingStatus.SCHEDULED);
+		Meeting future = heldCandidate(mentorId, Instant.now().plus(1, ChronoUnit.HOURS), null,
+				MeetingStatus.SCHEDULED);
 		Meeting cancelled = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null,
 				MeetingStatus.CANCELLED);
 		when(meetingRepository.findById(past.getId())).thenReturn(Optional.of(past));
@@ -302,7 +305,7 @@ class MeetingServiceTest {
 	}
 
 	@Test
-		void logMeetingSavesEntryLinkedToTheRequest() {
+	void logMeetingSavesEntryLinkedToTheRequest() {
 		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(acceptedRequest()));
 		when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.empty());
 		when(meetingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
@@ -410,8 +413,8 @@ class MeetingServiceTest {
 		when(meetingRepository.saveAll(any())).thenReturn(List.of(meeting));
 		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
 
-		MeetingResponse response = meetingService.update(
-				meetingId, new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED, null, null, null));
+		MeetingResponse response = meetingService.update(meetingId, null,
+				new UpdateMeetingRequest("Yeni not", null, MeetingStatus.COMPLETED, null, null, null));
 
 		assertThat(response.notes()).isEqualTo("Yeni not");
 		assertThat(response.status()).isEqualTo(MeetingStatus.COMPLETED);
@@ -428,8 +431,7 @@ class MeetingServiceTest {
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
 		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
 
-		MeetingResponse response = meetingService.update(
-				meetingId,
+		MeetingResponse response = meetingService.update(meetingId, null,
 				new UpdateMeetingRequest(null, null, null, null, "https://meet.google.com/abc-defg-hij", true));
 
 		assertThat(response.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
@@ -441,7 +443,9 @@ class MeetingServiceTest {
 		UUID meetingId = UUID.randomUUID();
 		when(meetingRepository.findById(meetingId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> meetingService.update(meetingId, new UpdateMeetingRequest("Not", null, null, null, null, null)))
+		assertThatThrownBy(
+				() -> meetingService.update(meetingId, null,
+						new UpdateMeetingRequest("Not", null, null, null, null, null)))
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 
@@ -570,7 +574,8 @@ class MeetingServiceTest {
 				eq(mentee),
 				eq(NotificationCategory.MEETING_CHANGE),
 				eq("Yeni görüşme planlandı"),
-				org.mockito.ArgumentMatchers.contains("Teknokent için yeni bir görüşme planladı · 15 Eylül Salı · 19:00."),
+				org.mockito.ArgumentMatchers
+						.contains("Teknokent için yeni bir görüşme planladı · 15 Eylül Salı · 19:00."),
 				eq("/mentorships?tab=active"));
 	}
 
@@ -661,7 +666,8 @@ class MeetingServiceTest {
 			return saved;
 		});
 
-		MeetingResponse result = meetingService.inviteGuest(sourceId, new InviteMeetingGuestRequest(guestOrgId, null));
+		MeetingResponse result = meetingService.inviteGuest(sourceId, null,
+				new InviteMeetingGuestRequest(guestOrgId, null));
 
 		assertThat(result.organizationId()).isEqualTo(guestOrgId);
 		assertThat(result.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
@@ -681,7 +687,8 @@ class MeetingServiceTest {
 		when(meetingRepository.findByMentorIdAndOrganizationIdAndScheduledAt(
 				otherMentorId, organizationId, source.getScheduledAt())).thenReturn(Optional.of(existing));
 
-		MeetingResponse result = meetingService.inviteGuest(sourceId, new InviteMeetingGuestRequest(null, otherMentorId));
+		MeetingResponse result = meetingService.inviteGuest(sourceId, null,
+				new InviteMeetingGuestRequest(null, otherMentorId));
 
 		assertThat(result.id()).isEqualTo(existing.getId());
 		verify(meetingRepository, never()).save(any(Meeting.class));
@@ -701,9 +708,170 @@ class MeetingServiceTest {
 		when(meetingRepository.findByMeetLinkAndScheduledAt(first.getMeetLink(), first.getScheduledAt()))
 				.thenReturn(List.of(first, second));
 
-		meetingService.deleteRoom(first.getId());
+		meetingService.deleteRoom(first.getId(), null);
 
 		verify(meetingRepository).deleteAll(List.of(first, second));
+	}
+
+	@Test
+	void deleteRoomLeavesAnotherTeamsMeetingInTheSameMeetRoomAlone() {
+		Meeting thisSession = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		thisSession.setMeetLink("https://meet.google.com/abc-defg-hij");
+		Meeting nextWeek = namedMeeting(UUID.randomUUID(), UUID.randomUUID(), mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		nextWeek.setMeetLink("https://meet.google.com/abc-defg-hij");
+		nextWeek.setScheduledAt(thisSession.getScheduledAt().plus(7, ChronoUnit.DAYS));
+		when(meetingRepository.findById(thisSession.getId())).thenReturn(Optional.of(thisSession));
+		when(meetingRepository.findByMeetLinkContainingIgnoreCase("abc-defg-hij"))
+				.thenReturn(List.of(thisSession, nextWeek));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(thisSession.getMeetLink(), thisSession.getScheduledAt()))
+				.thenReturn(List.of(thisSession));
+
+		meetingService.deleteRoom(thisSession.getId(), mentorId);
+
+		verify(meetingRepository).deleteAll(List.of(thisSession));
+	}
+
+	@Test
+	void deleteRoomRefusesATeamMember() {
+		Meeting meeting = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		UUID menteeId = UUID.randomUUID();
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(domainLookupService.requireUser(menteeId)).thenReturn(teamMember(menteeId));
+
+		assertThatThrownBy(() -> meetingService.deleteRoom(meeting.getId(), menteeId))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+		verify(meetingRepository, never()).deleteAll(any());
+	}
+
+	@Test
+	void deleteRoomLetsAnAdminRemoveTheMeeting() {
+		Meeting meeting = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		UUID adminId = UUID.randomUUID();
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(domainLookupService.requireUser(adminId)).thenReturn(namedUser(adminId, "Yönetici", UserRole.ADMIN));
+
+		meetingService.deleteRoom(meeting.getId(), adminId);
+
+		verify(meetingRepository).deleteAll(List.of(meeting));
+	}
+
+	@Test
+	void findRoomAndInviteGuestRefuseSomeoneWhoIsNotTheMentor() {
+		Meeting meeting = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(domainLookupService.requireUser(otherMentorId)).thenReturn(mentor(otherMentorId));
+
+		assertThatThrownBy(() -> meetingService.findRoom(meeting.getId(), otherMentorId))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> meetingService.inviteGuest(meeting.getId(), otherMentorId,
+				new InviteMeetingGuestRequest(UUID.randomUUID(), null)))
+				.isInstanceOf(ResponseStatusException.class);
+		verify(meetingRepository, never()).save(any(Meeting.class));
+	}
+
+	@Test
+	void updateRefusesATeamMemberWhoChangesTheLinkTheStatusOrTheRecording() {
+		Meeting meeting = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		UUID menteeId = UUID.randomUUID();
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(domainLookupService.requireUser(menteeId)).thenReturn(teamMember(menteeId));
+
+		for (UpdateMeetingRequest change : List.of(
+				new UpdateMeetingRequest(null, null, null, null, "https://meet.google.com/zzz-zzzz-zzz", null),
+				new UpdateMeetingRequest(null, null, MeetingStatus.CANCELLED, null, null, null),
+				new UpdateMeetingRequest(null, null, null, null, null, true))) {
+			assertThatThrownBy(() -> meetingService.update(meeting.getId(), menteeId, change))
+					.isInstanceOfSatisfying(ResponseStatusException.class,
+							error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+		}
+		assertThat(meeting.getMeetLink()).isNull();
+		assertThat(meeting.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+		verify(meetingRepository, never()).saveAndFlush(any(Meeting.class));
+	}
+
+	@Test
+	void updateRefusesSomeoneOutsideTheMeeting() {
+		Meeting meeting = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		UUID outsiderId = UUID.randomUUID();
+		AppUser outsider = namedUser(outsiderId, "Başka Ekip", UserRole.MENTEE);
+		outsider.setOrganization(namedOrganization(UUID.randomUUID(), "Başka"));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(domainLookupService.requireUser(outsiderId)).thenReturn(outsider);
+
+		assertThatThrownBy(() -> meetingService.update(meeting.getId(), outsiderId,
+				new UpdateMeetingRequest("Not", null, null, null, null, null)))
+				.isInstanceOf(ResponseStatusException.class);
+	}
+
+	@Test
+	void updateLetsATeamMemberWriteNotesAndCloseTheMeetingFromTheAssistant() {
+		Meeting meeting = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		UUID menteeId = UUID.randomUUID();
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(domainLookupService.requireUser(menteeId)).thenReturn(teamMember(menteeId));
+		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+
+		MeetingResponse response = meetingService.update(meeting.getId(), menteeId,
+				new UpdateMeetingRequest("Notlar", "Sonuç", MeetingStatus.COMPLETED, true, null, null));
+
+		assertThat(response.notes()).isEqualTo("Notlar");
+		assertThat(response.status()).isEqualTo(MeetingStatus.COMPLETED);
+		assertThat(response.botDispatchedAt()).isNotNull();
+	}
+
+	@Test
+	void updateLetsTheMentorChangeTheLink() {
+		Meeting meeting = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor(mentorId));
+		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+
+		MeetingResponse response = meetingService.update(meeting.getId(), mentorId,
+				new UpdateMeetingRequest(null, null, null, null, "https://meet.google.com/abc-defg-hij", null));
+
+		assertThat(response.meetLink()).isEqualTo("https://meet.google.com/abc-defg-hij");
+	}
+
+	@Test
+	void updateClosesOnlyTheCopiesOfThisSessionNotOtherMeetingsInTheSameRoom() {
+		Meeting thisSession = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		thisSession.setMeetLink("https://meet.google.com/abc-defg-hij");
+		Meeting guestCopy = namedMeeting(UUID.randomUUID(), UUID.randomUUID(), mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		guestCopy.setMeetLink("https://meet.google.com/abc-defg-hij?authuser=1");
+		Meeting nextWeek = namedMeeting(UUID.randomUUID(), UUID.randomUUID(), mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		nextWeek.setMeetLink("https://meet.google.com/abc-defg-hij");
+		nextWeek.setScheduledAt(thisSession.getScheduledAt().plus(7, ChronoUnit.DAYS));
+		when(meetingRepository.findById(thisSession.getId())).thenReturn(Optional.of(thisSession));
+		when(meetingRepository.findByMeetLinkContainingIgnoreCase("abc-defg-hij"))
+				.thenReturn(List.of(thisSession, guestCopy, nextWeek));
+		when(meetingRepository.saveAndFlush(thisSession)).thenReturn(thisSession);
+
+		meetingService.update(thisSession.getId(), null,
+				new UpdateMeetingRequest(null, null, MeetingStatus.COMPLETED, true, null, null));
+
+		assertThat(guestCopy.getStatus()).isEqualTo(MeetingStatus.COMPLETED);
+		assertThat(guestCopy.getBotDispatchedAt()).isNotNull();
+		assertThat(nextWeek.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+		assertThat(nextWeek.getBotDispatchedAt()).isNull();
+	}
+
+	private AppUser teamMember(UUID id) {
+		AppUser member = namedUser(id, "Ece Öğrenci", UserRole.MENTEE);
+		member.setOrganization(namedOrganization(organizationId, "Teknokent"));
+		return member;
 	}
 
 	private static Meeting namedMeeting(
@@ -886,5 +1054,528 @@ class MeetingServiceTest {
 		assertThatThrownBy(() -> meetingService.ratedMeetingIds(tooMany, authorId))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(meetingFeedbackRepository, never()).findByMeetingIdInAndAuthorId(any(), any());
+	}
+
+	private CreateMeetingRequest createRequest(UUID mentor, String meetLink, Boolean transcribe,
+			List<String> documents) {
+		return new CreateMeetingRequest(
+				organizationId, mentor, Instant.parse("2026-09-15T16:00:00Z"), 45, "Yol haritası", null, null,
+				meetLink, MeetingStatus.SCHEDULED, transcribe, documents);
+	}
+
+	private void savingMeetingsAsTheyAre() {
+		when(meetingRepository.save(any(Meeting.class))).thenAnswer(invocation -> invocation.getArgument(0));
+	}
+
+	private MentorshipRequest requestInStatus(MentorshipRequestStatus status) {
+		MentorshipRequest request = new MentorshipRequest();
+		request.setId(UUID.randomUUID());
+		request.setStatus(status);
+		return request;
+	}
+
+	@Test
+	void createWithoutAMentorSavesAStandaloneMeetingAndTellsOnlyTheMentees() {
+		AppUser mentee = namedUser(UUID.randomUUID(), "Ayşe", UserRole.MENTEE);
+		AppUser teammateWhoMentors = namedUser(UUID.randomUUID(), "Bora", UserRole.MENTOR);
+		when(domainLookupService.requireOrganization(organizationId))
+				.thenReturn(namedOrganization(organizationId, "Teknokent"));
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(organizationId))
+				.thenReturn(List.of(mentee, teammateWhoMentors));
+		savingMeetingsAsTheyAre();
+
+		MeetingResponse result = meetingService.create(createRequest(null, null, null, List.of("Sunum")));
+
+		assertThat(result.mentorId()).isNull();
+		assertThat(result.mentorshipRequestId()).isNull();
+		verify(notificationService).create(
+				mentee,
+				NotificationCategory.MEETING_CHANGE,
+				"Yeni görüşme planlandı",
+				"Mentörünüz, Teknokent için yeni bir görüşme planladı · 15 Eylül Salı · 19:00.",
+				"/mentorships?tab=active");
+		verify(notificationService, never()).create(eq(teammateWhoMentors), any(), any(), any(), any());
+		verifyNoInteractions(mentorshipRequestRepository, documentRequestService);
+	}
+
+	@Test
+	void createAcceptsAWaitingRequestWhenTheAcceptedOneAlreadyHasItsMeeting() {
+		AppUser mentor = namedUser(mentorId, "Dr. Kemal Arslan", UserRole.MENTOR);
+		MentorshipRequest alreadyMet = requestInStatus(MentorshipRequestStatus.ACCEPTED);
+		MentorshipRequest waiting = requestInStatus(MentorshipRequestStatus.PENDING);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+		when(domainLookupService.requireOrganization(organizationId))
+				.thenReturn(namedOrganization(organizationId, "Teknokent"));
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				mentorId, organizationId, MentorshipRequestStatus.ACCEPTED)).thenReturn(Optional.of(alreadyMet));
+		when(meetingRepository.findByMentorshipRequestId(alreadyMet.getId())).thenReturn(Optional.of(new Meeting()));
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				mentorId, organizationId, MentorshipRequestStatus.PENDING)).thenReturn(Optional.of(waiting));
+		when(meetingRepository.findByMentorshipRequestId(waiting.getId())).thenReturn(Optional.empty());
+		when(mentorshipRequestRepository.saveAndFlush(waiting)).thenReturn(waiting);
+		savingMeetingsAsTheyAre();
+
+		MeetingResponse result = meetingService.create(
+				createRequest(mentorId, null, null, List.of("Finansal tablo")));
+
+		assertThat(result.mentorshipRequestId()).isEqualTo(waiting.getId());
+		assertThat(waiting.getStatus()).isEqualTo(MentorshipRequestStatus.ACCEPTED);
+		assertThat(waiting.getMentorMessage()).isEqualTo("Takvimden oluşturuldu");
+		verify(domainLookupService, never()).requireOrganizationMentee(any());
+		verify(documentRequestService).saveTitlesOnMeeting(any(Meeting.class), eq(mentor),
+				eq(List.of("Finansal tablo")));
+	}
+
+	@Test
+	void createStartsANewMentorshipWhenEveryExistingRequestAlreadyHasAMeeting() {
+		AppUser mentor = namedUser(mentorId, "Dr. Kemal Arslan", UserRole.MENTOR);
+		AppUser mentee = namedUser(UUID.randomUUID(), "Ayşe", UserRole.MENTEE);
+		MentorshipRequest waiting = requestInStatus(MentorshipRequestStatus.PENDING);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+		when(domainLookupService.requireOrganization(organizationId))
+				.thenReturn(namedOrganization(organizationId, "Teknokent"));
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				eq(mentorId), eq(organizationId), any())).thenReturn(Optional.empty());
+		when(mentorshipRequestRepository.findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
+				mentorId, organizationId, MentorshipRequestStatus.PENDING)).thenReturn(Optional.of(waiting));
+		when(meetingRepository.findByMentorshipRequestId(waiting.getId())).thenReturn(Optional.of(new Meeting()));
+		when(domainLookupService.requireOrganizationMentee(organizationId)).thenReturn(mentee);
+		when(mentorshipRequestRepository.saveAndFlush(any(MentorshipRequest.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		savingMeetingsAsTheyAre();
+
+		meetingService.create(createRequest(mentorId, null, null, null));
+
+		assertThat(waiting.getStatus()).isEqualTo(MentorshipRequestStatus.PENDING);
+		verify(mentorshipRequestRepository, never()).saveAndFlush(waiting);
+		verify(mentorshipRequestRepository).saveAndFlush(org.mockito.ArgumentMatchers.argThat(
+				created -> created.getStatus() == MentorshipRequestStatus.ACCEPTED
+						&& created.getRequester().equals(mentee)
+						&& "Yol haritası".equals(created.getSupportArea())));
+	}
+
+	// One bot joins per Meet link, so a second meeting on the link shares it and never needs a free bot.
+	@Test
+	void createOnALinkThatAlreadyHasItsBotSharesItInsteadOfAskingForAFreeOne() {
+		String link = "https://meet.google.com/abc-defg-hij";
+		Instant dispatched = Instant.parse("2026-09-15T15:55:00Z");
+		Meeting inTheRoom = new Meeting();
+		inTheRoom.setBotDispatchedAt(dispatched);
+		when(domainLookupService.requireOrganization(organizationId))
+				.thenReturn(namedOrganization(organizationId, "Teknokent"));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(link, Instant.parse("2026-09-15T16:00:00Z")))
+				.thenReturn(List.of(new Meeting(), inTheRoom));
+		savingMeetingsAsTheyAre();
+
+		MeetingResponse result = meetingService.create(createRequest(null, link, true, null));
+
+		assertThat(result.botDispatchedAt()).isEqualTo(dispatched);
+		verify(meetingRepository, never()).findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(any(), any(),
+				any());
+	}
+
+	@Test
+	void createInAMentorsPersonalRoomStillGetsItsOwnBotWhenAnEarlierMeetingThereHadOne() {
+		String link = "https://meet.google.com/abc-defg-hij";
+		when(domainLookupService.requireOrganization(organizationId))
+				.thenReturn(namedOrganization(organizationId, "Teknokent"));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(link, Instant.parse("2026-09-15T16:00:00Z")))
+				.thenReturn(List.of());
+		when(meetingRepository.findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(any(), any(), any()))
+				.thenReturn(List.of());
+		savingMeetingsAsTheyAre();
+
+		MeetingResponse result = meetingService.create(createRequest(null, link, true, null));
+
+		assertThat(result.botDispatchedAt()).isNull();
+	}
+
+	@Test
+	void findRoomLeavesOutOtherSessionsInTheSameMeetRoom() {
+		Meeting thisSession = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		thisSession.setMeetLink("https://meet.google.com/abc-defg-hij");
+		Meeting otherTeamLastWeek = namedMeeting(UUID.randomUUID(), UUID.randomUUID(), mentorId, "Eski",
+				MeetingStatus.COMPLETED, 60);
+		otherTeamLastWeek.setMeetLink("https://meet.google.com/abc-defg-hij?authuser=0");
+		otherTeamLastWeek.setScheduledAt(thisSession.getScheduledAt().minus(7, ChronoUnit.DAYS));
+		when(meetingRepository.findById(thisSession.getId())).thenReturn(Optional.of(thisSession));
+		when(meetingRepository.findByMeetLinkContainingIgnoreCase("abc-defg-hij"))
+				.thenReturn(List.of(thisSession, otherTeamLastWeek));
+
+		assertThat(meetingService.findRoom(thisSession.getId(), mentorId)).extracting(MeetingResponse::id)
+				.containsExactly(thisSession.getId());
+	}
+
+	@Test
+	void findRoomListsEveryTeamsCopyOfTheSameSession() {
+		Meeting first = namedMeeting(UUID.randomUUID(), organizationId, mentorId, "Gündem", MeetingStatus.SCHEDULED,
+				60);
+		first.setMeetLink("https://meet.google.com/abc-defg-hij");
+		Meeting second = namedMeeting(UUID.randomUUID(), UUID.randomUUID(), mentorId, "Gündem",
+				MeetingStatus.SCHEDULED, 60);
+		second.setMeetLink("https://meet.google.com/abc-defg-hij?authuser=1");
+		Meeting otherSite = namedMeeting(UUID.randomUUID(), UUID.randomUUID(), otherMentorId, "Başka",
+				MeetingStatus.SCHEDULED, 60);
+		otherSite.setMeetLink("https://example.com/abc-defg-hij");
+		when(meetingRepository.findById(first.getId())).thenReturn(Optional.of(first));
+		when(meetingRepository.findByMeetLinkContainingIgnoreCase("abc-defg-hij"))
+				.thenReturn(List.of(first, second, otherSite));
+
+		assertThat(meetingService.findRoom(first.getId(), null)).extracting(MeetingResponse::id)
+				.containsExactly(first.getId(), second.getId());
+	}
+
+	@Test
+	void findRoomRejectsAnUnknownMeeting() {
+		UUID unknown = UUID.randomUUID();
+		when(meetingRepository.findById(unknown)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> meetingService.findRoom(unknown, null)).isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	void inviteGuestNeedsAStartupOrAMentorToInvite() {
+		assertThatThrownBy(() -> meetingService.inviteGuest(UUID.randomUUID(), null,
+				new InviteMeetingGuestRequest(null, null))).isInstanceOf(InvalidRequestException.class);
+
+		verifyNoInteractions(meetingRepository);
+	}
+
+	@Test
+	void inviteGuestRefusesAGuestMentorWithoutTheMentorRole() {
+		UUID sourceId = UUID.randomUUID();
+		UUID menteeId = UUID.randomUUID();
+		Meeting source = namedMeeting(sourceId, organizationId, mentorId, "Gündem", MeetingStatus.SCHEDULED, 60);
+		when(meetingRepository.findById(sourceId)).thenReturn(Optional.of(source));
+		when(domainLookupService.requireUser(menteeId)).thenReturn(namedUser(menteeId, "Elif Demir", UserRole.MENTEE));
+
+		assertThatThrownBy(
+				() -> meetingService.inviteGuest(sourceId, null, new InviteMeetingGuestRequest(null, menteeId)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("MENTOR role");
+		verify(meetingRepository, never()).save(any(Meeting.class));
+	}
+
+	@Test
+	void inviteGuestOnAMeetingWithoutAMentorCopiesItForTheOtherStartup() {
+		UUID sourceId = UUID.randomUUID();
+		UUID guestOrgId = UUID.randomUUID();
+		Meeting source = namedMeeting(sourceId, organizationId, mentorId, "Gündem", MeetingStatus.SCHEDULED, 60);
+		source.setMentor(null);
+		when(meetingRepository.findById(sourceId)).thenReturn(Optional.of(source));
+		when(domainLookupService.requireOrganization(guestOrgId)).thenReturn(namedOrganization(guestOrgId, "NovaMed"));
+		savingMeetingsAsTheyAre();
+
+		MeetingResponse result = meetingService.inviteGuest(sourceId, null,
+				new InviteMeetingGuestRequest(guestOrgId, null));
+
+		assertThat(result.organizationId()).isEqualTo(guestOrgId);
+		assertThat(result.mentorId()).isNull();
+		assertThat(result.scheduledAt()).isEqualTo(source.getScheduledAt());
+		verify(meetingRepository, never()).findByMentorIdAndOrganizationIdAndScheduledAt(any(), any(), any());
+	}
+
+	@Test
+	void inviteGuestCopyKeepsTheBotAlreadySentToTheRoom() {
+		UUID sourceId = UUID.randomUUID();
+		UUID guestOrgId = UUID.randomUUID();
+		Instant dispatched = Instant.parse("2026-09-15T15:55:00Z");
+		Meeting source = namedMeeting(sourceId, organizationId, mentorId, "Gündem", MeetingStatus.SCHEDULED, 60);
+		source.setMeetLink("https://meet.google.com/abc-defg-hij");
+		source.setTranscribeRequested(true);
+		source.setBotDispatchedAt(dispatched);
+		when(meetingRepository.findById(sourceId)).thenReturn(Optional.of(source));
+		when(domainLookupService.requireOrganization(guestOrgId)).thenReturn(namedOrganization(guestOrgId, "NovaMed"));
+		savingMeetingsAsTheyAre();
+
+		MeetingResponse result = meetingService.inviteGuest(sourceId, null,
+				new InviteMeetingGuestRequest(guestOrgId, null));
+
+		assertThat(result.botDispatchedAt()).isEqualTo(dispatched);
+		assertThat(result.transcribeRequested()).isTrue();
+		verify(meetingRepository, never()).findByMeetLinkAndScheduledAt(any(), any());
+	}
+
+	@Test
+	void logMeetingChangesOnlyWhatWasSentOnAnExistingMeeting() {
+		Instant at = Instant.parse("2026-09-10T10:00:00Z");
+		String link = "https://meet.google.com/abc-defg-hij";
+		MentorshipRequest request = acceptedRequest();
+		Meeting existing = Meeting.forLoggedEntry(
+				request, at, 45, "Eski gündem", "Eski not", null, MeetingStatus.SCHEDULED, link, true);
+		existing.setId(UUID.randomUUID());
+		when(mentorshipRequestRepository.findById(requestId)).thenReturn(Optional.of(request));
+		when(meetingRepository.findByMentorshipRequestId(requestId)).thenReturn(Optional.of(existing));
+		when(meetingRepository.saveAndFlush(existing)).thenReturn(existing);
+
+		MeetingResponse response = meetingService.logMeeting(requestId,
+				new LogMeetingRequest(mentorId, null, null, "  Yeni gündem ", null, "Karar alındı", null, null, null));
+
+		assertThat(response.agenda()).isEqualTo("Yeni gündem");
+		assertThat(response.outcomes()).isEqualTo("Karar alındı");
+		assertThat(response.notes()).isEqualTo("Eski not");
+		assertThat(response.scheduledAt()).isEqualTo(at);
+		assertThat(response.durationMinutes()).isEqualTo(45);
+		assertThat(response.status()).isEqualTo(MeetingStatus.SCHEDULED);
+		assertThat(response.meetLink()).isEqualTo(link);
+		assertThat(response.transcribeRequested()).isTrue();
+		verify(documentRequestService).copyFromRequestToMeeting(request, existing);
+	}
+
+	@Test
+	void updateOverwritesTheOutcomesAndLeavesTheNotes() {
+		Meeting meeting = Meeting.forLoggedEntry(
+				acceptedRequest(), Instant.now(), 30, "Gündem", "Eski not", "Eski sonuç", MeetingStatus.SCHEDULED, null,
+				false);
+		meeting.setId(UUID.randomUUID());
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+
+		MeetingResponse response = meetingService.update(meeting.getId(), null,
+				new UpdateMeetingRequest(null, "Yeni sonuç", null, null, null, null));
+
+		assertThat(response.outcomes()).isEqualTo("Yeni sonuç");
+		assertThat(response.notes()).isEqualTo("Eski not");
+		verify(meetingRepository, never()).saveAll(any());
+	}
+
+	@Test
+	void updateRefusesToStartRecordingWhenEveryBotIsBusy() {
+		Instant at = Instant.parse("2026-09-10T10:00:00Z");
+		Meeting meeting = heldCandidate(mentorId, at, "https://meet.google.com/abc-defg-hij", MeetingStatus.SCHEDULED);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		recordingBotsBusyAt(at);
+
+		assertThatThrownBy(() -> meetingService.update(meeting.getId(), null,
+				new UpdateMeetingRequest(null, null, null, null, null, true))).isInstanceOf(ConflictException.class);
+		verify(meetingRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void updateDoesNotLookForAFreeBotAgainForAMeetingAlreadyBeingRecorded() {
+		Meeting meeting = heldCandidate(mentorId, Instant.parse("2026-09-10T10:00:00Z"),
+				"https://meet.google.com/abc-defg-hij", MeetingStatus.SCHEDULED);
+		meeting.setTranscribeRequested(true);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+
+		MeetingResponse response = meetingService.update(meeting.getId(), null,
+				new UpdateMeetingRequest("Not", null, null, null, null, true));
+
+		assertThat(response.transcribeRequested()).isTrue();
+		verify(meetingRepository, never()).findByTranscribeRequestedTrueAndStatusAndScheduledAtBetween(any(), any(),
+				any());
+	}
+
+	@Test
+	void updateRecordsTheBotOnEveryMeetingInTheRoomWithoutTouchingTheirStatus() {
+		String link = "https://meet.google.com/abc-defg-hij";
+		Instant at = Instant.parse("2026-09-10T10:00:00Z");
+		Instant sentEarlier = at.minus(4, ChronoUnit.MINUTES);
+		Meeting meeting = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		Meeting guest = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		Meeting alreadyMarked = heldCandidate(otherMentorId, at, link, MeetingStatus.CANCELLED);
+		alreadyMarked.setBotDispatchedAt(sentEarlier);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(link, at))
+				.thenReturn(List.of(meeting, guest, alreadyMarked));
+		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+
+		MeetingResponse response = meetingService.update(meeting.getId(), null,
+				new UpdateMeetingRequest(null, null, null, true, null, null));
+
+		assertThat(response.botDispatchedAt()).isNotNull();
+		assertThat(guest.getBotDispatchedAt()).isEqualTo(response.botDispatchedAt());
+		assertThat(alreadyMarked.getBotDispatchedAt()).isEqualTo(sentEarlier);
+		assertThat(guest.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+		assertThat(alreadyMarked.getStatus()).isEqualTo(MeetingStatus.CANCELLED);
+		verify(meetingRepository).saveAll(List.of(meeting, guest, alreadyMarked));
+	}
+
+	@Test
+	void completingAMeetingCompletesItsRoommatesAndGivesThemItsBotTime() {
+		String link = "https://meet.google.com/abc-defg-hij";
+		Instant at = Instant.parse("2026-09-10T10:00:00Z");
+		Instant sentEarlier = at.minus(4, ChronoUnit.MINUTES);
+		Meeting meeting = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		meeting.setBotDispatchedAt(sentEarlier);
+		Meeting guest = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(link, at)).thenReturn(List.of(meeting, guest));
+		when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+
+		meetingService.update(meeting.getId(), null,
+				new UpdateMeetingRequest(null, null, MeetingStatus.COMPLETED, null, null, null));
+
+		assertThat(guest.getStatus()).isEqualTo(MeetingStatus.COMPLETED);
+		assertThat(guest.getBotDispatchedAt()).isEqualTo(sentEarlier);
+		assertThat(meeting.getBotDispatchedAt()).isEqualTo(sentEarlier);
+	}
+
+	@Test
+	void markBotStoppedIgnoresAMissingMeetingId() {
+		assertThat(meetingService.markBotStopped(null)).isEmpty();
+
+		verifyNoInteractions(meetingRepository);
+	}
+
+	@Test
+	void markBotStoppedLeavesAMeetingOnAnotherSiteWhoseLinkOnlyContainsTheCode() {
+		Meeting elsewhere = linkedMeeting(Instant.now().minus(15, ChronoUnit.MINUTES), 120);
+		elsewhere.setMeetLink("https://example.com/rooms/abc-defg-hij");
+		when(meetingRepository.findByStatusAndMeetLinkContainingIgnoreCase(
+				MeetingStatus.SCHEDULED, "abc-defg-hij")).thenReturn(List.of(elsewhere));
+
+		assertThat(meetingService.markBotStopped(" abc-defg-hij ")).isEmpty();
+		assertThat(elsewhere.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+	}
+
+	// Without a length a meeting counts as one hour, plus the hour the dispatcher keeps trying after it.
+	@Test
+	void markBotStoppedTreatsAMeetingWithoutALengthAsOneHourLong() {
+		Meeting stillInItsSlot = linkedMeeting(Instant.now().minus(90, ChronoUnit.MINUTES), 60);
+		stillInItsSlot.setDurationMinutes(null);
+		Meeting longOver = linkedMeeting(Instant.now().minus(150, ChronoUnit.MINUTES), 60);
+		longOver.setDurationMinutes(null);
+		when(meetingRepository.findByStatusAndMeetLinkContainingIgnoreCase(
+				MeetingStatus.SCHEDULED, "abc-defg-hij")).thenReturn(List.of(stillInItsSlot, longOver));
+
+		assertThat(meetingService.markBotStopped("abc-defg-hij")).containsExactly(stillInItsSlot.getId());
+		assertThat(longOver.getStatus()).isEqualTo(MeetingStatus.SCHEDULED);
+	}
+
+	private Meeting feedbackMeeting(AppUser meetingMentor) {
+		Meeting meeting = new Meeting();
+		meeting.setId(UUID.randomUUID());
+		meeting.setMentor(meetingMentor);
+		meeting.setOrganization(organization());
+		return meeting;
+	}
+
+	private AppUser menteeOf(Organization team) {
+		AppUser mentee = namedUser(UUID.randomUUID(), "Ece Öğrenci", UserRole.MENTEE);
+		mentee.setOrganization(team);
+		return mentee;
+	}
+
+	private void savingFeedbackAsItIs() {
+		when(meetingFeedbackRepository.saveAndFlush(any(MeetingFeedback.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+	}
+
+	@Test
+	void feedbackFromATeamMemberAlsoRechecksTheMentorsAchievements() {
+		Meeting meeting = feedbackMeeting(mentor(mentorId));
+		AppUser mentee = menteeOf(organization());
+		when(domainLookupService.requireMeeting(meeting.getId())).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentee.getId())).thenReturn(mentee);
+		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meeting.getId(), mentee.getId()))
+				.thenReturn(Optional.empty());
+		savingFeedbackAsItIs();
+
+		var response = meetingService.submitFeedback(meeting.getId(), mentee.getId(),
+				new SubmitMeetingFeedbackRequest(List.of(4, 5, 3), List.of()));
+
+		assertThat(response.authorId()).isEqualTo(mentee.getId());
+		assertThat(response.createdAt()).isNotNull();
+		verify(eventPublisher).publishEvent(new AchievementsMayChangeEvent(Set.of(mentee.getId(), mentorId)));
+	}
+
+	@Test
+	void feedbackOnAMeetingWithoutAMentorRechecksOnlyTheAuthor() {
+		Meeting meeting = feedbackMeeting(null);
+		AppUser mentee = menteeOf(organization());
+		when(domainLookupService.requireMeeting(meeting.getId())).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentee.getId())).thenReturn(mentee);
+		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meeting.getId(), mentee.getId()))
+				.thenReturn(Optional.empty());
+		savingFeedbackAsItIs();
+
+		meetingService.submitFeedback(meeting.getId(), mentee.getId(),
+				new SubmitMeetingFeedbackRequest(List.of(4, 5, 3), List.of()));
+
+		verify(eventPublisher).publishEvent(new AchievementsMayChangeEvent(Set.of(mentee.getId())));
+	}
+
+	@Test
+	void feedbackFromAMemberOfAnotherStartupIsRefused() {
+		Meeting meeting = feedbackMeeting(mentor(mentorId));
+		AppUser outsider = menteeOf(namedOrganization(UUID.randomUUID(), "Başka Takım"));
+		when(domainLookupService.requireMeeting(meeting.getId())).thenReturn(meeting);
+		when(domainLookupService.requireUser(outsider.getId())).thenReturn(outsider);
+
+		assertThatThrownBy(() -> meetingService.submitFeedback(meeting.getId(), outsider.getId(),
+				new SubmitMeetingFeedbackRequest(List.of(5, 5, 5), List.of())))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("participant");
+		verify(meetingFeedbackRepository, never()).saveAndFlush(any(MeetingFeedback.class));
+		verifyNoInteractions(eventPublisher);
+	}
+
+	@Test
+	void findFeedbackReturnsWhatTheAuthorLeftAndNothingForSomebodyWhoLeftNone() {
+		Meeting meeting = feedbackMeeting(mentor(mentorId));
+		MeetingFeedback left = new MeetingFeedback();
+		left.setId(UUID.randomUUID());
+		left.setMeeting(meeting);
+		left.setAuthor(mentor(mentorId));
+		left.getRatings().addAll(List.of(5, 4, 3));
+		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meeting.getId(), mentorId))
+				.thenReturn(Optional.of(left));
+		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meeting.getId(), otherMentorId))
+				.thenReturn(Optional.empty());
+
+		assertThat(meetingService.findFeedback(meeting.getId(), mentorId))
+				.hasValueSatisfying(feedback -> assertThat(feedback.ratings()).containsExactly(5, 4, 3));
+		assertThat(meetingService.findFeedback(meeting.getId(), otherMentorId)).isEmpty();
+	}
+
+	@Test
+	void confirmHeldRefusesAMeetingThatHasNoMentor() {
+		Meeting meeting = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null,
+				MeetingStatus.SCHEDULED);
+		meeting.setMentor(null);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+
+		assertThatThrownBy(() -> meetingService.confirmHeld(meeting.getId(), mentorId, true))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(meetingRepository, never()).saveAll(any());
+	}
+
+	@Test
+	void confirmHeldKeepsTheTimeASeatWasFirstConfirmed() {
+		Instant at = Instant.now().minus(2, ChronoUnit.HOURS);
+		Instant confirmedEarlier = at.plus(1, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		Meeting confirmedSeat = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		confirmedSeat.setHeldConfirmedAt(confirmedEarlier);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting, confirmedSeat));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		assertThat(confirmedSeat.getHeldConfirmedAt()).isEqualTo(confirmedEarlier);
+		assertThat(meeting.getHeldConfirmedAt()).isAfter(confirmedEarlier);
+	}
+
+	@Test
+	void confirmHeldLeavesSeatsOfAnotherMentorOrWithoutOneInTheSameCallAlone() {
+		String link = "https://meet.google.com/abc-defg-hij";
+		Instant at = Instant.now().minus(2, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		Meeting guestMentorSeat = heldCandidate(otherMentorId, at, link, MeetingStatus.SCHEDULED);
+		Meeting seatWithoutMentor = heldCandidate(mentorId, at, link, MeetingStatus.SCHEDULED);
+		seatWithoutMentor.setMentor(null);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMeetLinkAndScheduledAt(link, at))
+				.thenReturn(List.of(meeting, guestMentorSeat, seatWithoutMentor));
+
+		meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		assertThat(meeting.getHeldConfirmedAt()).isNotNull();
+		assertThat(guestMentorSeat.getHeldConfirmedAt()).isNull();
+		assertThat(seatWithoutMentor.getHeldConfirmedAt()).isNull();
+		verify(meetingRepository).saveAll(List.of(meeting));
 	}
 }

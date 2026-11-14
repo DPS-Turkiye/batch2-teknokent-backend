@@ -5,9 +5,9 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.StartupFundingStage;
 import com.dps.teknokent.domain.StartupMaturity;
@@ -22,8 +22,8 @@ import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
-import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.TextUtils;
@@ -46,8 +46,8 @@ public class OrganizationService {
 				.toList();
 	}
 
-	@Transactional(readOnly = true)
 	/** A student's personal team is no startup page anyone can open, its owner included. */
+	@Transactional(readOnly = true)
 	public OrganizationResponse findById(UUID id) {
 		Organization organization = domainLookupService.requireOrganization(id);
 		if (organization.isPersonal()) {

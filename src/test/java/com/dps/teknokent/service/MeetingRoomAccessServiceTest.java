@@ -1,5 +1,8 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,12 +15,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MeetingRepository;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingRoomAccessServiceTest {
@@ -53,6 +54,24 @@ class MeetingRoomAccessServiceTest {
 		when(meetingRepository.existsByIdAndOrganizationId(meetingId, otherOrganizationId)).thenReturn(false);
 
 		assertThat(service.isMeetingVisibleTo(meetingId, otherOrganizationId)).isFalse();
+	}
+
+	@Test
+	void showsANamedCallerOnlyTheMeetingsOfTheirOwnTeamOrThatTheyMentor() {
+		when(meetingRepository.existsByIdAndOrganizationId(meetingId, organizationId)).thenReturn(true);
+		Meeting meeting = new Meeting();
+		AppUser mentor = new AppUser();
+		mentor.setId(UUID.randomUUID());
+		meeting.setMentor(mentor);
+		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meeting));
+
+		member(UserAccountStatus.APPROVED, organizationId, null);
+		assertThat(service.isMeetingVisibleTo(meetingId, organizationId, userId)).isTrue();
+		assertThat(service.isMeetingVisibleTo(meetingId, organizationId, mentor.getId())).isTrue();
+		assertThat(service.isMeetingVisibleTo(meetingId, organizationId, null)).isTrue();
+
+		member(UserAccountStatus.APPROVED, UUID.randomUUID(), null);
+		assertThat(service.isMeetingVisibleTo(meetingId, organizationId, userId)).isFalse();
 	}
 
 	@Test

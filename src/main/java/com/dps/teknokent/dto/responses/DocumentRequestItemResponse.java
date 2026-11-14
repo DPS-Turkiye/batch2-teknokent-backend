@@ -5,15 +5,17 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 public record DocumentRequestItemResponse(
 		UUID id,
 		String title,
 		int sortOrder,
 		LocalDate dueDate,
 		UUID organizationId,
-		UUID mentorshipRequestId,
-		UUID meetingId,
-		UUID mentorshipId,
+		@Nullable UUID mentorshipRequestId,
+		@Nullable UUID meetingId,
+		@Nullable UUID mentorshipId,
 		UUID programId,
 		UUID createdById,
 		String createdByName,

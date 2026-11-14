@@ -1,5 +1,7 @@
 package com.dps.teknokent.domain;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.util.TextUtils;
 
@@ -20,20 +22,28 @@ public enum StartupFundingStage {
 		return value;
 	}
 
-	public static StartupFundingStage fromOrNull(String raw) {
+	public static @Nullable StartupFundingStage fromOrNull(@Nullable String raw) {
 		String normalized = TextUtils.normalizeOptional(raw);
-		if (normalized == null) return null;
+		if (normalized == null) {
+			return null;
+		}
 		for (StartupFundingStage stage : values()) {
-			if (stage.value.equals(normalized)) return stage;
+			if (stage.value.equals(normalized)) {
+				return stage;
+			}
 		}
 		return null;
 	}
 
-	public static StartupFundingStage requireValidOrNull(String raw) {
+	public static @Nullable StartupFundingStage requireValidOrNull(@Nullable String raw) {
 		String normalized = TextUtils.normalizeOptional(raw);
-		if (normalized == null) return null;
+		if (normalized == null) {
+			return null;
+		}
 		StartupFundingStage match = fromOrNull(raw);
-		if (match == null) throw new InvalidRequestException("Unknown funding stage: " + normalized);
+		if (match == null) {
+			throw new InvalidRequestException("Unknown funding stage: " + normalized);
+		}
 		return match;
 	}
 }

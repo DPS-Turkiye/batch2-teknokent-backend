@@ -49,7 +49,8 @@ public class TeamMembershipService {
 
 	public void left(AppUser user, Organization organization, TeamExitReason reason) {
 		teamMembershipRepository
-				.findFirstByUserIdAndOrganizationIdAndLeftAtIsNullOrderByJoinedAtDesc(user.getId(), organization.getId())
+				.findFirstByUserIdAndOrganizationIdAndLeftAtIsNullOrderByJoinedAtDesc(user.getId(),
+						organization.getId())
 				.ifPresent(membership -> {
 					membership.setLeftAt(Instant.now());
 					membership.setExitReason(reason);

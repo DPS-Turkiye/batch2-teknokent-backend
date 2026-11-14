@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.StartupStage;
 
 /**
@@ -15,9 +17,9 @@ public record StartupProcessResponse(
 		UUID organizationId,
 		StartupStage currentStage,
 		List<StartupStageResponse> stages,
-		StartupRoundResponse currentRound,
+		@Nullable StartupRoundResponse currentRound,
 		List<StartupRoundResponse> rounds,
 		List<ProcessAssignmentResponse> assignments,
-		UUID currentPhaseId,
+		@Nullable UUID currentPhaseId,
 		List<ProcessPhaseResponse> phases) {
 }

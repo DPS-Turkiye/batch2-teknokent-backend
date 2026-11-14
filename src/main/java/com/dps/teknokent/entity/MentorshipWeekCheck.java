@@ -22,11 +22,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(
-		name = "mentorship_week_check",
-		uniqueConstraints = @UniqueConstraint(
-				name = "uq_mentorship_week_check",
-				columnNames = { "mentorship_id", "week_start" }))
+@Table(name = "mentorship_week_check", uniqueConstraints = @UniqueConstraint(name = "uq_mentorship_week_check", columnNames = {
+		"mentorship_id", "week_start" }))
 @Getter
 @Setter
 @NoArgsConstructor

@@ -1,58 +1,58 @@
 package com.dps.teknokent.service;
 
-import java.util.stream.Collectors;
-import java.util.Map;
-import com.dps.teknokent.repository.ProgramMentorRepository;
-import com.dps.teknokent.repository.MentorshipRepository;
-import com.dps.teknokent.repository.MentorProgramName;
-import com.dps.teknokent.repository.MentorCount;
-import com.dps.teknokent.domain.ProgramMentorStatus;
-import com.dps.teknokent.domain.MentorshipStatus;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Set;
-import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
-import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
-import com.dps.teknokent.entity.MentorAvailabilityRule;
-import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
-import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
-import com.dps.teknokent.entity.MentorAvailabilityException;
-import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
-import com.dps.teknokent.dto.requests.MentorAvailabilityExceptionRequest;
-import com.dps.teknokent.dto.responses.MentorAvailabilityExceptionResponse;
-import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
 import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
+import com.dps.teknokent.dto.requests.MentorAvailabilityExceptionRequest;
 import com.dps.teknokent.dto.requests.MentorProgramRoleRequest;
 import com.dps.teknokent.dto.requests.StudentProfileRequest;
+import com.dps.teknokent.dto.requests.UpdateMentorAvailabilitySettingsRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
+import com.dps.teknokent.dto.responses.MentorAvailabilityExceptionResponse;
+import com.dps.teknokent.dto.responses.MentorAvailabilityRuleResponse;
+import com.dps.teknokent.dto.responses.MentorAvailabilitySettingsResponse;
 import com.dps.teknokent.dto.responses.MentorAvailabilitySlotResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorProgramResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.MentorAvailabilityException;
+import com.dps.teknokent.entity.MentorAvailabilityRule;
 import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.MentorExperience;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.ProgramMentor;
-import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingRepository;
+import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
+import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
 import com.dps.teknokent.repository.MentorAvailabilitySlotRepository;
+import com.dps.teknokent.repository.MentorCount;
 import com.dps.teknokent.repository.MentorProfileRepository;
+import com.dps.teknokent.repository.MentorProgramName;
+import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
+import com.dps.teknokent.util.TextUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -80,7 +80,7 @@ public class MentorProfileService {
 
 	/** The directory as {@code actorId} sees it: a mentee in a program gets only that program's accepted mentors. */
 	@Transactional(readOnly = true)
-	public List<MentorProfileResponse> findReachable(UUID actorId) {
+	public List<MentorProfileResponse> findReachable(@Nullable UUID actorId) {
 		return menteeProgramService.reachableMentorIds(actorId)
 				.map(ids -> withActivity(approvedMentors().stream()
 						.filter(profile -> ids.contains(profile.getId()))
@@ -134,8 +134,8 @@ public class MentorProfileService {
 		AppUser mentor = requireMentor(mentorId);
 		MentorProfile profile = mentorProfileRepository.findOneById(mentorId)
 				.orElseThrow(() -> new ResourceNotFoundException("Mentor profile not found: " + mentorId));
-		validateRules(request.rules());
-		validateExceptions(request.exceptions());
+		AvailabilityRules.validateRules(request.rules());
+		AvailabilityRules.validateExceptions(request.exceptions());
 		mentorAvailabilityRuleRepository.findByMentorIdOrderByDayOfWeekAscStartTimeAsc(mentorId)
 				.forEach(rule -> deleteAvailabilityRule(mentorId, rule.getId()));
 		mentorAvailabilityExceptionRepository.deleteAll(mentorAvailabilityExceptionRepository.findByMentorId(mentorId));
@@ -165,30 +165,6 @@ public class MentorProfileService {
 				profile.getDefaultMeetingDurationMinutes(), profile.getMeetingBufferMinutes());
 	}
 
-	private void validateRules(List<CreateMentorAvailabilityRuleRequest> rules) {
-		Set<String> seen = new HashSet<>();
-		for (CreateMentorAvailabilityRuleRequest rule : rules) {
-			if (!rule.endTime().isAfter(rule.startTime())) throw new InvalidRequestException("Availability must end after it starts");
-			if (!seen.add(rule.dayOfWeek() + ":" + rule.startTime())) throw new InvalidRequestException("Duplicate weekly availability rule");
-		}
-		for (CreateMentorAvailabilityRuleRequest left : rules) for (CreateMentorAvailabilityRuleRequest right : rules) {
-			if (left == right || left.dayOfWeek() != right.dayOfWeek()) continue;
-			if (left.startTime().isBefore(right.endTime()) && right.startTime().isBefore(left.endTime()))
-				throw new InvalidRequestException("Weekly availability ranges cannot overlap");
-		}
-	}
-
-	private void validateExceptions(List<MentorAvailabilityExceptionRequest> exceptions) {
-		Set<String> seen = new HashSet<>();
-		for (MentorAvailabilityExceptionRequest exception : exceptions) {
-			if (exception.endsOn().isBefore(exception.startsOn()))
-				throw new InvalidRequestException("Availability exception must end on or after it starts");
-			// The table is unique on these dates, so a repeat would otherwise surface as a 500.
-			if (!seen.add(exception.startsOn() + ":" + exception.endsOn()))
-				throw new InvalidRequestException("Duplicate availability exception dates");
-		}
-	}
-
 	private void saveException(AppUser mentor, MentorAvailabilityExceptionRequest request) {
 		MentorAvailabilityException exception = new MentorAvailabilityException();
 		exception.setMentor(mentor);
@@ -199,7 +175,8 @@ public class MentorProfileService {
 	}
 
 	private void removeUnbookedSlotsInExceptions(UUID mentorId) {
-		mentorAvailabilitySlotRepository.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(mentorId, Instant.now()).stream()
+		mentorAvailabilitySlotRepository.findByMentorIdAndStartsAtAfterOrderByStartsAtAsc(mentorId, Instant.now())
+				.stream()
 				.filter(slot -> isExcluded(mentorId, slot.getStartsAt().atZone(BUSINESS_ZONE).toLocalDate()))
 				.filter(slot -> !isBooked(slot))
 				.forEach(mentorAvailabilitySlotRepository::delete);
@@ -244,7 +221,8 @@ public class MentorProfileService {
 				.orElseThrow(() -> new ResourceNotFoundException("Availability rule not found: " + ruleId));
 
 		List<MentorAvailabilitySlot> removable = new ArrayList<>();
-		for (MentorAvailabilitySlot slot : mentorAvailabilitySlotRepository.findByRuleIdAndStartsAtAfter(ruleId, Instant.now())) {
+		for (MentorAvailabilitySlot slot : mentorAvailabilitySlotRepository.findByRuleIdAndStartsAtAfter(ruleId,
+				Instant.now())) {
 			if (isBooked(slot)) {
 				// A kept slot still pointing at the deleted rule makes Hibernate refuse the flush.
 				slot.setRule(null);
@@ -283,8 +261,8 @@ public class MentorProfileService {
 		List<MentorAvailabilitySlot> created = new ArrayList<>();
 		while (cursor.isBefore(horizon)) {
 			ZonedDateTime dayEnd = cursor.with(rule.getEndTime());
-			for (ZonedDateTime at = cursor; !at.plusMinutes(rule.getSlotMinutes()).isAfter(dayEnd);
-					at = at.plusMinutes(rule.getSlotMinutes())) {
+			for (ZonedDateTime at = cursor; !at.plusMinutes(rule.getSlotMinutes()).isAfter(dayEnd); at = at
+					.plusMinutes(rule.getSlotMinutes())) {
 				Instant startsAt = at.toInstant();
 				// Skip anything already past, and anything the mentor added by hand.
 				if (!startsAt.isAfter(Instant.now())
@@ -364,7 +342,8 @@ public class MentorProfileService {
 	}
 
 	@Transactional
-	public MentorAvailabilitySlotResponse createAvailabilitySlot(UUID mentorId, CreateMentorAvailabilitySlotRequest request) {
+	public MentorAvailabilitySlotResponse createAvailabilitySlot(UUID mentorId,
+			CreateMentorAvailabilitySlotRequest request) {
 		AppUser mentor = requireMentor(mentorId);
 		if (!request.startsAt().isAfter(Instant.now())) {
 			throw new InvalidRequestException("Availability slot must be in the future");
@@ -378,7 +357,8 @@ public class MentorProfileService {
 		slot.setStartsAt(request.startsAt());
 		slot.setDurationMinutes(request.durationMinutes() != null ? request.durationMinutes() : 60);
 		MentorAvailabilitySlot saved = mentorAvailabilitySlotRepository.saveAndFlush(slot);
-		return new MentorAvailabilitySlotResponse(saved.getId(), saved.getStartsAt(), saved.getDurationMinutes(), false);
+		return new MentorAvailabilitySlotResponse(saved.getId(), saved.getStartsAt(), saved.getDurationMinutes(),
+				false);
 	}
 
 	@Transactional
@@ -451,7 +431,8 @@ public class MentorProfileService {
 		if (!slot.getMentor().getId().equals(mentorId)) {
 			throw new InvalidRequestException("This slot does not belong to the given mentor");
 		}
-		if (meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentorId, slot.getStartsAt(), MeetingStatus.SCHEDULED)) {
+		if (meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentorId, slot.getStartsAt(),
+				MeetingStatus.SCHEDULED)) {
 			throw new InvalidRequestException("Cannot remove a slot that already has a scheduled meeting");
 		}
 		mentorAvailabilitySlotRepository.delete(slot);

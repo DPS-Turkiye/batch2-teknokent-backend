@@ -7,9 +7,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ProviderBotDetails(
-    String status,
-    String platform,
-    @JsonProperty("native_meeting_id") String nativeMeetingId,
-    List<Object> participants,
-    List<Object> attendees
-) {}
+		String status,
+		String platform,
+		@JsonProperty("native_meeting_id") String nativeMeetingId,
+		List<Object> participants,
+		List<Object> attendees) {
+}

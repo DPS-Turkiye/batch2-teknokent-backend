@@ -62,9 +62,9 @@ class CoordinatorMentorshipControllerTest {
 		when(coordinatorMentorshipService.list(SIGNED_IN_ID, PROGRAM_ID)).thenReturn(List.of(row()));
 
 		mockMvc.perform(get("/api/coordinator/mentorships")
-						.param("programId", PROGRAM_ID.toString())
-						.param("actorId", OTHER_ID.toString())
-						.with(authentication(signedIn())))
+				.param("programId", PROGRAM_ID.toString())
+				.param("actorId", OTHER_ID.toString())
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].organizationName").value("Lumen"))
 				.andExpect(jsonPath("$[0].health").value("RISKY"));
@@ -72,7 +72,8 @@ class CoordinatorMentorshipControllerTest {
 
 	@Test
 	void aReminderAnswersNoContent() throws Exception {
-		mockMvc.perform(post("/api/coordinator/mentorships/{id}/remind", MENTORSHIP_ID).with(authentication(signedIn())))
+		mockMvc.perform(
+				post("/api/coordinator/mentorships/{id}/remind", MENTORSHIP_ID).with(authentication(signedIn())))
 				.andExpect(status().isNoContent());
 
 		verify(coordinatorMentorshipService).remind(SIGNED_IN_ID, MENTORSHIP_ID);
@@ -82,13 +83,14 @@ class CoordinatorMentorshipControllerTest {
 	void theCalendarParsesItsDayRange() throws Exception {
 		LocalDate from = LocalDate.of(2026, 9, 14);
 		LocalDate to = LocalDate.of(2026, 9, 20);
-		when(coordinatorCalendarService.calendar(SIGNED_IN_ID, null, from, to)).thenReturn(new CoordinatorCalendarResponse(
-				from, to, List.of(), List.of(), new CoordinatorCalendarResponse.Summary(18, 2, 2, 2), 2));
+		when(coordinatorCalendarService.calendar(SIGNED_IN_ID, null, from, to))
+				.thenReturn(new CoordinatorCalendarResponse(
+						from, to, List.of(), List.of(), new CoordinatorCalendarResponse.Summary(18, 2, 2, 2), 2));
 
 		mockMvc.perform(get("/api/coordinator/calendar")
-						.param("from", "2026-09-14")
-						.param("to", "2026-09-20")
-						.with(authentication(signedIn())))
+				.param("from", "2026-09-14")
+				.param("to", "2026-09-20")
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.summary.meetings").value(18));
 	}
@@ -102,14 +104,16 @@ class CoordinatorMentorshipControllerTest {
 
 	private static UsernamePasswordAuthenticationToken signedIn() {
 		return new UsernamePasswordAuthenticationToken(
-				new AppUserPrincipal(SIGNED_IN_ID, "elif@tekno.test", UserRole.COORDINATOR, UserAccountStatus.APPROVED, "uid"),
+				new AppUserPrincipal(SIGNED_IN_ID, "elif@tekno.test", UserRole.COORDINATOR, UserAccountStatus.APPROVED,
+						"uid"),
 				null, List.of());
 	}
 
 	private static CoordinatorMentorshipResponse row() {
 		return new CoordinatorMentorshipResponse(
 				MENTORSHIP_ID, PROGRAM_ID, "METU Stars 2026", UUID.randomUUID(), "Ayşe Demir", null,
-				UUID.randomUUID(), "Lumen", MentorshipStatus.ACTIVE, CoordinatorMentorshipHealth.RISKY, "Finansal model",
+				UUID.randomUUID(), "Lumen", MentorshipStatus.ACTIVE, CoordinatorMentorshipHealth.RISKY,
+				"Finansal model",
 				null, null, 18L, null, 2, 1, 0);
 	}
 }

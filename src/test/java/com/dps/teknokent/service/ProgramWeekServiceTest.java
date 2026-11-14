@@ -50,6 +50,8 @@ class ProgramWeekServiceTest {
 	private ProgramPhase discovery;
 	private ProgramPhase prototype;
 	private ProgramPhase demo;
+	private List<ProgramPhase> phaseRows;
+	private List<ProgramWeek> weekRows = List.of();
 
 	@BeforeEach
 	void setUp() {
@@ -63,8 +65,8 @@ class ProgramWeekServiceTest {
 		prototype = phase(1, "Prototip", "2026-11-04", "2026-11-22", "Çalışan ilk sürüm");
 		demo = phase(2, "Demo hazırlığı", "2026-11-23", "2026-12-27", "Demo günü sunumu");
 		when(programs.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
-		when(phases.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of(discovery, prototype, demo,
-				phase(3, "Tarihsiz", null, null, null)));
+		phaseRows = List.of(discovery, prototype, demo, phase(3, "Tarihsiz", null, null, null));
+		when(phases.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(phaseRows);
 	}
 
 	@Test
@@ -83,8 +85,8 @@ class ProgramWeekServiceTest {
 
 	@Test
 	void theWeeksPlannedContentComesWithItsDates() {
-		when(weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of(
-				week(1, "Tanışma"), week(2, "Kullanıcı görüşmeleri")));
+		weekRows = List.of(week(1, "Tanışma"), week(2, "Kullanıcı görüşmeleri"));
+		when(weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(weekRows);
 
 		ProgramWeekResponse week = build(LocalDate.of(2026, 10, 14));
 
@@ -225,8 +227,7 @@ class ProgramWeekServiceTest {
 	}
 
 	private ProgramWeekResponse build(LocalDate today) {
-		return ProgramWeekService.build(program, phases.findByProgramIdOrderByPositionAsc(PROGRAM_ID),
-				weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID), today);
+		return ProgramWeekService.build(program, phaseRows, weekRows, today);
 	}
 
 	private AppUser user(UserAccountStatus status, UserRole... roles) {

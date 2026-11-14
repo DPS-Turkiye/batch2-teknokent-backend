@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.i18n.LocaleContext;
 import org.springframework.context.i18n.LocaleContextHolder;
 
@@ -37,7 +38,7 @@ public final class Texts {
 		}
 
 		@Override
-		public Locale getFallbackLocale(String baseName, Locale locale) {
+		public @Nullable Locale getFallbackLocale(String baseName, Locale locale) {
 			return null;
 		}
 
@@ -51,12 +52,12 @@ public final class Texts {
 	private Texts() {
 	}
 
-	public static String get(AppUser reader, String key, Object... args) {
+	public static String get(AppUser reader, String key, @Nullable Object... args) {
 		return get(reader.getPreferredLanguage(), key, args);
 	}
 
 	/** For the answer to the current request (an error, a match reason), in the caller's language. */
-	public static String forRequest(String key, Object... args) {
+	public static String forRequest(String key, @Nullable Object... args) {
 		return get(requestLanguage(), key, args);
 	}
 
@@ -68,11 +69,11 @@ public final class Texts {
 	}
 
 	/** For an invitee with no account yet, so no known language: Turkish, then English. */
-	public static String inBoth(String separator, String key, Object... args) {
+	public static String inBoth(String separator, String key, @Nullable Object... args) {
 		return get(AppLanguage.TR, key, args) + separator + get(AppLanguage.EN, key, args);
 	}
 
-	public static String get(AppLanguage language, String key, Object... args) {
+	public static String get(AppLanguage language, String key, @Nullable Object... args) {
 		Object[] shown = Arrays.stream(args)
 				.map(arg -> arg instanceof Instant instant ? MeetingSlotTimes.formatForPeople(instant, language) : arg)
 				.toArray();

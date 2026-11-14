@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
@@ -30,7 +32,7 @@ public final class ProgramActivity {
 	 *
 	 * @param teamMentorships the mentorships of the meeting's team
 	 */
-	public static UUID programOf(Meeting meeting, Collection<Mentorship> teamMentorships) {
+	public static @Nullable UUID programOf(Meeting meeting, Collection<Mentorship> teamMentorships) {
 		MentorshipRequest request = meeting.getMentorshipRequest();
 		if (request != null && request.getProgram() != null) {
 			return request.getProgram().getId();
@@ -42,7 +44,8 @@ public final class ProgramActivity {
 		List<Mentorship> withThisMentor = teamMentorships.stream()
 				.filter(mentorship -> mentorship.getProgram() != null
 						&& mentorship.getMentor().getId().equals(mentorId))
-				.sorted(Comparator.comparing(Mentorship::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
+				.sorted(Comparator.comparing(Mentorship::getCreatedAt,
+						Comparator.nullsFirst(Comparator.naturalOrder())))
 				.toList();
 		if (withThisMentor.isEmpty()) {
 			return null;
@@ -71,7 +74,7 @@ public final class ProgramActivity {
 	/**
 	 * Of these meetings, the ones that count in the program (see {@link #countsIn}).
 	 *
-	 * @param teams the teams in the program today
+	 * @param teams             the teams in the program today
 	 * @param mentorshipsByTeam every team's mentorships, by organization id
 	 */
 	public static List<Meeting> heldIn(

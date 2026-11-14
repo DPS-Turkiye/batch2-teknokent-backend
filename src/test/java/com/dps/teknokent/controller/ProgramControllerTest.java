@@ -30,8 +30,8 @@ import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekResponse;
 import com.dps.teknokent.service.ProgramCalendarService;
-import com.dps.teknokent.service.ProgramWeekService;
 import com.dps.teknokent.service.ProgramService;
+import com.dps.teknokent.service.ProgramWeekService;
 
 @WebMvcTest(ProgramController.class)
 @Import(SecurityConfig.class)
@@ -63,8 +63,8 @@ class ProgramControllerTest {
 		when(programService.list(ACTOR_ID)).thenReturn(List.of(program()));
 
 		mockMvc.perform(get("/api/programs")
-						.param("actorId", ACTOR_ID.toString())
-						.with(user("test-user")))
+				.param("actorId", ACTOR_ID.toString())
+				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].name").value("Seed 2026"));
 	}
@@ -75,8 +75,8 @@ class ProgramControllerTest {
 				null, null, 3, 12, null, null, false, false, true, null, List.of()));
 
 		mockMvc.perform(get("/api/programs/mine/this-week")
-						.param("actorId", ACTOR_ID.toString())
-						.with(user("test-user")))
+				.param("actorId", ACTOR_ID.toString())
+				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.week").value(3))
 				.andExpect(jsonPath("$.hasSyllabus").value(true));
@@ -93,9 +93,9 @@ class ProgramControllerTest {
 		when(programService.create(eq(ACTOR_ID), eq("Seed 2026"))).thenReturn(program());
 
 		mockMvc.perform(post("/api/programs")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"name\":\"Seed 2026\",\"actorId\":\"" + ACTOR_ID + "\"}")
-						.with(user("test-user")))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"name\":\"Seed 2026\",\"actorId\":\"" + ACTOR_ID + "\"}")
+				.with(user("test-user")))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.name").value("Seed 2026"));
 
@@ -107,9 +107,9 @@ class ProgramControllerTest {
 		when(programService.setStatus(ACTOR_ID, PROGRAM_ID, ProgramStatus.COMPLETED)).thenReturn(program());
 
 		mockMvc.perform(put("/api/programs/" + PROGRAM_ID + "/status")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"status\":\"COMPLETED\",\"actorId\":\"" + ACTOR_ID + "\"}")
-						.with(user("test-user")))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"COMPLETED\",\"actorId\":\"" + ACTOR_ID + "\"}")
+				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("ACTIVE"));
 
@@ -119,9 +119,9 @@ class ProgramControllerTest {
 	@Test
 	void rejectsAStatusChangeWithoutAStatus() throws Exception {
 		mockMvc.perform(put("/api/programs/" + PROGRAM_ID + "/status")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + ACTOR_ID + "\"}")
-						.with(user("test-user")))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + ACTOR_ID + "\"}")
+				.with(user("test-user")))
 				.andExpect(status().isBadRequest());
 	}
 
@@ -136,8 +136,8 @@ class ProgramControllerTest {
 				Instant.parse("2026-09-01T09:00:00Z"))));
 
 		mockMvc.perform(get("/api/programs/invitations")
-						.param("actorId", mentorId.toString())
-						.with(user("test-user")))
+				.param("actorId", mentorId.toString())
+				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].programName").value("Seed 2026"));
 	}
@@ -151,10 +151,10 @@ class ProgramControllerTest {
 						ProgramEventKind.DEADLINE, Instant.parse("2026-09-25T20:59:00Z"), null, null)));
 
 		mockMvc.perform(get("/api/programs/events")
-						.param("from", from.toString())
-						.param("to", to.toString())
-						.param("actorId", ACTOR_ID.toString())
-						.with(user("test-user")))
+				.param("from", from.toString())
+				.param("to", to.toString())
+				.param("actorId", ACTOR_ID.toString())
+				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].programName").value("Seed 2026"))
 				.andExpect(jsonPath("$[0].kind").value("DEADLINE"));
@@ -163,9 +163,9 @@ class ProgramControllerTest {
 	@Test
 	void requiresAnActorForProgramEvents() throws Exception {
 		mockMvc.perform(get("/api/programs/events")
-						.param("from", "2026-09-21T00:00:00Z")
-						.param("to", "2026-09-28T00:00:00Z")
-						.with(user("test-user")))
+				.param("from", "2026-09-21T00:00:00Z")
+				.param("to", "2026-09-28T00:00:00Z")
+				.with(user("test-user")))
 				.andExpect(status().isBadRequest());
 	}
 

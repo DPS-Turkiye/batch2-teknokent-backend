@@ -21,11 +21,15 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 	// The request is read for every meeting to tell which program it was held in (ProgramActivity).
 	@EntityGraph(attributePaths = "mentorshipRequest")
 	List<Meeting> findAllByOrderByScheduledAtDesc();
+
 	List<Meeting> findByOrganizationIdOrderByScheduledAtDesc(UUID organizationId);
+
 	List<Meeting> findByMentorIdOrderByScheduledAtDesc(UUID mentorId);
+
 	List<Meeting> findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(UUID mentorId, UUID organizationId);
 
-	long countByOrganizationIdAndStatusAndScheduledAtAfter(UUID organizationId, MeetingStatus status, Instant threshold);
+	long countByOrganizationIdAndStatusAndScheduledAtAfter(UUID organizationId, MeetingStatus status,
+			Instant threshold);
 
 	Optional<Meeting> findByMentorshipRequestId(UUID mentorshipRequestId);
 
@@ -48,8 +52,6 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 	List<Meeting> findByMentorIdAndScheduledAt(UUID mentorId, Instant scheduledAt);
 
 	List<Meeting> findByMeetLinkContainingIgnoreCase(String meetLinkFragment);
-
-	Optional<Meeting> findFirstByMeetLinkAndBotDispatchedAtIsNotNull(String meetLink);
 
 	List<Meeting> findByStatusAndMeetLinkContainingIgnoreCase(MeetingStatus status, String meetLinkFragment);
 

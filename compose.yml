@@ -19,7 +19,7 @@ services:
       - redis
 
   postgres:
-    image: pgvector/pgvector:0.8.6-pg17
+    image: pgvector/pgvector:0.8.7-pg17
     restart: unless-stopped
     command: ["postgres", "-c", "log_min_messages=warning"]
     ports:
@@ -42,7 +42,7 @@ services:
   # Moodle keeps its own "moodle" database in the postgres service. See dev/moodle/README.md.
   moodle-db:
     profiles: ["moodle"]
-    image: pgvector/pgvector:0.8.6-pg17
+    image: pgvector/pgvector:0.8.7-pg17
     environment:
       PGPASSWORD: ${DATABASE_PASSWORD}
     entrypoint: ["sh", "-c"]

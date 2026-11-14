@@ -30,6 +30,13 @@
 
 @REM Always run Maven in Docker unless already inside the container.
 @IF "%MVNW_IN_DOCKER%"=="1" GOTO runMaven
+
+@REM Turn on the shared git hooks (.githooks) the first time a build runs in a checkout, as husky does in the
+@REM web repo. Nothing changes when core.hooksPath is already set: "git config core.hooksPath .git/hooks" opts out.
+@IF EXIST "%~dp0.githooks" (
+  git -C "%~dp0." config --get core.hooksPath >nul 2>&1 || git -C "%~dp0." config core.hooksPath .githooks >nul 2>&1
+)
+
 docker --version >nul 2>&1
 @IF ERRORLEVEL 1 (
   @echo Docker is required to run mvnw.cmd. 1>&2

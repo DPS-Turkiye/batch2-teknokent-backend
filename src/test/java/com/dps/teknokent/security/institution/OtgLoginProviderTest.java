@@ -46,7 +46,7 @@ class OtgLoginProviderTest {
 	private static final String REDIRECT = "http://localhost:3000/auth/otg/callback";
 
 	private final StringRedisTemplate redis = mock(StringRedisTemplate.class);
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // mock() takes the raw class of a generic type.
 	private final ValueOperations<String, String> values = mock(ValueOperations.class);
 	private MockRestServiceServer otg;
 	private OtgLoginProvider provider;
@@ -201,6 +201,109 @@ class OtgLoginProviderTest {
 	}
 
 	@Test
+	void aCallbackWithoutAStateHasNoVerifierAndIsRefused() {
+		assertThatThrownBy(() -> provider.completeLogin(null, Map.of("code", "code-1")))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(values, never()).getAndDelete(anyString());
+		otg.verify();
+	}
+
+	@Test
+	void aBlankOrOversizedCodeNeverReachesOtg() {
+		when(values.getAndDelete(anyString())).thenReturn("verifier-1");
+
+		assertThatThrownBy(() -> provider.completeLogin("state-1", Map.of("code", "  ")))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> provider.completeLogin("state-1", Map.of("code", "c".repeat(2049))))
+				.isInstanceOf(InvalidRequestException.class);
+		otg.verify();
+	}
+
+	@Test
+	void theLongestCodeOtgMaySendIsStillTraded() {
+		when(values.getAndDelete(anyString())).thenReturn("verifier-1");
+		String longest = "c".repeat(2048);
+		otg.expect(requestTo(ISSUER + "/oauth/token"))
+				.andExpect(content().formDataContains(Map.of("code", longest)))
+				.andRespond(withSuccess("{\"access_token\":\"access-1\"}", MediaType.APPLICATION_JSON));
+		otg.expect(requestTo(USERINFO))
+				.andRespond(withSuccess("{\"sub\":\" a72ab40d \",\"email\":\"x@ornek.com\"}",
+						MediaType.APPLICATION_JSON));
+
+		InstitutionIdentity identity = provider.completeLogin("state-1", Map.of("code", longest));
+
+		otg.verify();
+		// The sub becomes part of a Firebase uid, so stray whitespace must not make a second person of it.
+		assertThat(identity.persistentId()).isEqualTo("a72ab40d");
+	}
+
+	@Test
+	void aTokenAnswerWithoutAnAccessTokenIsABadGatewayAndUserinfoIsNeverAsked() {
+		when(values.getAndDelete(anyString())).thenReturn("verifier-1");
+		otg.expect(requestTo(ISSUER + "/oauth/token"))
+				.andRespond(withSuccess("{\"token_type\":\"Bearer\",\"access_token\":\" \"}",
+						MediaType.APPLICATION_JSON));
+
+		assertBadGateway(() -> provider.completeLogin("state-1", Map.of("code", "code-1")));
+		otg.verify();
+	}
+
+	@Test
+	void anEmptyAnswerFromOtgIsABadGateway() {
+		when(values.getAndDelete(anyString())).thenReturn("verifier-1");
+		otg.expect(requestTo(ISSUER + "/oauth/token")).andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+		assertBadGateway(() -> provider.completeLogin("state-1", Map.of("code", "code-1")));
+	}
+
+	// A login page or proxy error served with 200 must not surface as a JSON parsing 500.
+	@Test
+	void anAnswerThatIsNotJsonIsABadGateway() {
+		when(values.getAndDelete(anyString())).thenReturn("verifier-1");
+		otg.expect(requestTo(ISSUER + "/oauth/token"))
+				.andRespond(withSuccess("{\"access_token\":\"access-1\"}", MediaType.APPLICATION_JSON));
+		otg.expect(requestTo(USERINFO))
+				.andRespond(withSuccess("<html>Giriş yapın</html>", MediaType.TEXT_HTML));
+
+		assertBadGateway(() -> provider.completeLogin("state-1", Map.of("code", "code-1")));
+	}
+
+	@Test
+	void aBlankSubIsABadGateway() {
+		when(values.getAndDelete(anyString())).thenReturn("verifier-1");
+		otg.expect(requestTo(ISSUER + "/oauth/token"))
+				.andRespond(withSuccess("{\"access_token\":\"access-1\"}", MediaType.APPLICATION_JSON));
+		otg.expect(requestTo(USERINFO))
+				.andRespond(withSuccess("{\"sub\":\"  \",\"email\":\"x@ornek.com\"}", MediaType.APPLICATION_JSON));
+
+		assertBadGateway(() -> provider.completeLogin("state-1", Map.of("code", "code-1")));
+	}
+
+	// The constructor Spring uses: its own HTTP client, and the same checks on the settings.
+	@Test
+	void theApplicationsOwnConstructorBuildsAProviderThatSendsTheBrowserToTheIssuer() {
+		JsonMapper json = JsonMapper.builder().build();
+		OtgLoginProvider wired = new OtgLoginProvider(redis, json, ISSUER, USERINFO, " client-1 ", "secret-1",
+				REDIRECT);
+
+		String redirect = wired.startLogin("state-2");
+
+		assertThat(redirect).startsWith(ISSUER + "/oauth/authorize?");
+		assertThat(UriComponentsBuilder.fromUriString(redirect).build().getQueryParams().getFirst("client_id"))
+				.isEqualTo("client-1");
+		assertThatThrownBy(() -> new OtgLoginProvider(redis, json, ISSUER, "http://otg.example/userinfo", "client-1",
+				"secret-1", REDIRECT))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("OTG_USERINFO_URL");
+		assertThatThrownBy(() -> new OtgLoginProvider(redis, json, ISSUER, USERINFO, null, "secret-1", REDIRECT))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("OTG_CLIENT_ID");
+	}
+
+	private static void assertBadGateway(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+		assertThatThrownBy(call).isInstanceOfSatisfying(ResponseStatusException.class,
+				error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
+	}
+
+	@Test
 	void refusesToStartWithoutItsSettingsOrOverPlainHttp() {
 		JsonMapper json = JsonMapper.builder().build();
 		RestClient client = RestClient.create();
@@ -209,7 +312,8 @@ class OtgLoginProviderTest {
 		assertThatThrownBy(() -> new OtgLoginProvider(redis, json, client, "http://otg.example/auth/v1", USERINFO,
 				"client-1", "secret-1", REDIRECT))
 				.isInstanceOf(IllegalStateException.class).hasMessageContaining("https");
-		assertThatThrownBy(() -> new OtgLoginProvider(redis, json, client, ISSUER, USERINFO, "client-1", "secret-1", ""))
+		assertThatThrownBy(
+				() -> new OtgLoginProvider(redis, json, client, ISSUER, USERINFO, "client-1", "secret-1", ""))
 				.isInstanceOf(IllegalStateException.class).hasMessageContaining("OTG_REDIRECT_URI");
 		verify(values, never()).set(anyString(), anyString(), any(Duration.class));
 	}

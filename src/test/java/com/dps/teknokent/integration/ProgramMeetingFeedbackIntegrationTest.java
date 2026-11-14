@@ -158,8 +158,8 @@ class ProgramMeetingFeedbackIntegrationTest {
 				.andExpect(jsonPath("$.content[?(@.meetingTitle == 'İptal')]").isEmpty())
 				.andExpect(jsonPath("$.content[?(@.meetingTitle == 'Gelecek')]").isEmpty());
 		mockMvc.perform(get("/api/coordinator/programs/{id}/meeting-feedback", other.getId())
-						.param("actorId", otherCoordinator.getId().toString())
-						.with(httpBasic("test", "test")))
+				.param("actorId", otherCoordinator.getId().toString())
+				.with(httpBasic("test", "test")))
 				.andExpect(jsonPath("$.content[?(@.meetingTitle == 'Diğer program')]").isNotEmpty())
 				.andExpect(jsonPath("$.content[?(@.meetingTitle == 'Bu program')]").isEmpty());
 	}
@@ -177,10 +177,10 @@ class ProgramMeetingFeedbackIntegrationTest {
 	@Test
 	void pagesThroughTheFeedback() throws Exception {
 		mockMvc.perform(get("/api/coordinator/programs/{id}/meeting-feedback", program.getId())
-						.param("actorId", coordinator.getId().toString())
-						.param("page", "1")
-						.param("size", "2")
-						.with(httpBasic("test", "test")))
+				.param("actorId", coordinator.getId().toString())
+				.param("page", "1")
+				.param("size", "2")
+				.with(httpBasic("test", "test")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.page").value(1))
 				.andExpect(jsonPath("$.size").value(2))
@@ -209,19 +209,19 @@ class ProgramMeetingFeedbackIntegrationTest {
 	@Test
 	void aSignedInMenteeCannotBorrowTheCoordinatorsId() throws Exception {
 		mockMvc.perform(get("/api/coordinator/programs/{id}/meeting-feedback", program.getId())
-						.param("actorId", coordinator.getId().toString())
-						.with(authentication(signedIn(founder))))
+				.param("actorId", coordinator.getId().toString())
+				.with(authentication(signedIn(founder))))
 				.andExpect(status().isForbidden());
 	}
 
 	@Test
 	void anUnknownProgramIsNotFoundAndNoSignInIsUnauthorized() throws Exception {
 		mockMvc.perform(get("/api/coordinator/programs/{id}/meeting-feedback", UUID.randomUUID())
-						.param("actorId", coordinator.getId().toString())
-						.with(httpBasic("test", "test")))
+				.param("actorId", coordinator.getId().toString())
+				.with(httpBasic("test", "test")))
 				.andExpect(status().isNotFound());
 		mockMvc.perform(get("/api/coordinator/programs/{id}/meeting-feedback", program.getId())
-						.param("actorId", coordinator.getId().toString()))
+				.param("actorId", coordinator.getId().toString()))
 				.andExpect(status().isUnauthorized());
 	}
 

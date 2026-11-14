@@ -101,6 +101,13 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				.filter(user -> user.getStatus() != UserAccountStatus.DELETED);
 		if (account.isEmpty()) {
 			if (isProfileParsePreview(request)) {
+				// Firebase lets anyone make e-mail/password logins at will, so a token alone would buy unlimited
+				// OCR and paid AI parses, one budget per throwaway login. The sign-up page verifies the address
+				// before its CV step, and registering needs a verified address anyway.
+				if (!identity.get().emailVerified()) {
+					write(response, HttpServletResponse.SC_FORBIDDEN, "Verify your e-mail address first");
+					return;
+				}
 				authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
 				filterChain.doFilter(request, response);
 				return;
@@ -226,7 +233,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 
 	/**
 	 * The signup CV step parses a file before the applicant has an account at
-	 * all, and again while they are PENDING, so a token alone has to open it.
+	 * all, and again while they are PENDING, so a token with a verified address has to open it.
 	 * Safe to widen this far because the endpoint persists nothing — no stored
 	 * document, no profile_analysis row — so there is no organization to scope
 	 * and nothing to leak between startups. It is not public, because it runs

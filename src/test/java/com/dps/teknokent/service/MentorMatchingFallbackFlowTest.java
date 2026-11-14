@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.MentorMatchingMethod;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
@@ -44,7 +46,8 @@ class MentorMatchingFallbackFlowTest {
 
 	@BeforeEach
 	void mentors() {
-		payments = persistMentor("Ayla Payments", UserAccountStatus.APPROVED, List.of("Fintech", "Payments"), "Fintech");
+		payments = persistMentor("Ayla Payments", UserAccountStatus.APPROVED, List.of("Fintech", "Payments"),
+				"Fintech");
 		growth = persistMentor("Burak Growth", UserAccountStatus.APPROVED, List.of("Growth marketing"), "E-commerce");
 		for (int i = 0; i < 5; i++) {
 			persistMentor("Cem Other " + i, UserAccountStatus.APPROVED, List.of("Hardware"), "Manufacturing");
@@ -60,7 +63,7 @@ class MentorMatchingFallbackFlowTest {
 	void fallbackRanksByTheRequestAndExplainsEachMatch() {
 		MentorRecommendationResult result = recommendations.recommend(fintechRequest(null));
 
-		assertThat(result.matchingMethod()).isEqualTo("DETERMINISTIC");
+		assertThat(result.matchingMethod()).isEqualTo(MentorMatchingMethod.DETERMINISTIC);
 		assertThat(result.matchingModel()).isEqualTo("keyword-overlap-v1");
 		assertThat(result.mentors()).hasSize(5); // a shortlist, not the whole pool of 7
 		assertThat(result.mentors().getFirst().id()).isEqualTo(payments.getId());
@@ -92,7 +95,7 @@ class MentorMatchingFallbackFlowTest {
 				List.of(UUID.randomUUID()));
 
 		assertThat(result.mentors()).isEmpty();
-		assertThat(result.matchingMethod()).isEqualTo("DETERMINISTIC");
+		assertThat(result.matchingMethod()).isEqualTo(MentorMatchingMethod.DETERMINISTIC);
 	}
 
 	private static RecommendMentorsRequest fintechRequest(UUID excludedMentorId) {
@@ -102,7 +105,7 @@ class MentorMatchingFallbackFlowTest {
 
 	private AppUser persistMentor(String name, UserAccountStatus status, List<String> specialties, String sector) {
 		AppUser user = new AppUser();
-		user.setEmail(name.toLowerCase().replace(' ', '.') + "@mentor.test");
+		user.setEmail(name.toLowerCase(Locale.ROOT).replace(' ', '.') + "@mentor.test");
 		user.setFullName(name);
 		user.setRole(UserRole.MENTOR);
 		user.setStatus(status);
@@ -110,7 +113,7 @@ class MentorMatchingFallbackFlowTest {
 
 		MentorProfile profile = new MentorProfile();
 		profile.setUser(user);
-		profile.setInitials(name.substring(0, 2).toUpperCase());
+		profile.setInitials(name.substring(0, 2).toUpperCase(Locale.ROOT));
 		profile.setProfessionalTitle("Mentor");
 		profile.setCompany("Teknokent");
 		profile.setAvailabilityLabel("Mentorluğa açık");

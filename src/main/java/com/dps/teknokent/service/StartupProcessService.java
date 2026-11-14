@@ -8,11 +8,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,7 +35,6 @@ import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.ProgramPhase;
-import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.StartupRound;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -44,12 +43,8 @@ import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
-import com.dps.teknokent.repository.ProgramCoordinatorRepository;
-import com.dps.teknokent.repository.ProgramRepository;
-import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
-import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
@@ -68,9 +63,6 @@ public class StartupProcessService {
 
 	private final DomainLookupService domainLookupService;
 	private final OrganizationRepository organizationRepository;
-	private final ProgramRepository programRepository;
-	private final ProgramCoordinatorRepository programCoordinatorRepository;
-	private final ProgramStartupRepository programStartupRepository;
 	private final StartupRoundRepository startupRoundRepository;
 	private final ActionItemRepository actionItemRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
@@ -78,6 +70,7 @@ public class StartupProcessService {
 	private final NotificationService notificationService;
 	private final MenteeProgramService menteeProgramService;
 	private final ProgramPhaseRepository programPhaseRepository;
+	private final StartupAccessService startupAccessService;
 
 	@Transactional(readOnly = true)
 	public StartupProcessResponse get(UUID organizationId, UUID actorId) {
@@ -178,7 +171,8 @@ public class StartupProcessService {
 	}
 
 	StartupProcessResponse describe(Organization organization, LocalDate today) {
-		List<StartupRound> rounds = startupRoundRepository.findByOrganizationIdOrderByStartsOnDesc(organization.getId());
+		List<StartupRound> rounds = startupRoundRepository
+				.findByOrganizationIdOrderByStartsOnDesc(organization.getId());
 		List<ActionItem> assignments = actionItemRepository
 				.findByOrganizationIdOrderByCreatedAtDesc(organization.getId()).stream()
 				.filter(StartupProcessService::isAssignment)
@@ -223,7 +217,7 @@ public class StartupProcessService {
 	}
 
 	/** A phase of the team's program, or a 404 for any other id. */
-	private UUID requirePhaseOf(Organization organization, UUID phaseId) {
+	private @Nullable UUID requirePhaseOf(Organization organization, @Nullable UUID phaseId) {
 		if (phaseId == null) {
 			return null;
 		}
@@ -252,7 +246,7 @@ public class StartupProcessService {
 	 * The phase an Ödev belongs to: the one it names while that is still a phase of the program, else the one its
 	 * due date (or the day it was made) falls in; null when none does.
 	 */
-	static UUID phaseOf(ActionItem item, List<ProgramPhase> phases) {
+	static @Nullable UUID phaseOf(ActionItem item, List<ProgramPhase> phases) {
 		LocalDate day = item.getDueDate() != null ? item.getDueDate()
 				: item.getCreatedAt() == null ? null : LocalDate.ofInstant(item.getCreatedAt(), PROGRAM_ZONE);
 		return linkedOrCovering(item.getProgramPhaseId(), day, phases);
@@ -263,7 +257,8 @@ public class StartupProcessService {
 				linkedOrCovering(round.getProgramPhaseId(), round.getStartsOn(), phases));
 	}
 
-	private static UUID linkedOrCovering(UUID linked, LocalDate day, List<ProgramPhase> phases) {
+	private static @Nullable UUID linkedOrCovering(@Nullable UUID linked, @Nullable LocalDate day,
+			List<ProgramPhase> phases) {
 		if (linked != null && phases.stream().anyMatch(phase -> linked.equals(phase.getId()))) {
 			return linked;
 		}
@@ -279,7 +274,7 @@ public class StartupProcessService {
 	}
 
 	/** The round running today; failing that the next one planned; failing that the last one held. */
-	static StartupRound pickCurrentRound(List<StartupRound> rounds, LocalDate today) {
+	static @Nullable StartupRound pickCurrentRound(List<StartupRound> rounds, LocalDate today) {
 		Comparator<StartupRound> byStart = Comparator.comparing(StartupRound::getStartsOn);
 		return rounds.stream().filter(round -> round.covers(today)).max(byStart)
 				.or(() -> rounds.stream().filter(round -> round.getStartsOn().isAfter(today)).min(byStart))
@@ -323,25 +318,20 @@ public class StartupProcessService {
 		if (actor.has(UserRole.ADMIN)) {
 			return;
 		}
-		boolean coordinatesIt = actor.has(UserRole.COORDINATOR)
-				&& programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(organization.getId()).stream()
-						.map(ProgramStartup::getProgramId)
-						.map(programRepository::findById)
-						.flatMap(Optional::stream)
-						.anyMatch(program -> ProgramCoordination.coordinates(
-								program, actor.getId(), programCoordinatorRepository));
-		if (!coordinatesIt) {
+		if (!startupAccessService.coordinates(actor, organization.getId())) {
 			throw new InvalidRequestException(
 					"Only an admin or a coordinator of this startup's program can change its stage");
 		}
 	}
 
-	// Founder, admin, coordinator, or a mentor this startup has an accepted mentorship with.
+	// Founder, admin, a coordinator of the startup's program, or a mentor this startup has an accepted mentorship
+	// with.
 	private AppUser requireEditor(Organization organization, UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		if (!isEditor(organization, actor)) {
 			throw new InvalidRequestException(
-					"Only the founder, a mentor of this startup, an admin or a coordinator can change its process");
+					"Only the founder, a mentor of this startup, an admin or a coordinator of its program can change its"
+							+ " process");
 		}
 		return actor;
 	}
@@ -351,12 +341,13 @@ public class StartupProcessService {
 		boolean teamMember = actor.getOrganization() != null
 				&& organization.getId().equals(actor.getOrganization().getId());
 		if (!teamMember && !isEditor(organization, actor)) {
-			throw new InvalidRequestException("Only the startup's team, its mentors, an admin or a coordinator can do this");
+			throw new InvalidRequestException(
+					"Only the startup's team, its mentors, an admin or a coordinator of its program can do this");
 		}
 	}
 
 	private boolean isEditor(Organization organization, AppUser actor) {
-		if (actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR)) {
+		if (actor.has(UserRole.ADMIN) || startupAccessService.coordinates(actor, organization.getId())) {
 			return true;
 		}
 		if (organization.getFounder() != null && organization.getFounder().getId().equals(actor.getId())) {

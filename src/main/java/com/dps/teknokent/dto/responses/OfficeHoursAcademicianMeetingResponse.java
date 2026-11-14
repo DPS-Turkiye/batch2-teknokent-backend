@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A booked office-hours meeting on the academician's calendar, with where it happens.
  *
@@ -13,9 +15,9 @@ public record OfficeHoursAcademicianMeetingResponse(
 		UUID requestId,
 		Instant startsAt,
 		Instant endsAt,
-		OfficeHoursStudentResponse student,
-		String topic,
-		String courseName,
+		@Nullable OfficeHoursStudentResponse student,
+		@Nullable String topic,
+		@Nullable String courseName,
 		String place,
 		String onlineLink) {
 }

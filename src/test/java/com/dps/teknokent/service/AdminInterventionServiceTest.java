@@ -20,6 +20,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -241,12 +243,13 @@ class AdminInterventionServiceTest {
 		when(domainLookupService.requireUser(COORDINATOR))
 				.thenReturn(user(COORDINATOR, "Deniz Acar", UserRole.COORDINATOR));
 
-		assertThatThrownBy(() -> service.list(COORDINATOR)).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.list(COORDINATOR)).isInstanceOfSatisfying(ResponseStatusException.class,
+				refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		assertThatThrownBy(
 				() -> service.open(COORDINATOR, new OpenInterventionRequest(COORDINATOR, MENTORSHIP, "Ara", null)))
-				.isInstanceOf(InvalidRequestException.class);
+				.isInstanceOf(ResponseStatusException.class);
 		assertThatThrownBy(() -> service.resolve(COORDINATOR, UUID.randomUUID()))
-				.isInstanceOf(InvalidRequestException.class);
+				.isInstanceOf(ResponseStatusException.class);
 		verify(notificationService, never()).create(any(), anyString(), anyString(), anyString());
 		verify(interventionRepository, never()).save(any());
 	}

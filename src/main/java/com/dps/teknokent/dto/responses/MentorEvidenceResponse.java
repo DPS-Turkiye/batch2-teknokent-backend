@@ -1,7 +1,7 @@
 package com.dps.teknokent.dto.responses;
 
-import com.dps.teknokent.entity.RecommendationEvidenceSnapshot;
 import com.dps.teknokent.entity.MentorProfileEvidence;
+import com.dps.teknokent.entity.RecommendationEvidenceSnapshot;
 
 public record MentorEvidenceResponse(
 		String category,

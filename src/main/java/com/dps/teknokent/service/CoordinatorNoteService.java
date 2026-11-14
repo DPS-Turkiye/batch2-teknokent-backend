@@ -3,9 +3,9 @@ package com.dps.teknokent.service;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,7 +67,8 @@ public class CoordinatorNoteService {
 		noteRepository.delete(note);
 	}
 
-	private static CoordinatorNoteResponse response(CoordinatorNote note, String authorName, UUID viewerId) {
+	private static CoordinatorNoteResponse response(CoordinatorNote note, @Nullable String authorName,
+			UUID viewerId) {
 		return new CoordinatorNoteResponse(
 				note.getId(), note.getMentorshipId(), authorName, note.getBody(), note.getCreatedAt(),
 				note.getAuthorId().equals(viewerId));

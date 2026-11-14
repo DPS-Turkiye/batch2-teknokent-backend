@@ -57,14 +57,14 @@ public class NotificationPreference {
 	// GENERAL covers account and request decisions, and BADGE badge decisions; neither is ever muted.
 	public boolean allows(NotificationCategory category) {
 		return switch (category) {
-			case GENERAL -> true;
-			case MESSAGE -> messages;
-			case MEETING_REMINDER -> meetingReminders;
-			case MEETING_CHANGE -> meetingChanges;
-			case TASK_ASSIGNED -> newTasks;
-			case TASK_DEADLINE -> taskDeadlines;
-			case STARTUP_ACTIVITY -> startupActivity;
-			case BADGE -> true;
+		case GENERAL -> true;
+		case MESSAGE -> messages;
+		case MEETING_REMINDER -> meetingReminders;
+		case MEETING_CHANGE -> meetingChanges;
+		case TASK_ASSIGNED -> newTasks;
+		case TASK_DEADLINE -> taskDeadlines;
+		case STARTUP_ACTIVITY -> startupActivity;
+		case BADGE -> true;
 		};
 	}
 }

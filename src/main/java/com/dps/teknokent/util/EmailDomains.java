@@ -3,6 +3,8 @@ package com.dps.teknokent.util;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.exception.InvalidRequestException;
 
 /** E-mail domain rules shared by sign-up limits and program eligibility. */
@@ -15,8 +17,9 @@ public final class EmailDomains {
 	}
 
 	/** "@METU.edu.tr " → "metu.edu.tr"; blank → null; anything that is not a domain is refused. */
-	public static String normalizeDomain(String raw) {
-		String domain = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+	public static @Nullable String normalizeDomain(@Nullable String raw) {
+		String trimmed = raw == null ? "" : raw.trim();
+		String domain = trimmed.toLowerCase(Locale.ROOT);
 		if (domain.startsWith("@")) {
 			domain = domain.substring(1);
 		}
@@ -24,12 +27,12 @@ public final class EmailDomains {
 			return null;
 		}
 		if (!DOMAIN.matcher(domain).matches()) {
-			throw new InvalidRequestException(Texts.forRequest("error.emailDomainInvalid", raw.trim()));
+			throw new InvalidRequestException(Texts.forRequest("error.emailDomainInvalid", trimmed));
 		}
 		return domain;
 	}
 
-	public static String normalizeEmail(String raw) {
+	public static String normalizeEmail(@Nullable String raw) {
 		return raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
 	}
 
@@ -38,7 +41,7 @@ public final class EmailDomains {
 	}
 
 	/** A department subdomain counts as the university's: ceng.metu.edu.tr matches metu.edu.tr. */
-	public static boolean matches(String email, String domain) {
+	public static boolean matches(@Nullable String email, @Nullable String domain) {
 		if (domain == null) {
 			return true;
 		}

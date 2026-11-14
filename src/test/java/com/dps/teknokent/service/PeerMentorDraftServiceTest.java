@@ -66,7 +66,8 @@ class PeerMentorDraftServiceTest {
 		ArgumentCaptor<PeerMentorDraft> stored = ArgumentCaptor.forClass(PeerMentorDraft.class);
 		verify(drafts).saveAndFlush(stored.capture());
 		assertThat(stored.getValue().getUserId()).isEqualTo(mentor.getId());
-		assertThat(stored.getValue().getPayload()).contains("\"startedOn\":\"2025-06\"").doesNotContain(actorId.toString());
+		assertThat(stored.getValue().getPayload()).contains("\"startedOn\":\"2025-06\"")
+				.doesNotContain(actorId.toString());
 		assertThat(saved.updatedAt()).isAfterOrEqualTo(before).isEqualTo(stored.getValue().getUpdatedAt());
 
 		when(drafts.findById(mentor.getId())).thenReturn(Optional.of(stored.getValue()));

@@ -19,8 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
@@ -89,9 +89,9 @@ class BadgeControllerTest {
 		when(badgeService.awardGate(ACTOR, PROGRAM, STUDENT)).thenReturn(row(GateBadgeState.ACTIVE));
 
 		mockMvc.perform(post("/api/coordinator/programs/" + PROGRAM + "/badges/awards")
-						.with(user("proxy"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + ACTOR + "\",\"userId\":\"" + STUDENT + "\"}"))
+				.with(user("proxy"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + ACTOR + "\",\"userId\":\"" + STUDENT + "\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.state").value("ACTIVE"));
 		verify(badgeService).awardGate(ACTOR, PROGRAM, STUDENT);
@@ -100,21 +100,22 @@ class BadgeControllerTest {
 	@Test
 	void aRevokeWithoutAReasonNeverReachesTheService() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/" + PROGRAM + "/badges/awards/" + AWARD + "/revoke")
-						.with(user("proxy"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + ACTOR + "\",\"reason\":\"  \"}"))
+				.with(user("proxy"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + ACTOR + "\",\"reason\":\"  \"}"))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(badgeService);
 	}
 
 	@Test
 	void filtersTheRosterByState() throws Exception {
-		when(badgeService.roster(ACTOR, PROGRAM, GateBadgeState.ACTIVE)).thenReturn(List.of(row(GateBadgeState.ACTIVE)));
+		when(badgeService.roster(ACTOR, PROGRAM, GateBadgeState.ACTIVE))
+				.thenReturn(List.of(row(GateBadgeState.ACTIVE)));
 
 		mockMvc.perform(get("/api/coordinator/programs/" + PROGRAM + "/badges/roster")
-						.param("actorId", ACTOR.toString())
-						.param("state", "ACTIVE")
-						.with(user("proxy")))
+				.param("actorId", ACTOR.toString())
+				.param("state", "ACTIVE")
+				.with(user("proxy")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].userId").value(STUDENT.toString()));
 		verify(badgeService).roster(any(), any(), any());

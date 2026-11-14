@@ -71,7 +71,8 @@ public final class TableExport {
 					"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
 							+ "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" "
 							+ "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
-							+ "<sheets><sheet name=\"" + xml(sheetName) + "\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+							+ "<sheets><sheet name=\"" + xml(sheetName)
+							+ "\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
 			entry(zip, "xl/_rels/workbook.xml.rels",
 					"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
 							+ "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
@@ -99,17 +100,18 @@ public final class TableExport {
 
 	private static String xml(String value) {
 		StringBuilder out = new StringBuilder(value.length());
-		for (char c : value.toCharArray()) {
+		for (int i = 0; i < value.length(); i++) {
+			char c = value.charAt(i);
 			switch (c) {
-				case '&' -> out.append("&amp;");
-				case '<' -> out.append("&lt;");
-				case '>' -> out.append("&gt;");
-				case '"' -> out.append("&quot;");
-				default -> {
-					if (c >= 0x20 || c == '\t' || c == '\n' || c == '\r') {
-						out.append(c);
-					}
+			case '&' -> out.append("&amp;");
+			case '<' -> out.append("&lt;");
+			case '>' -> out.append("&gt;");
+			case '"' -> out.append("&quot;");
+			default -> {
+				if (c >= 0x20 || c == '\t' || c == '\n' || c == '\r') {
+					out.append(c);
 				}
+			}
 			}
 		}
 		return out.toString();

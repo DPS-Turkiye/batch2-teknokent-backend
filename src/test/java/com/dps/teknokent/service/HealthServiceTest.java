@@ -1,5 +1,8 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+
 import java.time.Instant;
 import java.util.Optional;
 
@@ -14,9 +17,6 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import com.dps.teknokent.domain.HealthStatus;
 import com.dps.teknokent.entity.HealthProbe;
 import com.dps.teknokent.repository.HealthProbeRepository;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class HealthServiceTest {

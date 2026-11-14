@@ -36,211 +36,210 @@ import com.dps.teknokent.service.ActionItemService;
 @Import(SecurityConfig.class)
 class ActionItemControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+	@Autowired
+	private MockMvc mockMvc;
 
-    @MockitoBean
-    private ActionItemService actionItemService;
+	@MockitoBean
+	private ActionItemService actionItemService;
 
-    @Test
-    void requiresAuthenticationForList() throws Exception {
-        mockMvc.perform(get("/api/actions"))
-                .andExpect(status().isUnauthorized());
-    }
+	@Test
+	void requiresAuthenticationForList() throws Exception {
+		mockMvc.perform(get("/api/actions"))
+				.andExpect(status().isUnauthorized());
+	}
 
-    @Test
-    void returnsActionItems() throws Exception {
-        UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000011");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
-        UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+	@Test
+	void returnsActionItems() throws Exception {
+		UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000011");
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+		UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(actionItemService.findByOrganization(organizationId)).thenReturn(List.of(new ActionItemResponse(
-                actionItemId,
-                organizationId,
-                "Teknokent",
-                meetingId,
-                ownerId,
-                "Ahmet Yılmaz",
-                "Prepare onboarding checklist",
-                "Review onboarding docs and assign owners",
-                ActionItemStatus.OPEN,
-                LocalDate.of(2026, 9, 15),
-                null,
-                Instant.parse("2026-08-20T10:00:00Z"),
-                Instant.parse("2026-08-20T10:00:00Z"),
-                null,
-                null,
-                null
-        )));
+		when(actionItemService.findByOrganization(organizationId)).thenReturn(List.of(new ActionItemResponse(
+				actionItemId,
+				organizationId,
+				"Teknokent",
+				meetingId,
+				ownerId,
+				"Ahmet Yılmaz",
+				"Prepare onboarding checklist",
+				"Review onboarding docs and assign owners",
+				ActionItemStatus.OPEN,
+				LocalDate.of(2026, 9, 15),
+				null,
+				Instant.parse("2026-08-20T10:00:00Z"),
+				Instant.parse("2026-08-20T10:00:00Z"),
+				null,
+				null,
+				null)));
 
-        mockMvc.perform(get("/api/actions")
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(actionItemId.toString()))
-                .andExpect(jsonPath("$[0].title").value("Prepare onboarding checklist"))
-                .andExpect(jsonPath("$[0].status").value("OPEN"));
-    }
+		mockMvc.perform(get("/api/actions")
+				.param("organizationId", organizationId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].id").value(actionItemId.toString()))
+				.andExpect(jsonPath("$[0].title").value("Prepare onboarding checklist"))
+				.andExpect(jsonPath("$[0].status").value("OPEN"));
+	}
 
-    @Test
-    void returnsOneRequestsActionItemsForTheCallingMentor() throws Exception {
-        UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
-        UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+	@Test
+	void returnsOneRequestsActionItemsForTheCallingMentor() throws Exception {
+		UUID mentorshipRequestId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+		UUID mentorId = UUID.fromString("00000000-0000-0000-0000-000000000501");
 
-        when(actionItemService.findByRequests(List.of(mentorshipRequestId), null, mentorId)).thenReturn(List.of());
+		when(actionItemService.findByRequests(List.of(mentorshipRequestId), null, mentorId)).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/actions")
-                        .param("mentorshipRequestId", mentorshipRequestId.toString())
-                        .param("mentorId", mentorId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk());
-        verify(actionItemService).findByRequests(List.of(mentorshipRequestId), null, mentorId);
-    }
+		mockMvc.perform(get("/api/actions")
+				.param("mentorshipRequestId", mentorshipRequestId.toString())
+				.param("mentorId", mentorId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk());
+		verify(actionItemService).findByRequests(List.of(mentorshipRequestId), null, mentorId);
+	}
 
-    @Test
-    void rejectsListWithoutAScope() throws Exception {
-        when(actionItemService.findByOrganization(null))
-                .thenThrow(new InvalidRequestException("Provide exactly one of organizationId or mentorshipRequestId"));
+	@Test
+	void rejectsListWithoutAScope() throws Exception {
+		when(actionItemService.findByOrganization(null))
+				.thenThrow(new InvalidRequestException("Provide exactly one of organizationId or mentorshipRequestId"));
 
-        mockMvc.perform(get("/api/actions").with(user("test-user")))
-                .andExpect(status().isBadRequest());
-    }
+		mockMvc.perform(get("/api/actions").with(user("test-user")))
+				.andExpect(status().isBadRequest());
+	}
 
-    @Test
-    void createsActionItem() throws Exception {
-        UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000022");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
-        UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+	@Test
+	void createsActionItem() throws Exception {
+		UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000022");
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+		UUID meetingId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-        when(actionItemService.create(any(CreateActionItemRequest.class))).thenReturn(new ActionItemResponse(
-                actionItemId,
-                organizationId,
-                "Teknokent",
-                meetingId,
-                ownerId,
-                "Ahmet Yılmaz",
-                "Prepare onboarding checklist",
-                "Review onboarding docs and assign owners",
-                ActionItemStatus.IN_PROGRESS,
-                LocalDate.of(2026, 9, 15),
-                null,
-                Instant.parse("2026-08-20T10:30:00Z"),
-                Instant.parse("2026-08-20T10:30:00Z"),
-                null,
-                null,
-                null
-        ));
+		when(actionItemService.create(any(CreateActionItemRequest.class))).thenReturn(new ActionItemResponse(
+				actionItemId,
+				organizationId,
+				"Teknokent",
+				meetingId,
+				ownerId,
+				"Ahmet Yılmaz",
+				"Prepare onboarding checklist",
+				"Review onboarding docs and assign owners",
+				ActionItemStatus.IN_PROGRESS,
+				LocalDate.of(2026, 9, 15),
+				null,
+				Instant.parse("2026-08-20T10:30:00Z"),
+				Instant.parse("2026-08-20T10:30:00Z"),
+				null,
+				null,
+				null));
 
-        mockMvc.perform(post("/api/actions")
-                        .with(user("test-user"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "organizationId": "00000000-0000-0000-0000-000000000001",
-                                  "meetingId": "00000000-0000-0000-0000-000000000003",
-                                  "ownerId": "00000000-0000-0000-0000-000000000002",
-                                  "title": "Prepare onboarding checklist",
-                                  "description": "Review onboarding docs and assign owners",
-                                  "dueDate": "2026-09-15"
-                                }
-                                """))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(actionItemId.toString()))
-                .andExpect(jsonPath("$.title").value("Prepare onboarding checklist"))
-                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
-    }
+		mockMvc.perform(post("/api/actions")
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "organizationId": "00000000-0000-0000-0000-000000000001",
+						  "meetingId": "00000000-0000-0000-0000-000000000003",
+						  "ownerId": "00000000-0000-0000-0000-000000000002",
+						  "title": "Prepare onboarding checklist",
+						  "description": "Review onboarding docs and assign owners",
+						  "dueDate": "2026-09-15"
+						}
+						"""))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.id").value(actionItemId.toString()))
+				.andExpect(jsonPath("$.title").value("Prepare onboarding checklist"))
+				.andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+	}
 
-    @Test
-    void rejectsCreateActionItemWhenTitleIsBlank() throws Exception {
-        mockMvc.perform(post("/api/actions")
-                        .with(user("test-user"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "organizationId": "00000000-0000-0000-0000-000000000001",
-                                  "ownerId": "00000000-0000-0000-0000-000000000002",
-                                  "title": "",
-                                  "description": "Missing title"
-                                }
-                                """))
-                .andExpect(status().isBadRequest());
-    }
+	@Test
+	void rejectsCreateActionItemWhenTitleIsBlank() throws Exception {
+		mockMvc.perform(post("/api/actions")
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "organizationId": "00000000-0000-0000-0000-000000000001",
+						  "ownerId": "00000000-0000-0000-0000-000000000002",
+						  "title": "",
+						  "description": "Missing title"
+						}
+						"""))
+				.andExpect(status().isBadRequest());
+	}
 
-    @Test
-    void updatesActionItem() throws Exception {
-        UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000044");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+	@Test
+	void updatesActionItem() throws Exception {
+		UUID actionItemId = UUID.fromString("00000000-0000-0000-0000-000000000044");
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		UUID ownerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-        when(actionItemService.update(eq(actionItemId), eq(organizationId), eq(null), any(UpdateActionItemRequest.class))).thenReturn(new ActionItemResponse(
-                actionItemId,
-                organizationId,
-                "Teknokent",
-                null,
-                ownerId,
-                "Ahmet Yılmaz",
-                "Finalize onboarding",
-                "All handoff docs completed",
-                ActionItemStatus.COMPLETED,
-                LocalDate.of(2026, 9, 20),
-                "Completed after review",
-                Instant.parse("2026-08-20T11:00:00Z"),
-                Instant.parse("2026-08-20T11:05:00Z"),
-                null,
-                null,
-                null
-        ));
+		when(actionItemService
+				.update(eq(actionItemId), eq(organizationId), eq(null), any(UpdateActionItemRequest.class)))
+				.thenReturn(new ActionItemResponse(
+						actionItemId,
+						organizationId,
+						"Teknokent",
+						null,
+						ownerId,
+						"Ahmet Yılmaz",
+						"Finalize onboarding",
+						"All handoff docs completed",
+						ActionItemStatus.COMPLETED,
+						LocalDate.of(2026, 9, 20),
+						"Completed after review",
+						Instant.parse("2026-08-20T11:00:00Z"),
+						Instant.parse("2026-08-20T11:05:00Z"),
+						null,
+						null,
+						null));
 
-        mockMvc.perform(patch("/api/actions/{id}", actionItemId)
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "ownerId": "00000000-0000-0000-0000-000000000002",
-                                  "title": "Finalize onboarding",
-                                  "status": "COMPLETED",
-                                  "dueDate": "2026-09-20",
-                                  "completionNotes": "Completed after review"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(actionItemId.toString()))
-                .andExpect(jsonPath("$.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.completionNotes").value("Completed after review"));
-    }
+		mockMvc.perform(patch("/api/actions/{id}", actionItemId)
+				.param("organizationId", organizationId.toString())
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "ownerId": "00000000-0000-0000-0000-000000000002",
+						  "title": "Finalize onboarding",
+						  "status": "COMPLETED",
+						  "dueDate": "2026-09-20",
+						  "completionNotes": "Completed after review"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(actionItemId.toString()))
+				.andExpect(jsonPath("$.status").value("COMPLETED"))
+				.andExpect(jsonPath("$.completionNotes").value("Completed after review"));
+	}
 
-    @Test
-    void listsSeveralRequestsItemsInOneCall() throws Exception {
-        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000401");
-        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000402");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        when(actionItemService.findByRequests(List.of(first, second), organizationId, null)).thenReturn(List.of(new ActionItemResponse(
-                UUID.fromString("00000000-0000-0000-0000-000000000011"),
-                UUID.fromString("00000000-0000-0000-0000-000000000001"),
-                "Teknokent",
-                null,
-                UUID.fromString("00000000-0000-0000-0000-000000000002"),
-                "Ahmet Yılmaz",
-                "Prepare onboarding checklist",
-                null,
-                ActionItemStatus.OPEN,
-                null,
-                null,
-                Instant.parse("2026-08-20T10:00:00Z"),
-                Instant.parse("2026-08-20T10:00:00Z"),
-                second,
-                null,
-                null
-        )));
+	@Test
+	void listsSeveralRequestsItemsInOneCall() throws Exception {
+		UUID first = UUID.fromString("00000000-0000-0000-0000-000000000401");
+		UUID second = UUID.fromString("00000000-0000-0000-0000-000000000402");
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		when(actionItemService.findByRequests(List.of(first, second), organizationId, null))
+				.thenReturn(List.of(new ActionItemResponse(
+						UUID.fromString("00000000-0000-0000-0000-000000000011"),
+						UUID.fromString("00000000-0000-0000-0000-000000000001"),
+						"Teknokent",
+						null,
+						UUID.fromString("00000000-0000-0000-0000-000000000002"),
+						"Ahmet Yılmaz",
+						"Prepare onboarding checklist",
+						null,
+						ActionItemStatus.OPEN,
+						null,
+						null,
+						Instant.parse("2026-08-20T10:00:00Z"),
+						Instant.parse("2026-08-20T10:00:00Z"),
+						second,
+						null,
+						null)));
 
-        mockMvc.perform(get("/api/actions")
-                        .param("mentorshipRequestIds", first.toString(), second.toString())
-                        .param("organizationId", organizationId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].mentorshipRequestId").value(second.toString()));
-    }
+		mockMvc.perform(get("/api/actions")
+				.param("mentorshipRequestIds", first.toString(), second.toString())
+				.param("organizationId", organizationId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].mentorshipRequestId").value(second.toString()));
+	}
 }

@@ -14,8 +14,8 @@ import lombok.Setter;
 
 /** One address on a program's list of people allowed to join; stored lowercase. */
 @Entity
-@Table(name = "program_eligible_email",
-		uniqueConstraints = @UniqueConstraint(name = "uq_program_eligible_email", columnNames = { "program_id", "email" }))
+@Table(name = "program_eligible_email", uniqueConstraints = @UniqueConstraint(name = "uq_program_eligible_email", columnNames = {
+		"program_id", "email" }))
 @Getter
 @Setter
 @NoArgsConstructor

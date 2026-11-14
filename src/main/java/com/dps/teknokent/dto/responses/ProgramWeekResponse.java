@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * "Bu hafta" on a participant's Süreç: the program week running today, its planned content ({@code plan}, from the
  * weekly plan the coordinator saved; null when that week has none) and the syllabus phases that fall in it.
@@ -15,14 +17,14 @@ public record ProgramWeekResponse(
 		String programName,
 		LocalDate programStart,
 		LocalDate programEnd,
-		Integer week,
-		Integer totalWeeks,
-		LocalDate weekStart,
-		LocalDate weekEnd,
+		@Nullable Integer week,
+		@Nullable Integer totalWeeks,
+		@Nullable LocalDate weekStart,
+		@Nullable LocalDate weekEnd,
 		boolean notStarted,
 		boolean ended,
 		boolean hasSyllabus,
-		ProgramWeekPlanResponse.Week plan,
+		ProgramWeekPlanResponse.@Nullable Week plan,
 		List<Phase> phases) {
 
 	/** {@code current} marks the phase whose dates contain today. */

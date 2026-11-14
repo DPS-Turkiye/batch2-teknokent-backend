@@ -61,7 +61,8 @@ public class ActionItemService {
 	 * still loads.
 	 */
 	@Transactional(readOnly = true)
-	public List<ActionItemResponse> findByRequests(List<UUID> mentorshipRequestIds, UUID organizationId, UUID mentorId) {
+	public List<ActionItemResponse> findByRequests(List<UUID> mentorshipRequestIds, UUID organizationId,
+			UUID mentorId) {
 		if ((organizationId == null) == (mentorId == null)) {
 			throw new InvalidRequestException("Provide exactly one of organizationId or mentorId");
 		}
@@ -72,8 +73,9 @@ public class ActionItemService {
 			return List.of();
 		}
 		List<ActionItem> items = organizationId != null
-				? actionItemRepository.findByMentorshipRequestIdInAndMentorshipRequestOrganizationIdOrderByCreatedAtDesc(
-						mentorshipRequestIds, organizationId)
+				? actionItemRepository
+						.findByMentorshipRequestIdInAndMentorshipRequestOrganizationIdOrderByCreatedAtDesc(
+								mentorshipRequestIds, organizationId)
 				: actionItemRepository.findByMentorshipRequestIdInAndMentorshipRequestMentorIdOrderByCreatedAtDesc(
 						mentorshipRequestIds, mentorId);
 		return items.stream()

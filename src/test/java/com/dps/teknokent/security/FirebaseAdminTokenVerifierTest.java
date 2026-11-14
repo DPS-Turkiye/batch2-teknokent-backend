@@ -52,7 +52,7 @@ class FirebaseAdminTokenVerifierTest {
 
 	@Test
 	void refusesARevokedTokenOrDisabledAccount() throws Exception {
-		for (AuthErrorCode code : new AuthErrorCode[] {AuthErrorCode.REVOKED_ID_TOKEN, AuthErrorCode.USER_DISABLED}) {
+		for (AuthErrorCode code : new AuthErrorCode[] { AuthErrorCode.REVOKED_ID_TOKEN, AuthErrorCode.USER_DISABLED }) {
 			FirebaseAuthException failure = mock(FirebaseAuthException.class);
 			when(failure.getAuthErrorCode()).thenReturn(code);
 			doThrow(failure).when(firebaseAuth).verifyIdToken("token", true);
@@ -105,7 +105,7 @@ class FirebaseAdminTokenVerifierTest {
 	// A Firebase outage says nothing about the token, so it must not read as "invalid token".
 	@Test
 	void reportsFirebaseUnavailableRatherThanAnInvalidToken() throws Exception {
-		for (AuthErrorCode code : new AuthErrorCode[] {null, AuthErrorCode.CERTIFICATE_FETCH_FAILED}) {
+		for (AuthErrorCode code : new AuthErrorCode[] { null, AuthErrorCode.CERTIFICATE_FETCH_FAILED }) {
 			FirebaseAuthException outage = mock(FirebaseAuthException.class);
 			when(outage.getAuthErrorCode()).thenReturn(code);
 			doThrow(outage).when(firebaseAuth).verifyIdToken("token", true);
@@ -124,6 +124,85 @@ class FirebaseAdminTokenVerifierTest {
 		assertThat(verifier.verify("no-email")).isEmpty();
 		assertThat(verifier.verify("no-email")).isEmpty();
 		verify(firebaseAuth, times(2)).verifyIdToken("no-email", true);
+	}
+
+	@Test
+	void refusesAMissingTokenATokenWithABlankEmailAndOneTheSdkCannotParse() throws Exception {
+		assertThat(verifier.enabled()).isTrue();
+		assertThat(verifier.verify(null)).isEmpty();
+
+		FirebaseToken blankEmail = token("uid-2", "  ");
+		when(firebaseAuth.verifyIdToken("blank-email", true)).thenReturn(blankEmail);
+		assertThat(verifier.verify("blank-email")).isEmpty();
+
+		when(firebaseAuth.verifyIdToken("garbage", true)).thenThrow(new IllegalArgumentException("not a JWT"));
+		assertThat(verifier.verify("garbage")).isEmpty();
+	}
+
+	// A token good for an hour is still asked about again after the sixty seconds.
+	@Test
+	void aLongLivedTokenIsStillRecheckedAfterSixtySeconds() throws Exception {
+		FirebaseToken valid = token("uid-1", "qa@teknokent-dev.test");
+		when(valid.getClaims()).thenReturn(Map.of("exp", T0.plusSeconds(3600).getEpochSecond()));
+		when(firebaseAuth.verifyIdToken("token", true)).thenReturn(valid);
+
+		verifier.verify("token");
+		clock.now = T0.plusSeconds(59);
+		verifier.verify("token");
+		verify(firebaseAuth, times(1)).verifyIdToken("token", true);
+
+		clock.now = T0.plusSeconds(60);
+		verifier.verify("token");
+		verify(firebaseAuth, times(2)).verifyIdToken("token", true);
+	}
+
+	@Test
+	void anExpiryThatIsNotANumberFallsBackToTheSixtySeconds() throws Exception {
+		FirebaseToken valid = token("uid-1", "qa@teknokent-dev.test");
+		when(valid.getClaims()).thenReturn(Map.of("exp", "tomorrow"));
+		when(firebaseAuth.verifyIdToken("token", true)).thenReturn(valid);
+
+		verifier.verify("token");
+		clock.now = T0.plusSeconds(59);
+		verifier.verify("token");
+		clock.now = T0.plusSeconds(60);
+		verifier.verify("token");
+
+		verify(firebaseAuth, times(2)).verifyIdToken("token", true);
+	}
+
+	// Each token is remembered separately: one person's confirmed token says nothing about another's.
+	@Test
+	void aConfirmedTokenDoesNotVouchForADifferentOne() throws Exception {
+		FirebaseToken valid = token("uid-1", "qa@teknokent-dev.test");
+		FirebaseAuthException revoked = mock(FirebaseAuthException.class);
+		when(revoked.getAuthErrorCode()).thenReturn(AuthErrorCode.REVOKED_ID_TOKEN);
+		when(firebaseAuth.verifyIdToken("token", true)).thenReturn(valid);
+		when(firebaseAuth.verifyIdToken("other", true)).thenThrow(revoked);
+
+		assertThat(verifier.verify("token")).isPresent();
+		assertThat(verifier.verify("other")).isEmpty();
+	}
+
+	// The memory of checked tokens is only swept past ten thousand entries; without the sweep it grows for ever.
+	@Test
+	void forgetsExpiredChecksOnceTheMemoryHasGrownLarge() throws Exception {
+		FirebaseToken valid = token("uid-1", "qa@teknokent-dev.test");
+		when(firebaseAuth.verifyIdToken(anyString(), anyBoolean())).thenReturn(valid);
+		for (int i = 0; i <= 10_000; i++) {
+			verifier.verify("token-" + i);
+		}
+		Map<?, ?> remembered = (Map<?, ?>) org.springframework.test.util.ReflectionTestUtils.getField(verifier,
+				"checked");
+		assertThat(remembered).hasSize(10_001);
+
+		clock.now = T0.plusSeconds(61);
+		verifier.verify("fresh");
+
+		assertThat(remembered).hasSize(1);
+		clock.now = T0.plusSeconds(62);
+		assertThat(verifier.verify("fresh")).isPresent();
+		verify(firebaseAuth, times(1)).verifyIdToken("fresh", true);
 	}
 
 	private static FirebaseToken token(String uid, String email) {

@@ -59,7 +59,8 @@ class ProgramMeetingFeedbackResponseTest {
 	void theSideFollowsTheMeetingRatherThanTheAccountsRole() {
 		AppUser peerMentor = user("Zeynep Demir", UserRole.MENTEE);
 
-		var row = ProgramMeetingFeedbackResponse.from(feedback(meeting(peerMentor), peerMentor, List.of(3, 3), List.of()));
+		var row = ProgramMeetingFeedbackResponse
+				.from(feedback(meeting(peerMentor), peerMentor, List.of(3, 3), List.of()));
 
 		assertThat(row.side()).isEqualTo(MeetingFeedbackSide.MENTOR);
 	}

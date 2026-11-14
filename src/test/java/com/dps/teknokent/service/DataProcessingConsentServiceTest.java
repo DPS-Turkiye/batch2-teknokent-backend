@@ -59,7 +59,8 @@ class DataProcessingConsentServiceTest {
 	@Test
 	void anAccountHolderIsRecordedAsTheConsenterAndTheSubjectByDefault() {
 		UUID userId = UUID.randomUUID();
-		signInAs(new AppUserPrincipal(userId, "deniz@example.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-1"));
+		signInAs(new AppUserPrincipal(userId, "deniz@example.com", UserRole.MENTEE, UserAccountStatus.APPROVED,
+				"uid-1"));
 		when(repository.save(any())).thenAnswer(call -> call.getArgument(0));
 
 		service.record(CONSENT, ProcessingConsentSource.PREVIEW_UPLOAD, null);
@@ -79,7 +80,8 @@ class DataProcessingConsentServiceTest {
 	void aFounderUploadingForATeamMemberIsTheConsenterAndTheMemberTheSubject() {
 		UUID founderId = UUID.randomUUID();
 		UUID memberId = UUID.randomUUID();
-		signInAs(new AppUserPrincipal(founderId, "f@example.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-f"));
+		signInAs(
+				new AppUserPrincipal(founderId, "f@example.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid-f"));
 		when(repository.save(any())).thenAnswer(call -> call.getArgument(0));
 
 		service.record(CONSENT, ProcessingConsentSource.PROFILE_ANALYSIS, memberId);

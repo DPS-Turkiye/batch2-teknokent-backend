@@ -24,9 +24,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
+import com.dps.teknokent.domain.OcrMode;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.ExtractSyllabusPhasesRequest;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
@@ -34,6 +34,7 @@ import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.StoredDocument;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -42,8 +43,9 @@ import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.service.LocalPiiRedactionService.RedactionResult;
 import com.dps.teknokent.service.PdfDocumentTextExtractor.ExtractionResult;
 import com.dps.teknokent.util.JsonUtils;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class SyllabusPhaseServiceTest {
@@ -83,7 +85,7 @@ class SyllabusPhaseServiceTest {
 	private SyllabusPhaseService serviceWith(AiFeatures aiFeatures) {
 		return new SyllabusPhaseService(programService, storedDocumentRepository, programRepository,
 				programCoordinatorRepository, objectStorage, textExtractor, piiRedactionService, aiProviderClient,
-				jsonUtils, aiFeatures);
+				aiFeatures);
 	}
 
 	@Test
@@ -197,7 +199,7 @@ class SyllabusPhaseServiceTest {
 
 		assertThatThrownBy(() -> service.extract(OTHER_COORDINATOR_ID, request()))
 				.isInstanceOf(ResourceNotFoundException.class);
-		verify(objectStorage, never()).get(anyString());
+		verify(objectStorage, never()).require(anyString());
 	}
 
 	@Test
@@ -220,7 +222,7 @@ class SyllabusPhaseServiceTest {
 	void aCvIsNotASyllabus() {
 		whenActorIs(COORDINATOR_ID, UserRole.COORDINATOR);
 		StoredDocument cv = syllabus(COORDINATOR_ID);
-		cv.setKind(DocumentKind.CV.value());
+		cv.setKind(DocumentKind.CV);
 		when(storedDocumentRepository.findById(DOCUMENT_ID)).thenReturn(Optional.of(cv));
 
 		assertThatThrownBy(() -> service.extract(COORDINATOR_ID, request()))
@@ -266,8 +268,9 @@ class SyllabusPhaseServiceTest {
 	}
 
 	private void stubText(String raw, String redacted, int pages) {
-		when(objectStorage.get("syllabus-key")).thenReturn(new byte[] { 1 });
-		when(textExtractor.extract(any(), eq("auto"))).thenReturn(new ExtractionResult(raw, pages, List.of(), false));
+		when(objectStorage.require("syllabus-key")).thenReturn(new byte[] { 1 });
+		when(textExtractor.extract(any(), eq(OcrMode.AUTO)))
+				.thenReturn(new ExtractionResult(raw, pages, List.of(), false));
 		when(piiRedactionService.redact(raw)).thenReturn(new RedactionResult(redacted, Map.of(), 0));
 	}
 
@@ -275,7 +278,7 @@ class SyllabusPhaseServiceTest {
 		StoredDocument document = new StoredDocument();
 		document.setId(DOCUMENT_ID);
 		document.setUserId(ownerId);
-		document.setKind(DocumentKind.SYLLABUS.value());
+		document.setKind(DocumentKind.SYLLABUS);
 		document.setS3Key("syllabus-key");
 		return document;
 	}

@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.TeamJoinStatus;
 
 /**
@@ -11,16 +13,16 @@ import com.dps.teknokent.domain.TeamJoinStatus;
  * {@code codeSendFailed}: SES refused the last code email, so the team shows under "Sorunlu".
  */
 public record ProgramTeamResponse(
-		UUID inviteId,
+		@Nullable UUID inviteId,
 		UUID organizationId,
 		String name,
 		TeamJoinStatus status,
-		String leadName,
-		String leadEmail,
+		@Nullable String leadName,
+		@Nullable String leadEmail,
 		String code,
 		Instant invitedAt,
 		Instant joinedAt,
 		int memberCount,
-		Instant codeSentAt,
+		@Nullable Instant codeSentAt,
 		boolean codeSendFailed) {
 }

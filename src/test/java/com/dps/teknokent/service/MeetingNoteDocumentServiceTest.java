@@ -1,5 +1,14 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,15 +23,6 @@ import com.dps.teknokent.dto.requests.MeetingNoteDocumentMessage;
 import com.dps.teknokent.dto.responses.MeetingNoteDocumentResponse;
 import com.dps.teknokent.dto.responses.MeetingRoomEvent;
 import com.dps.teknokent.exception.ResourceNotFoundException;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingNoteDocumentServiceTest {
@@ -43,10 +43,10 @@ class MeetingNoteDocumentServiceTest {
 
 	@Test
 	void returnsTheLiveStateWithoutHandingOutSeedRights() {
-		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId)).thenReturn(true);
+		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId, null)).thenReturn(true);
 		when(documentStore.findState(meetingId)).thenReturn(Optional.of("AQID"));
 
-		MeetingNoteDocumentResponse response = service().findDocument(meetingId, organizationId);
+		MeetingNoteDocumentResponse response = service().findDocument(meetingId, organizationId, null);
 
 		assertThat(response.state()).isEqualTo("AQID");
 		assertThat(response.seedFromSnapshot()).isFalse();
@@ -55,19 +55,19 @@ class MeetingNoteDocumentServiceTest {
 
 	@Test
 	void letsOnlyTheFirstClientSeedAnEmptyDocument() {
-		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId)).thenReturn(true);
+		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId, null)).thenReturn(true);
 		when(documentStore.findState(meetingId)).thenReturn(Optional.empty());
 		when(documentStore.claimSeed(meetingId)).thenReturn(true, false);
 
-		assertThat(service().findDocument(meetingId, organizationId).seedFromSnapshot()).isTrue();
-		assertThat(service().findDocument(meetingId, organizationId).seedFromSnapshot()).isFalse();
+		assertThat(service().findDocument(meetingId, organizationId, null).seedFromSnapshot()).isTrue();
+		assertThat(service().findDocument(meetingId, organizationId, null).seedFromSnapshot()).isFalse();
 	}
 
 	@Test
 	void hidesDocumentsThatBelongToAnotherOrganization() {
-		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId)).thenReturn(false);
+		when(meetingRoomAccessService.isMeetingVisibleTo(meetingId, organizationId, null)).thenReturn(false);
 
-		assertThatThrownBy(() -> service().findDocument(meetingId, organizationId))
+		assertThatThrownBy(() -> service().findDocument(meetingId, organizationId, null))
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 

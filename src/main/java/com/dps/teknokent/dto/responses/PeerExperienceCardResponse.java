@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.LocalDate;
 import java.time.YearMonth;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerExperienceKind;
 import com.dps.teknokent.entity.MentorExperience;
 
@@ -11,9 +13,9 @@ public record PeerExperienceCardResponse(
 		PeerExperienceKind kind,
 		String title,
 		String organization,
-		YearMonth startedOn,
-		/** Null while it is still going on. */
-		YearMonth endedOn,
+		@Nullable YearMonth startedOn,
+		/* Null while it is still going on. */
+		@Nullable YearMonth endedOn,
 		String summary) {
 
 	/** A line written before cards had a kind shows as "other". */
@@ -27,7 +29,7 @@ public record PeerExperienceCardResponse(
 				experience.getSummary());
 	}
 
-	private static YearMonth month(LocalDate day) {
+	private static @Nullable YearMonth month(@Nullable LocalDate day) {
 		return day == null ? null : YearMonth.from(day);
 	}
 }

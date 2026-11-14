@@ -11,17 +11,24 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
-import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
@@ -31,8 +38,9 @@ import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.JsonUtils;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 class TaskHandoverServiceTest {
 
@@ -45,12 +53,38 @@ class TaskHandoverServiceTest {
 	private final NotificationService notificationService = mock(NotificationService.class);
 	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
+	private final AtomicInteger openTransactions = new AtomicInteger();
+	private final PlatformTransactionManager transactionManager = new CountingTransactionManager();
 	private final TaskHandoverService service = serviceWith(TestAiFeatures.allOn());
 
 	private TaskHandoverService serviceWith(AiFeatures aiFeatures) {
+		return serviceWith(aiFeatures, Runnable::run);
+	}
+
+	private TaskHandoverService serviceWith(AiFeatures aiFeatures, Executor background) {
 		return new TaskHandoverService(actionItemRepository, appUserRepository, organizationRepository,
-				aiProviderClient, new LocalPiiRedactionService(), notificationService, eventPublisher, jsonUtils,
-				aiFeatures);
+				aiProviderClient, new LocalPiiRedactionService(), notificationService, eventPublisher,
+				aiFeatures, transactionManager, background);
+	}
+
+	/** Counts the transactions open right now, to show what runs inside one. */
+	private final class CountingTransactionManager implements PlatformTransactionManager {
+
+		@Override
+		public TransactionStatus getTransaction(TransactionDefinition definition) {
+			openTransactions.incrementAndGet();
+			return new SimpleTransactionStatus();
+		}
+
+		@Override
+		public void commit(TransactionStatus status) {
+			openTransactions.decrementAndGet();
+		}
+
+		@Override
+		public void rollback(TransactionStatus status) {
+			openTransactions.decrementAndGet();
+		}
 	}
 
 	private Organization startup;
@@ -162,6 +196,83 @@ class TaskHandoverServiceTest {
 
 		assertThat(pitch.getOwner()).isSameAs(leaver);
 		verify(aiProviderClient, never()).taskHandover(anyString(), any());
+	}
+
+	@Test
+	void onMemberLeft_runsOffTheLeavesThreadSoItsResponseDoesNotWaitForTheAi() throws Exception {
+		List<Runnable> queued = new ArrayList<>();
+		TaskHandoverService queuing = serviceWith(TestAiFeatures.allOn(), queued::add);
+		when(aiProviderClient.taskHandover(anyString(), any())).thenReturn(json(
+				"{\"assignments\":[{\"task\":\"T2\",\"member\":\"M2\"}]}"));
+
+		queuing.onMemberLeft(new TeamMemberLeftEvent(ORGANIZATION_ID, leaver.getId()));
+
+		verifyNoInteractions(aiProviderClient);
+		assertThat(mockups.getOwner()).isSameAs(leaver);
+
+		queued.forEach(Runnable::run);
+
+		assertThat(mockups.getOwner()).isSameAs(designer);
+	}
+
+	@Test
+	void onMemberLeft_holdsNoTransactionWhileTheAiAnswers() throws Exception {
+		AtomicInteger openDuringTheCall = new AtomicInteger(-1);
+		when(aiProviderClient.taskHandover(anyString(), any())).thenAnswer(call -> {
+			openDuringTheCall.set(openTransactions.get());
+			return json("{\"assignments\":[{\"task\":\"T2\",\"member\":\"M2\"}]}");
+		});
+
+		service.onMemberLeft(new TeamMemberLeftEvent(ORGANIZATION_ID, leaver.getId()));
+
+		assertThat(openDuringTheCall.get()).isZero();
+		assertThat(openTransactions.get()).isZero();
+		assertThat(mockups.getOwner()).isSameAs(designer);
+	}
+
+	@Test
+	void onMemberLeft_readsEveryMembersLoadInOneQuery() {
+		ActionItem first = task("Müşteri görüşmesi", null);
+		first.setOwner(designer);
+		ActionItem second = task("Rakip analizi", null);
+		second.setOwner(designer);
+		when(actionItemRepository.findByOrganizationIdAndStatusIn(ORGANIZATION_ID, TaskHandoverService.OPEN))
+				.thenReturn(List.of(pitch, mockups, first, second));
+		ArgumentCaptor<String> input = ArgumentCaptor.forClass(String.class);
+		when(aiProviderClient.taskHandover(input.capture(), any())).thenReturn(jsonUtils.createObjectNode());
+
+		service.onMemberLeft(new TeamMemberLeftEvent(ORGANIZATION_ID, leaver.getId()));
+
+		assertThat(input.getValue()).contains("M1\tCEO\t0\tyes\n", "M2\tÜrün tasarımcısı\t2\tno\n");
+		verify(actionItemRepository).findByOrganizationIdAndStatusIn(ORGANIZATION_ID, TaskHandoverService.OPEN);
+		verify(actionItemRepository, never()).findByOrganizationIdAndOwnerIdAndStatusIn(eq(ORGANIZATION_ID),
+				eq(designer.getId()), any());
+		verify(actionItemRepository, never()).findByOrganizationIdAndOwnerIdAndStatusIn(eq(ORGANIZATION_ID),
+				eq(lead.getId()), any());
+	}
+
+	@Test
+	void onMemberLeft_givesTheLeadATaskTheAiPlacedOnSomeoneWhoLeftMeanwhile() throws Exception {
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(ORGANIZATION_ID))
+				.thenReturn(List.of(lead, designer))
+				.thenReturn(List.of(lead));
+		when(aiProviderClient.taskHandover(anyString(), any())).thenReturn(json(
+				"{\"assignments\":[{\"task\":\"T2\",\"member\":\"M2\"}]}"));
+
+		service.onMemberLeft(new TeamMemberLeftEvent(ORGANIZATION_ID, leaver.getId()));
+
+		assertThat(mockups.getOwner()).isSameAs(lead);
+	}
+
+	@Test
+	void onMemberLeft_aFailureIsLoggedAndLeavesTheTasksWithTheLeaver() {
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(ORGANIZATION_ID))
+				.thenThrow(new IllegalStateException("database down"));
+
+		service.onMemberLeft(new TeamMemberLeftEvent(ORGANIZATION_ID, leaver.getId()));
+
+		assertThat(pitch.getOwner()).isSameAs(leaver);
+		assertThat(openTransactions.get()).isZero();
 	}
 
 	private JsonNode json(String value) throws Exception {

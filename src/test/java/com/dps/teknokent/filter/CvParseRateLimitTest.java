@@ -29,6 +29,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import com.dps.teknokent.domain.ProfileType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.security.AppUserPrincipal;
@@ -60,7 +61,7 @@ class CvParseRateLimitTest {
 
 	@BeforeEach
 	void stubParse() {
-		when(profileAnalysisService.parseStoredCvPreview(any(), any(), anyString(), any(), anyString()))
+		when(profileAnalysisService.parseStoredCvPreview(any(), any(), any(ProfileType.class), any(), anyString()))
 				.thenReturn(Map.of());
 	}
 
@@ -86,7 +87,7 @@ class CvParseRateLimitTest {
 		spendCvBudget(founder);
 
 		mockMvc.perform(get("/api/profile-analyses/latest/confirmed").with(authentication(founder))
-						.header("X-Forwarded-For", OFFICE_IP))
+				.header("X-Forwarded-For", OFFICE_IP))
 				.andExpect(header().doesNotExist("X-Rate-Limit-Retry-After-Seconds"));
 	}
 
@@ -115,10 +116,10 @@ class CvParseRateLimitTest {
 		// An encoded letter reaches the same endpoint, so it spends the same budget.
 		// A URI, not a template: a template would encode the "%" again.
 		mockMvc.perform(post(URI.create("/api/coordinator/programs/" + UUID.randomUUID() + "/weekly-program/%72ead"))
-						.contentType("application/json")
-						.content("{\"documentId\": \"" + UUID.randomUUID() + "\"}")
-						.header("X-Forwarded-For", OFFICE_IP)
-						.with(authentication(coordinator)))
+				.contentType("application/json")
+				.content("{\"documentId\": \"" + UUID.randomUUID() + "\"}")
+				.header("X-Forwarded-For", OFFICE_IP)
+				.with(authentication(coordinator)))
 				.andExpect(status().isTooManyRequests());
 	}
 

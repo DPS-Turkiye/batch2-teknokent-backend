@@ -1,12 +1,12 @@
 package com.dps.teknokent.entity;
 
+import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 
 @Embeddable
 @Getter

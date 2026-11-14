@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,7 +49,6 @@ import com.dps.teknokent.repository.UserDeletionCleanupRepository;
 import com.dps.teknokent.util.Texts;
 
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -75,21 +75,18 @@ class UserDataEraser {
 	private static final List<MentorshipStatus> LIVE_MENTORSHIPS = List.of(
 			MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
 	/** Files about the person, deleted wherever they hang. */
-	private static final Set<String> PERSONAL_KINDS = Set.of(
-			DocumentKind.CV.value(), DocumentKind.AVATAR.value(), DocumentKind.PROFILE_PDF.value(),
-			DocumentKind.PEER_EVIDENCE.value());
+	private static final Set<DocumentKind> PERSONAL_KINDS = EnumSet.of(
+			DocumentKind.CV, DocumentKind.AVATAR, DocumentKind.PROFILE_PDF, DocumentKind.PEER_EVIDENCE);
 	/** Files that belong to a program, whoever uploaded them. */
-	private static final Set<String> PROGRAM_KINDS = Set.of(
-			DocumentKind.SYLLABUS.value(), DocumentKind.WEEKLY_PROGRAM.value());
+	private static final Set<DocumentKind> PROGRAM_KINDS = EnumSet.of(
+			DocumentKind.SYLLABUS, DocumentKind.WEEKLY_PROGRAM);
 	/** A shorter name would also match ordinary words inside other people's notifications. */
 	private static final int MIN_NAME_LENGTH_TO_REPLACE = 5;
 	/** The widths of notification.title and notification.body. */
 	private static final int TITLE_LENGTH = 160;
 	private static final int BODY_LENGTH = 500;
 
-	@PersistenceContext
-	private EntityManager entityManager;
-
+	private final EntityManager entityManager;
 	private final AppUserRepository appUserRepository;
 	private final TaskHandoverService taskHandoverService;
 	private final NotificationService notificationService;
@@ -183,7 +180,8 @@ class UserDataEraser {
 
 		List<UUID> archived = new ArrayList<>();
 		for (Organization organization : organizations.values()) {
-			List<AppUser> others = appUserRepository.findByOrganizationIdOrderByFullNameAsc(organization.getId()).stream()
+			List<AppUser> others = appUserRepository.findByOrganizationIdOrderByFullNameAsc(organization.getId())
+					.stream()
 					.filter(member -> !member.getId().equals(id))
 					.toList();
 			boolean wasFounder = organization.getFounder() != null && organization.getFounder().getId().equals(id);
@@ -266,7 +264,8 @@ class UserDataEraser {
 				.setParameter("id", id)
 				.getResultList());
 		List<MeetingProposal> proposals = new ArrayList<>(entityManager.createQuery(
-				"select p from MeetingProposal p where p.status = :pending and p.mentor.id = :id", MeetingProposal.class)
+				"select p from MeetingProposal p where p.status = :pending and p.mentor.id = :id",
+				MeetingProposal.class)
 				.setParameter("pending", MeetingProposalStatus.PENDING)
 				.setParameter("id", id)
 				.getResultList());
@@ -353,7 +352,8 @@ class UserDataEraser {
 		List<UUID> ids = going.stream().map(StoredDocument::getId).toList();
 		update("delete from StoredDocumentShare s where s.documentId in :ids", "ids", ids);
 		update("delete from DocumentRequestUpload u where u.storedDocument.id in :ids", "ids", ids);
-		update("update ActionItem a set a.submissionDocumentId = null where a.submissionDocumentId in :ids", "ids", ids);
+		update("update ActionItem a set a.submissionDocumentId = null where a.submissionDocumentId in :ids", "ids",
+				ids);
 		update("delete from StoredDocument d where d.id in :ids", "ids", ids);
 		return going.stream().map(StoredDocument::getS3Key).toList();
 	}
@@ -432,7 +432,8 @@ class UserDataEraser {
 				.setParameter("id", id)
 				.setParameter("email", email)
 				.executeUpdate();
-		update("delete from ProgramTeamInvite i where lower(i.leadEmail) = :email and i.joinedAt is null", "email", email);
+		update("delete from ProgramTeamInvite i where lower(i.leadEmail) = :email and i.joinedAt is null", "email",
+				email);
 		update("delete from OrganizationPendingMember m where lower(m.email) = :email", "email", email);
 	}
 
@@ -549,13 +550,15 @@ class UserDataEraser {
 				.setParameter("mentors", mentorIds)
 				.getResultList()
 				.forEach(week -> {
-					PeerWeeklySummary summary = jsonMapper.readValue(week.getSummarySnapshot(), PeerWeeklySummary.class);
+					PeerWeeklySummary summary = jsonMapper.readValue(week.getSummarySnapshot(),
+							PeerWeeklySummary.class);
 					PeerWeeklySummary redacted = new PeerWeeklySummary(summary.meetings(), summary.firstMeetings(),
 							summary.followUpMeetings(),
 							summary.mentees().stream().filter(mentee -> !menteeId.equals(mentee.id())).toList(),
 							summary.meetingReportsSent(), summary.meetingReportsTotal(), summary.activities(),
 							summary.activityTypes(), summary.recordedMinutes(), summary.skills(),
-							summary.outcomes().stream().filter(outcome -> !menteeId.equals(outcome.menteeId())).toList());
+							summary.outcomes().stream().filter(outcome -> !menteeId.equals(outcome.menteeId()))
+									.toList());
 					if (!redacted.equals(summary)) {
 						week.setSummarySnapshot(jsonMapper.writeValueAsString(redacted));
 					}

@@ -93,8 +93,9 @@ public class UserDeletionService {
 		loginProvisioner.uidForEmail(login.email()).ifPresent(firebaseUids::add);
 
 		UUID auditId = transaction.execute(status -> {
-			appUserRepository.findByIdForUpdate(targetId)
-					.orElseThrow(() -> new ResourceNotFoundException("User not found: " + targetId));
+			if (appUserRepository.findByIdForUpdate(targetId).isEmpty()) {
+				throw new ResourceNotFoundException("User not found: " + targetId);
+			}
 			// Checked again under the lock: another admin may have deleted or promoted the account meanwhile.
 			AppUser target = requireDeletable(actorId, targetId, confirmEmail);
 			if (target.getFirebaseUid() != null && !target.getFirebaseUid().isBlank()) {

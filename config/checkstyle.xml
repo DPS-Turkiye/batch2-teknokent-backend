@@ -1,0 +1,139 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN" "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  Lint rules for main and test code; `./mvnw verify` fails on any violation.
+
+  What is deliberately not here:
+    - Layout and import order: Spotless owns formatting (config/eclipse-formatter.xml), as Prettier does in the web repo.
+    - Bug patterns that need types: Error Prone and javac's own lint run in the compiler (pom.xml).
+    - Which layer may use which: ArchitectureTest.
+
+  To silence one finding, name the check and say why on the same line:
+      @SuppressWarnings("checkstyle:ParameterAssignment") // The cursor is advanced in place while parsing.
+-->
+<module name="Checker">
+	<property name="charset" value="UTF-8" />
+	<property name="severity" value="error" />
+	<property name="fileExtensions" value="java" />
+
+	<!-- Lets @SuppressWarnings("checkstyle:CheckName") turn a check off for one declaration. -->
+	<module name="SuppressWarningsFilter" />
+
+	<!-- A suppression says why, like `eslint-disable-next-line rule - reason` in the web repo. -->
+	<module name="RegexpSingleline">
+		<property name="id" value="SuppressionNeedsReason" />
+		<property name="format" value="@SuppressWarnings\(.*\)\s*$" />
+		<property name="message" value="Say why on the same line: @SuppressWarnings(...) // reason" />
+	</module>
+	<module name="RegexpSingleline">
+		<property name="id" value="DisabledTestNeedsReason" />
+		<property name="format" value="@Disabled\s*$" />
+		<property name="message" value="A disabled test says why: @Disabled(&quot;reason&quot;)" />
+	</module>
+
+	<module name="TreeWalker">
+		<module name="SuppressWarningsHolder" />
+
+		<!-- Imports -->
+		<module name="AvoidStarImport" />
+		<module name="IllegalImport">
+			<!-- JDK internals, and JUnit 4: tests here are JUnit 5 (org.junit.jupiter). -->
+			<property name="illegalPkgs" value="sun, junit.framework, org.junit.runner, org.junit.rules" />
+			<property name="illegalClasses"
+				value="org.junit.Test, org.junit.Assert, org.junit.Before, org.junit.After, org.junit.BeforeClass, org.junit.AfterClass, org.junit.Ignore" />
+		</module>
+
+		<!-- Blocks and statements -->
+		<module name="NeedBraces" />
+		<module name="OneStatementPerLine" />
+		<module name="MultipleVariableDeclarations" />
+		<module name="EmptyStatement" />
+		<module name="EmptyBlock">
+			<property name="option" value="text" />
+		</module>
+		<!-- An empty catch needs a comment saying why nothing is done. -->
+		<module name="EmptyCatchBlock" />
+		<module name="AvoidNestedBlocks" />
+
+		<!-- Likely mistakes -->
+		<module name="EqualsHashCode" />
+		<module name="CovariantEquals" />
+		<module name="StringLiteralEquality" />
+		<module name="FallThrough" />
+		<module name="DefaultComesLast" />
+		<module name="ModifiedControlVariable" />
+		<module name="InnerAssignment" />
+		<module name="ParameterAssignment" />
+		<module name="SimplifyBooleanExpression" />
+		<module name="SimplifyBooleanReturn" />
+		<module name="UnusedLocalVariable" />
+		<module name="NoFinalizer" />
+		<module name="NoClone" />
+		<module name="IllegalThrows" />
+		<module name="MutableException" />
+		<module name="UnnecessarySemicolonInEnumeration" />
+		<module name="UnnecessarySemicolonInTryWithResources" />
+		<module name="UnnecessarySemicolonAfterTypeMemberDeclaration" />
+		<module name="AvoidNoArgumentSuperConstructorCall" />
+
+		<!-- Class design -->
+		<module name="OneTopLevelClass" />
+		<module name="OuterTypeFilename" />
+		<module name="FinalClass" />
+		<!-- No public fields: state is read through methods (records and Lombok accessors included). -->
+		<module name="VisibilityModifier">
+			<property name="protectedAllowed" value="true" />
+			<property name="packageAllowed" value="true" />
+		</module>
+
+		<!-- Style javac accepts but the team does not write -->
+		<module name="UpperEll" />
+		<module name="ArrayTypeStyle" />
+		<module name="ModifierOrder" />
+		<module name="RedundantModifier" />
+		<module name="PackageDeclaration" />
+		<module name="AvoidEscapedUnicodeCharacters">
+			<property name="allowNonPrintableEscapes" value="true" />
+			<property name="allowEscapesForControlCharacters" value="true" />
+		</module>
+
+		<!-- Names -->
+		<module name="PackageName" />
+		<module name="TypeName" />
+		<!--
+			camelCase, with underscores allowed between parts: Spring Data walks properties with them
+			(findByMentorshipRequest_Mentor_Id) and tests name the case after the method (findProfile_hidesPhone).
+		-->
+		<module name="MethodName">
+			<property name="format" value="^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$" />
+		</module>
+		<module name="MemberName" />
+		<module name="ParameterName" />
+		<module name="LocalVariableName" />
+		<module name="LambdaParameterName" />
+		<module name="RecordComponentName" />
+		<module name="StaticVariableName" />
+		<!-- UPPER_SNAKE_CASE, except the SLF4J logger, which is `log` everywhere. -->
+		<module name="ConstantName">
+			<property name="format" value="^(log|[A-Z][A-Z0-9]*(_[A-Z0-9]+)*)$" />
+		</module>
+		<module name="ClassTypeParameterName" />
+		<module name="MethodTypeParameterName" />
+
+		<!-- Bans, the `no-restricted-syntax` of this repo -->
+		<module name="Regexp">
+			<property name="id" value="NoSystemOut" />
+			<property name="format" value="System\.(out|err)\." />
+			<property name="illegalPattern" value="true" />
+			<property name="ignoreComments" value="true" />
+			<property name="message" value="Log through SLF4J, not System.out or System.err." />
+		</module>
+		<module name="Regexp">
+			<property name="id" value="NoPrintStackTrace" />
+			<property name="format" value="\.printStackTrace\(\)" />
+			<property name="illegalPattern" value="true" />
+			<property name="ignoreComments" value="true" />
+			<property name="message" value="Log the exception through SLF4J, not printStackTrace()." />
+		</module>
+	</module>
+</module>

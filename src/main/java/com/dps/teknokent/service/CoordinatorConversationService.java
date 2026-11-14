@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -169,7 +170,8 @@ public class CoordinatorConversationService {
 	private void notifyOtherSide(CoordinatorConversation conversation, Side senderSide, AppUser sender) {
 		if (senderSide == Side.COUNTERPART) {
 			programRepository.findById(conversation.getProgramId())
-					.map(program -> ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository))
+					.map(program -> ProgramCoordination.runners(program, programCoordinatorRepository,
+							appUserRepository))
 					.orElse(List.of())
 					.forEach(coordinator -> notificationService.create(
 							coordinator,
@@ -183,19 +185,23 @@ public class CoordinatorConversationService {
 		if (conversation.getMentorId() != null) {
 			appUserRepository.findById(conversation.getMentorId())
 					.ifPresent(mentor -> notificationService.create(
-							mentor, NotificationCategory.MESSAGE, Texts.get(mentor, "notification.coordinatorMessage.title"),
+							mentor, NotificationCategory.MESSAGE,
+							Texts.get(mentor, "notification.coordinatorMessage.title"),
 							Texts.get(mentor, "notification.coordinatorMessage.body", sender.getFullName()),
 							"/mentor-dashboard/messages" + thread));
 			return;
 		}
-		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(conversation.getOrganizationId())) {
+		for (AppUser member : appUserRepository
+				.findByOrganizationIdOrderByFullNameAsc(conversation.getOrganizationId())) {
 			notificationService.create(member, NotificationCategory.MESSAGE,
 					Texts.get(member, "notification.coordinatorMessage.title"),
-					Texts.get(member, "notification.coordinatorMessage.body", sender.getFullName()), "/messages" + thread);
+					Texts.get(member, "notification.coordinatorMessage.body", sender.getFullName()),
+					"/messages" + thread);
 		}
 	}
 
-	private CoordinatorConversation newConversation(UUID programId, UUID organizationId, UUID mentorId) {
+	private CoordinatorConversation newConversation(UUID programId, @Nullable UUID organizationId,
+			@Nullable UUID mentorId) {
 		CoordinatorConversation conversation = new CoordinatorConversation();
 		conversation.setId(UUID.randomUUID());
 		conversation.setProgramId(programId);
@@ -241,7 +247,8 @@ public class CoordinatorConversationService {
 	}
 
 	private static boolean unread(CoordinatorConversation conversation, Side side) {
-		Instant readAt = side == Side.COORDINATOR ? conversation.getCoordinatorReadAt() : conversation.getCounterpartReadAt();
+		Instant readAt = side == Side.COORDINATOR ? conversation.getCoordinatorReadAt()
+				: conversation.getCounterpartReadAt();
 		return conversation.getLastMessageAt() != null
 				&& (readAt == null || conversation.getLastMessageAt().isAfter(readAt));
 	}
@@ -251,7 +258,8 @@ public class CoordinatorConversationService {
 		if (!unread(conversation, side)) {
 			return 0;
 		}
-		Instant readAt = side == Side.COORDINATOR ? conversation.getCoordinatorReadAt() : conversation.getCounterpartReadAt();
+		Instant readAt = side == Side.COORDINATOR ? conversation.getCoordinatorReadAt()
+				: conversation.getCounterpartReadAt();
 		return readAt == null
 				? messageRepository.countByConversationId(conversation.getId())
 				: messageRepository.countByConversationIdAndCreatedAtAfter(conversation.getId(), readAt);
@@ -262,7 +270,8 @@ public class CoordinatorConversationService {
 			return List.of();
 		}
 		Map<UUID, Program> programs = programRepository
-				.findAllById(conversations.stream().map(CoordinatorConversation::getProgramId).collect(Collectors.toSet()))
+				.findAllById(
+						conversations.stream().map(CoordinatorConversation::getProgramId).collect(Collectors.toSet()))
 				.stream()
 				.collect(Collectors.toMap(Program::getId, Function.identity()));
 		Map<UUID, List<AppUser>> runners = ProgramCoordination.runners(
@@ -284,7 +293,8 @@ public class CoordinatorConversationService {
 						.reversed())
 				.map(conversation -> {
 					Program program = programs.get(conversation.getProgramId());
-					List<AppUser> running = program == null ? List.of() : runners.getOrDefault(program.getId(), List.of());
+					List<AppUser> running = program == null ? List.of()
+							: runners.getOrDefault(program.getId(), List.of());
 					AppUser coordinator = running.isEmpty() ? null : running.get(0);
 					boolean team = conversation.getOrganizationId() != null;
 					UUID counterpartId = team ? conversation.getOrganizationId() : conversation.getMentorId();
@@ -298,7 +308,8 @@ public class CoordinatorConversationService {
 							team ? CoordinatorConversationCounterpart.TEAM : CoordinatorConversationCounterpart.MENTOR,
 							counterpartId,
 							counterpartName,
-							coordinator == null ? (program == null ? null : program.getCreatedBy()) : coordinator.getId(),
+							coordinator == null ? (program == null ? null : program.getCreatedBy())
+									: coordinator.getId(),
 							coordinator == null ? null : coordinator.getFullName(),
 							conversation.getLastMessagePreview(),
 							conversation.getLastMessageAt(),
@@ -311,15 +322,16 @@ public class CoordinatorConversationService {
 				.toList();
 	}
 
-	private static String nameOf(Organization organization) {
+	private static String nameOf(@Nullable Organization organization) {
 		return organization == null ? Texts.forRequest("label.team") : organization.getName();
 	}
 
-	private static String nameOf(AppUser user) {
+	private static String nameOf(@Nullable AppUser user) {
 		return user == null ? "Mentor" : user.getFullName();
 	}
 
-	private static CoordinatorMessageResponse toMessage(CoordinatorMessage message, AppUser sender, UUID actorId) {
+	private static CoordinatorMessageResponse toMessage(CoordinatorMessage message, @Nullable AppUser sender,
+			UUID actorId) {
 		return new CoordinatorMessageResponse(
 				message.getId(),
 				message.getSenderId(),

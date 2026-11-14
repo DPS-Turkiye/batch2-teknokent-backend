@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,7 +88,7 @@ public class PeerDailyReportService {
 		requireWeekOpen(mentor, date);
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseGet(() -> newReport(mentor, date));
-		requireEditable(report.getStatus());
+		PeerReportAccess.requireEditable(report.getStatus());
 		report.setDidToday(PeerMeetingReportService.trimmed(request.didToday()));
 		report.setChallenge(PeerMeetingReportService.trimmed(request.challenge()));
 		report.getSkills().clear();
@@ -100,14 +101,16 @@ public class PeerDailyReportService {
 		return response(mentor, date, PeerReportAccess.savedOrConflict(() -> dailyRepository.saveAndFlush(report)));
 	}
 
-	/** Sends the day for review: every held meeting of the day needs a sent report, and the four questions an answer. */
+	/**
+	 * Sends the day for review: every held meeting of the day needs a sent report, and the four questions an answer.
+	 */
 	@Transactional
 	public PeerDailyReportResponse submit(UUID actorId, LocalDate date) {
 		AppUser mentor = access.requireMentor(actorId);
 		requireReportableDay(mentor, date);
 		PeerDailyReport report = dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.orElseThrow(() -> new ConflictException(Texts.forRequest("error.peerReportNotStarted")));
-		requireEditable(report.getStatus());
+		PeerReportAccess.requireEditable(report.getStatus());
 		requireWeekOpen(mentor, date);
 		if (missingMeetingReports(mentor, date) > 0) {
 			throw new ConflictException(Texts.forRequest("error.peerDailyMissingMeetingReports"));
@@ -132,8 +135,8 @@ public class PeerDailyReportService {
 		activity.setProgramId(access.programOf(mentor));
 		activity.setCreatedAt(calendar.now());
 		apply(mentor, activity, request);
-		if (activityRepository.countByMentorIdAndActivityDate(mentor.getId(), request.activityDate())
-				>= MAX_ACTIVITIES_PER_DAY) {
+		if (activityRepository.countByMentorIdAndActivityDate(mentor.getId(),
+				request.activityDate()) >= MAX_ACTIVITIES_PER_DAY) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerActivityLimit"));
 		}
 		return activityResponse(activityRepository.saveAndFlush(activity), menteeNames(List.of(activity)));
@@ -189,10 +192,6 @@ public class PeerDailyReportService {
 	}
 
 	/** Activities of the mentor from {@code from} to {@code to}, both included. Shared with the weekly summary. */
-	List<PeerActivity> activities(AppUser mentor, LocalDate from, LocalDate to) {
-		return activities(mentor, from, to, PeerReportScope.MENTOR);
-	}
-
 	List<PeerActivity> activities(AppUser mentor, LocalDate from, LocalDate to, PeerReportScope scope) {
 		return activityRepository.findByMentorIdAndActivityDateBetweenOrderByActivityDateAscCreatedAtAsc(
 				mentor.getId(), from, to).stream()
@@ -201,7 +200,7 @@ public class PeerDailyReportService {
 	}
 
 	/** A day report as the scope may see it: a reviewer sees neither a draft nor another program's day. */
-	private static PeerDailyReport visible(PeerDailyReport report, PeerReportScope scope) {
+	private static @Nullable PeerDailyReport visible(@Nullable PeerDailyReport report, PeerReportScope scope) {
 		if (report == null || (scope.sentOnly() && report.getStatus() == PeerReportStatus.DRAFT)
 				|| !scope.inProgram(report.getProgramId())) {
 			return null;
@@ -216,11 +215,12 @@ public class PeerDailyReportService {
 		}
 	}
 
-	private PeerDailyReportResponse response(AppUser mentor, LocalDate date, PeerDailyReport report) {
+	private PeerDailyReportResponse response(AppUser mentor, LocalDate date, @Nullable PeerDailyReport report) {
 		return response(mentor, date, report, PeerReportScope.MENTOR);
 	}
 
-	PeerDailyReportResponse response(AppUser mentor, LocalDate date, PeerDailyReport report, PeerReportScope scope) {
+	PeerDailyReportResponse response(AppUser mentor, LocalDate date, @Nullable PeerDailyReport report,
+			PeerReportScope scope) {
 		List<Meeting> meetings = access.inScope(mentor, meetingsOf(mentor, date), scope);
 		Map<UUID, PeerMeetingReport> reports = meetingReports.reportsFor(mentor, meetings, scope);
 		List<PeerReportMeetingResponse> rows = meetingReports.rows(mentor, meetings, scope);
@@ -233,7 +233,7 @@ public class PeerDailyReportService {
 		PeerReportStatus status = report == null ? null
 				: statuses.lookup().of(report.getStatus(), mentor.getId(), date, report.getProgramId());
 		boolean open = status == null || status.editable();
-		boolean late = report != null && report.getSubmittedAt() != null
+		boolean late = (report != null && report.getSubmittedAt() != null)
 				? report.getSubmittedAt().isAfter(calendar.dailyDeadline(date))
 				: open && calendar.now().isAfter(calendar.dailyDeadline(date));
 		return new PeerDailyReportResponse(
@@ -294,7 +294,7 @@ public class PeerDailyReportService {
 
 	/** An activity belongs to its day: once the day is sent (or approved) its activities are fixed too. */
 	private void requireDayEditable(AppUser mentor, LocalDate date) {
-		requireEditable(dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
+		PeerReportAccess.requireEditable(dailyRepository.findByMentorIdAndReportDate(mentor.getId(), date)
 				.map(PeerDailyReport::getStatus)
 				.orElse(null));
 		requireWeekOpen(mentor, date);
@@ -346,12 +346,6 @@ public class PeerDailyReportService {
 				Optional.ofNullable(activity.getMenteeId()).map(names::get).orElse(null),
 				activity.getDescription(),
 				activity.getCreatedAt());
-	}
-
-	private static void requireEditable(PeerReportStatus status) {
-		if (status != null && !status.editable()) {
-			throw new ConflictException(Texts.forRequest("error.peerReportLocked"));
-		}
 	}
 
 	private static void requireWorkingDay(LocalDate date) {

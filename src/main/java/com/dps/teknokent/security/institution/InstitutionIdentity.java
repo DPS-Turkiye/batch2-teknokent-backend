@@ -2,6 +2,8 @@ package com.dps.teknokent.security.institution;
 
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.IdentityKind;
 import com.dps.teknokent.domain.StudyLevel;
 
@@ -11,15 +13,15 @@ import com.dps.teknokent.domain.StudyLevel;
  */
 public record InstitutionIdentity(
 		String persistentId,
-		String email,
+		@Nullable String email,
 		boolean emailVerified,
-		String fullName,
+		@Nullable String fullName,
 		Set<IdentityKind> kinds,
-		String faculty,
-		String departmentCode,
-		String departmentName,
-		Integer classYear,
-		StudyLevel programLevel,
-		String academicTitle,
+		@Nullable String faculty,
+		@Nullable String departmentCode,
+		@Nullable String departmentName,
+		@Nullable Integer classYear,
+		@Nullable StudyLevel programLevel,
+		@Nullable String academicTitle,
 		boolean iskurParticipant) {
 }

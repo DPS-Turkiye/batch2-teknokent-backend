@@ -67,7 +67,8 @@ public final class TechnologyInferenceRules {
 			rule("DevOps", "DERIVED_CAPABILITY", "MEDIUM",
 					"\\bdevops\\b", "\\bci\\s*/\\s*cd\\b", "\\bcontinuous (?:integration|delivery|deployment)\\b"),
 			rule("Cloud infrastructure", "DERIVED_CAPABILITY", "MEDIUM",
-					"\\bcloud infrastructure\\b", "\\bbulut altyap", "\\bkubernetes\\b", "\\baws\\b", "\\bazure\\b", "google cloud"));
+					"\\bcloud infrastructure\\b", "\\bbulut altyap", "\\bkubernetes\\b", "\\baws\\b", "\\bazure\\b",
+					"google cloud"));
 
 	private TechnologyInferenceRules() {
 	}

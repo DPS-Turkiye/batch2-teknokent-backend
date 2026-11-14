@@ -7,14 +7,16 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.PeerReportStatus;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
@@ -49,6 +51,13 @@ class PeerReportAccess {
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramRepository programRepository;
 	private final PeerReportCalendar calendar;
+
+	/** A sent or approved report is locked; a draft or one sent back for revision can still change. */
+	static void requireEditable(@Nullable PeerReportStatus status) {
+		if (status != null && !status.editable()) {
+			throw new ConflictException(Texts.forRequest("error.peerReportLocked"));
+		}
+	}
 
 	AppUser requireMentor(UUID actorId) {
 		try {
@@ -86,7 +95,7 @@ class PeerReportAccess {
 	}
 
 	/** When the mentor role was last withdrawn; null for someone who holds it, or never had it. */
-	private static Instant revokedAt(AppUser user) {
+	private static @Nullable Instant revokedAt(AppUser user) {
 		return user.lastRevoked(UserRole.MENTOR).orElse(null);
 	}
 
@@ -174,6 +183,7 @@ class PeerReportAccess {
 	 * The one running peer program the mentor is accepted in; null when there is none. A mentor in two at once cannot
 	 * say which program a day's or week's report belongs to, so that is refused (Arya, 14 Nov).
 	 */
+	@Nullable
 	UUID programOf(AppUser mentor) {
 		List<UUID> ids = programMentorRepository
 				.findByMentorIdAndStatusOrderByCreatedAtDesc(mentor.getId(), ProgramMentorStatus.ACCEPTED).stream()
@@ -192,6 +202,7 @@ class PeerReportAccess {
 	}
 
 	/** The program a meeting report belongs to: the request's, else the mentor's running one. */
+	@Nullable
 	UUID programOf(AppUser mentor, Meeting meeting) {
 		return Optional.ofNullable(meeting.getMentorshipRequest().getProgram())
 				.map(Program::getId)
@@ -199,6 +210,7 @@ class PeerReportAccess {
 	}
 
 	/** As {@link #programOf(AppUser)}, for reading: an ambiguous mentor gives null instead of a 409. */
+	@Nullable
 	UUID programOrNull(AppUser mentor) {
 		try {
 			return programOf(mentor);
@@ -208,6 +220,7 @@ class PeerReportAccess {
 	}
 
 	/** As {@link #programOf(AppUser, Meeting)}, for reading (a prefill, a list): never a 409. */
+	@Nullable
 	UUID programOrNull(AppUser mentor, Meeting meeting) {
 		return Optional.ofNullable(meeting.getMentorshipRequest().getProgram())
 				.map(Program::getId)

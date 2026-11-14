@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -59,7 +61,7 @@ class InstitutionLoginServiceTest {
 	private final FakeProvider otg = new FakeProvider("otg", false);
 	private final JsonMapper jsonMapper = JsonMapper.builder().build();
 	private final StringRedisTemplate redis = mock(StringRedisTemplate.class);
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // mock() takes the raw class of a generic type.
 	private final ValueOperations<String, String> values = mock(ValueOperations.class);
 	private final AppUserRepository users = mock(AppUserRepository.class);
 	private final AppUserIdentityRepository identities = mock(AppUserIdentityRepository.class);
@@ -68,7 +70,7 @@ class InstitutionLoginServiceTest {
 	private InstitutionLoginService service;
 
 	@BeforeEach
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // mock() takes the raw class of a generic type.
 	void setUp() {
 		ObjectProvider<InstitutionLoginProvider> providers = mock(ObjectProvider.class);
 		when(providers.orderedStream()).thenAnswer(invocation -> Stream.of(provider, otg));
@@ -298,7 +300,8 @@ class InstitutionLoginServiceTest {
 		String code = service.complete("otg", "s1", Map.of("code", "c"));
 
 		verify(values).set(InstitutionLoginService.CODE_KEY + code, user.getId().toString(), Duration.ofSeconds(60));
-		verify(values, never()).set(eq(InstitutionLoginService.SIGNUP_CODE_KEY + code), anyString(), any(Duration.class));
+		verify(values, never()).set(eq(InstitutionLoginService.SIGNUP_CODE_KEY + code), anyString(),
+				any(Duration.class));
 	}
 
 	// Status, roles and grants stay Menton's: a PENDING account stays PENDING, and an ODTÜ grant is not withdrawn.
@@ -343,7 +346,8 @@ class InstitutionLoginServiceTest {
 		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a2", "ogrenci@ornek.com", false, null)))
 				.isInstanceOf(InvalidRequestException.class);
 
-		when(users.findByEmailIgnoreCase("koordinator@ornek.com")).thenReturn(Optional.of(account(UserRole.COORDINATOR)));
+		when(users.findByEmailIgnoreCase("koordinator@ornek.com"))
+				.thenReturn(Optional.of(account(UserRole.COORDINATOR)));
 		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a3", "koordinator@ornek.com", true, null)))
 				.isInstanceOf(ConflictException.class);
 	}
@@ -411,7 +415,7 @@ class InstitutionLoginServiceTest {
 	@Test
 	void theProvidersCheckRunsBeforeTheTransactionOpens() {
 		PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
-		@SuppressWarnings("unchecked")
+		@SuppressWarnings("unchecked") // mock() takes the raw class of a generic type.
 		ObjectProvider<InstitutionLoginProvider> providers = mock(ObjectProvider.class);
 		InstitutionLoginProvider remote = mock(InstitutionLoginProvider.class);
 		when(remote.id()).thenReturn("otg");
@@ -434,6 +438,168 @@ class InstitutionLoginServiceTest {
 				.isInstanceOf(InvalidRequestException.class);
 	}
 
+	// A state is bound to the login it was started for: one issued for OTG opens nothing at ODTÜ.
+	@Test
+	void aStateStartedForAnotherProviderIsRefused() {
+		when(values.getAndDelete(InstitutionLoginService.STATE_KEY + "s1")).thenReturn("otg");
+		provider.next = student("e100001", "ayse@metu.edu.tr");
+
+		assertThatThrownBy(() -> service.complete("odtu", "s1", Map.of()))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(provider.lastCallback).isNull();
+		verify(users, never()).save(any());
+	}
+
+	@Test
+	void aCallbackWithNoStateAtAllIsRefusedWithoutAskingRedis() {
+		assertThatThrownBy(() -> service.complete("odtu", null, Map.of())).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.complete("odtu", " ", Map.of())).isInstanceOf(InvalidRequestException.class);
+		verify(values, never()).getAndDelete(anyString());
+	}
+
+	@Test
+	void aCallbackWithoutParametersReachesTheProviderAsAnEmptyOne() {
+		when(values.getAndDelete(InstitutionLoginService.STATE_KEY + "s1")).thenReturn("odtu");
+		provider.next = student("e100001", "ayse@metu.edu.tr");
+
+		service.complete("odtu", "s1", null);
+
+		assertThat(provider.lastCallback).isNotNull().isEmpty();
+	}
+
+	@Test
+	void aMissingOrBlankCodeIsRefusedWithoutAskingRedis() {
+		assertThatThrownBy(() -> service.exchange(null)).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.exchange(" ")).isInstanceOf(InvalidRequestException.class);
+		verify(values, never()).getAndDelete(anyString());
+		verify(loginProvisioner, never()).customToken(any(), any(), any(), anyBoolean());
+	}
+
+	// The code lives for a minute; an account closed inside that minute must not get a session out of it.
+	@Test
+	void aCodeForAnAccountRejectedOrDeletedInTheMeantimeBuysNoToken() {
+		for (UserAccountStatus status : List.of(UserAccountStatus.REJECTED, UserAccountStatus.DELETED)) {
+			AppUser user = account(UserRole.MENTEE);
+			user.setStatus(status);
+			when(values.getAndDelete(InstitutionLoginService.CODE_KEY + "c1")).thenReturn(user.getId().toString());
+			when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+			assertThatThrownBy(() -> service.exchange("c1")).isInstanceOfSatisfying(ResponseStatusException.class,
+					error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+		}
+		verify(loginProvisioner, never()).customToken(any(), any(), any(), anyBoolean());
+	}
+
+	@Test
+	void aCodeWhoseAccountNoLongerExistsIsNotFound() {
+		UUID gone = UUID.randomUUID();
+		when(values.getAndDelete(InstitutionLoginService.CODE_KEY + "c1")).thenReturn(gone.toString());
+		when(users.findById(gone)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.exchange("c1")).isInstanceOf(ResourceNotFoundException.class);
+		// An account code never falls through to the sign-up path.
+		verify(values, never()).getAndDelete(InstitutionLoginService.SIGNUP_CODE_KEY + "c1");
+	}
+
+	@Test
+	void aReturningPersonWhoseAccountWasRejectedOrDeletedIsTurnedAwayAndGivenNothing() {
+		for (UserAccountStatus status : List.of(UserAccountStatus.REJECTED, UserAccountStatus.DELETED)) {
+			AppUser user = account(UserRole.MENTOR);
+			user.setStatus(status);
+			when(identities.findByProviderAndPersistentId("odtu", "e100001"))
+					.thenReturn(Optional.of(new AppUserIdentity(user, "odtu", "e100001", Instant.now())));
+
+			assertThatThrownBy(() -> service.signIn(provider, student("e100001", "ayse@metu.edu.tr")))
+					.isInstanceOfSatisfying(ResponseStatusException.class,
+							error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+			assertThat(user.activePermissions()).containsExactly(UserRole.MENTOR);
+			assertThat(user.getStatus()).isEqualTo(status);
+		}
+		verify(people, never()).save(any());
+	}
+
+	@Test
+	void aDeletedAccountGetsNoCodeFromAnIdentityOnlyLogin() {
+		AppUser user = account(UserRole.MENTEE);
+		user.setStatus(UserAccountStatus.DELETED);
+		when(identities.findByProviderAndPersistentId("otg", "a72ab40d"))
+				.thenReturn(Optional.of(new AppUserIdentity(user, "otg", "a72ab40d", Instant.now())));
+
+		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a72ab40d", "ogrenci@ornek.com", true, null)))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+		verify(users, never()).save(any());
+	}
+
+	@Test
+	void anAdminAccountKeepsItsOwnLoginOnBothKindsOfInstitutionLogin() {
+		AppUser admin = account(UserRole.ADMIN);
+		when(users.findByEmailIgnoreCase("admin@metu.edu.tr")).thenReturn(Optional.of(admin));
+		assertThatThrownBy(() -> service.signIn(provider, student("e100004", "admin@metu.edu.tr")))
+				.isInstanceOf(ConflictException.class);
+
+		when(identities.findByProviderAndPersistentId("otg", "a1"))
+				.thenReturn(Optional.of(new AppUserIdentity(admin, "otg", "a1", Instant.now())));
+		assertThatThrownBy(() -> service.findAccount(otg, otgPerson("a1", "admin@metu.edu.tr", true, null)))
+				.isInstanceOf(ConflictException.class);
+		verify(identities, never()).save(any());
+		verify(users, never()).save(any());
+	}
+
+	@Test
+	void aNewAccountIsNamedAsTheInstitutionSaysOrByItsAddressWhenItSaysNothing() {
+		AppUser nameless = service.signIn(provider, named("e100005", "isimsiz@metu.edu.tr", "  "));
+		AppUser unnamed = service.signIn(provider, named("e100006", "adsiz@metu.edu.tr", null));
+		AppUser withName = service.signIn(provider, named("e100007", "ayse@metu.edu.tr", " Ayşe Yılmaz "));
+
+		assertThat(nameless.getFullName()).isEqualTo("isimsiz@metu.edu.tr");
+		assertThat(unnamed.getFullName()).isEqualTo("adsiz@metu.edu.tr");
+		assertThat(withName.getFullName()).isEqualTo("Ayşe Yılmaz");
+	}
+
+	// The id becomes part of the Firebase uid, which is at most 128 characters.
+	@Test
+	void anIdThatWouldNotFitAFirebaseUidIsRefusedAndTheLongestThatFitsIsKept() {
+		assertThatThrownBy(() -> service.signIn(provider, student("e".repeat(101), "uzun@metu.edu.tr")))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.signIn(provider, student(null, "yok@metu.edu.tr")))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(users, never()).save(any());
+
+		AppUser user = service.signIn(provider, student(" " + "e".repeat(100) + " ", "sinir@metu.edu.tr"));
+
+		assertThat(user.getFirebaseUid()).isEqualTo("odtu_" + "e".repeat(100));
+	}
+
+	@Test
+	void aStudentTheInstitutionSendsWithoutAnAddressGetsNoAccount() {
+		assertThatThrownBy(() -> service.signIn(provider, student("e100008", " ")))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.signIn(provider, student("e100008", null)))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(users, never()).save(any());
+		verify(identities, never()).save(any());
+	}
+
+	// Firebase refuses a blank display name, so a newcomer's blank name travels as no name.
+	@Test
+	void aNewcomersBlankNameIsNotCarriedIntoTheSignupCode() {
+		when(values.getAndDelete(InstitutionLoginService.STATE_KEY + "s1")).thenReturn("otg");
+		otg.next = otgPerson("a72ab40d", "ogrenci@ornek.com", true, "   ");
+
+		String code = service.complete("otg", "s1", Map.of("code", "c"));
+
+		ArgumentCaptor<String> login = ArgumentCaptor.forClass(String.class);
+		verify(values).set(eq(InstitutionLoginService.SIGNUP_CODE_KEY + code), login.capture(),
+				eq(Duration.ofSeconds(60)));
+		assertThat(jsonMapper.readValue(login.getValue(), InstitutionLoginService.NewLogin.class).fullName()).isNull();
+	}
+
+	private static InstitutionIdentity named(String persistentId, String email, String fullName) {
+		return new InstitutionIdentity(persistentId, email, true, fullName, Set.of(IdentityKind.STUDENT),
+				"Mühendislik Fakültesi", "CENG", "Bilgisayar Mühendisliği", 3, null, null, false);
+	}
+
 	private static InstitutionIdentity otgPerson(String sub, String email, boolean verified, String name) {
 		return new InstitutionIdentity(sub, email, verified, name, Set.of(), null, null, null, null, null, null, false);
 	}
@@ -451,14 +617,14 @@ class InstitutionLoginServiceTest {
 	private static AppUser account(UserRole role) {
 		AppUser user = new AppUser();
 		user.setId(UUID.randomUUID());
-		user.setEmail(role.name().toLowerCase() + "@metu.edu.tr");
+		user.setEmail(role.name().toLowerCase(Locale.ROOT) + "@metu.edu.tr");
 		user.setFullName("Var Olan");
 		user.setRole(role);
 		user.setStatus(UserAccountStatus.APPROVED);
 		return user;
 	}
 
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // getField returns Object; the field is a List<AppUserPermission>.
 	private static List<AppUserPermission> grants(AppUser user) {
 		return (List<AppUserPermission>) ReflectionTestUtils.getField(user, "permissions");
 	}
@@ -467,6 +633,7 @@ class InstitutionLoginServiceTest {
 		private final String id;
 		private final boolean grantsAccess;
 		private InstitutionIdentity next;
+		private Map<String, String> lastCallback;
 		private Set<UserRole> extra = Set.of();
 
 		private FakeProvider(String id, boolean grantsAccess) {
@@ -491,6 +658,7 @@ class InstitutionLoginServiceTest {
 
 		@Override
 		public InstitutionIdentity completeLogin(String state, Map<String, String> callback) {
+			lastCallback = callback;
 			return next;
 		}
 

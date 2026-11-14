@@ -14,6 +14,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -88,7 +89,7 @@ public class PeerMeetingReportService {
 			created.setCreatedAt(calendar.now());
 			return created;
 		});
-		requireEditable(report);
+		PeerReportAccess.requireEditable(report.getStatus());
 		apply(report, request);
 		report.setUpdatedAt(calendar.now());
 		return response(mentor, meeting,
@@ -102,11 +103,12 @@ public class PeerMeetingReportService {
 		Meeting meeting = access.requireHeldMeeting(mentor, meetingId);
 		PeerMeetingReport report = reportOf(meeting)
 				.orElseThrow(() -> new ConflictException(Texts.forRequest("error.peerReportNotStarted")));
-		requireEditable(report);
+		PeerReportAccess.requireEditable(report.getStatus());
 		List<String> missing = missingSections(report);
 		if (!missing.isEmpty()) {
 			throw new InvalidRequestException(
-					Texts.forRequest("error.peerReportIncomplete", String.join(", ", missing)), "PEER_REPORT_INCOMPLETE");
+					Texts.forRequest("error.peerReportIncomplete", String.join(", ", missing)),
+					"PEER_REPORT_INCOMPLETE");
 		}
 		report.submit(calendar.now());
 		return response(mentor, meeting,
@@ -177,13 +179,13 @@ public class PeerMeetingReportService {
 	}
 
 	/** The minutes a meeting counts for: the reported duration once there is one, the planned one before. */
-	static int durationOf(Meeting meeting, PeerMeetingReport report) {
+	static int durationOf(Meeting meeting, @Nullable PeerMeetingReport report) {
 		return report != null && report.getActualDurationMinutes() != null ? report.getActualDurationMinutes()
 				: meeting.getDurationMinutes();
 	}
 
 	/** Whether the report counts as sent for the day and week gates. */
-	static boolean sent(PeerMeetingReport report) {
+	static boolean sent(@Nullable PeerMeetingReport report) {
 		return report != null && report.getStatus() != null && report.getStatus().sent();
 	}
 
@@ -235,7 +237,7 @@ public class PeerMeetingReportService {
 	}
 
 	/** The request's meeting mode; with no preference, a meeting with a link was held online. */
-	private static PeerMeetingFormat defaultFormat(Meeting meeting) {
+	private static @Nullable PeerMeetingFormat defaultFormat(Meeting meeting) {
 		MeetingMode mode = meeting.getMentorshipRequest().getMeetingMode();
 		if (mode == MeetingMode.IN_PERSON) {
 			return PeerMeetingFormat.IN_PERSON;
@@ -244,12 +246,6 @@ public class PeerMeetingReportService {
 			return PeerMeetingFormat.ONLINE;
 		}
 		return null;
-	}
-
-	private static void requireEditable(PeerMeetingReport report) {
-		if (report.getStatus() != null && !report.getStatus().editable()) {
-			throw new ConflictException(Texts.forRequest("error.peerReportLocked"));
-		}
 	}
 
 	private void apply(PeerMeetingReport report, SavePeerMeetingReportRequest request) {
@@ -368,7 +364,9 @@ public class PeerMeetingReportService {
 				report.getUpdatedAt());
 	}
 
-	/** The side card: this meeting's number with the mentee, the meeting before it, and steps still open from before. */
+	/**
+	 * The side card: this meeting's number with the mentee, the meeting before it, and steps still open from before.
+	 */
 	private PeerMeetingReportResponse.Context context(AppUser mentor, Meeting meeting, PeerReportScope scope) {
 		UUID menteeId = meeting.getMentorshipRequest().getRequester().getId();
 		List<Meeting> earlier = access.inScope(mentor, access.meetingsWith(mentor, menteeId).stream()
@@ -387,7 +385,8 @@ public class PeerMeetingReportService {
 		return new PeerMeetingReportResponse.Context(
 				earlier.size() + 1,
 				new PeerMeetingReportResponse.PreviousMeeting(previous.getId(), previous.getScheduledAt(),
-						previousReport == null ? Set.of() : ordered(previousReport.getTopics(), PeerMeetingTopic.class)),
+						previousReport == null ? Set.of()
+								: ordered(previousReport.getTopics(), PeerMeetingTopic.class)),
 				openActions);
 	}
 
@@ -407,18 +406,18 @@ public class PeerMeetingReportService {
 		return copy;
 	}
 
-	private static <E> void replace(Set<E> target, Set<E> values) {
+	private static <E> void replace(Set<E> target, @Nullable Set<E> values) {
 		target.clear();
 		if (values != null) {
 			target.addAll(values);
 		}
 	}
 
-	static String trimmed(String value) {
+	static @Nullable String trimmed(@Nullable String value) {
 		return value == null || value.isBlank() ? null : value.trim();
 	}
 
-	static boolean blank(String value) {
+	static boolean blank(@Nullable String value) {
 		return value == null || value.isBlank();
 	}
 }

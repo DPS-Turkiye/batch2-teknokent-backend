@@ -4,9 +4,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MentorshipStatus;
-import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Mentorship;
+import com.dps.teknokent.entity.Organization;
 
 public record MentorshipResponse(
 		UUID id,
@@ -21,13 +23,9 @@ public record MentorshipResponse(
 		String goals,
 		List<MentorshipGoalResponse> goalItems,
 		int progressPercent,
-		/** The program the mentorship belongs to; null for a startup outside any program. */
-		UUID programId,
-		String programName) {
-
-	public static MentorshipResponse fromEntity(Mentorship mentorship) {
-		return fromEntity(mentorship, List.of());
-	}
+		/* The program the mentorship belongs to; null for a startup outside any program. */
+		@Nullable UUID programId,
+		@Nullable String programName) {
 
 	public static MentorshipResponse fromEntity(
 			Mentorship mentorship, List<MentorshipGoalResponse> goalItems) {

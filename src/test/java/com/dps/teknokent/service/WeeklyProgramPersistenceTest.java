@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -31,6 +32,9 @@ import jakarta.persistence.EntityManager;
 
 /** The one-step save against a real persistence context: phases, weeks and the file land together. */
 @DataJpaTest
+// The pooled test database: H2 checks the stored_document.kind enum constraint against the session that created
+// it, which the unpooled embedded database has already closed.
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({ WeeklyProgramService.class, CoordinatorProgramService.class, ProgramWeekPlanService.class,
 		DomainLookupService.class, LocalPiiRedactionService.class, AiFeatures.class })
 class WeeklyProgramPersistenceTest {
@@ -80,7 +84,7 @@ class WeeklyProgramPersistenceTest {
 		file = new StoredDocument();
 		file.setId(UUID.randomUUID());
 		file.setUserId(coordinator.getId());
-		file.setKind(DocumentKind.WEEKLY_PROGRAM.value());
+		file.setKind(DocumentKind.WEEKLY_PROGRAM);
 		file.setOriginalFilename("kesif-haftalik-program.pdf");
 		file.setContentType("application/pdf");
 		file.setSizeBytes(70_000L);
@@ -111,7 +115,7 @@ class WeeklyProgramPersistenceTest {
 				.containsExactly("1:Yola Çık", "2:Problemi Anla", "3:Saha Gezisi");
 		assertThat(saved.plan().weeks()).hasSize(3);
 		assertThat(saved.program().syllabus().id()).isEqualTo(file.getId());
-		assertThat(saved.program().syllabus().kind()).isEqualTo(DocumentKind.WEEKLY_PROGRAM.value());
+		assertThat(saved.program().syllabus().kind()).isEqualTo(DocumentKind.WEEKLY_PROGRAM);
 	}
 
 	private WeeklyProgramSavedResponse save(List<WeekInput> weeks, List<PhaseInput> phases, int seenPhases,

@@ -61,7 +61,8 @@ public class ProgramWeekService {
 				: ownProgram.orElseThrow(() -> new ResourceNotFoundException("The caller is in no program"));
 		boolean participant = ownProgram.filter(programId::equals).isPresent() || mentorsIn(caller, programId);
 		if (caller.getStatus() != UserAccountStatus.APPROVED || !participant) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.programWeekParticipantsOnly"));
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					Texts.forRequest("error.programWeekParticipantsOnly"));
 		}
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
@@ -85,11 +86,12 @@ public class ProgramWeekService {
 								phase.getStartDate(), phase.getEndDate(), phase.getExpectedOutput(),
 								covers(phase, today)))
 						.toList();
-		ProgramWeekPlanResponse.Week planned = week == null ? null : plan.stream()
-				.filter(item -> item.getWeekNumber() == week)
-				.findFirst()
-				.map(item -> ProgramWeekPlanService.weekOf(item, start, end))
-				.orElse(null);
+		ProgramWeekPlanResponse.Week planned = week == null ? null
+				: plan.stream()
+						.filter(item -> item.getWeekNumber() == week)
+						.findFirst()
+						.map(item -> ProgramWeekPlanService.weekOf(item, start, end))
+						.orElse(null);
 		return new ProgramWeekResponse(program.getId(), program.getName(), start, end, week,
 				ProgramCalendar.totalWeeks(start, end), week == null ? null : from, week == null ? null : to,
 				notStarted, ended, !phases.isEmpty() || !plan.isEmpty(), planned, inWeek);
@@ -100,8 +102,9 @@ public class ProgramWeekService {
 	}
 
 	private boolean mentorsIn(AppUser caller, UUID programId) {
-		return caller.has(UserRole.MENTOR) && programMentorRepository.findByProgramIdAndMentorId(programId, caller.getId())
-				.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
-				.isPresent();
+		return caller.has(UserRole.MENTOR)
+				&& programMentorRepository.findByProgramIdAndMentorId(programId, caller.getId())
+						.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
+						.isPresent();
 	}
 }

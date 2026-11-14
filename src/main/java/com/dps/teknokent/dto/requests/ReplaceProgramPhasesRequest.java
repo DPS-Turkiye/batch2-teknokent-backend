@@ -11,7 +11,8 @@ import jakarta.validation.constraints.Size;
 
 /**
  * The phases in order; the list replaces the program's current phases. A phase sent with its {@code id} keeps it
- * (Süreç assignments stay linked to it); one without is new, and a saved phase left out is removed. A {@code syllabusDocumentId} also
+ * (Süreç assignments stay linked to it); one without is new, and a saved phase left out is removed. A
+ * {@code syllabusDocumentId} also
  * replaces the program's syllabus file; null keeps the current one.
  */
 public record ReplaceProgramPhasesRequest(

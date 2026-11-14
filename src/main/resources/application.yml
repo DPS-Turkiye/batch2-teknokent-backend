@@ -43,6 +43,13 @@ spring:
       # (SecurityConfig.SERVICE_ONLY_PATHS); no Menton account ever gets it.
       roles: SERVICE
 
+  # One thread per @Scheduled job (transcript bots, reminders, user-deletion cleanup), so a slow tick of one does
+  # not hold back the others. Each job is fixedDelay, so it still never overlaps itself.
+  task:
+    scheduling:
+      pool:
+        size: 3
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}

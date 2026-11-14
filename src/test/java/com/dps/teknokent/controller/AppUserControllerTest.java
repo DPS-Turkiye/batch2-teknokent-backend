@@ -48,353 +48,348 @@ import com.dps.teknokent.service.TeamMembershipService;
 @Import(SecurityConfig.class)
 class AppUserControllerTest {
 
-    private static final UUID ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000ad");
+	private static final UUID ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000ad");
 
-    @Autowired
-    private MockMvc mockMvc;
+	@Autowired
+	private MockMvc mockMvc;
 
-    @MockitoBean
-    private AppUserService appUserService;
+	@MockitoBean
+	private AppUserService appUserService;
 
-    @MockitoBean
-    private TeamMembershipService teamMembershipService;
+	@MockitoBean
+	private TeamMembershipService teamMembershipService;
 
-    @MockitoBean
-    private PersonSummaryService personSummaryService;
+	@MockitoBean
+	private PersonSummaryService personSummaryService;
 
-    @Test
-    void requiresAuthenticationForUsersList() throws Exception {
-        mockMvc.perform(get("/api/users"))
-                .andExpect(status().isUnauthorized());
-    }
+	@Test
+	void requiresAuthenticationForUsersList() throws Exception {
+		mockMvc.perform(get("/api/users"))
+				.andExpect(status().isUnauthorized());
+	}
 
-    @Test
-    void returnsUsersFilteredByRole() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+	@Test
+	void returnsUsersFilteredByRole() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-        when(appUserService.findAll(ADMIN_ID, UserRole.MENTOR, null)).thenReturn(List.of(new UserResponse(
-                userId,
-                "mentor@teknokent.demo",
-                "Dr. Kemal Arslan",
-                UserRole.MENTOR,
-                UserAccountStatus.APPROVED,
-                organizationId,
-                "Teknokent",
-                "Ürün & Araştırma Direktörü",
-                null,
-                false
-        )));
+		when(appUserService.findAll(ADMIN_ID, UserRole.MENTOR, null)).thenReturn(List.of(new UserResponse(
+				userId,
+				"mentor@teknokent.demo",
+				"Dr. Kemal Arslan",
+				UserRole.MENTOR,
+				UserAccountStatus.APPROVED,
+				organizationId,
+				"Teknokent",
+				"Ürün & Araştırma Direktörü",
+				null,
+				false)));
 
-        mockMvc.perform(get("/api/users").param("role", "MENTOR").param("actorId", ADMIN_ID.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(userId.toString()))
-                .andExpect(jsonPath("$[0].email").value("mentor@teknokent.demo"))
-                .andExpect(jsonPath("$[0].role").value("MENTOR"));
-    }
+		mockMvc.perform(get("/api/users").param("role", "MENTOR").param("actorId", ADMIN_ID.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].id").value(userId.toString()))
+				.andExpect(jsonPath("$[0].email").value("mentor@teknokent.demo"))
+				.andExpect(jsonPath("$[0].role").value("MENTOR"));
+	}
 
-    @Test
-    void returnsUserById() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000102");
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+	@Test
+	void returnsUserById() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
-        when(appUserService.findById(ADMIN_ID, userId)).thenReturn(new UserResponse(
-                userId,
-                "mentee@teknokent.demo",
-                "Elif Demir",
-                UserRole.MENTEE,
-                UserAccountStatus.APPROVED,
-                organizationId,
-                "Teknokent",
-                "Product Designer",
-                null,
-                false
-        ));
+		when(appUserService.findById(ADMIN_ID, userId)).thenReturn(new UserResponse(
+				userId,
+				"mentee@teknokent.demo",
+				"Elif Demir",
+				UserRole.MENTEE,
+				UserAccountStatus.APPROVED,
+				organizationId,
+				"Teknokent",
+				"Product Designer",
+				null,
+				false));
 
-        mockMvc.perform(get("/api/users/{id}", userId).param("actorId", ADMIN_ID.toString()).with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(userId.toString()))
-                .andExpect(jsonPath("$.fullName").value("Elif Demir"))
-                .andExpect(jsonPath("$.role").value("MENTEE"));
-    }
+		mockMvc.perform(get("/api/users/{id}", userId).param("actorId", ADMIN_ID.toString()).with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(userId.toString()))
+				.andExpect(jsonPath("$.fullName").value("Elif Demir"))
+				.andExpect(jsonPath("$.role").value("MENTEE"));
+	}
 
-    @Test
-    void returnsUsersWithoutRoleFilter() throws Exception {
-        UUID firstUserId = UUID.fromString("00000000-0000-0000-0000-000000000103");
-        UUID secondUserId = UUID.fromString("00000000-0000-0000-0000-000000000104");
+	@Test
+	void returnsUsersWithoutRoleFilter() throws Exception {
+		UUID firstUserId = UUID.fromString("00000000-0000-0000-0000-000000000103");
+		UUID secondUserId = UUID.fromString("00000000-0000-0000-0000-000000000104");
 
-        when(appUserService.findAll(eq(ADMIN_ID), isNull(), isNull())).thenReturn(List.of(
-                new UserResponse(
-                        firstUserId,
-                        "admin@teknokent.demo",
-                        "Admin User",
-                        UserRole.ADMIN,
-                        UserAccountStatus.APPROVED,
-                        null,
-                        null,
-                        "Platform Admin",
-                        null,
-                        false
-                ),
-                new UserResponse(
-                        secondUserId,
-                        "mentor@teknokent.demo",
-                        "Mentor User",
-                        UserRole.MENTOR,
-                        UserAccountStatus.APPROVED,
-                        null,
-                        null,
-                        "Mentor",
-                        null,
-                        false
-                )
-        ));
+		when(appUserService.findAll(eq(ADMIN_ID), isNull(), isNull())).thenReturn(List.of(
+				new UserResponse(
+						firstUserId,
+						"admin@teknokent.demo",
+						"Admin User",
+						UserRole.ADMIN,
+						UserAccountStatus.APPROVED,
+						null,
+						null,
+						"Platform Admin",
+						null,
+						false),
+				new UserResponse(
+						secondUserId,
+						"mentor@teknokent.demo",
+						"Mentor User",
+						UserRole.MENTOR,
+						UserAccountStatus.APPROVED,
+						null,
+						null,
+						"Mentor",
+						null,
+						false)));
 
-        mockMvc.perform(get("/api/users").param("actorId", ADMIN_ID.toString()).with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].email").value("admin@teknokent.demo"))
-                .andExpect(jsonPath("$[1].role").value("MENTOR"));
-    }
+		mockMvc.perform(get("/api/users").param("actorId", ADMIN_ID.toString()).with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].email").value("admin@teknokent.demo"))
+				.andExpect(jsonPath("$[1].role").value("MENTOR"));
+	}
 
-    @Test
-    void requiresAuthenticationToDecideStatus() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+	@Test
+	void requiresAuthenticationToDecideStatus() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
 
-        mockMvc.perform(patch("/api/users/{id}/status", userId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "actorId": "00000000-0000-0000-0000-000000000001",
-                                  "status": "APPROVED"
-                                }
-                                """))
-                .andExpect(status().isUnauthorized());
-    }
+		mockMvc.perform(patch("/api/users/{id}/status", userId)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "actorId": "00000000-0000-0000-0000-000000000001",
+						  "status": "APPROVED"
+						}
+						"""))
+				.andExpect(status().isUnauthorized());
+	}
 
-    @Test
-    void decidesAccountStatus() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
-        UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
-        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+	@Test
+	void decidesAccountStatus() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+		UUID organizationId = UUID.fromString("10000000-0000-0000-0000-000000000011");
+		UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-        when(appUserService.decideStatus(eq(userId), any(DecideAccountStatusRequest.class)))
-                .thenReturn(new AccountDecisionResponse(
-                        new UserResponse(
-                                userId,
-                                "ayse@startup.com",
-                                "Ayşe Demir",
-                                UserRole.MENTEE,
-                                UserAccountStatus.APPROVED,
-                                organizationId,
-                                "GreenLoop",
-                                "Kurucu",
-                                null,
-                                false
-                        ),
-                        "ABCD2345"
-                ));
+		when(appUserService.decideStatus(eq(userId), any(DecideAccountStatusRequest.class)))
+				.thenReturn(new AccountDecisionResponse(
+						new UserResponse(
+								userId,
+								"ayse@startup.com",
+								"Ayşe Demir",
+								UserRole.MENTEE,
+								UserAccountStatus.APPROVED,
+								organizationId,
+								"GreenLoop",
+								"Kurucu",
+								null,
+								false),
+						"ABCD2345"));
 
-        mockMvc.perform(patch("/api/users/{id}/status", userId)
-                        .with(user("test-user"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "actorId": "%s",
-                                  "status": "APPROVED"
-                                }
-                                """.formatted(adminId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.user.id").value(userId.toString()))
-                .andExpect(jsonPath("$.user.status").value("APPROVED"))
-                .andExpect(jsonPath("$.inviteCode").value("ABCD2345"));
-    }
+		mockMvc.perform(patch("/api/users/{id}/status", userId)
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "actorId": "%s",
+						  "status": "APPROVED"
+						}
+						""".formatted(adminId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.user.id").value(userId.toString()))
+				.andExpect(jsonPath("$.user.status").value("APPROVED"))
+				.andExpect(jsonPath("$.inviteCode").value("ABCD2345"));
+	}
 
-    // A signed-in caller is the actor, whatever actorId the body names, so a
-    // non-admin cannot decide accounts by quoting an admin's id.
-    @Test
-    void decidesStatusAsTheSignedInCallerNotTheBodyActor() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
-        UUID callerId = UUID.fromString("00000000-0000-0000-0000-000000000822");
-        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UsernamePasswordAuthenticationToken caller = new UsernamePasswordAuthenticationToken(
-                new AppUserPrincipal(callerId, "mentee@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid"),
-                null, List.of());
+	// A signed-in caller is the actor, whatever actorId the body names, so a
+	// non-admin cannot decide accounts by quoting an admin's id.
+	@Test
+	void decidesStatusAsTheSignedInCallerNotTheBodyActor() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+		UUID callerId = UUID.fromString("00000000-0000-0000-0000-000000000822");
+		UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		UsernamePasswordAuthenticationToken caller = new UsernamePasswordAuthenticationToken(
+				new AppUserPrincipal(callerId, "mentee@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED,
+						"uid"),
+				null, List.of());
 
-        mockMvc.perform(patch("/api/users/{id}/status", userId)
-                .with(authentication(caller))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {
-                          "actorId": "%s",
-                          "status": "APPROVED"
-                        }
-                        """.formatted(adminId)));
+		mockMvc.perform(patch("/api/users/{id}/status", userId)
+				.with(authentication(caller))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "actorId": "%s",
+						  "status": "APPROVED"
+						}
+						""".formatted(adminId)));
 
-        verify(appUserService).decideStatus(eq(userId), argThat(request -> callerId.equals(request.actorId())));
-    }
+		verify(appUserService).decideStatus(eq(userId), argThat(request -> callerId.equals(request.actorId())));
+	}
 
-    @Test
-    void revokesSignInsAsTheSignedInCallerNotTheBodyActor() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
-        UUID callerId = UUID.fromString("00000000-0000-0000-0000-000000000822");
-        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UsernamePasswordAuthenticationToken caller = new UsernamePasswordAuthenticationToken(
-                new AppUserPrincipal(callerId, "mentee@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED, "uid"),
-                null, List.of());
+	@Test
+	void revokesSignInsAsTheSignedInCallerNotTheBodyActor() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+		UUID callerId = UUID.fromString("00000000-0000-0000-0000-000000000822");
+		UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		UsernamePasswordAuthenticationToken caller = new UsernamePasswordAuthenticationToken(
+				new AppUserPrincipal(callerId, "mentee@startup.com", UserRole.MENTEE, UserAccountStatus.APPROVED,
+						"uid"),
+				null, List.of());
 
-        mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
-                .with(authentication(caller))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        { "actorId": "%s" }
-                        """.formatted(adminId)));
+		mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
+				.with(authentication(caller))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "actorId": "%s" }
+						""".formatted(adminId)));
 
-        verify(appUserService).revokeSignIns(userId, callerId);
-    }
+		verify(appUserService).revokeSignIns(userId, callerId);
+	}
 
-    @Test
-    void revokesSignInsForTheServiceCredentialActor() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
-        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        Instant revokedAt = Instant.parse("2026-10-23T15:00:00Z");
-        when(appUserService.revokeSignIns(userId, adminId)).thenReturn(new UserResponse(
-                userId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE, UserAccountStatus.APPROVED,
-                null, null, "Kurucu", revokedAt, false));
+	@Test
+	void revokesSignInsForTheServiceCredentialActor() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+		UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		Instant revokedAt = Instant.parse("2026-10-23T15:00:00Z");
+		when(appUserService.revokeSignIns(userId, adminId)).thenReturn(new UserResponse(
+				userId, "ayse@startup.com", "Ayşe Demir", UserRole.MENTEE, UserAccountStatus.APPROVED,
+				null, null, "Kurucu", revokedAt, false));
 
-        mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
-                        .with(user("test-user"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                { "actorId": "%s" }
-                                """.formatted(adminId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.signInsRevokedAt").value("2026-10-23T15:00:00Z"));
-    }
+		mockMvc.perform(post("/api/users/{id}/sign-ins/revoke", userId)
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{ "actorId": "%s" }
+						""".formatted(adminId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.signInsRevokedAt").value("2026-10-23T15:00:00Z"));
+	}
 
-    @Test
-    void returnsTheTeamHistoryForTheSignedInCaller() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000802");
-        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
-        when(teamMembershipService.history(signedIn, userId))
-                .thenReturn(new TeamHistoryResponse(userId, "Deniz Yıldız", List.of()));
+	@Test
+	void returnsTheTeamHistoryForTheSignedInCaller() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000802");
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+		when(teamMembershipService.history(signedIn, userId))
+				.thenReturn(new TeamHistoryResponse(userId, "Deniz Yıldız", List.of()));
 
-        mockMvc.perform(get("/api/users/{id}/team-history", userId)
-                        .param("actorId", "00000000-0000-0000-0000-000000000999")
-                        .with(authentication(new UsernamePasswordAuthenticationToken(
-                                new AppUserPrincipal(signedIn, "coordinator@tnt", UserRole.COORDINATOR,
-                                        UserAccountStatus.APPROVED, "uid"),
-                                null, List.of()))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
-    }
+		mockMvc.perform(get("/api/users/{id}/team-history", userId)
+				.param("actorId", "00000000-0000-0000-0000-000000000999")
+				.with(authentication(new UsernamePasswordAuthenticationToken(
+						new AppUserPrincipal(signedIn, "coordinator@tnt", UserRole.COORDINATOR,
+								UserAccountStatus.APPROVED, "uid"),
+						null, List.of()))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
+	}
 
-    @Test
-    void theAccountListNamesWhoIsAsking() throws Exception {
-        mockMvc.perform(get("/api/users").with(user("test-user")))
-                .andExpect(status().isBadRequest());
-    }
+	@Test
+	void theAccountListNamesWhoIsAsking() throws Exception {
+		mockMvc.perform(get("/api/users").with(user("test-user")))
+				.andExpect(status().isBadRequest());
+	}
 
-    @Test
-    void theAccountListRefusesWhomTheServiceRefuses() throws Exception {
-        UUID mentee = UUID.fromString("00000000-0000-0000-0000-0000000000e1");
-        when(appUserService.findAll(eq(mentee), isNull(), isNull()))
-                .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Only an admin can list accounts"));
+	@Test
+	void theAccountListRefusesWhomTheServiceRefuses() throws Exception {
+		UUID mentee = UUID.fromString("00000000-0000-0000-0000-0000000000e1");
+		when(appUserService.findAll(eq(mentee), isNull(), isNull()))
+				.thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Only an admin can list accounts"));
 
-        mockMvc.perform(get("/api/users").param("actorId", mentee.toString()).with(user("test-user")))
-                .andExpect(status().isForbidden());
-    }
+		mockMvc.perform(get("/api/users").param("actorId", mentee.toString()).with(user("test-user")))
+				.andExpect(status().isForbidden());
+	}
 
-    @Test
-    void aProfileNamesWhoIsAsking() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000105");
+	@Test
+	void aProfileNamesWhoIsAsking() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000105");
 
-        mockMvc.perform(get("/api/users/{id}/profile", userId).with(user("test-user")))
-                .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/users/{id}", userId).with(user("test-user")))
-                .andExpect(status().isBadRequest());
-    }
+		mockMvc.perform(get("/api/users/{id}/profile", userId).with(user("test-user")))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(get("/api/users/{id}", userId).with(user("test-user")))
+				.andExpect(status().isBadRequest());
+	}
 
-    @Test
-    void returnsTheProfileForTheNamedActor() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000106");
-        when(appUserService.findProfile(ADMIN_ID, userId)).thenReturn(new UserProfileResponse(
-                userId, "Örnek Kişi", "kisi@example.test", null, null, null, null, List.of(), List.of()));
+	@Test
+	void returnsTheProfileForTheNamedActor() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000106");
+		when(appUserService.findProfile(ADMIN_ID, userId)).thenReturn(new UserProfileResponse(
+				userId, "Örnek Kişi", "kisi@example.test", null, null, null, null, List.of(), List.of()));
 
-        mockMvc.perform(get("/api/users/{id}/profile", userId).param("actorId", ADMIN_ID.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.fullName").value("Örnek Kişi"));
-    }
+		mockMvc.perform(get("/api/users/{id}/profile", userId).param("actorId", ADMIN_ID.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.fullName").value("Örnek Kişi"));
+	}
 
-    @Test
-    void anUnrelatedCallerGetsNotFound() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000107");
-        UUID stranger = UUID.fromString("00000000-0000-0000-0000-0000000000e2");
-        when(appUserService.findProfile(stranger, userId))
-                .thenThrow(new ResourceNotFoundException("User not found: " + userId));
-        when(appUserService.findById(stranger, userId))
-                .thenThrow(new ResourceNotFoundException("User not found: " + userId));
+	@Test
+	void anUnrelatedCallerGetsNotFound() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000107");
+		UUID stranger = UUID.fromString("00000000-0000-0000-0000-0000000000e2");
+		when(appUserService.findProfile(stranger, userId))
+				.thenThrow(new ResourceNotFoundException("User not found: " + userId));
+		when(appUserService.findById(stranger, userId))
+				.thenThrow(new ResourceNotFoundException("User not found: " + userId));
 
-        mockMvc.perform(get("/api/users/{id}/profile", userId).param("actorId", stranger.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/users/{id}", userId).param("actorId", stranger.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isNotFound());
-    }
+		mockMvc.perform(get("/api/users/{id}/profile", userId).param("actorId", stranger.toString())
+				.with(user("test-user")))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(get("/api/users/{id}", userId).param("actorId", stranger.toString())
+				.with(user("test-user")))
+				.andExpect(status().isNotFound());
+	}
 
-    // A signed-in caller is the actor, whatever actorId the query names.
-    @Test
-    void aSignedInCallerReadsAsThemselves() throws Exception {
-        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000e3");
-        when(appUserService.findProfile(signedIn, signedIn)).thenReturn(new UserProfileResponse(
-                signedIn, "Örnek Kişi", "kisi@example.test", null, null, null, null, List.of(), List.of()));
+	// A signed-in caller is the actor, whatever actorId the query names.
+	@Test
+	void aSignedInCallerReadsAsThemselves() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000e3");
+		when(appUserService.findProfile(signedIn, signedIn)).thenReturn(new UserProfileResponse(
+				signedIn, "Örnek Kişi", "kisi@example.test", null, null, null, null, List.of(), List.of()));
 
-        mockMvc.perform(get("/api/users/{id}/profile", signedIn)
-                        .param("actorId", ADMIN_ID.toString())
-                        .with(authentication(new UsernamePasswordAuthenticationToken(
-                                new AppUserPrincipal(signedIn, "kisi@example.test", UserRole.MENTEE,
-                                        UserAccountStatus.APPROVED, "uid"),
-                                null, List.of()))))
-                .andExpect(status().isOk());
-        verify(appUserService).findProfile(signedIn, signedIn);
-    }
+		mockMvc.perform(get("/api/users/{id}/profile", signedIn)
+				.param("actorId", ADMIN_ID.toString())
+				.with(authentication(new UsernamePasswordAuthenticationToken(
+						new AppUserPrincipal(signedIn, "kisi@example.test", UserRole.MENTEE,
+								UserAccountStatus.APPROVED, "uid"),
+						null, List.of()))))
+				.andExpect(status().isOk());
+		verify(appUserService).findProfile(signedIn, signedIn);
+	}
 
-    @Test
-    void summaryRequiresAuthentication() throws Exception {
-        mockMvc.perform(get("/api/users/{id}/summary", UUID.randomUUID()))
-                .andExpect(status().isUnauthorized());
-    }
+	@Test
+	void summaryRequiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/users/{id}/summary", UUID.randomUUID()))
+				.andExpect(status().isUnauthorized());
+	}
 
-    @Test
-    void returnsTheSummaryForTheSignedInCallerNotTheRequestedActor() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000803");
-        UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
-        when(personSummaryService.summary(signedIn, userId)).thenReturn(new PersonSummaryResponse(userId,
-                "Deniz Yıldız", "deniz@example.test", UserRole.MENTOR, UserAccountStatus.APPROVED, "Danışman",
-                null, null, List.of(), null, null, null, List.of()));
+	@Test
+	void returnsTheSummaryForTheSignedInCallerNotTheRequestedActor() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000803");
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+		when(personSummaryService.summary(signedIn, userId)).thenReturn(new PersonSummaryResponse(userId,
+				"Deniz Yıldız", "deniz@example.test", UserRole.MENTOR, UserAccountStatus.APPROVED, "Danışman",
+				null, null, List.of(), null, null, null, List.of()));
 
-        mockMvc.perform(get("/api/users/{id}/summary", userId)
-                        .param("actorId", "00000000-0000-0000-0000-000000000999")
-                        .with(authentication(new UsernamePasswordAuthenticationToken(
-                                new AppUserPrincipal(signedIn, "coordinator@tnt", UserRole.COORDINATOR,
-                                        UserAccountStatus.APPROVED, "uid"),
-                                null, List.of()))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
-    }
+		mockMvc.perform(get("/api/users/{id}/summary", userId)
+				.param("actorId", "00000000-0000-0000-0000-000000000999")
+				.with(authentication(new UsernamePasswordAuthenticationToken(
+						new AppUserPrincipal(signedIn, "coordinator@tnt", UserRole.COORDINATOR,
+								UserAccountStatus.APPROVED, "uid"),
+						null, List.of()))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.fullName").value("Deniz Yıldız"));
+	}
 
-    @Test
-    void summaryIsNotFoundWhenTheCallerMayNotSeeThePerson() throws Exception {
-        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000804");
-        UUID actorId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
-        when(personSummaryService.summary(actorId, userId))
-                .thenThrow(new ResourceNotFoundException("User not found: " + userId));
+	@Test
+	void summaryIsNotFoundWhenTheCallerMayNotSeeThePerson() throws Exception {
+		UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000804");
+		UUID actorId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+		when(personSummaryService.summary(actorId, userId))
+				.thenThrow(new ResourceNotFoundException("User not found: " + userId));
 
-        mockMvc.perform(get("/api/users/{id}/summary", userId)
-                        .param("actorId", actorId.toString())
-                        .with(user("test-user")))
-                .andExpect(status().isNotFound());
-    }
+		mockMvc.perform(get("/api/users/{id}/summary", userId)
+				.param("actorId", actorId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isNotFound());
+	}
 }

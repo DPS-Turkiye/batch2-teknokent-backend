@@ -13,15 +13,19 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
+import com.dps.teknokent.config.AiProperties;
 import com.dps.teknokent.domain.AiFeature;
+import com.dps.teknokent.domain.MeetingMode;
+import com.dps.teknokent.domain.MentorMatchingMethod;
+import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
-import com.dps.teknokent.dto.responses.StudentProfileResponse;
 import com.dps.teknokent.dto.responses.MentorRecommendationResult;
+import com.dps.teknokent.dto.responses.StudentProfileResponse;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -55,15 +59,9 @@ public class MentorRecommendationService {
 	private final PgVectorMentorRetrievalService pgVectorRetrievalService;
 	private final MenteeProgramService menteeProgramService;
 	private final AiFeatures aiFeatures;
-
-	@Value("${AI_PROVIDER:openrouter}")
-	private String provider;
-
-	@Value("${OPENROUTER_EMBEDDING_MODEL:openai/text-embedding-3-small}")
-	private String openRouterModel;
-
-	@Value("${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}")
-	private String openAiModel;
+	// The same settings AiProviderClient sends with, so the shortlist is labelled and cached under the provider and
+	// model that actually produced the embeddings.
+	private final AiProperties aiProperties;
 
 	public MentorRecommendationResult recommend(RecommendMentorsRequest request) {
 		return rank(request, request.excludedMentorId() == null
@@ -72,7 +70,7 @@ public class MentorRecommendationService {
 	}
 
 	/** What a mentee is offered: ranked among their program's accepted mentors when they are in a program. */
-	public MentorRecommendationResult recommendFor(UUID actorId, RecommendMentorsRequest request) {
+	public MentorRecommendationResult recommendFor(@Nullable UUID actorId, RecommendMentorsRequest request) {
 		return menteeProgramService.reachableMentorIds(actorId)
 				.map(ids -> {
 					Set<UUID> pool = new HashSet<>(ids);
@@ -96,7 +94,7 @@ public class MentorRecommendationService {
 
 	private MentorRecommendationResult rank(RecommendMentorsRequest request, List<MentorProfileResponse> mentors) {
 		if (mentors.isEmpty()) {
-			return new MentorRecommendationResult("DETERMINISTIC", null, Instant.now(), List.of());
+			return new MentorRecommendationResult(MentorMatchingMethod.DETERMINISTIC, null, Instant.now(), List.of());
 		}
 		List<MentorProfileResponse> candidates = mentors;
 		boolean vectorRetrieved = false;
@@ -115,13 +113,14 @@ public class MentorRecommendationService {
 			log.debug("Semantic mentor retrieval failure details", exception);
 		}
 		if (vectorRetrieved) {
-			return new MentorRecommendationResult("PGVECTOR_SEMANTIC",
+			return new MentorRecommendationResult(MentorMatchingMethod.PGVECTOR_SEMANTIC,
 					normalizedProvider() + ":" + embeddingModel(), Instant.now(), candidates.stream()
 							.limit(5).map(mentor -> withReasons(request, mentor, fallbackReasons(request, mentor)))
 							.toList());
 		}
 		return new MentorRecommendationResult(
-				"DETERMINISTIC", "keyword-overlap-v1", Instant.now(), deterministicRank(request, mentors));
+				MentorMatchingMethod.DETERMINISTIC, "keyword-overlap-v1", Instant.now(),
+				deterministicRank(request, mentors));
 	}
 
 	private String queryText(RecommendMentorsRequest request) {
@@ -160,8 +159,9 @@ public class MentorRecommendationService {
 
 	private List<String> fallbackReasons(RecommendMentorsRequest request, MentorProfileResponse mentor) {
 		List<String> reasons = new ArrayList<>(requestSpecificReasons(request, mentor));
-		if (reasons.isEmpty())
+		if (reasons.isEmpty()) {
 			reasons.add(Texts.forRequest("match.reason.closeExpertise", request.supportArea()));
+		}
 		return reasons.stream().limit(3).toList();
 	}
 
@@ -245,27 +245,33 @@ public class MentorRecommendationService {
 				.contains(stage.toLowerCase(Locale.ROOT));
 	}
 
-	private boolean isMeetingModeCompatible(String requestedMode, String mentorMode) {
+	private boolean isMeetingModeCompatible(MeetingMode requestedMode, String mentorMode) {
 		String normalizedMentorMode = value(mentorMode).toLowerCase(Locale.forLanguageTag("tr"));
-		return switch (value(requestedMode)) {
-			case "ONLINE" -> normalizedMentorMode.contains("online");
-			case "IN_PERSON" -> normalizedMentorMode.contains("yüz yüze");
-			default -> false;
+		if (requestedMode == null) {
+			return false;
+		}
+		return switch (requestedMode) {
+		case ONLINE -> normalizedMentorMode.contains("online");
+		case IN_PERSON -> normalizedMentorMode.contains("yüz yüze");
+		case NO_PREFERENCE -> false;
 		};
 	}
 
-	private String meetingModeLabel(String requestedMode) {
-		return Texts.forRequest("IN_PERSON".equals(requestedMode) ? "match.mode.inPerson" : "match.mode.online");
+	private String meetingModeLabel(MeetingMode requestedMode) {
+		return Texts.forRequest(requestedMode == MeetingMode.IN_PERSON ? "match.mode.inPerson" : "match.mode.online");
 	}
 
-	private boolean isAvailableForUrgency(String urgency, String availability) {
+	private boolean isAvailableForUrgency(MentorshipRequestUrgency urgency, String availability) {
 		String normalizedAvailability = value(availability).toLowerCase(Locale.forLanguageTag("tr"));
-		return switch (value(urgency)) {
-			case "THIS_WEEK" -> normalizedAvailability.contains("bu hafta");
-			case "NEXT_TWO_WEEKS" -> normalizedAvailability.contains("bu hafta")
-					|| normalizedAvailability.contains("gelecek hafta")
-					|| normalizedAvailability.contains("iki hafta");
-			default -> false;
+		if (urgency == null) {
+			return false;
+		}
+		return switch (urgency) {
+		case THIS_WEEK -> normalizedAvailability.contains("bu hafta");
+		case NEXT_TWO_WEEKS -> normalizedAvailability.contains("bu hafta")
+				|| normalizedAvailability.contains("gelecek hafta")
+				|| normalizedAvailability.contains("iki hafta");
+		case THIS_MONTH, NOT_URGENT -> false;
 		};
 	}
 
@@ -295,14 +301,11 @@ public class MentorRecommendationService {
 	}
 
 	private String normalizedProvider() {
-		return Set.of("openai", "openrouter", "ollama").contains(provider.toLowerCase(Locale.ROOT))
-				? provider.toLowerCase(Locale.ROOT)
-				: "openrouter";
+		return aiProperties.provider().wireName();
 	}
 
 	private String embeddingModel() {
-		return "openai".equals(normalizedProvider()) ? openAiModel
-				: "ollama".equals(normalizedProvider()) ? "bge-m3" : openRouterModel;
+		return aiProperties.embeddingModel();
 	}
 
 	private Set<String> tokens(String text) {

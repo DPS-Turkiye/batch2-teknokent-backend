@@ -47,7 +47,8 @@ class MentorshipRequestListQueryCountTest {
 		entityManager.persist(organization);
 		AppUser mentee = persistUser("mentee-batch@tekno.com", UserRole.MENTEE, organization);
 		for (int i = 0; i < REQUESTS; i++) {
-			persistRequest(mentee, organization, persistUser("mentor-batch-" + i + "@tekno.com", UserRole.MENTOR, null));
+			persistRequest(mentee, organization,
+					persistUser("mentor-batch-" + i + "@tekno.com", UserRole.MENTOR, null));
 		}
 		entityManager.flush();
 		entityManager.clear();

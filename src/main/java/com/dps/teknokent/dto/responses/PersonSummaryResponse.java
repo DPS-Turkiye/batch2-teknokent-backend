@@ -7,6 +7,8 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MentorLanguage;
 import com.dps.teknokent.domain.PersonProgramRelation;
 import com.dps.teknokent.domain.ProgramMentorStatus;
@@ -32,8 +34,8 @@ public record PersonSummaryResponse(
 		String linkedinUrl,
 		List<String> expertise,
 		Instant createdAt,
-		Mentor mentor,
-		Startup startup,
+		@Nullable Mentor mentor,
+		@Nullable Startup startup,
 		List<Program> programs) {
 
 	public record Mentor(
@@ -48,7 +50,7 @@ public record PersonSummaryResponse(
 			List<MentorLanguage> languages,
 			List<MentorExperienceResponse> experiences,
 			List<MentorEducationResponse> educations,
-			Integer menteeCapacity,
+			@Nullable Integer menteeCapacity,
 			String meetingMode,
 			long activeMenteeCount,
 			long completedMentorshipCount,
@@ -84,11 +86,11 @@ public record PersonSummaryResponse(
 			String name,
 			String description,
 			String website,
-			String sector,
-			String maturity,
+			@Nullable String sector,
+			@Nullable String maturity,
 			String problem,
 			String solution,
-			String fundingStage,
+			@Nullable String fundingStage,
 			Integer foundedYear) {
 
 		public static Startup of(Organization organization) {
@@ -104,10 +106,11 @@ public record PersonSummaryResponse(
 
 	/** {@code mentorStatus} is set for {@link PersonProgramRelation#MENTOR} rows only. */
 	public record Program(UUID id, String name, ProgramStatus status, PersonProgramRelation relation,
-			ProgramMentorStatus mentorStatus) {
+			@Nullable ProgramMentorStatus mentorStatus) {
 	}
 
-	public static PersonSummaryResponse of(AppUser person, Mentor mentor, Startup startup, List<Program> programs) {
+	public static PersonSummaryResponse of(AppUser person, @Nullable Mentor mentor, @Nullable Startup startup,
+			List<Program> programs) {
 		return new PersonSummaryResponse(person.getId(), person.getFullName(), person.getEmail(), person.getRole(),
 				person.getStatus(), person.getJobTitle(), person.getBio(), person.getLinkedinUrl(),
 				List.copyOf(person.getExpertise()), person.getCreatedAt(), mentor, startup, programs);

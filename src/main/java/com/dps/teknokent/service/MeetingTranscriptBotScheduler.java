@@ -10,11 +10,7 @@ import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(
-		prefix = "meeting.transcript-bot",
-		name = "enabled",
-		havingValue = "true",
-		matchIfMissing = true)
+@ConditionalOnProperty(prefix = "meeting.transcript-bot", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class MeetingTranscriptBotScheduler {
 
 	private final MeetingTranscriptBotDispatcher dispatcher;

@@ -67,7 +67,7 @@ class CoordinatorEmailPrefixQueryTest {
 
 	private List<String> emails(String prefix, int size) {
 		return repository.findByPermissionAndStatusAndEmailPrefix(UserRole.COORDINATOR, UserAccountStatus.APPROVED,
-						prefix, PageRequest.of(0, size))
+				prefix, PageRequest.of(0, size))
 				.stream().map(AppUser::getEmail).toList();
 	}
 

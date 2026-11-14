@@ -62,9 +62,9 @@ class MeetingProposalControllerTest {
 				.thenReturn(proposal());
 
 		mockMvc.perform(post("/api/coordinator/mentorships/{id}/meeting-proposals", MENTORSHIP_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"scheduledAt\":\"2026-10-01T07:30:00Z\",\"durationMinutes\":45}")
-						.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"scheduledAt\":\"2026-10-01T07:30:00Z\",\"durationMinutes\":45}")
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.status").value("PENDING"));
 	}
@@ -72,9 +72,9 @@ class MeetingProposalControllerTest {
 	@Test
 	void aProposalNeedsATimeAndASaneLength() throws Exception {
 		mockMvc.perform(post("/api/coordinator/mentorships/{id}/meeting-proposals", MENTORSHIP_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"durationMinutes\":5}")
-						.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"durationMinutes\":5}")
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(proposalService);
 	}
@@ -88,24 +88,25 @@ class MeetingProposalControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].organizationName").value("Lumen"));
 		mockMvc.perform(post("/api/meeting-proposals/{id}/accept", PROPOSAL_ID)
-						.with(authentication(signedIn(UserRole.MENTOR))))
+				.with(authentication(signedIn(UserRole.MENTOR))))
 				.andExpect(status().isOk());
 		mockMvc.perform(post("/api/meeting-proposals/{id}/decline", PROPOSAL_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"reason\":\"Seyahatteyim\"}")
-						.with(authentication(signedIn(UserRole.MENTOR))))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"reason\":\"Seyahatteyim\"}")
+				.with(authentication(signedIn(UserRole.MENTOR))))
 				.andExpect(status().isOk());
 
-		verify(proposalService).decline(SIGNED_IN_ID, PROPOSAL_ID, new DeclineMeetingProposalRequest(null, "Seyahatteyim"));
+		verify(proposalService).decline(SIGNED_IN_ID, PROPOSAL_ID,
+				new DeclineMeetingProposalRequest(null, "Seyahatteyim"));
 	}
 
 	@Test
 	void remindAndWithdrawAnswerNoContent() throws Exception {
 		mockMvc.perform(post("/api/coordinator/meeting-proposals/{id}/remind", PROPOSAL_ID)
-						.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isNoContent());
 		mockMvc.perform(delete("/api/coordinator/meeting-proposals/{id}", PROPOSAL_ID)
-						.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isNoContent());
 
 		verify(proposalService).remind(SIGNED_IN_ID, PROPOSAL_ID);

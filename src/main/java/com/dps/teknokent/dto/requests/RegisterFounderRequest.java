@@ -1,15 +1,17 @@
 package com.dps.teknokent.dto.requests;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.Valid;
-import com.dps.teknokent.domain.ContactPreference;
 import java.util.List;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.ContactPreference;
+import com.dps.teknokent.util.ValidationPatterns;
+
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -24,9 +26,9 @@ public record RegisterFounderRequest(
 		@Size(max = 32) @Pattern(regexp = "^\\+?[0-9]{8,15}$") String phone,
 		@NotNull UUID programId,
 		@Size(max = 5000) String bio,
-		@Size(max = 255) String linkedinUrl,
+		@Size(max = 255) @Pattern(regexp = ValidationPatterns.WEB_LINK, message = ValidationPatterns.WEB_LINK_MESSAGE) String linkedinUrl,
 		List<@Size(max = 255) String> expertise,
-		@Size(max = 255) String website,
+		@Size(max = 255) @Pattern(regexp = ValidationPatterns.WEB_LINK, message = ValidationPatterns.WEB_LINK_MESSAGE) String website,
 		@Size(max = 5000) String problem,
 		@Size(max = 5000) String solution,
 		@Size(max = 5000) String currentSolution,
@@ -36,7 +38,7 @@ public record RegisterFounderRequest(
 		@Size(max = 255) String programLevel,
 		List<@Size(max = 255) String> supportAreas,
 		@Size(max = 4) List<@NotNull ContactPreference> contactPreferences,
-		@Size(max = 255) String mvpUrl,
+		@Size(max = 255) @Pattern(regexp = ValidationPatterns.WEB_LINK, message = ValidationPatterns.WEB_LINK_MESSAGE) String mvpUrl,
 		@Size(max = 20) List<@Valid OnboardingTeamMemberRequest> teamMembers,
 		@Min(1900) @Max(2100) Integer foundedYear) implements StartupProfileFields {
 }

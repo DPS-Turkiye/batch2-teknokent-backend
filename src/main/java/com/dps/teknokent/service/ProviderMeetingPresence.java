@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
 
 public final class ProviderMeetingPresence {
@@ -11,9 +13,10 @@ public final class ProviderMeetingPresence {
 	static final String BOT_NAME = "Mentor Bot";
 	static final int UNKNOWN = -1;
 
-	private ProviderMeetingPresence() {}
+	private ProviderMeetingPresence() {
+	}
 
-	public static boolean looksFinished(String status) {
+	public static boolean looksFinished(@Nullable String status) {
 		if (status == null || status.isBlank()) {
 			return false;
 		}
@@ -27,7 +30,7 @@ public final class ProviderMeetingPresence {
 				|| normalized.equals("destroyed");
 	}
 
-	public static int humanCount(ProviderBotDetails details) {
+	public static int humanCount(@Nullable ProviderBotDetails details) {
 		if (details == null) {
 			return UNKNOWN;
 		}
@@ -60,7 +63,7 @@ public final class ProviderMeetingPresence {
 		return String.valueOf(item).trim();
 	}
 
-	private static Object first(Map<?, ?> map, String... keys) {
+	private static @Nullable Object first(Map<?, ?> map, String... keys) {
 		for (String key : keys) {
 			if (map.containsKey(key) && map.get(key) != null) {
 				return map.get(key);

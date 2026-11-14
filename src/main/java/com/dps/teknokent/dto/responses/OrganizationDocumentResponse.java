@@ -4,21 +4,25 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
+import com.dps.teknokent.domain.DocumentKind;
+
 /** A document on the Dosyalar tab, with who uploaded it, its meeting and who it is shared with. */
 public record OrganizationDocumentResponse(
 		UUID id,
-		String kind,
+		DocumentKind kind,
 		String originalFilename,
 		String contentType,
 		long sizeBytes,
 		Instant createdAt,
 		UUID uploadedById,
-		String uploadedByName,
+		@Nullable String uploadedByName,
 		UUID meetingId,
-		String meetingAgenda,
-		Instant meetingScheduledAt,
+		@Nullable String meetingAgenda,
+		@Nullable Instant meetingScheduledAt,
 		Instant reviewedAt,
 		UUID reviewedById,
-		String reviewedByName,
+		@Nullable String reviewedByName,
 		List<DocumentShareResponse> shares) {
 }

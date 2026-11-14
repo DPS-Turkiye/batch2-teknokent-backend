@@ -1,5 +1,7 @@
 package com.dps.teknokent.domain;
 
+import org.jspecify.annotations.Nullable;
+
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 
@@ -7,12 +9,12 @@ import jakarta.persistence.Converter;
 public class StartupProgramLevelConverter implements AttributeConverter<StartupProgramLevel, String> {
 
 	@Override
-	public String convertToDatabaseColumn(StartupProgramLevel attribute) {
+	public @Nullable String convertToDatabaseColumn(@Nullable StartupProgramLevel attribute) {
 		return attribute == null ? null : attribute.value();
 	}
 
 	@Override
-	public StartupProgramLevel convertToEntityAttribute(String dbData) {
+	public @Nullable StartupProgramLevel convertToEntityAttribute(@Nullable String dbData) {
 		return StartupProgramLevel.fromOrNull(dbData);
 	}
 }

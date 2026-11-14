@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.PeerTopicLevel;
 
@@ -14,7 +16,7 @@ import com.dps.teknokent.domain.PeerTopicLevel;
 public record PeerMentorDetailResponse(
 		UUID mentorId,
 		String fullName,
-		String department,
+		@Nullable String department,
 		Integer classYear,
 		List<PeerTopicCategory> categories,
 		String helpWith,
@@ -25,15 +27,15 @@ public record PeerMentorDetailResponse(
 		List<String> subTopics,
 		List<String> strongCourses,
 		List<String> projects,
-		String erasmus,
-		String linkedinUrl,
+		@Nullable String erasmus,
+		@Nullable String linkedinUrl,
 		List<MentorAvailabilityRuleResponse> weeklyHours,
-		/** Levels for the categories on the card only. */
+		/* Levels for the categories on the card only. */
 		Map<PeerTopicCategory, PeerTopicLevel> levels,
 		List<PeerExperienceCardResponse> experiences) {
 
 	public static PeerMentorDetailResponse of(PeerMentorCardResponse card, MentorProfileResponse profile,
-			String linkedinUrl, List<MentorAvailabilityRuleResponse> weeklyHours,
+			@Nullable String linkedinUrl, List<MentorAvailabilityRuleResponse> weeklyHours,
 			Map<PeerTopicCategory, PeerTopicLevel> levels, List<PeerExperienceCardResponse> experiences) {
 		StudentProfileResponse studies = profile.studentProfile();
 		return new PeerMentorDetailResponse(card.mentorId(), card.fullName(), card.department(), card.classYear(),

@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.BottleneckSeverity;
 import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.entity.Bottleneck;
@@ -11,8 +13,8 @@ import com.dps.teknokent.entity.Bottleneck;
 public record BottleneckResponse(
 		UUID id,
 		UUID organizationId,
-		UUID ownerId,
-		String ownerName,
+		@Nullable UUID ownerId,
+		@Nullable String ownerName,
 		String title,
 		String description,
 		BottleneckSeverity severity,

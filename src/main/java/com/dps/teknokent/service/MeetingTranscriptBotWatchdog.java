@@ -9,7 +9,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.domain.AiFeature;
@@ -22,12 +25,10 @@ import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.repository.MeetingRepository;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MeetingTranscriptBotWatchdog {
 
 	private final MeetingRepository meetingRepository;
@@ -36,8 +37,22 @@ public class MeetingTranscriptBotWatchdog {
 	private final MeetingAssistantShareService shareService;
 	private final TranscriptCleanupService transcriptCleanupService;
 	private final AiFeatures aiFeatures;
+	private final Executor reportExecutor;
 	private final ConcurrentHashMap<String, Instant> emptySince = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, Boolean> sawHumans = new ConcurrentHashMap<>();
+
+	public MeetingTranscriptBotWatchdog(MeetingRepository meetingRepository, MeetingService meetingService,
+			AssistantService assistantService, MeetingAssistantShareService shareService,
+			TranscriptCleanupService transcriptCleanupService, AiFeatures aiFeatures,
+			@Qualifier("aiTaskExecutor") Executor reportExecutor) {
+		this.meetingRepository = meetingRepository;
+		this.meetingService = meetingService;
+		this.assistantService = assistantService;
+		this.shareService = shareService;
+		this.transcriptCleanupService = transcriptCleanupService;
+		this.aiFeatures = aiFeatures;
+		this.reportExecutor = reportExecutor;
+	}
 
 	public int closeFinishedMeetings(Instant now) {
 		List<Meeting> live = meetingRepository
@@ -57,7 +72,12 @@ public class MeetingTranscriptBotWatchdog {
 			if (!shouldClose(candidate, running.get(), now)) {
 				continue;
 			}
-			closed += closeAsStopped(candidate);
+			// One meeting that cannot be closed must not keep the rest of this tick's meetings open.
+			try {
+				closed += closeAsStopped(candidate);
+			} catch (RuntimeException error) {
+				log.warn("Could not close meeting {}", candidate.nativeMeetingId, error);
+			}
 		}
 		return closed;
 	}
@@ -109,11 +129,13 @@ public class MeetingTranscriptBotWatchdog {
 		}
 		log.info("Meeting {} ended without a stop request; closing {} row(s)",
 				candidate.nativeMeetingId, stopped.size());
-		storeTranscriptAndReport(stopped, candidate.platform, candidate.nativeMeetingId);
+		// The report is an AI call of up to minutes; off the scheduler thread it does not delay the next bot dispatch.
+		// The meeting is already closed, so it is picked up here only once.
+		reportExecutor.execute(() -> storeTranscriptAndReport(stopped, candidate.platform, candidate.nativeMeetingId));
 		return stopped.size();
 	}
 
-	private ProviderBotDetails botDetails(Candidate candidate) {
+	private @Nullable ProviderBotDetails botDetails(Candidate candidate) {
 		try {
 			return assistantService.botDetails(candidate.platform, candidate.nativeMeetingId);
 		} catch (RuntimeException error) {
@@ -122,7 +144,8 @@ public class MeetingTranscriptBotWatchdog {
 		}
 	}
 
-	private record Candidate(String nativeMeetingId, String platform, Instant slotEndsAt) {}
+	private record Candidate(String nativeMeetingId, String platform, @Nullable Instant slotEndsAt) {
+	}
 
 	private Map<String, Candidate> candidatesByNativeId(List<Meeting> live, Instant now) {
 		Map<String, Candidate> candidates = new LinkedHashMap<>();

@@ -72,7 +72,8 @@ class ProgramAnnouncementServiceTest {
 	void setUp() {
 		lenient().when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId()))
 				.thenReturn(List.of(startup(lumen.getId())));
-		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(lumen.getId())).thenReturn(List.of(deniz));
+		lenient().when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(lumen.getId()))
+				.thenReturn(List.of(deniz));
 		lenient().when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of(
 				programMentor(ayse.getId(), ProgramMentorStatus.ACCEPTED),
 				programMentor(pendingMentor.getId(), ProgramMentorStatus.PENDING)));

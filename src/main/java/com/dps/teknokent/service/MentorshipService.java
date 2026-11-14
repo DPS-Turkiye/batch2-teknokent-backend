@@ -3,12 +3,14 @@ package com.dps.teknokent.service;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +36,7 @@ import com.dps.teknokent.repository.MentorshipGoalRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
 import com.dps.teknokent.repository.MentorshipWeekCheckRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
@@ -51,10 +54,19 @@ public class MentorshipService {
 	private final NotificationService notificationService;
 	private final MenteeProgramService menteeProgramService;
 	private final ProgramRepository programRepository;
+	private final StartupAccessService startupAccessService;
 
 	@Transactional(readOnly = true)
 	public List<MentorshipResponse> findAll() {
 		return mentorshipRepository.findAllByOrderByCreatedAtDesc().stream()
+				.map(this::toResponse)
+				.toList();
+	}
+
+	/** The mentorships of these teams, newest first, as {@link #findAll} lists them. */
+	@Transactional(readOnly = true)
+	public List<MentorshipResponse> findByOrganizations(Collection<UUID> organizationIds) {
+		return mentorshipRepository.findByOrganizationIdInOrderByCreatedAtDesc(organizationIds).stream()
 				.map(this::toResponse)
 				.toList();
 	}
@@ -67,7 +79,7 @@ public class MentorshipService {
 		if (mentorId != null && organizationId != null) {
 			throw new InvalidRequestException("Provide only one of mentorId or organizationId");
 		}
-		LocalDate today = LocalDate.now();
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
 		List<Mentorship> rows = mentorId != null
 				? mentorshipRepository.findActiveForMentorOn(mentorId, MentorshipStatus.ACTIVE, today)
 				: mentorshipRepository.findActiveForOrganizationOn(
@@ -75,9 +87,22 @@ public class MentorshipService {
 		return rows.stream().map(this::toResponse).toList();
 	}
 
+	/**
+	 * One mentorship, for its mentor, the startup's team, admins and the coordinators of the startup's program;
+	 * anyone else gets "not found". The proxy filters the same way and, until it names the caller, sends none.
+	 */
 	@Transactional(readOnly = true)
-	public MentorshipResponse findById(UUID id) {
-		return toResponse(requireMentorship(id));
+	public MentorshipResponse findById(UUID id, @Nullable UUID actorId) {
+		Mentorship mentorship = requireMentorship(id);
+		if (actorId != null && !canRead(mentorship, domainLookupService.requireUser(actorId))) {
+			throw new ResourceNotFoundException("Mentorship not found: " + id);
+		}
+		return toResponse(mentorship);
+	}
+
+	private boolean canRead(Mentorship mentorship, AppUser actor) {
+		return actor.getId().equals(mentorship.getMentor().getId())
+				|| startupAccessService.isTeamOrStaff(actor, mentorship.getOrganization().getId());
 	}
 
 	@Transactional
@@ -257,7 +282,7 @@ public class MentorshipService {
 	}
 
 	static LocalDate mondayOf(LocalDate date) {
-		LocalDate value = date == null ? LocalDate.now() : date;
+		LocalDate value = date == null ? LocalDate.now(MeetingSlotTimes.APP_ZONE) : date;
 		return value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 	}
 }
