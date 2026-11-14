@@ -13,7 +13,8 @@ import com.dps.teknokent.service.OfficeHoursMailService.Side;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Reminds each side of an office-hours meeting by e-mail 24 hours before it (FR-OH-17). Each side is claimed with a
+ * Reminds each side of an office-hours meeting by e-mail 24 hours before it (FR-OH-17), unless it was booked inside
+ * those 24 hours. Each side is claimed with a
  * conditional update first, so two servers running the scheduler never both send it; a send that fails gives the
  * claim back, so the next run tries again until the meeting starts, without repeating the other side's reminder.
  */
@@ -29,6 +30,9 @@ public class OfficeHoursReminderService {
 
 	public void remindUpcomingMeetings(Instant now) {
 		for (OfficeHoursMeeting meeting : meetingRepository.findReminderDue(now, now.plus(REMINDER_LEAD))) {
+			if (bookedWithinLead(meeting)) {
+				continue;
+			}
 			if (meeting.getStudentRemindedAt() == null) {
 				remind(meeting, Side.STUDENT, now);
 			}
@@ -36,6 +40,14 @@ public class OfficeHoursReminderService {
 				remind(meeting, Side.INSTRUCTOR, now);
 			}
 		}
+	}
+
+	/**
+	 * A meeting booked less than a day before it starts gets no reminder: the acceptance e-mail just went out, and a
+	 * second one right behind it says nothing new (decided with the product owner for FR-OH-17).
+	 */
+	private static boolean bookedWithinLead(OfficeHoursMeeting meeting) {
+		return meeting.getCreatedAt().isAfter(meeting.getScheduledAt().minus(REMINDER_LEAD));
 	}
 
 	private void remind(OfficeHoursMeeting meeting, Side side, Instant now) {

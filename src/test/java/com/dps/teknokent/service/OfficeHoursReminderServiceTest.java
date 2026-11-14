@@ -5,6 +5,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -32,9 +33,12 @@ class OfficeHoursReminderServiceTest {
     @InjectMocks
     private OfficeHoursReminderService service;
 
+    /** Booked two days ahead and starting within the next day: due for its reminder. */
     private static OfficeHoursMeeting meeting() {
         OfficeHoursMeeting meeting = new OfficeHoursMeeting();
         meeting.setId(UUID.randomUUID());
+        meeting.setScheduledAt(NOW.plus(Duration.ofHours(20)));
+        meeting.setCreatedAt(NOW.minus(Duration.ofDays(2)));
         return meeting;
     }
 
@@ -90,5 +94,18 @@ class OfficeHoursReminderServiceTest {
 
         verify(meetingRepository, never()).claimStudentReminder(any(), any());
         verify(meetingRepository, never()).releaseInstructorReminder(any());
+    }
+
+    @Test
+    void aMeetingBookedLessThanADayAheadGetsNoReminderSinceTheAcceptanceMailJustWent() {
+        OfficeHoursMeeting late = meeting();
+        late.setCreatedAt(NOW.minus(Duration.ofHours(2)));
+        due(late);
+
+        service.remindUpcomingMeetings(NOW);
+
+        verify(meetingRepository, never()).claimStudentReminder(any(), any());
+        verify(meetingRepository, never()).claimInstructorReminder(any(), any());
+        verify(mailService, never()).meetingSoon(any(), any());
     }
 }
