@@ -886,7 +886,8 @@ class OfficeHoursBookingServiceTest {
 		assertThat(response.messages()).containsExactly(new OfficeHoursRequestResponse.Message(
 				question.getId(), ACADEMIC, OfficeHoursMessageType.INSTRUCTOR_QUESTION, "Hangi soru?", NOW));
 		assertThat(response.meeting()).isEqualTo(new OfficeHoursSlotResponse(at, 30));
-		assertThat(response.allowedActions()).isEmpty();
+		// The meeting is still ahead, so either side may still call it off.
+		assertThat(response.allowedActions()).containsExactly(OfficeHoursRequestAction.CANCEL);
 	}
 
 	@Test
