@@ -12,7 +12,8 @@ public interface PeerMentorDocumentRepository extends JpaRepository<PeerMentorDo
 
 	List<PeerMentorDocument> findByUserIdOrderByCreatedAtAsc(UUID userId);
 
-	List<PeerMentorDocument> findByUserIdAndVisibilityOrderByCreatedAtAsc(UUID userId, PeerDocumentVisibility visibility);
+	List<PeerMentorDocument> findByUserIdAndVisibilityOrderByCreatedAtAsc(UUID userId,
+			PeerDocumentVisibility visibility);
 
 	long countByUserId(UUID userId);
 }

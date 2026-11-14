@@ -19,18 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Cache Maven dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .ci/m2
           key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: Run tests
-        run: ./mvnw -B clean test
+      # The same gate as CI: zero-warning build, tests, format, lint and the coverage floor.
+      - name: Verify
+        run: ./mvnw -B clean verify
         env:
           MVNW_M2_HOST_DIR: .ci/m2
 

@@ -1,6 +1,5 @@
 package com.dps.teknokent.controller;
 
-import com.dps.teknokent.security.CurrentActor;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,6 +17,7 @@ import com.dps.teknokent.dto.requests.ShareDocumentRequest;
 import com.dps.teknokent.dto.responses.DocumentDownloadResponse;
 import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
 import com.dps.teknokent.dto.responses.OrganizationDocumentResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.DocumentRequestService;
 import com.dps.teknokent.service.StartupDocumentService;
 

@@ -3,13 +3,14 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.entity.StoredDocument;
 
 public record StoredDocumentResponse(
 		UUID id,
 		UUID userId,
 		UUID organizationId,
-		String kind,
+		DocumentKind kind,
 		String originalFilename,
 		String contentType,
 		long sizeBytes,

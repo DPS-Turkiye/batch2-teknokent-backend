@@ -2,9 +2,6 @@ package com.dps.teknokent.service;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +18,6 @@ import com.dps.teknokent.dto.responses.OfficeHoursAvailabilityResponse;
 import com.dps.teknokent.entity.OfficeHoursException;
 import com.dps.teknokent.entity.OfficeHoursRule;
 import com.dps.teknokent.entity.OfficeHoursSettings;
-import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.OfficeHoursEnrollmentRepository;
 import com.dps.teknokent.repository.OfficeHoursExceptionRepository;
 import com.dps.teknokent.repository.OfficeHoursRuleRepository;
@@ -83,8 +79,8 @@ public class OfficeHoursAvailabilityService {
 	/** Saves someone's office hours as a whole, once the caller is known to be an academic. */
 	@Transactional
 	public OfficeHoursAvailabilityResponse write(UUID instructorId, UpdateOfficeHoursAvailabilityRequest request) {
-		validateRules(request.rules());
-		validateExceptions(request.exceptions());
+		AvailabilityRules.validateRules(request.rules());
+		AvailabilityRules.validateExceptions(request.exceptions());
 		Instant now = clock.instant();
 
 		ruleRepository.deleteAll(ruleRepository.findByInstructorIdOrderByDayOfWeekAscStartTimeAsc(instructorId));
@@ -127,41 +123,6 @@ public class OfficeHoursAvailabilityService {
 				settings.getStudentCapacity(),
 				settings.getDefaultMeetingDurationMinutes(),
 				settings.getMeetingBufferMinutes());
-	}
-
-	/** The same checks a mentor's weekly availability gets. */
-	static void validateRules(List<CreateMentorAvailabilityRuleRequest> rules) {
-		Set<String> seen = new HashSet<>();
-		for (CreateMentorAvailabilityRuleRequest rule : rules) {
-			if (!rule.endTime().isAfter(rule.startTime())) {
-				throw new InvalidRequestException("Availability must end after it starts");
-			}
-			if (!seen.add(rule.dayOfWeek() + ":" + rule.startTime())) {
-				throw new InvalidRequestException("Duplicate weekly availability rule");
-			}
-		}
-		for (CreateMentorAvailabilityRuleRequest left : rules) {
-			for (CreateMentorAvailabilityRuleRequest right : rules) {
-				if (left == right || left.dayOfWeek() != right.dayOfWeek()) {
-					continue;
-				}
-				if (left.startTime().isBefore(right.endTime()) && right.startTime().isBefore(left.endTime())) {
-					throw new InvalidRequestException("Weekly availability ranges cannot overlap");
-				}
-			}
-		}
-	}
-
-	static void validateExceptions(List<MentorAvailabilityExceptionRequest> exceptions) {
-		Set<String> seen = new HashSet<>();
-		for (MentorAvailabilityExceptionRequest exception : exceptions) {
-			if (exception.endsOn().isBefore(exception.startsOn())) {
-				throw new InvalidRequestException("Availability exception must end on or after it starts");
-			}
-			if (!seen.add(exception.startsOn() + ":" + exception.endsOn())) {
-				throw new InvalidRequestException("Duplicate availability exception dates");
-			}
-		}
 	}
 
 	private static OfficeHoursRule newRule(UUID instructorId, CreateMentorAvailabilityRuleRequest request,

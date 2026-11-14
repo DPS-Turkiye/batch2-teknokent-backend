@@ -26,7 +26,8 @@ class MailServiceTest {
 
 	@Test
 	void sendsFromTheConfiguredAddress() {
-		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr", Runnable::run);
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				Runnable::run);
 
 		mailService.sendAfterCommit("mentor@tekno.com", "Yeni mentorluk talebi", "Merhaba");
 
@@ -42,7 +43,8 @@ class MailServiceTest {
 	@Test
 	void sendsAfterTheCommitOnAnotherThreadSoTheConnectionIsReleasedFirst() {
 		List<Runnable> queued = new ArrayList<>();
-		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr", queued::add);
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				queued::add);
 		TransactionSynchronizationManager.initSynchronization();
 		try {
 			mailService.sendAfterCommit("mentor@tekno.com", "Konu", "Metin");
@@ -85,7 +87,8 @@ class MailServiceTest {
 
 	@Test
 	void sendsNothingWithoutARecipient() {
-		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr", Runnable::run);
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				Runnable::run);
 
 		mailService.sendAfterCommit(" ", "Konu", "Metin");
 
@@ -94,7 +97,8 @@ class MailServiceTest {
 
 	@Test
 	void keepsGoingWhenSesRejectsTheEmail() {
-		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr", Runnable::run);
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				Runnable::run);
 		when(sesClient.sendEmail(any(SendEmailRequest.class)))
 				.thenThrow(SesV2Exception.builder().message("Email address is not verified.").build());
 
@@ -104,13 +108,15 @@ class MailServiceTest {
 
 	@Test
 	void sendNowSaysWhetherSesAcceptedTheEmail() {
-		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr", Runnable::run);
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				Runnable::run);
 		assertThat(mailService.sendNow("lead@team.co", "Konu", "Metin")).isTrue();
 
 		when(sesClient.sendEmail(any(SendEmailRequest.class)))
 				.thenThrow(SesV2Exception.builder().message("Email address is not verified.").build());
 		assertThat(mailService.sendNow("lead@team.co", "Konu", "Metin")).isFalse();
-		assertThat(new MailService(sesClient, "", "https://menton.com.tr", Runnable::run).sendNow("lead@team.co", "Konu", "Metin"))
+		assertThat(new MailService(sesClient, "", "https://menton.com.tr", Runnable::run).sendNow("lead@team.co",
+				"Konu", "Metin"))
 				.isFalse();
 	}
 

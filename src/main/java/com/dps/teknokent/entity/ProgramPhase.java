@@ -13,11 +13,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(
-		name = "program_phase",
-		uniqueConstraints = @UniqueConstraint(
-				name = "uq_program_phase_position",
-				columnNames = { "program_id", "position" }))
+@Table(name = "program_phase", uniqueConstraints = @UniqueConstraint(name = "uq_program_phase_position", columnNames = {
+		"program_id", "position" }))
 @Getter
 @Setter
 @NoArgsConstructor

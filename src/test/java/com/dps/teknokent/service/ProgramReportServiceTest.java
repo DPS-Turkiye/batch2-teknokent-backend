@@ -206,12 +206,12 @@ class ProgramReportServiceTest {
 		service.meetingFeedback(actorId, program.getId(), null, -3, 500);
 		service.meetingFeedback(actorId, program.getId(), null, Integer.MAX_VALUE, 20);
 
-		verify(meetingFeedbackRepository).findByMeetingIdIn(eq(List.of(held.getId())), argThat((Pageable pageable) ->
-				pageable.getPageNumber() == 0
+		verify(meetingFeedbackRepository).findByMeetingIdIn(eq(List.of(held.getId())),
+				argThat((Pageable pageable) -> pageable.getPageNumber() == 0
 						&& pageable.getPageSize() == ProgramReportService.MAX_FEEDBACK_PAGE_SIZE
 						&& pageable.getSort().getOrderFor("meeting.scheduledAt").isDescending()));
-		verify(meetingFeedbackRepository).findByMeetingIdIn(any(), argThat((Pageable pageable) ->
-				pageable.getPageNumber() == ProgramReportService.MAX_FEEDBACK_PAGE));
+		verify(meetingFeedbackRepository).findByMeetingIdIn(any(),
+				argThat((Pageable pageable) -> pageable.getPageNumber() == ProgramReportService.MAX_FEEDBACK_PAGE));
 	}
 
 	@Test

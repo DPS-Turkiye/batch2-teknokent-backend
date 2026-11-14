@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -78,7 +79,7 @@ public class MeetingTranscriptBotDispatcher {
 	}
 
 	static boolean isUnrecoverableJoinFailure(Throwable error) {
-		String text = error.getMessage() == null ? "" : error.getMessage().toLowerCase();
+		String text = error.getMessage() == null ? "" : error.getMessage().toLowerCase(Locale.ROOT);
 		return text.contains("ended")
 				|| text.contains("finished")
 				|| text.contains("no longer")

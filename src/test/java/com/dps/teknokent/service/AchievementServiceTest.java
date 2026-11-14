@@ -21,9 +21,14 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import com.dps.teknokent.domain.BadgeCode;
 import com.dps.teknokent.domain.BadgeSource;
@@ -55,6 +60,8 @@ class AchievementServiceTest {
 	private AppUserRepository users;
 	@Mock
 	private BadgeService badgeService;
+	@Mock
+	private PlatformTransactionManager transactionManager;
 
 	@InjectMocks
 	private AchievementService service;
@@ -176,6 +183,27 @@ class AchievementServiceTest {
 
 		verify(badgeService).award(eq(mentor), eq(BadgeCode.FIRST_SESSION), isNull(), eq(BadgeSource.RULE), isNull(),
 				eq(true));
+	}
+
+	@Test
+	void aFailingCheckRollsBackOnlyThatPersonAndTheOthersBadgesAreCommitted() {
+		UUID broken = UUID.randomUUID();
+		when(users.findById(broken)).thenThrow(new IllegalStateException("boom"));
+		when(meetings.findByMentorIdAndHeldConfirmedAtIsNotNull(mentor.getId()))
+				.thenReturn(List.of(held(MONDAY, 60)));
+		TransactionStatus brokenTransaction = new SimpleTransactionStatus();
+		TransactionStatus mentorTransaction = new SimpleTransactionStatus();
+		ArgumentCaptor<TransactionDefinition> opened = ArgumentCaptor.forClass(TransactionDefinition.class);
+		when(transactionManager.getTransaction(opened.capture())).thenReturn(brokenTransaction, mentorTransaction);
+
+		service.onChange(new AchievementsMayChangeEvent(new LinkedHashSet<>(List.of(broken, mentor.getId()))));
+
+		verify(transactionManager).rollback(brokenTransaction);
+		verify(transactionManager, never()).commit(brokenTransaction);
+		verify(transactionManager).commit(mentorTransaction);
+		assertThat(opened.getAllValues()).extracting(TransactionDefinition::getPropagationBehavior)
+				.containsExactly(TransactionDefinition.PROPAGATION_REQUIRES_NEW,
+						TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
 	@Test

@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -398,10 +399,10 @@ class ProgramTeamMoveIntegrationTest {
 	@Test
 	void aSignedInCoordinatorCannotActAsTheAdmin() throws Exception {
 		mockMvc.perform(post(MOVE, newProgram.getId(), team.getId())
-						.param("actorId", admin.getId().toString())
-						.with(authentication(signedIn(oldCoordinator)))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(body(oldProgram)))
+				.param("actorId", admin.getId().toString())
+				.with(authentication(signedIn(oldCoordinator)))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body(oldProgram)))
 				.andExpect(status().isForbidden());
 
 		assertNothingMoved();
@@ -410,9 +411,9 @@ class ProgramTeamMoveIntegrationTest {
 	@Test
 	void signedOutCallsAreRefused() throws Exception {
 		mockMvc.perform(post(MOVE, newProgram.getId(), team.getId())
-						.param("actorId", admin.getId().toString())
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(body(oldProgram)))
+				.param("actorId", admin.getId().toString())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body(oldProgram)))
 				.andExpect(status().isUnauthorized());
 
 		assertNothingMoved();
@@ -421,10 +422,10 @@ class ProgramTeamMoveIntegrationTest {
 	@Test
 	void refusesABodyWithoutTheProgramToLeave() throws Exception {
 		mockMvc.perform(post(MOVE, newProgram.getId(), team.getId())
-						.param("actorId", admin.getId().toString())
-						.with(httpBasic("test", "test"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{}"))
+				.param("actorId", admin.getId().toString())
+				.with(httpBasic("test", "test"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
 				.andExpect(status().isBadRequest());
 
 		assertNothingMoved();
@@ -490,7 +491,7 @@ class ProgramTeamMoveIntegrationTest {
 		StoredDocument file = new StoredDocument();
 		file.setId(UUID.randomUUID());
 		file.setOrganizationId(team.getId());
-		file.setKind("PITCH_DECK");
+		file.setKind(DocumentKind.PITCH_DECK);
 		file.setOriginalFilename("pitch.pdf");
 		file.setContentType("application/pdf");
 		file.setSizeBytes(1024);

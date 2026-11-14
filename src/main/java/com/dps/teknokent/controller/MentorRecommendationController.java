@@ -28,10 +28,11 @@ public class MentorRecommendationController {
 	public ResponseEntity<?> recommend(
 			@Valid @RequestBody RecommendMentorsRequest request,
 			@RequestParam(required = false) UUID actorId) {
-		MentorRecommendationResult result = mentorRecommendationService.recommendFor(CurrentActor.resolveOptional(actorId),
+		MentorRecommendationResult result = mentorRecommendationService.recommendFor(
+				CurrentActor.resolveOptional(actorId),
 				request);
 		return ResponseEntity.ok()
-				.header("X-Matching-Method", result.matchingMethod())
+				.header("X-Matching-Method", result.matchingMethod().name())
 				.header("X-Matching-Model", result.matchingModel() == null ? "" : result.matchingModel())
 				.header("X-Recommendation-Generated-At", result.generatedAt().toString())
 				.body(result.mentors());

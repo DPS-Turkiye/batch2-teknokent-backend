@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -86,7 +87,8 @@ public class MeetingProposalService {
 		}
 		if (request.replacesMeetingId() != null) {
 			Meeting replaced = meetingRepository.findById(request.replacesMeetingId())
-					.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + request.replacesMeetingId()));
+					.orElseThrow(
+							() -> new ResourceNotFoundException("Meeting not found: " + request.replacesMeetingId()));
 			if (!samePair(replaced, mentorship) || replaced.getStatus() != MeetingStatus.SCHEDULED) {
 				throw new InvalidRequestException(Texts.forRequest("error.rescheduleOnlyPlanned"));
 			}
@@ -110,7 +112,8 @@ public class MeetingProposalService {
 		String titleKey = request.replacesMeetingId() == null
 				? "notification.proposalFromCoordinator.title"
 				: "notification.newTimeFromCoordinator.title";
-		notifyUnanswered(saved, titleKey, "notification.proposalPleaseConfirm.body", pairLine(saved), saved.getScheduledAt());
+		notifyUnanswered(saved, titleKey, "notification.proposalPleaseConfirm.body", pairLine(saved),
+				saved.getScheduledAt());
 		return response(saved, scoped.program(), null);
 	}
 
@@ -175,7 +178,8 @@ public class MeetingProposalService {
 					.toList();
 		}
 		AppUser actor = programService.requireCoordinatorOrAdmin(actorId);
-		Map<UUID, Program> scope = programService.scopeOf(actorId, programService.managedPrograms(actor), programId).stream()
+		Map<UUID, Program> scope = programService.scopeOf(actorId, programService.managedPrograms(actor), programId)
+				.stream()
 				.collect(Collectors.toMap(Program::getId, Function.identity(), (first, second) -> first));
 		if (scope.isEmpty()) {
 			return List.of();
@@ -205,7 +209,8 @@ public class MeetingProposalService {
 				.toList();
 		Map<UUID, Program> programs = programRepository
 				.findAllById(proposals.stream().map(MeetingProposal::getProgramId).filter(java.util.Objects::nonNull)
-						.distinct().toList()).stream()
+						.distinct().toList())
+				.stream()
 				.collect(Collectors.toMap(Program::getId, Function.identity()));
 		return proposals.stream()
 				.map(proposal -> response(proposal, programs.get(proposal.getProgramId()), actor))
@@ -275,7 +280,8 @@ public class MeetingProposalService {
 		if (replaced != null) {
 			// Checked again here: the slot may have filled up while the proposal waited for answers.
 			meetingService.requireTranscriptBotSlot(replaced, proposal.getScheduledAt(), proposal.getDurationMinutes());
-			// ponytail: moves only this meeting, not guest copies in a shared room; add roommates if group reschedules matter.
+			// ponytail: moves only this meeting, not guest copies in a shared room; add roommates if group reschedules
+			// matter.
 			replaced.setScheduledAt(proposal.getScheduledAt());
 			replaced.setDurationMinutes(proposal.getDurationMinutes());
 			replaced.setReminderSentAt(null);
@@ -299,10 +305,11 @@ public class MeetingProposalService {
 		proposal.setStatus(MeetingProposalStatus.CONFIRMED);
 
 		String bodyKey = "notification.proposalConfirmed.body";
-		Object[] args = {pairLine(proposal), proposal.getScheduledAt()};
+		Object[] args = { pairLine(proposal), proposal.getScheduledAt() };
 		notifyProposer(proposal, "notification.proposalConfirmed.title", bodyKey, args);
 		if (!proposal.getMentor().getId().equals(proposal.getProposedBy())) {
-			notify(proposal.getMentor(), "notification.proposalConfirmed.title", bodyKey, args, "/mentor-dashboard/calendar");
+			notify(proposal.getMentor(), "notification.proposalConfirmed.title", bodyKey, args,
+					"/mentor-dashboard/calendar");
 		}
 		if (replaced != null) {
 			for (AppUser member : members(proposal.getOrganization())) {
@@ -343,8 +350,9 @@ public class MeetingProposalService {
 		return mentorSide ? "/mentor-dashboard/calendar" : TEAM_HOME;
 	}
 
-	private Program programOf(MeetingProposal proposal) {
-		return proposal.getProgramId() == null ? null : programRepository.findById(proposal.getProgramId()).orElse(null);
+	private @Nullable Program programOf(MeetingProposal proposal) {
+		return proposal.getProgramId() == null ? null
+				: programRepository.findById(proposal.getProgramId()).orElse(null);
 	}
 
 	/** The team lead answers for the team; a team without a lead lets any member answer. */
@@ -359,7 +367,7 @@ public class MeetingProposalService {
 				.toList();
 	}
 
-	private Side sideOf(AppUser actor, MeetingProposal proposal) {
+	private @Nullable Side sideOf(AppUser actor, MeetingProposal proposal) {
 		if (proposal.getMentor().getId().equals(actor.getId())) {
 			return Side.MENTOR;
 		}
@@ -410,7 +418,8 @@ public class MeetingProposalService {
 		return proposal.getMentor().getFullName() + " ↔ " + proposal.getOrganization().getName();
 	}
 
-	private MeetingProposalResponse response(MeetingProposal proposal, Program program, AppUser viewer) {
+	private MeetingProposalResponse response(MeetingProposal proposal, @Nullable Program program,
+			@Nullable AppUser viewer) {
 		Side side = viewer == null ? null : sideOf(viewer, proposal);
 		boolean canRespond = proposal.isPending()
 				&& ((side == Side.MENTOR && proposal.getMentorAcceptedAt() == null)
@@ -441,7 +450,7 @@ public class MeetingProposalService {
 				canRespond);
 	}
 
-	private String nameOf(UUID userId) {
+	private @Nullable String nameOf(@Nullable UUID userId) {
 		return userId == null ? null : appUserRepository.findById(userId).map(AppUser::getFullName).orElse(null);
 	}
 }

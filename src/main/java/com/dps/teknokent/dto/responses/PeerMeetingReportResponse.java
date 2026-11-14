@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerActionOwner;
 import com.dps.teknokent.domain.PeerMeetingFormat;
 import com.dps.teknokent.domain.PeerMeetingTopic;
@@ -20,7 +22,7 @@ import com.dps.teknokent.domain.PeerReportStatus;
 public record PeerMeetingReportResponse(
 		UUID id,
 		UUID meetingId,
-		PeerReportStatus status,
+		@Nullable PeerReportStatus status,
 		boolean editable,
 		Mentee mentee,
 		Instant scheduledAt,
@@ -46,10 +48,10 @@ public record PeerMeetingReportResponse(
 		String revisionNote,
 		Instant updatedAt) {
 
-	public record Mentee(UUID id, String fullName, String department) {
+	public record Mentee(UUID id, String fullName, @Nullable String department) {
 	}
 
-	public record Context(int meetingNumber, PreviousMeeting previousMeeting, int openActions) {
+	public record Context(int meetingNumber, @Nullable PreviousMeeting previousMeeting, int openActions) {
 	}
 
 	public record PreviousMeeting(UUID meetingId, Instant scheduledAt, Set<PeerMeetingTopic> topics) {

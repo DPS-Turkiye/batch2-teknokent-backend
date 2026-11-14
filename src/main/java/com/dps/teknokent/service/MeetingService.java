@@ -4,13 +4,17 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -26,9 +30,9 @@ import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
 import com.dps.teknokent.dto.responses.MeetingResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
-import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.MentorshipRequest;
+import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -133,7 +137,8 @@ public class MeetingService {
 								meeting.getOrganization().getName(),
 								meeting.getScheduledAt() == null
 										? ""
-										: " · " + MeetingSlotTimes.formatForPeople(meeting.getScheduledAt(), mentee.getPreferredLanguage())),
+										: " · " + MeetingSlotTimes.formatForPeople(meeting.getScheduledAt(),
+												mentee.getPreferredLanguage())),
 						"/mentorships?tab=active"));
 	}
 
@@ -170,19 +175,28 @@ public class MeetingService {
 		return mentorshipRequestRepository.saveAndFlush(created);
 	}
 
+	/**
+	 * Every copy of the meeting's session, for its mentor or an admin.
+	 *
+	 * @param actorId who asks; null only on the proxy's service credentials when it names nobody, which the proxy
+	 *                has already checked to be the meeting's mentor
+	 */
 	@Transactional(readOnly = true)
-	public List<MeetingResponse> findRoom(UUID meetingId) {
-		return roommates(requireMeeting(meetingId)).stream()
+	public List<MeetingResponse> findRoom(UUID meetingId, @Nullable UUID actorId) {
+		Meeting meeting = requireMeeting(meetingId);
+		requireMentorOrAdmin(meeting, actorId);
+		return roommates(meeting).stream()
 				.map(MeetingResponse::fromEntity)
 				.toList();
 	}
 
 	@Transactional
-	public MeetingResponse inviteGuest(UUID meetingId, InviteMeetingGuestRequest request) {
+	public MeetingResponse inviteGuest(UUID meetingId, @Nullable UUID actorId, InviteMeetingGuestRequest request) {
 		if (request.organizationId() == null && request.mentorId() == null) {
 			throw new InvalidRequestException("A startup or mentor is required.");
 		}
 		Meeting source = requireMeeting(meetingId);
+		requireMentorOrAdmin(source, actorId);
 		Organization organization = request.organizationId() == null
 				? source.getOrganization()
 				: domainLookupService.requireOrganization(request.organizationId());
@@ -202,9 +216,10 @@ public class MeetingService {
 	}
 
 	@Transactional
-	public void deleteRoom(UUID meetingId) {
-		List<Meeting> room = roommates(requireMeeting(meetingId));
-		meetingRepository.deleteAll(room);
+	public void deleteRoom(UUID meetingId, @Nullable UUID actorId) {
+		Meeting meeting = requireMeeting(meetingId);
+		requireMentorOrAdmin(meeting, actorId);
+		meetingRepository.deleteAll(roommates(meeting));
 	}
 
 	@Transactional(readOnly = true)
@@ -287,10 +302,19 @@ public class MeetingService {
 		}
 	}
 
+	/**
+	 * The meeting's mentor or an admin may change anything. A member of its team may write the notes and outcomes,
+	 * mark the bot sent and close the meeting, which is what the team's assistant and summary pages send; the link,
+	 * the recording choice and any other status stay the mentor's.
+	 *
+	 * @param actorId who asks; null only on the proxy's service credentials when it names nobody, which the proxy
+	 *                has already checked to be the meeting's mentor or a member of its team
+	 */
 	@Transactional
-	public MeetingResponse update(UUID meetingId, UpdateMeetingRequest request) {
+	public MeetingResponse update(UUID meetingId, @Nullable UUID actorId, UpdateMeetingRequest request) {
 		Meeting meeting = meetingRepository.findById(meetingId)
 				.orElseThrow(() -> new ResourceNotFoundException("Meeting not found: " + meetingId));
+		requireMayUpdate(meeting, actorId, request);
 		if (request.notes() != null) {
 			meeting.setNotes(request.notes());
 		}
@@ -355,7 +379,7 @@ public class MeetingService {
 		return stopped.stream().map(Meeting::getId).toList();
 	}
 
-	private static String nativeMeetingIdOf(Meeting meeting) {
+	private static @Nullable String nativeMeetingIdOf(Meeting meeting) {
 		String meetLink = meeting.getMeetLink();
 		if (meetLink == null || meetLink.isBlank()) {
 			return null;
@@ -381,7 +405,8 @@ public class MeetingService {
 
 	private static boolean isRunningSlot(Meeting meeting, Instant now) {
 		Instant start = meeting.getScheduledAt();
-		if (start == null || start.isAfter(now.plus(TranscriptBotConstants.BOT_JOIN_LEAD_MINUTES, ChronoUnit.MINUTES))) {
+		if (start == null
+				|| start.isAfter(now.plus(TranscriptBotConstants.BOT_JOIN_LEAD_MINUTES, ChronoUnit.MINUTES))) {
 			return false;
 		}
 		return !hasEnded(meeting, now);
@@ -405,7 +430,8 @@ public class MeetingService {
 		feedback.getRatings().addAll(request.ratings());
 		feedback.getBenefits().addAll(request.benefits());
 
-		MeetingFeedbackResponse saved = MeetingFeedbackResponse.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
+		MeetingFeedbackResponse saved = MeetingFeedbackResponse
+				.fromEntity(meetingFeedbackRepository.saveAndFlush(feedback));
 		Set<UUID> affected = new HashSet<>(Set.of(authorId));
 		if (meeting.getMentor() != null) {
 			affected.add(meeting.getMentor().getId());
@@ -431,7 +457,7 @@ public class MeetingService {
 		if (held && meeting.getScheduledAt().isAfter(now)) {
 			throw new InvalidRequestException("A meeting can be confirmed as held only after it starts.");
 		}
-		// A reused Meet link joins older meetings into the room too, so only the same mentor's same slot counts.
+		// A guest mentor's copy of the session is in the room too, and it is that mentor's to confirm.
 		List<Meeting> room = roommates(meeting).stream()
 				.filter(mate -> mate.getMentor() != null && mate.getMentor().getId().equals(mentorId))
 				.filter(mate -> meeting.getScheduledAt().equals(mate.getScheduledAt()))
@@ -507,12 +533,59 @@ public class MeetingService {
 		return MeetingRooms.of(meeting, meetingRepository);
 	}
 
+	/**
+	 * Only another copy of the same session shares its bot: a mentor's personal room holds next week's meeting too,
+	 * and taking last week's dispatch would keep the dispatcher from ever sending that meeting a bot.
+	 */
 	private void copyBotDispatchIfSameLink(Meeting meeting) {
 		String meetLink = meeting.getMeetLink();
-		if (meetLink == null || meetLink.isBlank() || meeting.getBotDispatchedAt() != null) {
+		if (meetLink == null || meetLink.isBlank() || meeting.getBotDispatchedAt() != null
+				|| meeting.getScheduledAt() == null) {
 			return;
 		}
-		meetingRepository.findFirstByMeetLinkAndBotDispatchedAtIsNotNull(meetLink)
-				.ifPresent(existing -> meeting.setBotDispatchedAt(existing.getBotDispatchedAt()));
+		meetingRepository.findByMeetLinkAndScheduledAt(meetLink, meeting.getScheduledAt()).stream()
+				.map(Meeting::getBotDispatchedAt)
+				.filter(Objects::nonNull)
+				.findFirst()
+				.ifPresent(meeting::setBotDispatchedAt);
+	}
+
+	private void requireMayUpdate(Meeting meeting, @Nullable UUID actorId, UpdateMeetingRequest request) {
+		if (actorId == null) {
+			return;
+		}
+		AppUser actor = domainLookupService.requireUser(actorId);
+		if (actor.has(UserRole.ADMIN) || isMeetingMentor(meeting, actorId)) {
+			return;
+		}
+		if (!isTeamMember(meeting, actor)) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.meetingNotParticipant"));
+		}
+		boolean mentorOnlyChange = request.meetLink() != null
+				|| request.transcribeRequested() != null
+				|| (request.status() != null && request.status() != MeetingStatus.COMPLETED);
+		if (mentorOnlyChange) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					Texts.forRequest("error.meetingTeamChangeNotAllowed"));
+		}
+	}
+
+	private void requireMentorOrAdmin(Meeting meeting, @Nullable UUID actorId) {
+		if (actorId == null || isMeetingMentor(meeting, actorId)) {
+			return;
+		}
+		if (!domainLookupService.requireUser(actorId).has(UserRole.ADMIN)) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.meetingMentorOnly"));
+		}
+	}
+
+	private static boolean isMeetingMentor(Meeting meeting, UUID userId) {
+		return meeting.getMentor() != null && meeting.getMentor().getId().equals(userId);
+	}
+
+	private static boolean isTeamMember(Meeting meeting, AppUser user) {
+		return user.getOrganization() != null
+				&& meeting.getOrganization() != null
+				&& user.getOrganization().getId().equals(meeting.getOrganization().getId());
 	}
 }

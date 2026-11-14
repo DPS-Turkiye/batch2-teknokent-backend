@@ -10,15 +10,14 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /** A student ↔ academic advisor link from the institution's records; Menton never makes or edits these. */
 @Entity
-@Table(name = "institution_advising", uniqueConstraints = @UniqueConstraint(name = "uq_institution_advising",
-		columnNames = { "institution", "student_persistent_id", "advisor_persistent_id" }))
+@Table(name = "institution_advising", uniqueConstraints = @UniqueConstraint(name = "uq_institution_advising", columnNames = {
+		"institution", "student_persistent_id", "advisor_persistent_id" }))
 @Getter
 @Setter
 @NoArgsConstructor

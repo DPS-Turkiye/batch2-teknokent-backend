@@ -25,6 +25,7 @@ import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.Texts;
 
@@ -108,7 +109,8 @@ public class AdminProgramMembershipService {
 				appUserService.decide(founder, UserAccountStatus.APPROVED);
 			}
 			notificationService.create(founder, Texts.get(founder, "notification.startupProgramAssigned.title"),
-					Texts.get(founder, "notification.startupProgramAssigned.body", startup.getName(), program.getName()),
+					Texts.get(founder, "notification.startupProgramAssigned.body", startup.getName(),
+							program.getName()),
 					"/startup");
 		}
 		notifyCoordinators(program, startup.getName());
@@ -142,8 +144,6 @@ public class AdminProgramMembershipService {
 	}
 
 	private void requireAdmin(UUID actorId) {
-		if (!domainLookupService.requireUser(actorId).has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin can assign people to programs.");
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(actorId));
 	}
 }

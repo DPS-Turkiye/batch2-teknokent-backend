@@ -61,15 +61,15 @@ public class OfficeHoursReminderService {
 
 	private int claim(OfficeHoursMeeting meeting, Side side, Instant now) {
 		return switch (side) {
-			case STUDENT -> meetingRepository.claimStudentReminder(meeting.getId(), now);
-			case INSTRUCTOR -> meetingRepository.claimInstructorReminder(meeting.getId(), now);
+		case STUDENT -> meetingRepository.claimStudentReminder(meeting.getId(), now);
+		case INSTRUCTOR -> meetingRepository.claimInstructorReminder(meeting.getId(), now);
 		};
 	}
 
 	private void release(OfficeHoursMeeting meeting, Side side) {
 		switch (side) {
-			case STUDENT -> meetingRepository.releaseStudentReminder(meeting.getId());
-			case INSTRUCTOR -> meetingRepository.releaseInstructorReminder(meeting.getId());
+		case STUDENT -> meetingRepository.releaseStudentReminder(meeting.getId());
+		case INSTRUCTOR -> meetingRepository.releaseInstructorReminder(meeting.getId());
 		}
 	}
 }

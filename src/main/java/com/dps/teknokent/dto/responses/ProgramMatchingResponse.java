@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MatchNeedSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 
@@ -19,13 +21,13 @@ public final class ProgramMatchingResponse {
 	public record WaitingTeam(
 			UUID organizationId,
 			String name,
-			String sector,
-			String stage,
-			String leadName,
+			@Nullable String sector,
+			@Nullable String stage,
+			@Nullable String leadName,
 			int waitingDays,
 			MatchNeedSource needSource,
-			String needTopic,
-			String needText) {
+			@Nullable String needTopic,
+			@Nullable String needText) {
 	}
 
 	public record Match(
@@ -40,7 +42,7 @@ public final class ProgramMatchingResponse {
 	}
 
 	/** Ranked suggestions from the program's pool, plus the whole pool for a manual pick. */
-	public record Suggestions(String method, List<Candidate> recommended, List<Candidate> pool) {
+	public record Suggestions(@Nullable String method, List<Candidate> recommended, List<Candidate> pool) {
 	}
 
 	public record Candidate(
@@ -48,7 +50,7 @@ public final class ProgramMatchingResponse {
 			String fullName,
 			String title,
 			List<String> specialties,
-			String availability,
+			@Nullable String availability,
 			int activeTeams,
 			int capacity,
 			List<String> reasons) {

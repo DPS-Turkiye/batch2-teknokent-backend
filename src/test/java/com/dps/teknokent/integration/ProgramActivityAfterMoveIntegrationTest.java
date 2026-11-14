@@ -240,7 +240,7 @@ class ProgramActivityAfterMoveIntegrationTest {
 
 	private void moveTheTeam() throws Exception {
 		as(admin, post("/api/admin/programs/{programId}/startups/{organizationId}/move",
-						newProgram.getId(), team.getId())
+				newProgram.getId(), team.getId())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"fromProgramId\":\"" + oldProgram.getId() + "\"}"))
 				.andExpect(status().isOk());

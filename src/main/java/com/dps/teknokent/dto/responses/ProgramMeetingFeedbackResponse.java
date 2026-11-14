@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingFeedbackAnswers;
 import com.dps.teknokent.domain.MeetingFeedbackSide;
 import com.dps.teknokent.entity.AppUser;
@@ -20,20 +22,21 @@ public record ProgramMeetingFeedbackResponse(
 		UUID id,
 		Instant meetingAt,
 		String meetingTitle,
-		String mentorName,
+		@Nullable String mentorName,
 		String organizationName,
 		String authorName,
 		MeetingFeedbackSide side,
 		List<Integer> ratings,
 		List<String> qualities,
-		String note,
+		@Nullable String note,
 		Instant submittedAt) {
 
 	public static ProgramMeetingFeedbackResponse from(MeetingFeedback feedback) {
 		Meeting meeting = feedback.getMeeting();
 		AppUser mentor = meeting.getMentor();
 		AppUser author = feedback.getAuthor();
-		// The side follows the meeting, not the account: one person can mentor in one program and be mentored in another.
+		// The side follows the meeting, not the account: one person can mentor in one program and be mentored in
+		// another.
 		MeetingFeedbackSide side = mentor != null && mentor.getId().equals(author.getId())
 				? MeetingFeedbackSide.MENTOR
 				: MeetingFeedbackSide.MENTEE;

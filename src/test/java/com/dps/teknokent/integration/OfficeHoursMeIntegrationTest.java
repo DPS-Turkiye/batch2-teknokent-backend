@@ -96,12 +96,12 @@ class OfficeHoursMeIntegrationTest {
 				 "exceptions":[],"studentCapacity":null,"defaultMeetingDurationMinutes":30,"meetingBufferMinutes":0}
 				""";
 		mockMvc.perform(put("/api/office-hours/me/availability").param("actorId", as(academician))
-						.with(frontendServer()).contentType(MediaType.APPLICATION_JSON).content(hours))
+				.with(frontendServer()).contentType(MediaType.APPLICATION_JSON).content(hours))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.rules.length()").value(1));
 		mockMvc.perform(put("/api/office-hours/me/profile").param("actorId", as(academician))
-						.with(frontendServer()).contentType(MediaType.APPLICATION_JSON)
-						.content("{\"listed\":true,\"defaultPlace\":\"A-204\",\"onlineLink\":\"https://meet.example.com/x\"}"))
+				.with(frontendServer()).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"listed\":true,\"defaultPlace\":\"A-204\",\"onlineLink\":\"https://meet.example.com/x\"}"))
 				.andExpect(status().isOk());
 
 		mockMvc.perform(get("/api/office-hours/me/profile").param("actorId", as(academician)).with(frontendServer()))
@@ -109,7 +109,7 @@ class OfficeHoursMeIntegrationTest {
 				.andExpect(jsonPath("$.listed").value(true))
 				.andExpect(jsonPath("$.defaultPlace").value("A-204"));
 		mockMvc.perform(get("/api/office-hours/me/availability").param("actorId", as(academician))
-						.with(frontendServer()))
+				.with(frontendServer()))
 				.andExpect(jsonPath("$.defaultMeetingDurationMinutes").value(30))
 				.andExpect(jsonPath("$.rules[0].dayOfWeek").value("TUESDAY"));
 		OfficeHoursUser person = officeHoursUsers.findByAppUserId(academician.getId()).orElseThrow();
@@ -120,7 +120,7 @@ class OfficeHoursMeIntegrationTest {
 	@Test
 	void anAcademicianAnswersAMentonRequestAndSeesWhoAsked() throws Exception {
 		mockMvc.perform(put("/api/office-hours/me/profile").param("actorId", as(academician))
-						.with(frontendServer()).contentType(MediaType.APPLICATION_JSON).content("{\"listed\":true}"))
+				.with(frontendServer()).contentType(MediaType.APPLICATION_JSON).content("{\"listed\":true}"))
 				.andExpect(status().isOk());
 		UUID instructorId = officeHoursUsers.findByAppUserId(academician.getId()).orElseThrow().getId();
 		OfficeHoursUser asker = new OfficeHoursUser();
@@ -137,7 +137,8 @@ class OfficeHoursMeIntegrationTest {
 		request.setStatus(OfficeHoursRequestStatus.PENDING);
 		request.setTopic("Staj");
 		request.setPreferredSlots(
-				MeetingSlotTimes.formatMachineSlot(Instant.now().plus(10, ChronoUnit.DAYS).truncatedTo(ChronoUnit.HOURS)));
+				MeetingSlotTimes
+						.formatMachineSlot(Instant.now().plus(10, ChronoUnit.DAYS).truncatedTo(ChronoUnit.HOURS)));
 		request.setCreatedAt(Instant.now());
 		request.setUpdatedAt(Instant.now());
 		requests.saveAndFlush(request);
@@ -150,14 +151,14 @@ class OfficeHoursMeIntegrationTest {
 				.andExpect(jsonPath("$[0].courseName").doesNotExist())
 				.andExpect(jsonPath("$[0].allowedActions.length()").value(3));
 		mockMvc.perform(post("/api/office-hours/me/requests/{id}/decision", request.getId())
-						.param("actorId", as(academician)).with(frontendServer())
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"action\":\"ASK_QUESTION\",\"message\":\"Hangi ders?\"}"))
+				.param("actorId", as(academician)).with(frontendServer())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"action\":\"ASK_QUESTION\",\"message\":\"Hangi ders?\"}"))
 				.andExpect(status().isBadRequest());
 		mockMvc.perform(post("/api/office-hours/me/requests/{id}/decision", request.getId())
-						.param("actorId", as(academician)).with(frontendServer())
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"action\":\"DECLINE\",\"message\":\"Bu hafta dolu\"}"))
+				.param("actorId", as(academician)).with(frontendServer())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"action\":\"DECLINE\",\"message\":\"Bu hafta dolu\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("DECLINED"))
 				.andExpect(jsonPath("$.rejectionReason").value("Bu hafta dolu"))
@@ -167,12 +168,13 @@ class OfficeHoursMeIntegrationTest {
 	@Test
 	void aRequestedTimeIsAsLongAsTheSlotItWouldBookNotTheDefault() throws Exception {
 		String everyDay = String.join(",", java.util.Arrays.stream(java.time.DayOfWeek.values())
-				.map(day -> "{\"dayOfWeek\":\"" + day + "\",\"startTime\":\"10:00\",\"endTime\":\"12:00\",\"slotMinutes\":20}")
+				.map(day -> "{\"dayOfWeek\":\"" + day
+						+ "\",\"startTime\":\"10:00\",\"endTime\":\"12:00\",\"slotMinutes\":20}")
 				.toList());
 		mockMvc.perform(put("/api/office-hours/me/availability").param("actorId", as(academician))
-						.with(frontendServer()).contentType(MediaType.APPLICATION_JSON)
-						.content("{\"rules\":[" + everyDay + "],\"exceptions\":[],\"studentCapacity\":null,"
-								+ "\"defaultMeetingDurationMinutes\":45,\"meetingBufferMinutes\":0}"))
+				.with(frontendServer()).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"rules\":[" + everyDay + "],\"exceptions\":[],\"studentCapacity\":null,"
+						+ "\"defaultMeetingDurationMinutes\":45,\"meetingBufferMinutes\":0}"))
 				.andExpect(status().isOk());
 		UUID instructorId = officeHoursUsers.findByAppUserId(academician.getId()).orElseThrow().getId();
 		OfficeHoursUser asker = new OfficeHoursUser();
@@ -195,7 +197,7 @@ class OfficeHoursMeIntegrationTest {
 		requests.saveAndFlush(request);
 
 		String inbox = mockMvc.perform(get("/api/office-hours/me/inbox").param("actorId", as(academician))
-						.with(frontendServer()))
+				.with(frontendServer()))
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 		java.time.OffsetDateTime startsAt = java.time.OffsetDateTime
 				.parse(com.jayway.jsonpath.JsonPath.<String>read(inbox, "$[0].requestedTimes[0].startsAt"));
@@ -209,7 +211,7 @@ class OfficeHoursMeIntegrationTest {
 		mockMvc.perform(get("/api/office-hours/me/inbox").param("actorId", as(student)).with(frontendServer()))
 				.andExpect(status().isNotFound());
 		mockMvc.perform(put("/api/office-hours/me/profile").param("actorId", as(student)).with(frontendServer())
-						.contentType(MediaType.APPLICATION_JSON).content("{\"listed\":true}"))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"listed\":true}"))
 				.andExpect(status().isNotFound());
 		assertThat(officeHoursUsers.findByAppUserId(student.getId())).isEmpty();
 	}

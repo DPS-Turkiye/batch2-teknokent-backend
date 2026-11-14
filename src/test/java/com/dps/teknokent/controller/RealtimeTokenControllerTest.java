@@ -1,5 +1,14 @@
 package com.dps.teknokent.controller;
 
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -14,15 +23,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.dto.responses.RealtimeTokenResponse;
 import com.dps.teknokent.service.RealtimeTokenService;
-
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(RealtimeTokenController.class)
 @Import(SecurityConfig.class)
@@ -44,11 +44,11 @@ class RealtimeTokenControllerTest {
 				.thenReturn(new RealtimeTokenResponse("token", SIGNED_IN_AT.plusSeconds(60)));
 
 		mockMvc.perform(post("/api/realtime/token")
-						.with(user("proxy"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{"userId": "%s", "organizationId": "%s", "signedInAt": "2026-11-08T08:15:30.123Z"}
-								""".formatted(USER_ID, ORGANIZATION_ID)))
+				.with(user("proxy"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"userId": "%s", "organizationId": "%s", "signedInAt": "2026-11-08T08:15:30.123Z"}
+						""".formatted(USER_ID, ORGANIZATION_ID)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.token").value("token"));
 	}
@@ -56,11 +56,11 @@ class RealtimeTokenControllerTest {
 	@Test
 	void stillIssuesATokenWhenTheFrontendSendsNoSignIn() throws Exception {
 		mockMvc.perform(post("/api/realtime/token")
-						.with(user("proxy"))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{"userId": "%s", "organizationId": "%s"}
-								""".formatted(USER_ID, ORGANIZATION_ID)))
+				.with(user("proxy"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"userId": "%s", "organizationId": "%s"}
+						""".formatted(USER_ID, ORGANIZATION_ID)))
 				.andExpect(status().isOk());
 
 		verify(realtimeTokenService).issue(eq(USER_ID), eq(ORGANIZATION_ID), isNull());

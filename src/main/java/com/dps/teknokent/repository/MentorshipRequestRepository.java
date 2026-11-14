@@ -41,11 +41,6 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 			@Param("programId") UUID programId,
 			@Param("statuses") Collection<MentorshipRequestStatus> statuses);
 
-	List<MentorshipRequest> findByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
-			UUID mentorId,
-			UUID organizationId,
-			MentorshipRequestStatus status);
-
 	Optional<MentorshipRequest> findFirstByMentorIdAndOrganizationIdAndStatusOrderByCreatedAtDesc(
 			UUID mentorId,
 			UUID organizationId,

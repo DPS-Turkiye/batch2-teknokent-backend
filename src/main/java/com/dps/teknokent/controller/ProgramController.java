@@ -34,8 +34,8 @@ import com.dps.teknokent.dto.responses.ProgramWeekResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.ProgramCalendarService;
-import com.dps.teknokent.service.ProgramWeekService;
 import com.dps.teknokent.service.ProgramService;
+import com.dps.teknokent.service.ProgramWeekService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -101,7 +101,7 @@ public class ProgramController {
 	}
 
 	@PutMapping("/mine/active")
-	public OrganizationProgramsResponse setActiveProgram(@RequestBody SetActiveProgramRequest request) {
+	public OrganizationProgramsResponse setActiveProgram(@Valid @RequestBody SetActiveProgramRequest request) {
 		return programService.setActiveProgram(resolveActorId(request.actorId()), request.programId());
 	}
 

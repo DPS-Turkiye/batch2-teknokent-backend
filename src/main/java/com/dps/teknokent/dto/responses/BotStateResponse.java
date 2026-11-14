@@ -2,6 +2,8 @@ package com.dps.teknokent.dto.responses;
 
 import java.time.Instant;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingBotEndReason;
 import com.dps.teknokent.domain.MeetingBotState;
 
@@ -10,9 +12,9 @@ import com.dps.teknokent.domain.MeetingBotState;
  * {@code requestedAt} lets the caller tell how long the bot has waited to be admitted.
  */
 public record BotStateResponse(
-    String platform,
-    String nativeMeetingId,
-    MeetingBotState state,
-    MeetingBotEndReason endReason,
-    Instant requestedAt
-) {}
+		String platform,
+		String nativeMeetingId,
+		MeetingBotState state,
+		@Nullable MeetingBotEndReason endReason,
+		@Nullable Instant requestedAt) {
+}

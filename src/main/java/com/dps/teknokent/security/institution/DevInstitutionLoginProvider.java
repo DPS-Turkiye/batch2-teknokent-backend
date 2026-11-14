@@ -64,8 +64,9 @@ public class DevInstitutionLoginProvider implements InstitutionLoginProvider {
 	/** Allowlist, not denylist: a server whose profile is unknown or missing must not start with the stub on. */
 	static void requireDevProfile(Environment environment) {
 		if (!environment.acceptsProfiles(Profiles.of(DEV_PROFILE))) {
-			throw new IllegalStateException("INSTITUTION_LOGIN_DEV_STUB=true needs SPRING_PROFILES_ACTIVE=" + DEV_PROFILE
-					+ "; refusing to start with the ODTÜ dev login on any other server.");
+			throw new IllegalStateException(
+					"INSTITUTION_LOGIN_DEV_STUB=true needs SPRING_PROFILES_ACTIVE=" + DEV_PROFILE
+							+ "; refusing to start with the ODTÜ dev login on any other server.");
 		}
 	}
 

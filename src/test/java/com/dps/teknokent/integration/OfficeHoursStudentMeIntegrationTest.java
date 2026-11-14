@@ -46,7 +46,8 @@ class OfficeHoursStudentMeIntegrationTest {
 			 "meetingBufferMinutes":0}
 			""".formatted(String.join(",", List.of("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY",
 			"SATURDAY", "SUNDAY").stream()
-			.map(day -> "{\"dayOfWeek\":\"" + day + "\",\"startTime\":\"09:00\",\"endTime\":\"17:00\",\"slotMinutes\":30}")
+			.map(day -> "{\"dayOfWeek\":\"" + day
+					+ "\",\"startTime\":\"09:00\",\"endTime\":\"17:00\",\"slotMinutes\":30}")
 			.toList()));
 
 	@Autowired
@@ -115,7 +116,7 @@ class OfficeHoursStudentMeIntegrationTest {
 	void aStudentBooksAListedAcademicianAndTakesAnOfferedTime() throws Exception {
 		String listedId = officeHoursUsers.findByAppUserId(academician.getId()).orElseThrow().getId().toString();
 		mockMvc.perform(get("/api/office-hours/me/academicians").param("actorId", student.getId().toString())
-						.with(frontendServer()))
+				.with(frontendServer()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].id").value(listedId))
@@ -160,7 +161,7 @@ class OfficeHoursStudentMeIntegrationTest {
 				.andExpect(jsonPath("$.allowedActions[0]").value("CANCEL"));
 		assertThat(meetings.findAll()).hasSize(1);
 		mockMvc.perform(get("/api/office-hours/me/meetings").param("actorId", academician.getId().toString())
-						.with(frontendServer()))
+				.with(frontendServer()))
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].student.fullName").value("Ali Kaya"));
 	}
@@ -213,7 +214,7 @@ class OfficeHoursStudentMeIntegrationTest {
 		// The first open time is within a day, so this is a late cancel; a student needs no reason for one.
 		assertThat(JsonPath.<Boolean>read(inbox, "$[0].cancellation.late")).isTrue();
 		mockMvc.perform(get("/api/office-hours/me/meetings").param("actorId", academician.getId().toString())
-						.with(frontendServer()))
+				.with(frontendServer()))
 				.andExpect(jsonPath("$.length()").value(0));
 
 		postAs(academician, "/api/office-hours/me/requests/" + requestId + "/cancel", "{}")
@@ -249,7 +250,7 @@ class OfficeHoursStudentMeIntegrationTest {
 		String hiddenId = officeHoursUsers.findByAppUserId(hidden.getId()).orElseThrow().getId().toString();
 
 		mockMvc.perform(get("/api/office-hours/me/academicians/" + hiddenId).param("actorId",
-						student.getId().toString()).with(frontendServer()))
+				student.getId().toString()).with(frontendServer()))
 				.andExpect(status().isNotFound());
 		postAs(student, "/api/office-hours/me/requests", "{\"academicianId\":\"" + hiddenId
 				+ "\",\"startsAt\":\"2030-01-07T09:00:00Z\",\"title\":\"Staj\"}")
@@ -269,10 +270,10 @@ class OfficeHoursStudentMeIntegrationTest {
 	@Test
 	void onlyAStudentSeesTheStudentSide() throws Exception {
 		mockMvc.perform(get("/api/office-hours/me/academicians").param("actorId", academician.getId().toString())
-						.with(frontendServer()))
+				.with(frontendServer()))
 				.andExpect(status().isNotFound());
 		mockMvc.perform(get("/api/office-hours/me/appointments").param("actorId", student.getId().toString())
-						.with(frontendServer()))
+				.with(frontendServer()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(0));
 	}

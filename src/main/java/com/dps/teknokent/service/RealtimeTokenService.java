@@ -9,6 +9,7 @@ import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,7 +24,7 @@ public class RealtimeTokenService {
 	private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
 
 	/** {@code signedInAt} is null for a token issued without one (a frontend from before it was sent). */
-	public record RealtimeIdentity(UUID userId, UUID organizationId, Instant signedInAt) {
+	public record RealtimeIdentity(UUID userId, UUID organizationId, @Nullable Instant signedInAt) {
 	}
 
 	@Value("${app.realtime.token-secret:}")
@@ -31,7 +32,7 @@ public class RealtimeTokenService {
 	@Value("${app.realtime.token-ttl-seconds:60}")
 	private long tokenTtlSeconds;
 
-	public RealtimeTokenResponse issue(UUID userId, UUID organizationId, Instant signedInAt) {
+	public RealtimeTokenResponse issue(UUID userId, UUID organizationId, @Nullable Instant signedInAt) {
 		Instant expiresAt = Instant.now().plusSeconds(tokenTtlSeconds);
 		String payload = userId + ":" + organizationId + ":" + expiresAt.getEpochSecond()
 				+ (signedInAt == null ? "" : ":" + signedInAt.toEpochMilli());
@@ -39,7 +40,7 @@ public class RealtimeTokenService {
 		return new RealtimeTokenResponse(token, expiresAt);
 	}
 
-	public RealtimeIdentity verify(String token) {
+	public @Nullable RealtimeIdentity verify(@Nullable String token) {
 		if (token == null || token.isBlank()) {
 			return null;
 		}

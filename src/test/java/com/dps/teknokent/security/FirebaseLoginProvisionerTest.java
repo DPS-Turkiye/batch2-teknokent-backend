@@ -4,14 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -85,8 +85,8 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz Öğrenci", false))
 				.isEqualTo("custom-token");
 		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
-			Map<String, Object> properties =
-					org.springframework.test.util.ReflectionTestUtils.invokeMethod(request, "getProperties");
+			Map<String, Object> properties = org.springframework.test.util.ReflectionTestUtils.invokeMethod(request,
+					"getProperties");
 			return "odtu_e100001".equals(properties.get("localId"))
 					&& "e100001@metu.edu.tr".equals(properties.get("email"));
 		}));
@@ -102,8 +102,8 @@ class FirebaseLoginProvisionerTest {
 
 		assertThat(provisioner.customToken("otg_a72ab40d", "ogrenci@ornek.com", null, true)).isEqualTo("custom-token");
 		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
-			Map<String, Object> properties =
-					org.springframework.test.util.ReflectionTestUtils.invokeMethod(request, "getProperties");
+			Map<String, Object> properties = org.springframework.test.util.ReflectionTestUtils.invokeMethod(request,
+					"getProperties");
 			return Boolean.TRUE.equals(properties.get("emailVerified")) && !properties.containsKey("displayName");
 		}));
 	}
@@ -146,7 +146,7 @@ class FirebaseLoginProvisionerTest {
 	void seesAPasswordOnlyOnceTheSetupLinkWasUsedAndAsksForEveryoneInOneCall() throws Exception {
 		UserInfo password = mock(UserInfo.class);
 		when(password.getProviderId()).thenReturn("password");
-		UserRecord ready = user("ready", new UserInfo[] {password});
+		UserRecord ready = user("ready", new UserInfo[] { password });
 		UserRecord waiting = user("waiting", new UserInfo[0]);
 		GetUsersResult result = mock(GetUsersResult.class);
 		when(result.getUsers()).thenReturn(Set.of(ready, waiting));
@@ -292,8 +292,8 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.passwordResetLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
 		verify(firebaseAuth, times(1)).generatePasswordResetLink(eq("kimse@tekno.com"), any());
 		assertThatThrownBy(() -> provisioner.passwordResetLink("mentor@bilkent.edu.tr", "https://menton.com.tr/login"))
-				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
-						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
 	}
 
 	// Found in the live test: with e-mail enumeration protection Firebase gives no link instead of an error.
@@ -302,8 +302,121 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.passwordResetLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
 		assertThat(provisioner.passwordSetupLink("kimse@tekno.com", "https://menton.com.tr/login")).isEmpty();
 		assertThatThrownBy(() -> provisioner.emailVerificationLink("kimse@tekno.com", "https://menton.com.tr/login"))
-				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
-						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+	}
+
+	// Two admins inviting the same address at once: the second create loses, and that is the admin's to retry.
+	@Test
+	void aLoginCreatedForTheSameAddressInTheMeantimeIsABadRequestNotAServerError() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		FirebaseAuthException taken = failure(ErrorCode.ALREADY_EXISTS, AuthErrorCode.EMAIL_ALREADY_EXISTS);
+		when(firebaseAuth.getUserByEmail("yeni@tekno.com")).thenThrow(notFound);
+		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(taken);
+
+		assertThatThrownBy(() -> provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör"))
+				.isInstanceOf(com.dps.teknokent.exception.InvalidRequestException.class);
+	}
+
+	@Test
+	void anyOtherFailureToCreateTheLoginIsABadGatewayWithFirebasesCode() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		FirebaseAuthException internal = failure(ErrorCode.INTERNAL, null);
+		when(firebaseAuth.getUserByEmail("yeni@tekno.com")).thenThrow(notFound);
+		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(internal);
+
+		assertThatThrownBy(() -> provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör"))
+				.isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+					assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+					assertThat(exception.getReason()).contains("INTERNAL");
+				});
+	}
+
+	// The setup link is an extra in the invitation mail: without it the mail still goes out.
+	@Test
+	void aSetupLinkFirebaseCannotMakeIsLeftOutInsteadOfFailingTheInvitation() throws Exception {
+		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);
+		when(firebaseAuth.generatePasswordResetLink(eq("yeni@tekno.com"), any())).thenThrow(denied);
+
+		assertThat(provisioner.passwordSetupLink("yeni@tekno.com", "https://menton.com.tr/login")).isEmpty();
+		// Once with the continue URL, once without it, then it gives up.
+		verify(firebaseAuth, times(2)).generatePasswordResetLink(eq("yeni@tekno.com"), any());
+	}
+
+	@Test
+	void aSetupLinkReturnsToTheGivenPage() throws Exception {
+		when(firebaseAuth.generatePasswordResetLink(eq("yeni@tekno.com"), any(ActionCodeSettings.class)))
+				.thenReturn("https://setup");
+
+		assertThat(provisioner.passwordSetupLink("yeni@tekno.com", "https://menton.com.tr/login"))
+				.contains("https://setup");
+	}
+
+	@Test
+	void aVerificationLinkFirebaseCannotMakeEvenWithoutAContinueUrlIsUnavailable() throws Exception {
+		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);
+		when(firebaseAuth.generateEmailVerificationLink(eq("mentor@bilkent.edu.tr"), any())).thenThrow(denied);
+
+		assertThatThrownBy(
+				() -> provisioner.emailVerificationLink("mentor@bilkent.edu.tr", "https://menton.com.tr/login"))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+	}
+
+	// The Firebase SDK itself refuses a continue URL that is not a URL, before any call is made.
+	@Test
+	void aContinueUrlThatIsNotAUrlIsDroppedAndTheLinkIsStillMade() throws Exception {
+		when(firebaseAuth.generateEmailVerificationLink(eq("mentor@bilkent.edu.tr"), isNull()))
+				.thenReturn("https://plain");
+
+		assertThat(provisioner.emailVerificationLink("mentor@bilkent.edu.tr", "not a url")).isEqualTo("https://plain");
+		verify(firebaseAuth, never()).generateEmailVerificationLink(anyString(), any(ActionCodeSettings.class));
+	}
+
+	// A Firebase outage must not read as "this person has no login" and create a second one over it.
+	@Test
+	void aFailedLoginLookupStopsTheTokenInsteadOfCreatingAnotherLogin() throws Exception {
+		FirebaseAuthException outage = failure(ErrorCode.UNAVAILABLE, null);
+		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(outage);
+
+		assertThatThrownBy(() -> provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz", false))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
+		verify(firebaseAuth, never()).createCustomToken(anyString());
+	}
+
+	@Test
+	void aLoginFirebaseCannotCreateOrATokenItCannotSignIsUnavailable() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		FirebaseAuthException internal = failure(ErrorCode.INTERNAL, null);
+		when(firebaseAuth.getUser("odtu_e100001")).thenThrow(notFound);
+		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(internal);
+		when(firebaseAuth.getUser("uid-1")).thenReturn(mock(UserRecord.class));
+		when(firebaseAuth.createCustomToken("uid-1")).thenThrow(internal);
+
+		assertThatThrownBy(() -> provisioner.customToken("odtu_e100001", "e100001@metu.edu.tr", "Deniz", false))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+		verify(firebaseAuth, never()).createCustomToken("odtu_e100001");
+		assertThatThrownBy(() -> provisioner.customToken("uid-1", "ayse@metu.edu.tr", "Ayşe", true))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+	}
+
+	@Test
+	void aBlankNameIsLeftOutOfTheNewLoginJustLikeAMissingOne() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUser("otg_a72ab40d")).thenThrow(notFound);
+		when(firebaseAuth.createCustomToken("otg_a72ab40d")).thenReturn("custom-token");
+
+		provisioner.customToken("otg_a72ab40d", "ogrenci@ornek.com", "   ", false);
+
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+			Map<String, Object> properties = org.springframework.test.util.ReflectionTestUtils.invokeMethod(request,
+					"getProperties");
+			return Boolean.FALSE.equals(properties.get("emailVerified")) && !properties.containsKey("displayName");
+		}));
 	}
 
 	private static FirebaseAuthException failure(ErrorCode errorCode, AuthErrorCode authErrorCode) {

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorshipRepository;
+import com.dps.teknokent.util.MeetingSlotTimes;
 
 import lombok.RequiredArgsConstructor;
 
@@ -26,23 +28,31 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class DashboardService {
 
-	private static final List<BottleneckStatus> OPEN_BOTTLENECK_STATUSES =
-			List.of(BottleneckStatus.OPEN, BottleneckStatus.IN_PROGRESS);
-	private static final List<BottleneckSeverity> HIGH_SEVERITIES =
-			List.of(BottleneckSeverity.HIGH, BottleneckSeverity.CRITICAL);
-	private static final List<ActionItemStatus> CLOSED_ACTION_STATUSES =
-			List.of(ActionItemStatus.COMPLETED, ActionItemStatus.CANCELLED);
+	private static final List<BottleneckStatus> OPEN_BOTTLENECK_STATUSES = List.of(BottleneckStatus.OPEN,
+			BottleneckStatus.IN_PROGRESS);
+	private static final List<BottleneckSeverity> HIGH_SEVERITIES = List.of(BottleneckSeverity.HIGH,
+			BottleneckSeverity.CRITICAL);
+	private static final List<ActionItemStatus> CLOSED_ACTION_STATUSES = List.of(ActionItemStatus.COMPLETED,
+			ActionItemStatus.CANCELLED);
 
 	private final MentorshipRepository mentorshipRepository;
 	private final BottleneckRepository bottleneckRepository;
 	private final ActionItemRepository actionItemRepository;
 	private final MeetingRepository meetingRepository;
+	private final StartupAccessService startupAccessService;
 
+	/**
+	 * The startup's home page counts, for its team and staff. The proxy sends only the session's own startup and,
+	 * before it names the caller too, no actor; a named caller (or a signed-in one) is checked.
+	 */
 	@Transactional(readOnly = true)
-	public DashboardSummaryResponse getSummary(UUID organizationId) {
+	public DashboardSummaryResponse getSummary(UUID organizationId, @Nullable UUID actorId) {
 		// Platform-wide counts are not for a startup's home page; a session without a startup sends a blank id.
 		if (organizationId == null) {
 			throw new InvalidRequestException("organizationId is required");
+		}
+		if (actorId != null) {
+			startupAccessService.requireTeamOrStaff(actorId, organizationId);
 		}
 		return new DashboardSummaryResponse(
 				mentorshipRepository.countByOrganizationIdAndStatus(organizationId, MentorshipStatus.ACTIVE),
@@ -50,7 +60,7 @@ public class DashboardService {
 				bottleneckRepository.countByOrganizationIdAndSeverityInAndStatusIn(
 						organizationId, HIGH_SEVERITIES, OPEN_BOTTLENECK_STATUSES),
 				actionItemRepository.countByOrganizationIdAndStatusNotInAndDueDateBefore(
-						organizationId, CLOSED_ACTION_STATUSES, LocalDate.now()),
+						organizationId, CLOSED_ACTION_STATUSES, LocalDate.now(MeetingSlotTimes.APP_ZONE)),
 				meetingRepository.countByOrganizationIdAndStatusAndScheduledAtAfter(
 						organizationId, MeetingStatus.SCHEDULED, Instant.now()));
 	}

@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
@@ -21,11 +23,11 @@ public record CoordinatorMentorshipResponse(
 		String organizationName,
 		MentorshipStatus status,
 		CoordinatorMentorshipHealth health,
-		String topic,
+		@Nullable String topic,
 		LocalDate startDate,
-		Instant lastMeetingAt,
-		Long daysSinceLastMeeting,
-		Instant nextMeetingAt,
+		@Nullable Instant lastMeetingAt,
+		@Nullable Long daysSinceLastMeeting,
+		@Nullable Instant nextMeetingAt,
 		int openActions,
 		int overdueActions,
 		int missingNotes) {
@@ -39,12 +41,12 @@ public record CoordinatorMentorshipResponse(
 			int staleAfterDays,
 			int pastMeetings,
 			int notedMeetings,
-			Instant lastNoteAt,
+			@Nullable Instant lastNoteAt,
 			int goalsDone,
 			int goalsTotal,
 			long mentorLoad,
-			Integer mentorCapacity,
-			String founderName,
+			@Nullable Integer mentorCapacity,
+			@Nullable String founderName,
 			int memberCount,
 			List<MeetingRow> meetings) {
 	}

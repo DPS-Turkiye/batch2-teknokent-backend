@@ -1,7 +1,7 @@
 package com.dps.teknokent.service;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -27,8 +27,8 @@ class AuthEmailServiceTest {
 
 	private final LoginProvisioner loginProvisioner = mock(LoginProvisioner.class);
 	private final MailService mailService = mock(MailService.class);
-	private final AuthEmailService service =
-			new AuthEmailService(loginProvisioner, mailService, new RateLimitingConfig());
+	private final AuthEmailService service = new AuthEmailService(loginProvisioner, mailService,
+			new RateLimitingConfig());
 
 	@BeforeEach
 	void mailIsSetUp() {
@@ -85,8 +85,8 @@ class AuthEmailServiceTest {
 		}
 
 		assertThatThrownBy(() -> service.sendVerification("mentor@yahoo.com"))
-				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
-						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS));
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS));
 	}
 
 	// The frontend falls back to Firebase's own e-mail on a 503.
@@ -94,14 +94,14 @@ class AuthEmailServiceTest {
 	void answers503WhenMailIsOffOrSesRefuses() {
 		when(mailService.isConfigured()).thenReturn(false);
 		assertThatThrownBy(() -> service.sendVerification("mentor@yahoo.com"))
-				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
-						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
 
 		when(mailService.isConfigured()).thenReturn(true);
 		when(loginProvisioner.passwordResetLink("mentor@metu.edu.tr", LOGIN)).thenReturn(Optional.of("https://reset"));
 		when(mailService.sendNow(anyString(), anyString(), anyString())).thenReturn(false);
 		assertThatThrownBy(() -> service.sendPasswordReset("mentor@metu.edu.tr"))
-				.isInstanceOfSatisfying(ResponseStatusException.class, exception ->
-						assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
 	}
 }

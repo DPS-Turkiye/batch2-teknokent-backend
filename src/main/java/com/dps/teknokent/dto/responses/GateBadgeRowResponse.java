@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.BadgeSource;
 import com.dps.teknokent.domain.GateBadgeState;
 
@@ -18,15 +20,15 @@ public record GateBadgeRowResponse(
 		UUID programId,
 		String programName,
 		GateBadgeState state,
-		UUID awardId,
-		BadgeSource source,
-		Instant awardedAt,
-		Instant revokedAt,
-		String reason,
+		@Nullable UUID awardId,
+		@Nullable BadgeSource source,
+		@Nullable Instant awardedAt,
+		@Nullable Instant revokedAt,
+		@Nullable String reason,
 		Training training) {
 
 	/** The person's progress on the program's current training version (4T); NONE without a training. */
-	public record Training(boolean videoWatched, int attempts, Integer bestScore) {
+	public record Training(boolean videoWatched, int attempts, @Nullable Integer bestScore) {
 		public static final Training NONE = new Training(false, 0, null);
 
 		public boolean started() {

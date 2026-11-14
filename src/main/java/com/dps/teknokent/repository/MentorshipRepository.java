@@ -1,7 +1,7 @@
 package com.dps.teknokent.repository;
 
-import java.util.Collection;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,6 +15,8 @@ import com.dps.teknokent.entity.Mentorship;
 public interface MentorshipRepository extends JpaRepository<Mentorship, UUID> {
 
 	List<Mentorship> findAllByOrderByCreatedAtDesc();
+
+	List<Mentorship> findByOrganizationIdInOrderByCreatedAtDesc(Collection<UUID> organizationIds);
 
 	boolean existsByMentorIdAndOrganizationId(UUID mentorId, UUID organizationId);
 

@@ -16,9 +16,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.InstitutionDataSource;
 import com.dps.teknokent.domain.ProgramType;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.AdminAcademicResponse;
 import com.dps.teknokent.entity.AppUser;
@@ -96,7 +99,19 @@ class AdminAcademicServiceTest {
 		UUID coordinator = UUID.randomUUID();
 		when(domainLookupService.requireUser(coordinator)).thenReturn(user(coordinator, UserRole.COORDINATOR));
 
-		assertThatThrownBy(() -> service.list(coordinator)).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.list(coordinator)).isInstanceOf(ResponseStatusException.class);
+		verify(people, never()).findByAcademicTrueOrderByFullNameAsc();
+	}
+
+	@Test
+	void anAdminWhoseAccountIsNotApprovedIsRefusedToo() {
+		UUID admin = UUID.randomUUID();
+		AppUser pending = user(admin, UserRole.ADMIN);
+		pending.setStatus(UserAccountStatus.PENDING);
+		when(domainLookupService.requireUser(admin)).thenReturn(pending);
+
+		assertThatThrownBy(() -> service.list(admin)).isInstanceOfSatisfying(ResponseStatusException.class,
+				refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		verify(people, never()).findByAcademicTrueOrderByFullNameAsc();
 	}
 

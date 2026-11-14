@@ -88,15 +88,15 @@ class OnboardingDraftControllerTest {
 						Instant.parse("2026-09-04T08:00:00Z")));
 
 		mockMvc.perform(put("/api/onboarding/draft")
-						.with(firebase())
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{
-								  "kind": "signup-wizard",
-								  "step": "1",
-								  "payload": { "bio": "Kurucu" }
-								}
-								"""))
+				.with(firebase())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "kind": "signup-wizard",
+						  "step": "1",
+						  "payload": { "bio": "Kurucu" }
+						}
+						"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.kind").value("signup-wizard"));
 	}

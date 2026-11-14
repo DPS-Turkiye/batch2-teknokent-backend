@@ -5,6 +5,16 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
+import com.dps.teknokent.domain.BottleneckSeverity;
+import com.dps.teknokent.domain.BottleneckStatus;
+import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.ProgramMentorStatus;
+import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 
@@ -20,14 +30,14 @@ public record AdminOverviewResponse(
 	public record ProgramRow(
 			UUID id,
 			String name,
-			String status,
-			String type,
+			ProgramStatus status,
+			ProgramType type,
 			Instant createdAt,
-			/** The first coordinator; null when the program has none yet ("Atanmadı"). */
-			UUID coordinatorId,
-			/** Every coordinator, comma-separated; an admin who created the program is not listed. */
-			String coordinatorName,
-			/** Every coordinator's id, in {@code coordinatorName} order; empty when the program has none. */
+			/* The first coordinator; null when the program has none yet ("Atanmadı"). */
+			@Nullable UUID coordinatorId,
+			/* Every coordinator, comma-separated; an admin who created the program is not listed. */
+			@Nullable String coordinatorName,
+			/* Every coordinator's id, in {@code coordinatorName} order; empty when the program has none. */
 			List<UUID> coordinatorIds,
 			int startupCount,
 			int acceptedMentorCount,
@@ -39,11 +49,11 @@ public record AdminOverviewResponse(
 	public record StartupRow(
 			UUID id,
 			String name,
-			String sector,
+			@Nullable String sector,
 			UUID programId,
 			String programName,
-			String founderName,
-			String founderJobTitle) {
+			@Nullable String founderName,
+			@Nullable String founderJobTitle) {
 	}
 
 	public record UserRow(
@@ -51,23 +61,23 @@ public record AdminOverviewResponse(
 			String email,
 			String fullName,
 			UserRole role,
-			/** Every active permission, the primary role included; a second-role mentor is listed with the mentors. */
+			/* Every active permission, the primary role included; a second-role mentor is listed with the mentors. */
 			List<UserRole> roles,
 			UserAccountStatus status,
-			UUID organizationId,
+			@Nullable UUID organizationId,
 			String organizationName,
 			String jobTitle,
 			Instant createdAt,
 			List<String> expertise,
-			/** Coordinators only: false until they set a password from the e-mailed link; null when unknown. */
-			Boolean passwordSet) {
+			/* Coordinators only: false until they set a password from the e-mailed link; null when unknown. */
+			@Nullable Boolean passwordSet) {
 	}
 
 	public record MentorMembershipRow(
 			UUID mentorId,
 			String fullName,
 			String email,
-			String status) {
+			ProgramMentorStatus status) {
 	}
 
 	public record MentorshipRow(
@@ -76,22 +86,22 @@ public record AdminOverviewResponse(
 			String mentorName,
 			UUID organizationId,
 			String organizationName,
-			String status,
+			MentorshipStatus status,
 			LocalDate startDate,
 			LocalDate endDate,
 			int progressPercent,
-			Long daysSinceMeeting,
+			@Nullable Long daysSinceMeeting,
 			int goalDone,
 			int goalTotal,
-			/** The program the mentorship was made in; null for one made before V82. */
-			UUID programId) {
+			/* The program the mentorship was made in; null for one made before V82. */
+			@Nullable UUID programId) {
 	}
 
 	public record MeetingMark(
 			UUID mentorId,
 			UUID organizationId,
 			Instant scheduledAt,
-			String status) {
+			MeetingStatus status) {
 	}
 
 	public record RequestRow(
@@ -101,15 +111,15 @@ public record AdminOverviewResponse(
 			UUID mentorId,
 			String mentorName,
 			String supportArea,
-			String status,
+			MentorshipRequestStatus status,
 			Instant createdAt) {
 	}
 
 	public record BottleneckRow(
 			UUID id,
 			String title,
-			String severity,
-			String status,
+			BottleneckSeverity severity,
+			BottleneckStatus status,
 			UUID organizationId,
 			String organizationName,
 			Instant createdAt) {

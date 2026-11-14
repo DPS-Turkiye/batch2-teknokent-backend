@@ -2,12 +2,15 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -22,6 +25,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.Edition;
 import com.dps.teknokent.domain.ProgramMentorInvitedBy;
@@ -30,21 +35,26 @@ import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
+import com.dps.teknokent.dto.responses.ProgramMemberSummaryResponse;
+import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
-import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.util.Texts;
 
 @ExtendWith(MockitoExtension.class)
 class ProgramServiceTest {
@@ -104,10 +114,11 @@ class ProgramServiceTest {
 		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
 
 		assertThatThrownBy(() -> programService.create(COORDINATOR_ID, "Seed"))
-				.isInstanceOf(InvalidRequestException.class)
-				.hasMessageContaining("admin");
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		assertThatThrownBy(() -> programService.create(MENTOR_ID, "Seed"))
-				.isInstanceOf(InvalidRequestException.class);
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		verify(programRepository, never()).save(any());
 	}
 
@@ -169,7 +180,8 @@ class ProgramServiceTest {
 		ProgramMentor pending = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR);
 		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
 				.thenReturn(Optional.of(pending));
-		when(programMentorRepository.save(any(ProgramMentor.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(programMentorRepository.save(any(ProgramMentor.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
 
 		var result = programService.decideInvitation(MENTOR_ID, PROGRAM_ID, true);
 
@@ -614,6 +626,393 @@ class ProgramServiceTest {
 		verify(programMentorRepository, never()).save(any());
 		verify(programStartupRepository, never()).save(any());
 		verify(notificationService, never()).create(any(), any(), any(), any());
+	}
+
+	@Test
+	void createRequiresAName() {
+		AppUser admin = coordinator();
+		admin.setRole(UserRole.ADMIN);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(admin);
+
+		assertThatThrownBy(() -> programService.create(COORDINATOR_ID, "   "))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("name is required");
+		assertThatThrownBy(() -> programService.create(COORDINATOR_ID, null))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("name is required");
+		verify(programRepository, never()).save(any());
+	}
+
+	@Test
+	void nothingIsDoneWithoutASignedInUser() {
+		assertThatThrownBy(() -> programService.create(null, "Seed 2026"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("signed-in user");
+		assertThatThrownBy(() -> programService.findDetail(null, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("signed-in user");
+		verifyNoInteractions(domainLookupService, programRepository);
+	}
+
+	@Test
+	void listRefusesAStartupMember() {
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(mentee(null));
+
+		assertThatThrownBy(() -> programService.list(MENTEE_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("coordinator or mentor");
+		verifyNoInteractions(programRepository);
+	}
+
+	@Test
+	void theSignupPickerLeavesOutDraftsAndCompletedPrograms() {
+		Program draft = program();
+		draft.setId(UUID.randomUUID());
+		draft.setStatus(ProgramStatus.DRAFT);
+		Program completed = program();
+		completed.setId(UUID.randomUUID());
+		completed.setStatus(ProgramStatus.COMPLETED);
+		Program open = program();
+		open.setIndividualMentees(true);
+		when(programRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(draft, open, completed));
+
+		assertThat(programService.listNames()).containsExactly(new ProgramNameResponse(PROGRAM_ID, "Seed 2026", true));
+	}
+
+	@Test
+	void aMentorSeesTheCoordinatorInvitesStillWaitingForTheirAnswer() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		ProgramMentor invite = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR);
+		when(programMentorRepository.findByMentorIdAndStatusAndInvitedByOrderByCreatedAtDesc(
+				MENTOR_ID, ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR))
+				.thenReturn(List.of(invite));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		assertThat(programService.listInvitations(MENTOR_ID)).containsExactly(new ProgramInvitationResponse(
+				PROGRAM_ID, "Seed 2026", COORDINATOR_ID, "Demo Coordinator", invite.getCreatedAt()));
+	}
+
+	@Test
+	void onlyAMentorSeesAnswersOrAsksForProgramMembership() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+
+		assertThatThrownBy(() -> programService.listInvitations(COORDINATOR_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Only a mentor");
+		assertThatThrownBy(() -> programService.decideInvitation(COORDINATOR_ID, PROGRAM_ID, true))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Only a mentor");
+		assertThatThrownBy(() -> programService.requestToJoin(COORDINATOR_ID, PROGRAM_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Only a mentor");
+		verifyNoInteractions(programMentorRepository, notificationService);
+	}
+
+	@Test
+	void addStartupRefusesAStartupAlreadyInTheProgram() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.of(assignment(PROGRAM_ID)));
+
+		assertThatThrownBy(() -> programService.addStartup(COORDINATOR_ID, PROGRAM_ID, ORG_ID))
+				.isInstanceOf(ConflictException.class)
+				.hasMessageContaining("already in the program");
+		verify(programStartupRepository, never()).save(any());
+	}
+
+	@Test
+	void addStartupRefusesATeamTheProgramsRulesExclude() {
+		Program program = program();
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.empty());
+		doThrow(new InvalidRequestException("Not eligible.")).when(programEligibilityService)
+				.requireTeam(program, ORG_ID);
+
+		assertThatThrownBy(() -> programService.addStartup(COORDINATOR_ID, PROGRAM_ID, ORG_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Not eligible.");
+		verify(programStartupRepository, never()).save(any());
+	}
+
+	@Test
+	void removeStartupDetachesTheOrganization() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		ProgramStartup row = assignment(PROGRAM_ID);
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.of(row));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		var result = programService.removeStartup(COORDINATOR_ID, PROGRAM_ID, ORG_ID);
+
+		verify(programStartupRepository).delete(row);
+		assertThat(result.id()).isEqualTo(PROGRAM_ID);
+	}
+
+	@Test
+	void removingAStartupThatIsNotInTheProgramIsNotFound() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> programService.removeStartup(COORDINATOR_ID, PROGRAM_ID, ORG_ID))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessageContaining("not in this program");
+		verify(programStartupRepository, never()).delete(any());
+	}
+
+	@Test
+	void inviteMentorRefusesSomeoneWhoIsNotAnApprovedMentor() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		AppUser awaitingApproval = mentor();
+		awaitingApproval.setStatus(UserAccountStatus.PENDING);
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(awaitingApproval);
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(mentee(null));
+
+		assertThatThrownBy(() -> programService.inviteMentor(COORDINATOR_ID, PROGRAM_ID, MENTEE_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("not a mentor");
+		assertThatThrownBy(() -> programService.inviteMentor(COORDINATOR_ID, PROGRAM_ID, MENTOR_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("approved mentor");
+		verifyNoInteractions(programMentorRepository, notificationService);
+	}
+
+	@Test
+	void aMentorWhoseEarlierRequestWasRejectedCanBeInvitedAgain() {
+		AppUser mentor = mentor();
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		ProgramMentor rejected = membership(ProgramMentorStatus.REJECTED, ProgramMentorInvitedBy.MENTOR);
+		rejected.setDecidedAt(Instant.parse("2026-09-02T09:00:00Z"));
+		Instant firstAsked = rejected.getCreatedAt();
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(rejected));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		programService.inviteMentor(COORDINATOR_ID, PROGRAM_ID, MENTOR_ID);
+
+		assertThat(rejected.getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
+		assertThat(rejected.getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.COORDINATOR);
+		assertThat(rejected.getDecidedAt()).isNull();
+		assertThat(rejected.getCreatedAt()).isAfter(firstAsked);
+		verify(programMentorRepository).save(rejected);
+		verify(notificationService).create(same(mentor), any(),
+				eq(Texts.get(mentor, "notification.programInvite.body", "Seed 2026")), eq("/mentor-dashboard"));
+	}
+
+	@Test
+	void aMentorTheProgramsRulesExcludeIsNotInvited() {
+		AppUser mentor = mentor();
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		doThrow(new InvalidRequestException("Not eligible.")).when(programEligibilityService)
+				.requireMentor(PROGRAM_ID, mentor);
+
+		assertThatThrownBy(() -> programService.inviteMentor(COORDINATOR_ID, PROGRAM_ID, MENTOR_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Not eligible.");
+		verifyNoInteractions(programMentorRepository, notificationService);
+	}
+
+	@Test
+	void decideInvitationRefusesAnAnsweredInviteAMentorsOwnRequestAndAMissingOne() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		ProgramMentor answered = membership(ProgramMentorStatus.ACCEPTED, ProgramMentorInvitedBy.COORDINATOR);
+		ProgramMentor ownRequest = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(answered))
+				.thenReturn(Optional.of(ownRequest))
+				.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> programService.decideInvitation(MENTOR_ID, PROGRAM_ID, false))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("cannot be decided");
+		assertThatThrownBy(() -> programService.decideInvitation(MENTOR_ID, PROGRAM_ID, true))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("cannot be decided");
+		assertThatThrownBy(() -> programService.decideInvitation(MENTOR_ID, PROGRAM_ID, true))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessageContaining("invitation not found");
+		assertThat(answered.getStatus()).isEqualTo(ProgramMentorStatus.ACCEPTED);
+		assertThat(ownRequest.getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
+		verify(programMentorRepository, never()).save(any());
+		verifyNoInteractions(notificationService);
+	}
+
+	@Test
+	void decliningAnInvitationRejectsItAndTellsTheCoordinatorWithoutAnEligibilityCheck() {
+		AppUser coordinator = coordinator();
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator));
+		ProgramMentor pending = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR);
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(pending));
+
+		programService.decideInvitation(MENTOR_ID, PROGRAM_ID, false);
+
+		assertThat(pending.getStatus()).isEqualTo(ProgramMentorStatus.REJECTED);
+		assertThat(pending.getDecidedAt()).isNotNull();
+		verify(programMentorRepository).save(pending);
+		verify(notificationService).create(same(coordinator), any(),
+				eq(Texts.get(coordinator, "notification.inviteDeclined.body", "Ece Demir")), eq("/programs"));
+		verifyNoInteractions(programEligibilityService);
+	}
+
+	@Test
+	void acceptingAnInvitationTellsTheCoordinatorTheMentorAccepted() {
+		AppUser coordinator = coordinator();
+		AppUser mentor = mentor();
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator));
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID)).thenReturn(
+				Optional.of(membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR)));
+
+		programService.decideInvitation(MENTOR_ID, PROGRAM_ID, true);
+
+		verify(programEligibilityService).requireMentor(PROGRAM_ID, mentor);
+		verify(notificationService).create(same(coordinator), any(),
+				eq(Texts.get(coordinator, "notification.inviteAccepted.body", "Ece Demir")), eq("/programs"));
+	}
+
+	@Test
+	void anInvitationTheMentorIsNoLongerEligibleForCannotBeAccepted() {
+		AppUser mentor = mentor();
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor);
+		ProgramMentor pending = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.COORDINATOR);
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(pending));
+		doThrow(new InvalidRequestException("Not eligible.")).when(programEligibilityService)
+				.requireMentor(PROGRAM_ID, mentor);
+
+		assertThatThrownBy(() -> programService.decideInvitation(MENTOR_ID, PROGRAM_ID, true))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Not eligible.");
+		assertThat(pending.getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
+		verify(programMentorRepository, never()).save(any());
+		verifyNoInteractions(notificationService);
+	}
+
+	@Test
+	void decliningAMentorsRequestRejectsItAndTellsTheMentor() {
+		AppUser mentor = mentor();
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor);
+		ProgramMentor request = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(request));
+
+		programService.settleMentorRequest(program(), MENTOR_ID, false);
+
+		assertThat(request.getStatus()).isEqualTo(ProgramMentorStatus.REJECTED);
+		assertThat(request.getDecidedAt()).isNotNull();
+		verify(programMentorRepository).save(request);
+		verify(notificationService).create(same(mentor), any(),
+				eq(Texts.get(mentor, "notification.joinRequestDeclined.body", "Seed 2026")), eq("/mentor-dashboard"));
+		verifyNoInteractions(programEligibilityService);
+	}
+
+	@Test
+	void aMentorRequestThatIsMissingOrAlreadyAnsweredCannotBeSettled() {
+		ProgramMentor answered = membership(ProgramMentorStatus.REJECTED, ProgramMentorInvitedBy.MENTOR);
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.empty())
+				.thenReturn(Optional.of(answered));
+
+		assertThatThrownBy(() -> programService.settleMentorRequest(program(), MENTOR_ID, true))
+				.isInstanceOf(ResourceNotFoundException.class)
+				.hasMessageContaining("Mentor request not found");
+		assertThatThrownBy(() -> programService.settleMentorRequest(program(), MENTOR_ID, true))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("cannot be decided");
+		assertThat(answered.getStatus()).isEqualTo(ProgramMentorStatus.REJECTED);
+		verify(programMentorRepository, never()).save(any());
+		verifyNoInteractions(notificationService);
+	}
+
+	@Test
+	void findDetailShowsAnAdminEachStartupsMembersWithTheFounderMarkedAndOnlyAcceptedMentors() {
+		UUID adminId = UUID.fromString("00000000-0000-0000-0000-0000000000a9");
+		AppUser admin = coordinator();
+		admin.setId(adminId);
+		admin.setRole(UserRole.ADMIN);
+		when(domainLookupService.requireUser(adminId)).thenReturn(admin);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		AppUser founder = mentee(null);
+		Organization organization = founder.getOrganization();
+		organization.setFounder(founder);
+		organization.setDescription("Sağlıkta yapay zekâ");
+		AppUser teammate = mentee(null);
+		teammate.setId(UUID.fromString("00000000-0000-0000-0000-000000000008"));
+		teammate.setFullName("Can Öz");
+		teammate.setJobTitle("CTO");
+		teammate.setOrganization(organization);
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID))
+				.thenReturn(List.of(assignment(PROGRAM_ID)));
+		ProgramMentor accepted = membership(ProgramMentorStatus.ACCEPTED, ProgramMentorInvitedBy.COORDINATOR);
+		accepted.setRole("Ürün mentoru");
+		ProgramMentor pending = membership(ProgramMentorStatus.PENDING, ProgramMentorInvitedBy.MENTOR);
+		pending.setMentorId(UUID.randomUUID());
+		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID))
+				.thenReturn(List.of(accepted, pending));
+		when(organizationRepository.findAllById(any())).thenReturn(List.of(organization));
+		when(appUserRepository.findByOrganizationIdInOrderByFullNameAsc(List.of(ORG_ID)))
+				.thenReturn(List.of(founder, teammate));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(mentor(), coordinator()));
+
+		var detail = programService.findDetail(adminId, PROGRAM_ID);
+
+		assertThat(detail.coordinatorId()).isEqualTo(COORDINATOR_ID);
+		assertThat(detail.coordinatorName()).isEqualTo("Demo Coordinator");
+		assertThat(detail.startups()).singleElement().satisfies(startup -> {
+			assertThat(startup.id()).isEqualTo(ORG_ID);
+			assertThat(startup.name()).isEqualTo("NovaMed AI");
+			assertThat(startup.description()).isEqualTo("Sağlıkta yapay zekâ");
+			assertThat(startup.members()).containsExactly(
+					new ProgramMemberSummaryResponse(MENTEE_ID, "Ayşe Kaya", null, true),
+					new ProgramMemberSummaryResponse(teammate.getId(), "Can Öz", "CTO", false));
+		});
+		assertThat(detail.mentors()).singleElement().satisfies(mentor -> {
+			assertThat(mentor.mentorId()).isEqualTo(MENTOR_ID);
+			assertThat(mentor.status()).isEqualTo(ProgramMentorStatus.ACCEPTED);
+			assertThat(mentor.role()).isEqualTo("Ürün mentoru");
+		});
+	}
+
+	@Test
+	void findDetailLetsAnAcceptedMentorIn() {
+		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(mentor());
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programMentorRepository.findByProgramIdAndMentorId(PROGRAM_ID, MENTOR_ID))
+				.thenReturn(Optional.of(membership(ProgramMentorStatus.ACCEPTED, ProgramMentorInvitedBy.COORDINATOR)));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		var detail = programService.findDetail(MENTOR_ID, PROGRAM_ID);
+
+		assertThat(detail.id()).isEqualTo(PROGRAM_ID);
+		assertThat(detail.startups()).isEmpty();
+		assertThat(detail.mentors()).isEmpty();
+		verify(appUserRepository, never()).findByOrganizationIdInOrderByFullNameAsc(any());
+	}
+
+	@Test
+	void findDetailLetsAStartupOfTheProgramIn() {
+		when(domainLookupService.requireUser(MENTEE_ID)).thenReturn(mentee(null));
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORG_ID))
+				.thenReturn(Optional.of(assignment(PROGRAM_ID)));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		assertThat(programService.findDetail(MENTEE_ID, PROGRAM_ID).name()).isEqualTo("Seed 2026");
 	}
 
 	private static AppUser mentee(UUID activeProgramId) {

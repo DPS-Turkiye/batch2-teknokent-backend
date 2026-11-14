@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -42,7 +43,7 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
-	public String customToken(String uid, String email, String displayName, boolean emailVerified) {
+	public String customToken(String uid, String email, @Nullable String displayName, boolean emailVerified) {
 		throw noFirebase();
 	}
 

@@ -4,12 +4,11 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.Locale;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -18,6 +17,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -150,7 +150,8 @@ public class OfficeHoursMeService {
 	public List<OfficeHoursInboxRequestResponse> inbox(UUID accountId) {
 		requireAcademic(accountId);
 		return existing(accountId)
-				.map(person -> inboxItems(requestRepository.findTop200ByInstructorIdOrderByCreatedAtDesc(person.getId())))
+				.map(person -> inboxItems(
+						requestRepository.findTop200ByInstructorIdOrderByCreatedAtDesc(person.getId())))
 				.orElse(List.of());
 	}
 
@@ -218,7 +219,8 @@ public class OfficeHoursMeService {
 						students.get(meeting.getStudentId()),
 						Optional.ofNullable(requests.get(meeting.getRequestId())).map(OfficeHoursRequest::getTopic)
 								.orElse(null),
-						courseName(courses, meeting.getCourseId()), settings.getDefaultPlace(), settings.getOnlineLink()))
+						courseName(courses, meeting.getCourseId()), settings.getDefaultPlace(),
+						settings.getOnlineLink()))
 				.toList();
 	}
 
@@ -243,7 +245,7 @@ public class OfficeHoursMeService {
 	 * The online meeting link students will open: a web address with a real host and no user name or password in
 	 * it, so it cannot pass for a different site.
 	 */
-	private static String webLink(String value) {
+	private static @Nullable String webLink(String value) {
 		String link = TextUtils.normalizeOptional(value);
 		if (link == null) {
 			return null;
@@ -309,22 +311,22 @@ public class OfficeHoursMeService {
 	private static DecideOfficeHoursRequest decision(AnswerOfficeHoursRequest answer) {
 		String message = answer.message();
 		return switch (answer.action()) {
-			case ACCEPT -> {
-				if (answer.time() == null) {
-					throw new InvalidRequestException("Pick one of the times the student asked for");
-				}
-				yield new DecideOfficeHoursRequest(OfficeHoursRequestStatus.ACCEPTED, message,
-						MeetingSlotTimes.formatMachineSlot(answer.time()), null);
+		case ACCEPT -> {
+			if (answer.time() == null) {
+				throw new InvalidRequestException("Pick one of the times the student asked for");
 			}
-			case DECLINE -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.DECLINED, message, null, null);
-			case PROPOSE_TIMES -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.COUNTER_PROPOSED, message,
-					null, answer.times() == null ? List.of()
-							: answer.times().stream().map(MeetingSlotTimes::formatMachineSlot).toList());
-			case ASK_QUESTION -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.MORE_INFO_REQUESTED, message,
-					null, null);
-			case REPLY, ACCEPT_PROPOSED, WITHDRAW -> throw new InvalidRequestException(
-					"Only the student can do that with a request");
-			case CANCEL -> throw new InvalidRequestException("A meeting is cancelled through its own route");
+			yield new DecideOfficeHoursRequest(OfficeHoursRequestStatus.ACCEPTED, message,
+					MeetingSlotTimes.formatMachineSlot(answer.time()), null);
+		}
+		case DECLINE -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.DECLINED, message, null, null);
+		case PROPOSE_TIMES -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.COUNTER_PROPOSED, message,
+				null, answer.times() == null ? List.of()
+						: answer.times().stream().map(MeetingSlotTimes::formatMachineSlot).toList());
+		case ASK_QUESTION -> new DecideOfficeHoursRequest(OfficeHoursRequestStatus.MORE_INFO_REQUESTED, message,
+				null, null);
+		case REPLY, ACCEPT_PROPOSED, WITHDRAW -> throw new InvalidRequestException(
+				"Only the student can do that with a request");
+		case CANCEL -> throw new InvalidRequestException("A meeting is cancelled through its own route");
 		};
 	}
 
@@ -355,10 +357,9 @@ public class OfficeHoursMeService {
 	}
 
 	/** A Menton request has no course; an immutable map refuses a null key, so it is not asked. */
-	private static String courseName(Map<UUID, String> courses, UUID courseId) {
+	private static @Nullable String courseName(Map<UUID, String> courses, @Nullable UUID courseId) {
 		return courseId == null ? null : courses.get(courseId);
 	}
-
 
 	private static OfficeHoursInboxRequestResponse.Message message(OfficeHoursRequestMessage message) {
 		return new OfficeHoursInboxRequestResponse.Message(

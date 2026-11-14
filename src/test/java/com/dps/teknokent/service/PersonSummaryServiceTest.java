@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -40,15 +41,15 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.PersonSummaryResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.MentorAvailabilityException;
+import com.dps.teknokent.entity.MentorAvailabilityRule;
+import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.TeamMembership;
 import com.dps.teknokent.exception.ResourceNotFoundException;
-import com.dps.teknokent.entity.MentorAvailabilityException;
-import com.dps.teknokent.entity.MentorAvailabilityRule;
-import com.dps.teknokent.entity.MentorAvailabilitySlot;
 import com.dps.teknokent.repository.MeetingRepository;
 import com.dps.teknokent.repository.MentorAvailabilityExceptionRepository;
 import com.dps.teknokent.repository.MentorAvailabilityRuleRepository;
@@ -123,8 +124,8 @@ class PersonSummaryServiceTest {
 			Collection<UUID> ids = invocation.getArgument(0);
 			return links.stream().filter(link -> ids.contains(link.getOrganizationId())).toList();
 		});
-		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(any())).thenAnswer(invocation ->
-				links.stream().filter(link -> link.getOrganizationId().equals(invocation.getArgument(0))).toList());
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(any())).thenAnswer(invocation -> links
+				.stream().filter(link -> link.getOrganizationId().equals(invocation.getArgument(0))).toList());
 		register(user(ADMIN_ID, UserRole.ADMIN));
 		register(user(COORDINATOR_ID, UserRole.COORDINATOR));
 		register(user(OTHER_COORDINATOR_ID, UserRole.COORDINATOR));
@@ -394,8 +395,8 @@ class PersonSummaryServiceTest {
 		when(meetingRepository.existsByMentorIdAndScheduledAtAndStatus(mentor.getId(),
 				booked.getStartsAt(), MeetingStatus.SCHEDULED)).thenReturn(true);
 
-		PersonSummaryResponse.Availability availability =
-				service.summary(COORDINATOR_ID, mentor.getId()).mentor().availability();
+		PersonSummaryResponse.Availability availability = service.summary(COORDINATOR_ID, mentor.getId()).mentor()
+				.availability();
 
 		assertThat(availability.weekly()).containsExactly(new PersonSummaryResponse.WeeklyWindow(
 				DayOfWeek.TUESDAY, LocalTime.of(10, 0), LocalTime.of(12, 0)));
@@ -412,8 +413,8 @@ class PersonSummaryServiceTest {
 		when(mentorProfileRepository.existsById(mentor.getId())).thenReturn(true);
 		when(mentorProfileService.findById(mentor.getId())).thenReturn(mentorProfile(mentor));
 
-		PersonSummaryResponse.Availability availability =
-				service.summary(ADMIN_ID, mentor.getId()).mentor().availability();
+		PersonSummaryResponse.Availability availability = service.summary(ADMIN_ID, mentor.getId()).mentor()
+				.availability();
 
 		assertThat(availability.weekly()).isEmpty();
 		assertThat(availability.daysOff()).isEmpty();
@@ -491,7 +492,7 @@ class PersonSummaryServiceTest {
 		AppUser user = new AppUser();
 		user.setId(id);
 		user.setFullName("Kişi " + role);
-		user.setEmail(role.name().toLowerCase() + "@example.test");
+		user.setEmail(role.name().toLowerCase(Locale.ROOT) + "@example.test");
 		user.setRole(role);
 		return user;
 	}

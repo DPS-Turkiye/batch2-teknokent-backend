@@ -83,7 +83,7 @@ public class PeerReportController {
 
 	@PatchMapping("/meetings/{meetingId}/actions/{actionId}")
 	public PeerMeetingReportResponse updateAction(@PathVariable UUID meetingId, @PathVariable UUID actionId,
-			@RequestBody UpdatePeerReportActionRequest request) {
+			@Valid @RequestBody UpdatePeerReportActionRequest request) {
 		return meetingReportService.updateAction(CurrentActor.resolve(request.actorId()), meetingId, actionId,
 				request.done());
 	}

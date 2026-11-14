@@ -1,7 +1,5 @@
 package com.dps.teknokent.controller;
 
-import com.dps.teknokent.dto.responses.OrganizationPendingMemberResponse;
-import com.dps.teknokent.security.CurrentActor;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,9 +27,11 @@ import com.dps.teknokent.dto.requests.UpdateOrganizationRequest;
 import com.dps.teknokent.dto.requests.UpdateOrganizationStatusRequest;
 import com.dps.teknokent.dto.responses.OrganizationInviteResponse;
 import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
+import com.dps.teknokent.dto.responses.OrganizationPendingMemberResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.TeamChangeResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.AppUserService;
 import com.dps.teknokent.service.OrganizationService;
 import com.dps.teknokent.service.RegistrationService;
@@ -168,7 +168,7 @@ public class OrganizationController {
 
 	/** The leader leaves at once, naming a successor; a startup nobody else is in is archived. */
 	@PostMapping("/{id}/leave")
-	public UserResponse leaveAsLeader(@PathVariable UUID id, @RequestBody LeaveTeamRequest request) {
+	public UserResponse leaveAsLeader(@PathVariable UUID id, @Valid @RequestBody LeaveTeamRequest request) {
 		return teamChangeService.leaveAsLeader(CurrentActor.resolve(request.actorId()), id, request.successorId());
 	}
 
@@ -189,14 +189,16 @@ public class OrganizationController {
 	}
 
 	@GetMapping("/{id}/invite-code")
-	public OrganizationInviteResponse inviteCode(@PathVariable UUID id, @RequestParam UUID actorId) {
-		return organizationService.getInviteCode(id, actorId);
+	public OrganizationInviteResponse inviteCode(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return organizationService.getInviteCode(id, CurrentActor.resolve(actorId));
 	}
 
 	@PostMapping("/{id}/invite-code")
 	public OrganizationInviteResponse regenerateInviteCode(
 			@PathVariable UUID id,
 			@Valid @RequestBody ActorRequest request) {
-		return organizationService.regenerateInviteCode(id, request.actorId());
+		return organizationService.regenerateInviteCode(id, CurrentActor.resolve(request.actorId()));
 	}
 }

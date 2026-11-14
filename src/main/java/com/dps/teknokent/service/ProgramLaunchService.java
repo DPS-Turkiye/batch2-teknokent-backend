@@ -7,7 +7,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -44,6 +43,8 @@ import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
+import com.dps.teknokent.security.AdminAccess;
+import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.ProgramDrafts;
 import com.dps.teknokent.util.TeamCodes;
 import com.dps.teknokent.util.Texts;
@@ -75,16 +76,13 @@ public class ProgramLaunchService {
 	private final AdminCoordinatorService adminCoordinatorService;
 	private final EditionService editionService;
 
-
 	/** An admin creates every program as a draft (Taslak) with its coordinators; launching is a separate step. */
 	@Transactional
 	public CoordinatorProgramResponse.Detail create(UUID actorId, CreateCoordinatorProgramRequest request) {
-		AppUser actor = programService.requireCoordinatorOrAdmin(actorId);
-		if (!actor.has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin creates programs.");
-		}
+		AppUser actor = AdminAccess.requireAdmin(programService.requireCoordinatorOrAdmin(actorId));
 		editionService.requireProgramType(request.type());
-		if (request.startDate() != null && request.endDate() != null && request.endDate().isBefore(request.startDate())) {
+		if (request.startDate() != null && request.endDate() != null
+				&& request.endDate().isBefore(request.startDate())) {
 			throw new InvalidRequestException("The program cannot end before it starts.");
 		}
 		ProgramCoordinators coordinators = checkCoordinators(actorId, request);
@@ -157,7 +155,8 @@ public class ProgramLaunchService {
 		}
 		if (ids.size() + invites.size() > CreateCoordinatorProgramRequest.MAX_COORDINATORS) {
 			throw new InvalidRequestException(
-					"A program starts with at most " + CreateCoordinatorProgramRequest.MAX_COORDINATORS + " coordinators.");
+					"A program starts with at most " + CreateCoordinatorProgramRequest.MAX_COORDINATORS
+							+ " coordinators.");
 		}
 		List<AppUser> byId = new ArrayList<>();
 		for (UUID coordinatorId : new LinkedHashSet<>(ids)) {
@@ -169,8 +168,9 @@ public class ProgramLaunchService {
 		Set<String> invitedEmails = new HashSet<>();
 		List<AdminCoordinatorService.CheckedInvite> checked = new ArrayList<>();
 		for (NewCoordinatorInput invite : invites) {
-			if (invitedEmails.add(invite.email().trim().toLowerCase(Locale.ROOT))) {
-				checked.add(adminCoordinatorService.checkNewProgramCoordinator(actorId, invite.email(), invite.fullName()));
+			if (invitedEmails.add(EmailDomains.normalizeEmail(invite.email()))) {
+				checked.add(
+						adminCoordinatorService.checkNewProgramCoordinator(actorId, invite.email(), invite.fullName()));
 			}
 		}
 		return new ProgramCoordinators(byId, checked);
@@ -205,7 +205,7 @@ public class ProgramLaunchService {
 	public List<ProgramTeamResponse> updateTeam(UUID actorId, UUID programId, UUID inviteId, TeamInviteInput input) {
 		programService.requireManagedProgram(actorId, programId);
 		ProgramTeamInvite invite = requireWaitingInvite(programId, inviteId);
-		String email = normalizeEmail(input.leadEmail());
+		String email = EmailDomains.normalizeEmail(input.leadEmail());
 		if (!email.equalsIgnoreCase(invite.getLeadEmail())
 				&& inviteRepository.existsByProgramIdAndLeadEmailIgnoreCase(programId, email)) {
 			throw new InvalidRequestException("Another team in this program already has this lead email.");
@@ -305,8 +305,9 @@ public class ProgramLaunchService {
 		Set<String> emails = new HashSet<>();
 		String prefix = TeamCodes.prefix(program.getName());
 		for (TeamInviteInput team : teams) {
-			String email = normalizeEmail(team.leadEmail());
-			if (!emails.add(email) || inviteRepository.existsByProgramIdAndLeadEmailIgnoreCase(program.getId(), email)) {
+			String email = EmailDomains.normalizeEmail(team.leadEmail());
+			if (!emails.add(email)
+					|| inviteRepository.existsByProgramIdAndLeadEmailIgnoreCase(program.getId(), email)) {
 				throw new InvalidRequestException("Each team needs its own lead email: " + email);
 			}
 			programEligibilityService.requirePerson(program, email);
@@ -336,7 +337,8 @@ public class ProgramLaunchService {
 	private List<ProgramTeamResponse> rows(UUID programId) {
 		List<ProgramTeamInvite> invites = inviteRepository.findByProgramIdOrderByCreatedAtAsc(programId);
 		List<ProgramStartup> startups = programStartupRepository.findByProgramIdIn(List.of(programId));
-		Set<UUID> organizationIds = startups.stream().map(ProgramStartup::getOrganizationId).collect(Collectors.toSet());
+		Set<UUID> organizationIds = startups.stream().map(ProgramStartup::getOrganizationId)
+				.collect(Collectors.toSet());
 		Map<UUID, Organization> organizations = organizationRepository.findAllById(organizationIds).stream()
 				.filter(Organization::isApprovedForProgram)
 				.collect(Collectors.toMap(Organization::getId, Function.identity()));
@@ -344,7 +346,8 @@ public class ProgramLaunchService {
 		List<ProgramTeamResponse> rows = new ArrayList<>();
 		Set<UUID> covered = new HashSet<>();
 		for (ProgramTeamInvite invite : invites) {
-			Organization organization = invite.getOrganizationId() == null ? null : organizations.get(invite.getOrganizationId());
+			Organization organization = invite.getOrganizationId() == null ? null
+					: organizations.get(invite.getOrganizationId());
 			if (organization != null) {
 				covered.add(organization.getId());
 			}
@@ -353,7 +356,8 @@ public class ProgramLaunchService {
 					invite.getOrganizationId(),
 					organization == null ? invite.getTeamName() : organization.getName(),
 					invite.getOrganizationId() == null ? TeamJoinStatus.WAITING : TeamJoinStatus.JOINED,
-					organization == null || organization.getFounder() == null ? null : organization.getFounder().getFullName(),
+					organization == null || organization.getFounder() == null ? null
+							: organization.getFounder().getFullName(),
 					invite.getLeadEmail(),
 					invite.getCode(),
 					invite.getCreatedAt(),
@@ -398,7 +402,4 @@ public class ProgramLaunchService {
 		return invite;
 	}
 
-	private static String normalizeEmail(String email) {
-		return email.trim().toLowerCase(Locale.ROOT);
-	}
 }

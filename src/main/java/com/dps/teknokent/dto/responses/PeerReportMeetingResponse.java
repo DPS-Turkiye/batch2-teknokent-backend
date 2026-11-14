@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerMeetingFormat;
 import com.dps.teknokent.domain.PeerMeetingType;
 import com.dps.teknokent.domain.PeerReportStatus;
@@ -17,7 +19,7 @@ public record PeerReportMeetingResponse(
 		String menteeName,
 		Instant scheduledAt,
 		int durationMinutes,
-		PeerMeetingType meetingType,
-		PeerMeetingFormat meetingFormat,
-		PeerReportStatus reportStatus) {
+		@Nullable PeerMeetingType meetingType,
+		@Nullable PeerMeetingFormat meetingFormat,
+		@Nullable PeerReportStatus reportStatus) {
 }

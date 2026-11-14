@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import com.dps.teknokent.domain.ProfileAnalysisStatus;
+import com.dps.teknokent.domain.ProfileType;
 import com.dps.teknokent.entity.ProfileAnalysis;
 
 public interface ProfileAnalysisRepository extends JpaRepository<ProfileAnalysis, UUID> {
@@ -13,5 +15,5 @@ public interface ProfileAnalysisRepository extends JpaRepository<ProfileAnalysis
 	Optional<ProfileAnalysis> findFirstByAppUserIdOrderByCreatedAtDesc(UUID appUserId);
 
 	Optional<ProfileAnalysis> findFirstByOrganizationIdAndAppUserIdIsNullAndProfileTypeAndStatusOrderByCreatedAtDesc(
-			UUID organizationId, String profileType, String status);
+			UUID organizationId, ProfileType profileType, ProfileAnalysisStatus status);
 }

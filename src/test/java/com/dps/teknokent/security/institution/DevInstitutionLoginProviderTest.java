@@ -32,8 +32,8 @@ class DevInstitutionLoginProviderTest {
 
 	private final InstitutionPersonRepository people = mock(InstitutionPersonRepository.class);
 	private final InstitutionAdvisingRepository advising = mock(InstitutionAdvisingRepository.class);
-	private final DevInstitutionLoginProvider stub =
-			new DevInstitutionLoginProvider(JsonMapper.builder().build(), people, advising, profiles("dev"));
+	private final DevInstitutionLoginProvider stub = new DevInstitutionLoginProvider(JsonMapper.builder().build(),
+			people, advising, profiles("dev"));
 
 	private static MockEnvironment profiles(String... active) {
 		MockEnvironment environment = new MockEnvironment();
@@ -113,7 +113,8 @@ class DevInstitutionLoginProviderTest {
 
 	@Test
 	void anUnknownPersonaIsRefused() {
-		assertThatThrownBy(() -> stub.completeLogin("state", Map.of(DevInstitutionLoginProvider.PERSONA_PARAM, "nobody")))
+		assertThatThrownBy(
+				() -> stub.completeLogin("state", Map.of(DevInstitutionLoginProvider.PERSONA_PARAM, "nobody")))
 				.isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> stub.completeLogin("state", Map.of())).isInstanceOf(InvalidRequestException.class);
 	}

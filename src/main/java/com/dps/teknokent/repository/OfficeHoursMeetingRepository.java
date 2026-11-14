@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -69,8 +70,9 @@ public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursM
 			WHERE m.id = :id AND m.cancelledAt IS NULL
 			""")
 	int cancelIfLive(@Param("id") UUID id, @Param("now") Instant now, @Param("by") UUID by,
-			@Param("reason") String reason);
+			@Param("reason") @Nullable String reason);
 
-	List<OfficeHoursMeeting> findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfterOrderByScheduledAtAsc(UUID instructorId,
+	List<OfficeHoursMeeting> findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfterOrderByScheduledAtAsc(
+			UUID instructorId,
 			Instant after);
 }

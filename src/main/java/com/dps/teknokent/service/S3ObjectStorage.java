@@ -2,7 +2,9 @@ package com.dps.teknokent.service;
 
 import java.time.Duration;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.exception.InvalidRequestException;
@@ -11,8 +13,10 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
@@ -61,7 +65,7 @@ public class S3ObjectStorage implements ObjectStorage {
 	}
 
 	@Override
-	public byte[] get(String key) {
+	public byte @Nullable [] get(String key) {
 		if (!isConfigured()) {
 			throw new InvalidRequestException("Object storage is not configured.");
 		}
@@ -71,6 +75,24 @@ public class S3ObjectStorage implements ObjectStorage {
 					.asByteArray();
 		} catch (NoSuchKeyException missing) {
 			return null;
+		} catch (RuntimeException error) {
+			throw new InvalidRequestException("The file could not be read.");
+		}
+	}
+
+	@Override
+	public @Nullable Long sizeOf(String key) {
+		if (!isConfigured()) {
+			throw new InvalidRequestException("Object storage is not configured.");
+		}
+		try {
+			return s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build()).contentLength();
+		} catch (S3Exception missing) {
+			// A HEAD has no body to name the error, so a missing key shows only as its 404.
+			if (missing.statusCode() == HttpStatus.NOT_FOUND.value()) {
+				return null;
+			}
+			throw new InvalidRequestException("The file could not be read.");
 		} catch (RuntimeException error) {
 			throw new InvalidRequestException("The file could not be read.");
 		}
@@ -126,7 +148,7 @@ public class S3ObjectStorage implements ObjectStorage {
 		return "inline; filename=\"" + ascii + "\"";
 	}
 
-	private String presign(String key, String contentType, String contentDisposition) {
+	private String presign(String key, @Nullable String contentType, @Nullable String contentDisposition) {
 		if (!isConfigured()) {
 			throw new InvalidRequestException("Object storage is not configured.");
 		}

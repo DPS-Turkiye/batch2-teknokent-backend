@@ -12,7 +12,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +49,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * The student side of office hours on Menton: the academicians who chose to be listed, their open times, and the
- * student's own requests. Where to meet and the online link come with a request only once it is a meeting. ODTÜ's record must say the account is a student; otherwise everything is a 404. A request
+ * student's own requests. Where to meet and the online link come with a request only once it is a meeting. ODTÜ's
+ * record must say the account is a student; otherwise everything is a 404. A request
  * goes to a listed academician for one of their open slots, through the same booking rules as the Moodle routes.
  */
 @Service
@@ -125,7 +128,8 @@ public class OfficeHoursStudentMeService {
 					+ " open requests with this academician. Wait for an answer first.");
 		}
 		OfficeHoursRequest created = bookingService.createRequest(studentId, null,
-				new CreateOfficeHoursRequest(instructorId, submission.title(), submission.description(), List.of(slot)));
+				new CreateOfficeHoursRequest(instructorId, submission.title(), submission.description(),
+						List.of(slot)));
 		return responses(List.of(created)).getFirst();
 	}
 
@@ -179,12 +183,14 @@ public class OfficeHoursStudentMeService {
 		Map<UUID, InstitutionPerson> records = people
 				.recordsOf(persons.stream().map(OfficeHoursUser::getAppUserId).toList());
 		return persons.stream()
-				.filter(person -> {
+				.flatMap(person -> {
 					InstitutionPerson record = records.get(person.getAppUserId());
-					return record != null && record.isActive() && record.isAcademic();
+					OfficeHoursSettings own = byInstructor.get(person.getId());
+					return record != null && own != null && record.isActive() && record.isAcademic()
+							? Stream.of(new Listed(person, record, own))
+							: Stream.<Listed>empty();
 				})
-				.collect(Collectors.toMap(OfficeHoursUser::getId, person -> new Listed(person,
-						records.get(person.getAppUserId()), byInstructor.get(person.getId()))));
+				.collect(Collectors.toMap(listed -> listed.person().getId(), Function.identity()));
 	}
 
 	private List<OfficeHoursStudentRequestResponse> responses(List<OfficeHoursRequest> requests) {
@@ -219,7 +225,8 @@ public class OfficeHoursStudentMeService {
 							.findFirst().orElse(null);
 			return new OfficeHoursStudentRequestResponse(request.getId(), request.getStatus(),
 					new OfficeHoursStudentRequestResponse.Academician(request.getInstructorId(),
-							record != null ? record.getFullName() : instructor == null ? null : instructor.getFullName(),
+							record != null ? record.getFullName()
+									: instructor == null ? null : instructor.getFullName(),
 							record == null ? null : record.getAcademicTitle(),
 							record == null ? null : record.getDepartmentName()),
 					request.getTopic(), request.getExpectedOutcome(),
@@ -235,7 +242,7 @@ public class OfficeHoursStudentMeService {
 	}
 
 	/** Where and how to meet, only for a meeting that is still on: a cancelled one has nowhere to go. */
-	private static String whileOn(OfficeHoursMeeting meeting, String value) {
+	private static @Nullable String whileOn(@Nullable OfficeHoursMeeting meeting, @Nullable String value) {
 		if (meeting == null || meeting.getCancelledAt() != null) {
 			return null;
 		}
@@ -246,7 +253,6 @@ public class OfficeHoursStudentMeService {
 		return joined == null || joined.isBlank() ? List.of()
 				: Arrays.stream(joined.split(",")).map(String::trim).filter(slot -> !slot.isEmpty()).toList();
 	}
-
 
 	private static ResourceNotFoundException requestNotFound() {
 		return new ResourceNotFoundException("Request not found.");

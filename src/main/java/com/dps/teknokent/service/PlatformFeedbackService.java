@@ -32,6 +32,7 @@ import com.dps.teknokent.repository.PlatformFeedbackRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.Texts;
 
@@ -76,7 +77,8 @@ public class PlatformFeedbackService {
 		Page<PlatformFeedback> feedback;
 		if (programType != null) {
 			feedback = unreadOnly
-					? feedbackRepository.findByReadAtIsNullAndProgramTypeOrderByCreatedAtDescIdDesc(programType, pageable)
+					? feedbackRepository.findByReadAtIsNullAndProgramTypeOrderByCreatedAtDescIdDesc(programType,
+							pageable)
 					: feedbackRepository.findByProgramTypeOrderByCreatedAtDescIdDesc(programType, pageable);
 		} else {
 			feedback = unreadOnly
@@ -84,7 +86,8 @@ public class PlatformFeedbackService {
 					: feedbackRepository.findAllByOrderByCreatedAtDescIdDesc(pageable);
 		}
 		return new PlatformFeedbackInboxResponse(
-				PageResponse.from(feedback.map(PlatformFeedbackResponse::from)), feedbackRepository.countByReadAtIsNull());
+				PageResponse.from(feedback.map(PlatformFeedbackResponse::from)),
+				feedbackRepository.countByReadAtIsNull());
 	}
 
 	@Transactional
@@ -106,10 +109,9 @@ public class PlatformFeedbackService {
 		return user;
 	}
 
+	// The inbox keeps its own text; PlatformFeedbackIntegrationTest checks it in both languages.
 	private void requireAdmin(UUID actorId) {
-		if (!requireApprovedUser(actorId).has(UserRole.ADMIN)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("feedback.adminOnly"));
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(actorId), "feedback.adminOnly");
 	}
 
 	/**
@@ -125,7 +127,8 @@ public class PlatformFeedbackService {
 		}
 		Set<UUID> ids = new LinkedHashSet<>();
 		if (author.has(UserRole.MENTOR)) {
-			programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(author.getId(), ProgramMentorStatus.ACCEPTED)
+			programMentorRepository
+					.findByMentorIdAndStatusOrderByCreatedAtDesc(author.getId(), ProgramMentorStatus.ACCEPTED)
 					.forEach(membership -> ids.add(membership.getProgramId()));
 		}
 		if (author.has(UserRole.COORDINATOR)) {

@@ -19,14 +19,14 @@ public enum MeetingBotState {
 			return NONE;
 		}
 		return switch (status.trim().toLowerCase(Locale.ROOT)) {
-			case "requested" -> REQUESTED;
-			case "joining" -> JOINING;
-			case "awaiting_admission" -> WAITING_FOR_ADMISSION;
-			case "active" -> ACTIVE;
-			case "needs_help" -> NEEDS_HELP;
-			case "stopping" -> STOPPING;
-			case "completed" -> COMPLETED;
-			default -> FAILED;
+		case "requested" -> REQUESTED;
+		case "joining" -> JOINING;
+		case "awaiting_admission" -> WAITING_FOR_ADMISSION;
+		case "active" -> ACTIVE;
+		case "needs_help" -> NEEDS_HELP;
+		case "stopping" -> STOPPING;
+		case "completed" -> COMPLETED;
+		default -> FAILED;
 		};
 	}
 

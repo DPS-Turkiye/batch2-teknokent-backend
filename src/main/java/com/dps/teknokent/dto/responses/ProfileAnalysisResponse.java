@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.dps.teknokent.domain.ProfileAnalysisStatus;
+import com.dps.teknokent.domain.ProfileType;
 import com.dps.teknokent.entity.ProfileAnalysis;
 
 public record ProfileAnalysisResponse(
@@ -10,9 +12,9 @@ public record ProfileAnalysisResponse(
 		UUID organizationId,
 		UUID appUserId,
 		String sourceFilename,
-		String profileType,
+		ProfileType profileType,
 		String profile,
-		String status,
+		ProfileAnalysisStatus status,
 		Instant consentAcceptedAt,
 		String redactionSummary,
 		String ocrSummary,
@@ -20,7 +22,8 @@ public record ProfileAnalysisResponse(
 
 	public static ProfileAnalysisResponse fromEntity(ProfileAnalysis analysis) {
 		String displayedProfile = analysis.getConfirmedProfile() == null
-				? analysis.getParsedProfile() : analysis.getConfirmedProfile();
+				? analysis.getParsedProfile()
+				: analysis.getConfirmedProfile();
 		return new ProfileAnalysisResponse(
 				analysis.getId(), analysis.getOrganizationId(), analysis.getAppUserId(), analysis.getSourceFilename(),
 				analysis.getProfileType(), displayedProfile, analysis.getStatus(), analysis.getConsentAcceptedAt(),

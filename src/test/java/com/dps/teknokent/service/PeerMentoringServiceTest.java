@@ -38,9 +38,9 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.PeerExperienceKind;
 import com.dps.teknokent.domain.PeerTopicCategory;
 import com.dps.teknokent.domain.PeerTopicLevel;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
-import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequestSubmission;
 import com.dps.teknokent.dto.requests.CreatePeerMentoringRequest;
@@ -109,7 +109,8 @@ class PeerMentoringServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new PeerMentoringService(lookup, directory, people, programs, profiles, requestService, requests,
-				personalTeams, profileRepository, users, badges, peerCategories, programMentors, programRepository, slots, drafts);
+				personalTeams, profileRepository, users, badges, peerCategories, programMentors, programRepository,
+				slots, drafts);
 		student = user("Ayşe Yılmaz", Set.of(IdentityKind.STUDENT), UserRole.MENTEE);
 		student.setProgramId(PROGRAM_ID);
 		peerMentor = user("Zeynep Demir", Set.of(IdentityKind.STUDENT), UserRole.MENTEE, UserRole.MENTOR);
@@ -136,7 +137,8 @@ class PeerMentoringServiceTest {
 		membership.setProgramId(PROGRAM_ID);
 		membership.setMentorId(peerMentor.getId());
 		membership.setStatus(ProgramMentorStatus.ACCEPTED);
-		when(programMentors.findByMentorIdAndStatusOrderByCreatedAtDesc(peerMentor.getId(), ProgramMentorStatus.ACCEPTED))
+		when(programMentors.findByMentorIdAndStatusOrderByCreatedAtDesc(peerMentor.getId(),
+				ProgramMentorStatus.ACCEPTED))
 				.thenReturn(List.of(membership));
 		Program running = new Program();
 		running.setId(PROGRAM_ID);
@@ -297,7 +299,8 @@ class PeerMentoringServiceTest {
 		when(profileRepository.findById(peerMentor.getId())).thenReturn(Optional.of(stored));
 		when(peerCategories.activeIn(List.of(PROGRAM_ID))).thenReturn(EnumSet.of(PeerTopicCategory.CAREER_INTERNSHIP));
 
-		assertThat(service.profile(peerMentor.getId()).categories()).containsExactly(PeerTopicCategory.CAREER_INTERNSHIP);
+		assertThat(service.profile(peerMentor.getId()).categories())
+				.containsExactly(PeerTopicCategory.CAREER_INTERNSHIP);
 	}
 
 	@Test
@@ -344,8 +347,8 @@ class PeerMentoringServiceTest {
 		PeerMentoringRequestResponse response = service.create(student.getId(), new CreatePeerMentoringRequest(null,
 				peerMentor.getId(), PeerTopicCategory.CAREER_INTERNSHIP, "  Staj başvurusu için CV'me bakar mısın?  "));
 
-		ArgumentCaptor<CreateMentorshipRequestSubmission> submission =
-				ArgumentCaptor.forClass(CreateMentorshipRequestSubmission.class);
+		ArgumentCaptor<CreateMentorshipRequestSubmission> submission = ArgumentCaptor
+				.forClass(CreateMentorshipRequestSubmission.class);
 		verify(requestService).create(submission.capture());
 		assertThat(submission.getValue().organizationId()).isEqualTo(personal.getId());
 		assertThat(submission.getValue().requesterId()).isEqualTo(student.getId());
@@ -371,7 +374,8 @@ class PeerMentoringServiceTest {
 		when(requests.findByRequesterIdOrderByCreatedAtDesc(student.getId())).thenReturn(List.of(open));
 
 		assertThatThrownBy(() -> service.create(student.getId(), new CreatePeerMentoringRequest(null,
-				peerMentor.getId(), PeerTopicCategory.CAREER_INTERNSHIP, "Bir sorum daha olacaktı, yardım eder misin?")))
+				peerMentor.getId(), PeerTopicCategory.CAREER_INTERNSHIP,
+				"Bir sorum daha olacaktı, yardım eder misin?")))
 				.isInstanceOf(ConflictException.class);
 		verify(personalTeams, never()).ensureFor(any());
 	}
@@ -496,7 +500,7 @@ class PeerMentoringServiceTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked") // ArgumentCaptor.forClass takes the raw collection class.
 	void thisWeekRunsFromTheBookingLeadToSevenDaysAheadForTheListedMentorsOnly() {
 		Instant before = Instant.now();
 
@@ -547,7 +551,8 @@ class PeerMentoringServiceTest {
 					assertThat(internship.getPeriod()).isNull();
 				},
 				club -> assertThat(club.getEndedOn()).isNull());
-		assertThat(saved.levels()).containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
+		assertThat(saved.levels())
+				.containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
 		assertThat(saved.experiences()).extracting(PeerExperienceCardResponse::startedOn)
 				.containsExactly(YearMonth.of(2025, 6), YearMonth.of(2024, 10));
 	}
@@ -597,8 +602,10 @@ class PeerMentoringServiceTest {
 		PeerMentorProfileResponse own = service.profile(peerMentor.getId());
 		PeerMentorDetailResponse page = service.mentor(student.getId(), peerMentor.getId());
 
-		assertThat(own.levels()).containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
-		assertThat(page.levels()).containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
+		assertThat(own.levels())
+				.containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
+		assertThat(page.levels())
+				.containsExactly(Map.entry(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicLevel.ADVANCED));
 		assertThat(page.experiences()).singleElement().satisfies(line -> {
 			assertThat(line.kind()).isEqualTo(PeerExperienceKind.OTHER);
 			assertThat(line.title()).isEqualTo("METU Stars Mentoru");

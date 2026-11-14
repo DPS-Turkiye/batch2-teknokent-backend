@@ -61,7 +61,7 @@ class ProgramPeerCategoryServiceTest {
 		assertThat(response.active())
 				.containsExactly(PeerTopicCategory.CAREER_INTERNSHIP, PeerTopicCategory.INTERNATIONAL);
 		verify(categories).deleteAll(List.of(dropped));
-		@SuppressWarnings("unchecked")
+		@SuppressWarnings("unchecked") // ArgumentCaptor.forClass takes the raw collection class.
 		ArgumentCaptor<List<ProgramPeerCategory>> added = ArgumentCaptor.forClass(List.class);
 		verify(categories).saveAll(added.capture());
 		assertThat(added.getValue()).singleElement().satisfies(row -> {
@@ -106,7 +106,8 @@ class ProgramPeerCategoryServiceTest {
 	void theUnionOverSeveralProgramsAndNothingForNoProgram() {
 		UUID other = UUID.randomUUID();
 		ProgramPeerCategory a = row(PeerTopicCategory.CAMPUS_LIFE);
-		ProgramPeerCategory b = new ProgramPeerCategory(other, PeerTopicCategory.ACADEMIC_DEVELOPMENT, null, Instant.now());
+		ProgramPeerCategory b = new ProgramPeerCategory(other, PeerTopicCategory.ACADEMIC_DEVELOPMENT, null,
+				Instant.now());
 		when(categories.findByProgramIdIn(List.of(PROGRAM, other))).thenReturn(List.of(a, b));
 
 		assertThat(service.activeIn(List.of(PROGRAM, other)))

@@ -1,7 +1,9 @@
 package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.ProgressStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -26,104 +30,144 @@ import com.dps.teknokent.repository.ProgressUpdateRepository;
 @ExtendWith(MockitoExtension.class)
 class ProgressUpdateServiceTest {
 
-    @Mock
-    private ProgressUpdateRepository progressUpdateRepository;
+	@Mock
+	private ProgressUpdateRepository progressUpdateRepository;
 
-    @Mock
-    private DomainLookupService domainLookupService;
+	@Mock
+	private DomainLookupService domainLookupService;
 
-    @InjectMocks
-    private ProgressUpdateService progressUpdateService;
+	@Mock
+	private StartupAccessService startupAccessService;
 
-    @Test
-    void findByOrganization_validatesOrganizationAndMapsUpdates() {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        Organization organization = organization(organizationId, "Teknokent");
-        AppUser author = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+	@InjectMocks
+	private ProgressUpdateService progressUpdateService;
 
-        ProgressUpdate update = progressUpdate(
-                UUID.fromString("00000000-0000-0000-0000-000000000301"),
-                organization,
-                author,
-                "Product",
-                ProgressStatus.ON_TRACK,
-                "MVP validation is moving well.",
-                "Six pilot users signed up.",
-                LocalDate.of(2026, 8, 20));
+	@Test
+	void findByOrganization_validatesOrganizationAndMapsUpdates() {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		Organization organization = organization(organizationId, "Teknokent");
+		AppUser author = user(UUID.fromString("00000000-0000-0000-0000-000000000201"), "mentor@tekno.com",
+				"Dr. Kemal Arslan", UserRole.MENTOR);
 
-        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
-        when(progressUpdateRepository.findByOrganizationIdOrderByRecordedAtDesc(organizationId)).thenReturn(List.of(update));
+		ProgressUpdate update = progressUpdate(
+				UUID.fromString("00000000-0000-0000-0000-000000000301"),
+				organization,
+				author,
+				"Product",
+				ProgressStatus.ON_TRACK,
+				"MVP validation is moving well.",
+				"Six pilot users signed up.",
+				LocalDate.of(2026, 8, 20));
 
-        var result = progressUpdateService.findByOrganization(organizationId);
+		when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+		when(progressUpdateRepository.findByOrganizationIdOrderByRecordedAtDesc(organizationId))
+				.thenReturn(List.of(update));
 
-        assertThat(result).hasSize(1);
-        assertThat(result.getFirst().organizationId()).isEqualTo(organizationId);
-        assertThat(result.getFirst().authorName()).isEqualTo("Dr. Kemal Arslan");
-        assertThat(result.getFirst().status()).isEqualTo(ProgressStatus.ON_TRACK);
-    }
+		var result = progressUpdateService.findByOrganization(organizationId, author.getId());
 
-    @Test
-    void create_requiresOrganizationAndAuthorThenSavesUpdate() {
-        UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        UUID authorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
-        UUID updateId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+		assertThat(result).hasSize(1);
+		assertThat(result.getFirst().organizationId()).isEqualTo(organizationId);
+		assertThat(result.getFirst().authorName()).isEqualTo("Dr. Kemal Arslan");
+		assertThat(result.getFirst().status()).isEqualTo(ProgressStatus.ON_TRACK);
+	}
 
-        Organization organization = organization(organizationId, "Teknokent");
-        AppUser author = user(authorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
-        CreateProgressUpdateRequest request = new CreateProgressUpdateRequest(
-                authorId,
-                "Product",
-                ProgressStatus.ON_TRACK,
-                "MVP validation milestones are progressing.",
-                "Two new pilot customers onboarded.",
-                LocalDate.of(2026, 8, 21));
+	@Test
+	void create_requiresOrganizationAndAuthorThenSavesUpdate() {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID authorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		UUID updateId = UUID.fromString("00000000-0000-0000-0000-000000000301");
 
-        when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
-        when(domainLookupService.requireUser(authorId)).thenReturn(author);
-        when(progressUpdateRepository.saveAndFlush(any(ProgressUpdate.class))).thenAnswer(invocation -> {
-            ProgressUpdate saved = invocation.getArgument(0);
-            saved.setId(updateId);
-            saved.setCreatedAt(Instant.parse("2026-08-21T09:00:00Z"));
-            return saved;
-        });
+		Organization organization = organization(organizationId, "Teknokent");
+		AppUser author = user(authorId, "mentor@tekno.com", "Dr. Kemal Arslan", UserRole.MENTOR);
+		CreateProgressUpdateRequest request = new CreateProgressUpdateRequest(
+				authorId,
+				"Product",
+				ProgressStatus.ON_TRACK,
+				"MVP validation milestones are progressing.",
+				"Two new pilot customers onboarded.",
+				LocalDate.of(2026, 8, 21));
 
-        var result = progressUpdateService.create(organizationId, request);
+		when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+		when(startupAccessService.requireTeamOrStaff(authorId, organizationId)).thenReturn(author);
+		when(progressUpdateRepository.saveAndFlush(any(ProgressUpdate.class))).thenAnswer(invocation -> {
+			ProgressUpdate saved = invocation.getArgument(0);
+			saved.setId(updateId);
+			saved.setCreatedAt(Instant.parse("2026-08-21T09:00:00Z"));
+			return saved;
+		});
 
-        assertThat(result.id()).isEqualTo(updateId);
-        assertThat(result.organizationId()).isEqualTo(organizationId);
-        assertThat(result.authorId()).isEqualTo(authorId);
-        assertThat(result.category()).isEqualTo("Product");
-        assertThat(result.summary()).isEqualTo("MVP validation milestones are progressing.");
-    }
+		var result = progressUpdateService.create(organizationId, authorId, request);
 
-    private static ProgressUpdate progressUpdate(UUID id, Organization organization, AppUser author, String category,
-            ProgressStatus status, String summary, String evidence, LocalDate recordedAt) {
-        ProgressUpdate update = new ProgressUpdate();
-        update.setId(id);
-        update.setOrganization(organization);
-        update.setAuthor(author);
-        update.setCategory(category);
-        update.setStatus(status);
-        update.setSummary(summary);
-        update.setEvidence(evidence);
-        update.setRecordedAt(recordedAt);
-        update.setCreatedAt(Instant.parse("2026-08-21T08:00:00Z"));
-        return update;
-    }
+		assertThat(result.id()).isEqualTo(updateId);
+		assertThat(result.organizationId()).isEqualTo(organizationId);
+		assertThat(result.authorId()).isEqualTo(authorId);
+		assertThat(result.category()).isEqualTo("Product");
+		assertThat(result.summary()).isEqualTo("MVP validation milestones are progressing.");
+	}
 
-    private static Organization organization(UUID id, String name) {
-        Organization organization = new Organization();
-        organization.setId(id);
-        organization.setName(name);
-        return organization;
-    }
+	@Test
+	void create_writesInTheActingCallersNameNotTheOneInTheBody() {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID actorId = UUID.fromString("00000000-0000-0000-0000-000000000202");
+		UUID claimedAuthorId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+		Organization organization = organization(organizationId, "Teknokent");
+		AppUser actor = user(actorId, "kurucu@tekno.com", "Gülse Buran", UserRole.MENTEE);
+		when(domainLookupService.requireOrganization(organizationId)).thenReturn(organization);
+		when(startupAccessService.requireTeamOrStaff(actorId, organizationId)).thenReturn(actor);
+		when(progressUpdateRepository.saveAndFlush(any(ProgressUpdate.class))).thenAnswer(call -> call.getArgument(0));
 
-    private static AppUser user(UUID id, String email, String fullName, UserRole role) {
-        AppUser user = new AppUser();
-        user.setId(id);
-        user.setEmail(email);
-        user.setFullName(fullName);
-        user.setRole(role);
-        return user;
-    }
+		var result = progressUpdateService.create(organizationId, actorId, new CreateProgressUpdateRequest(
+				claimedAuthorId, "Product", ProgressStatus.ON_TRACK, "Özet", null, LocalDate.of(2026, 8, 21)));
+
+		assertThat(result.authorId()).isEqualTo(actorId);
+	}
+
+	@Test
+	void findByOrganizationAndCreate_refuseSomeoneOutsideTheStartup() {
+		UUID organizationId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+		UUID outsider = UUID.fromString("00000000-0000-0000-0000-000000000299");
+		when(domainLookupService.requireOrganization(organizationId))
+				.thenReturn(organization(organizationId, "Teknokent"));
+		when(startupAccessService.requireTeamOrStaff(outsider, organizationId))
+				.thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN));
+
+		assertThatThrownBy(() -> progressUpdateService.findByOrganization(organizationId, outsider))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> progressUpdateService.create(organizationId, outsider,
+				new CreateProgressUpdateRequest(outsider, "Product", ProgressStatus.ON_TRACK, "Özet", null,
+						LocalDate.of(2026, 8, 21))))
+				.isInstanceOf(ResponseStatusException.class);
+		verifyNoInteractions(progressUpdateRepository);
+	}
+
+	private static ProgressUpdate progressUpdate(UUID id, Organization organization, AppUser author, String category,
+			ProgressStatus status, String summary, String evidence, LocalDate recordedAt) {
+		ProgressUpdate update = new ProgressUpdate();
+		update.setId(id);
+		update.setOrganization(organization);
+		update.setAuthor(author);
+		update.setCategory(category);
+		update.setStatus(status);
+		update.setSummary(summary);
+		update.setEvidence(evidence);
+		update.setRecordedAt(recordedAt);
+		update.setCreatedAt(Instant.parse("2026-08-21T08:00:00Z"));
+		return update;
+	}
+
+	private static Organization organization(UUID id, String name) {
+		Organization organization = new Organization();
+		organization.setId(id);
+		organization.setName(name);
+		return organization;
+	}
+
+	private static AppUser user(UUID id, String email, String fullName, UserRole role) {
+		AppUser user = new AppUser();
+		user.setId(id);
+		user.setEmail(email);
+		user.setFullName(fullName);
+		user.setRole(role);
+		return user;
+	}
 }

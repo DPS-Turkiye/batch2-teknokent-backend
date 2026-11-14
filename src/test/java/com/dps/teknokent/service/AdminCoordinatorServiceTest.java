@@ -20,6 +20,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.CoordinatorCandidateStatus;
 import com.dps.teknokent.domain.PermissionSource;
@@ -177,7 +179,8 @@ class AdminCoordinatorServiceTest {
 				.isEqualTo(CoordinatorCandidateStatus.ADMIN);
 		assertThat(service.candidate(ADMIN_ID, "coord@teknokent.org").status())
 				.isEqualTo(CoordinatorCandidateStatus.ALREADY_COORDINATOR);
-		for (String email : new String[] { "team@startup.com", "busy@mentor.com", "boss@teknokent.org", "coord@teknokent.org" }) {
+		for (String email : new String[] { "team@startup.com", "busy@mentor.com", "boss@teknokent.org",
+				"coord@teknokent.org" }) {
 			assertThatThrownBy(() -> service.add(ADMIN_ID, new AddCoordinatorRequest(null, "X", email)))
 					.isInstanceOf(InvalidRequestException.class);
 		}
@@ -187,11 +190,13 @@ class AdminCoordinatorServiceTest {
 
 	@Test
 	void onlyAnAdminCanManageCoordinators() {
-		when(domainLookupService.requireUser(MENTOR_ID)).thenReturn(user(MENTOR_ID, "ayse@mentor.com", UserRole.COORDINATOR));
+		when(domainLookupService.requireUser(MENTOR_ID))
+				.thenReturn(user(MENTOR_ID, "ayse@mentor.com", UserRole.COORDINATOR));
 
-		assertThatThrownBy(() -> service.candidate(MENTOR_ID, "x@y.com")).isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> service.candidate(MENTOR_ID, "x@y.com")).isInstanceOf(ResponseStatusException.class);
 		assertThatThrownBy(() -> service.add(MENTOR_ID, new AddCoordinatorRequest(null, "X", "x@y.com")))
-				.isInstanceOf(InvalidRequestException.class);
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		verify(appUserRepository, never()).findByEmailIgnoreCase(anyString());
 	}
 
@@ -307,15 +312,15 @@ class AdminCoordinatorServiceTest {
 		UUID coordinatorId = UUID.randomUUID();
 		when(domainLookupService.requireUser(coordinatorId))
 				.thenReturn(user(coordinatorId, "ayse@teknokent.org", UserRole.COORDINATOR));
-		AdminCoordinatorService.CheckedInvite invite =
-				new AdminCoordinatorService.CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null);
+		AdminCoordinatorService.CheckedInvite invite = new AdminCoordinatorService.CheckedInvite("yeni@teknokent.org",
+				"Yeni Kişi", null);
 
 		assertThatThrownBy(() -> service.checkNewProgramCoordinator(coordinatorId, "yeni@teknokent.org", "Yeni Kişi"))
-				.isInstanceOf(InvalidRequestException.class)
-				.hasMessageContaining("admin");
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		assertThatThrownBy(() -> service.coordinatorForNewProgram(coordinatorId, invite, "METU BİGG 2026"))
-				.isInstanceOf(InvalidRequestException.class)
-				.hasMessageContaining("admin");
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						refused -> assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
 		verify(appUserRepository, never()).findByEmailIgnoreCase(anyString());
 		verify(loginProvisioner, never()).loginFor(anyString(), anyString());
 		verify(appUserRepository, never()).save(any());
@@ -327,13 +332,84 @@ class AdminCoordinatorServiceTest {
 		stubAdmin();
 		when(appUserRepository.findByEmailIgnoreCase("yeni@teknokent.org")).thenReturn(Optional.empty());
 
-		AdminCoordinatorService.CheckedInvite invite =
-				service.checkNewProgramCoordinator(ADMIN_ID, " Yeni@Teknokent.org ", " Yeni Kişi ");
+		AdminCoordinatorService.CheckedInvite invite = service.checkNewProgramCoordinator(ADMIN_ID,
+				" Yeni@Teknokent.org ", " Yeni Kişi ");
 
-		assertThat(invite).isEqualTo(new AdminCoordinatorService.CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null));
+		assertThat(invite)
+				.isEqualTo(new AdminCoordinatorService.CheckedInvite("yeni@teknokent.org", "Yeni Kişi", null));
 		verify(loginProvisioner, never()).loginFor(anyString(), anyString());
 		verify(appUserRepository, never()).save(any());
 		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
+	}
+
+	// An admin may hold the coordinator permission too; locking themselves out would leave nobody to undo it.
+	@Test
+	void anAdminWhoIsAlsoACoordinatorCannotChangeTheirOwnAccess() {
+		AppUser admin = user(ADMIN_ID, "arya@admin.tnt", UserRole.ADMIN);
+		admin.grant(UserRole.COORDINATOR, PermissionSource.ADMIN, Instant.now());
+		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(admin);
+
+		assertThatThrownBy(() -> service.setAccess(ADMIN_ID, ADMIN_ID, false))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(admin.getStatus()).isEqualTo(UserAccountStatus.APPROVED);
+		verify(appUserRepository, never()).save(any());
+	}
+
+	@Test
+	void anAdminGivesADeactivatedCoordinatorTheirAccessBack() {
+		stubAdmin();
+		AppUser coordinator = user(UUID.randomUUID(), "coord@teknokent.org", UserRole.COORDINATOR);
+		coordinator.setStatus(UserAccountStatus.REJECTED);
+		when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+
+		var result = service.setAccess(ADMIN_ID, coordinator.getId(), true);
+
+		assertThat(result.status()).isEqualTo(UserAccountStatus.APPROVED);
+		assertThat(result.outcome()).isNull();
+		verify(appUserRepository).save(coordinator);
+	}
+
+	// A setup link would let a coordinator the admin switched off sign in to nothing; none is mailed.
+	@Test
+	void aDeactivatedCoordinatorIsNotSentAPasswordSetupEmail() {
+		stubAdmin();
+		AppUser coordinator = user(UUID.randomUUID(), "old@teknokent.org", UserRole.COORDINATOR);
+		coordinator.setStatus(UserAccountStatus.REJECTED);
+		when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+
+		assertThatThrownBy(() -> service.resendPasswordSetup(ADMIN_ID, coordinator.getId()))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(loginProvisioner, never()).passwordSetupLink(anyString(), anyString());
+		verify(mailService, never()).sendAfterCommit(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void anAcademicianCanBeMadeACoordinatorAndTheCandidateShowsWhoTheyAre() {
+		stubAdmin();
+		AppUser academician = user(UUID.randomUUID(), "hoca@metu.edu.tr", UserRole.ACADEMICIAN);
+		when(appUserRepository.findByEmailIgnoreCase("hoca@metu.edu.tr")).thenReturn(Optional.of(academician));
+
+		var candidate = service.candidate(ADMIN_ID, " Hoca@METU.edu.tr ");
+
+		assertThat(candidate.email()).isEqualTo("hoca@metu.edu.tr");
+		assertThat(candidate.status()).isEqualTo(CoordinatorCandidateStatus.PROMOTABLE);
+		assertThat(candidate.userId()).isEqualTo(academician.getId());
+		assertThat(candidate.fullName()).isEqualTo("Ayşe Demir");
+		assertThat(candidate.role()).isEqualTo(UserRole.ACADEMICIAN);
+	}
+
+	@Test
+	void aCandidateNobodyHasYetCarriesNoAccountDetailsAndAMissingEmailIsReadAsEmpty() {
+		stubAdmin();
+		when(appUserRepository.findByEmailIgnoreCase("")).thenReturn(Optional.empty());
+
+		var candidate = service.candidate(ADMIN_ID, null);
+
+		assertThat(candidate.email()).isEmpty();
+		assertThat(candidate.status()).isEqualTo(CoordinatorCandidateStatus.NEW);
+		assertThat(candidate.userId()).isNull();
+		assertThat(candidate.fullName()).isNull();
+		assertThat(candidate.role()).isNull();
 	}
 
 	private void stubAdmin() {

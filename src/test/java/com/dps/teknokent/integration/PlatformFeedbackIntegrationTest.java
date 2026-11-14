@@ -159,7 +159,9 @@ class PlatformFeedbackIntegrationTest {
 
 	@Test
 	void adminsPageThroughMessagesWithAuthorDetailsAndUnreadCounts() throws Exception {
-		for (int index = 0; index < 21; index++) feedback();
+		for (int index = 0; index < 21; index++) {
+			feedback();
+		}
 		mockMvc.perform(get("/api/admin/platform-feedback").with(authentication(signedIn(admin))))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.page.content", hasSize(20)))

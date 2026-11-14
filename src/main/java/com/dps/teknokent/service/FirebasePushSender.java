@@ -26,8 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 public class FirebasePushSender implements PushSender {
 
 	private static final String ICON = "/icons/icon-192.png";
-	private static final Set<MessagingErrorCode> DEAD_TOKEN_CODES =
-			Set.of(MessagingErrorCode.UNREGISTERED, MessagingErrorCode.INVALID_ARGUMENT);
+	private static final Set<MessagingErrorCode> DEAD_TOKEN_CODES = Set.of(MessagingErrorCode.UNREGISTERED,
+			MessagingErrorCode.INVALID_ARGUMENT);
 
 	private final FirebaseMessaging firebaseMessaging;
 	private final PushTokenRepository pushTokenRepository;
@@ -53,6 +53,9 @@ public class FirebasePushSender implements PushSender {
 				MoreExecutors.directExecutor());
 	}
 
+	// Firebase now prefers installation ids (addAllFids) to registration tokens. Moving is a change in the web
+	// client too, which registers tokens today.
+	@SuppressWarnings("deprecation") // addAllTokens: registration tokens are what the web client sends us.
 	static MulticastMessage toMulticast(List<String> tokens, PushMessage message) {
 		WebpushConfig.Builder webpush = WebpushConfig.builder()
 				.setNotification(WebpushNotification.builder()

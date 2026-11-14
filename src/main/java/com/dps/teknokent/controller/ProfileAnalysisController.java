@@ -3,30 +3,35 @@ package com.dps.teknokent.controller;
 import java.util.Map;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dps.teknokent.domain.ConsentAnswer;
-import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.dps.teknokent.domain.ProfileType;
+import com.dps.teknokent.dto.requests.ConfirmProfileAnalysisRequest;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
+import com.dps.teknokent.dto.responses.MentorRecommendationResult;
+import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.ProfileAnalysisService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -54,7 +59,7 @@ public class ProfileAnalysisController {
 	public ProfileAnalysisResponse parse(
 			@RequestParam(required = false) UUID organizationId,
 			@RequestParam(required = false) UUID appUserId,
-			@RequestParam(defaultValue = "mentee") String profileType,
+			@RequestParam(defaultValue = "mentee") ProfileType profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
 			@RequestParam(required = false) String consentTextVersion,
 			@RequestParam(defaultValue = "auto") String ocrMode,
@@ -74,7 +79,7 @@ public class ProfileAnalysisController {
 	 * posting directly carries a Firebase bearer, and its organization is
 	 * resolved from the account rather than from what it asked for.
 	 */
-	private static UUID resolveCallerUserId() {
+	private static @Nullable UUID resolveCallerUserId() {
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {
 			return principal.id();
@@ -88,7 +93,7 @@ public class ProfileAnalysisController {
 	 */
 	@PostMapping(path = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public Map<String, Object> parsePreview(
-			@RequestParam(defaultValue = "individual_mentee") String profileType,
+			@RequestParam(defaultValue = "individual_mentee") ProfileType profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
 			@RequestParam(required = false) String consentTextVersion,
 			@RequestParam(defaultValue = "auto") String ocrMode,
@@ -101,7 +106,7 @@ public class ProfileAnalysisController {
 	@PostMapping("/preview/documents/{documentId}")
 	public Map<String, Object> parseStoredCvPreview(
 			@PathVariable UUID documentId,
-			@RequestParam(defaultValue = "individual_mentee") String profileType,
+			@RequestParam(defaultValue = "individual_mentee") ProfileType profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
 			@RequestParam(required = false) String consentTextVersion,
 			@RequestParam(defaultValue = "auto") String ocrMode) {
@@ -115,17 +120,19 @@ public class ProfileAnalysisController {
 	public ProfileAnalysisResponse createManual(
 			@RequestParam(required = false) UUID organizationId,
 			@RequestParam(required = false) UUID appUserId,
-			@jakarta.validation.Valid @RequestBody CreateManualProfileRequest request) {
+			@Valid @RequestBody CreateManualProfileRequest request) {
 		return profileAnalysisService.createManual(organizationId, appUserId, request);
 	}
 
 	@PostMapping("/{id}/recommendations")
-	public JsonNode recommendations(@PathVariable UUID id) {
-		return profileAnalysisService.recommendations(id);
+	public MentorRecommendationResult recommendations(@PathVariable UUID id,
+			@RequestParam(required = false) UUID actorId) {
+		return profileAnalysisService.recommendations(CurrentActor.resolve(actorId), id);
 	}
 
 	@PatchMapping("/{id}/confirmation")
-	public ProfileAnalysisResponse confirm(@PathVariable UUID id, @RequestBody String payload) {
-		return profileAnalysisService.confirm(id, payload);
+	public ProfileAnalysisResponse confirm(@PathVariable UUID id, @RequestParam(required = false) UUID actorId,
+			@Valid @RequestBody ConfirmProfileAnalysisRequest request) {
+		return profileAnalysisService.confirm(CurrentActor.resolve(actorId), id, request);
 	}
 }

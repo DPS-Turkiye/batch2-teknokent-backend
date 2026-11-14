@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.ProgramLifecycle;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.entity.ProgramPhase;
@@ -14,7 +16,7 @@ public final class ProgramCalendar {
 	private ProgramCalendar() {
 	}
 
-	public static ProgramLifecycle lifecycle(ProgramStatus status, LocalDate startDate, LocalDate today) {
+	public static ProgramLifecycle lifecycle(ProgramStatus status, @Nullable LocalDate startDate, LocalDate today) {
 		if (status == ProgramStatus.DRAFT) {
 			return ProgramLifecycle.DRAFT;
 		}
@@ -25,29 +27,40 @@ public final class ProgramCalendar {
 	}
 
 	/** Whole weeks from start to end, counting a partial last week; null without both dates. */
-	public static Integer totalWeeks(LocalDate startDate, LocalDate endDate) {
+	public static @Nullable Integer totalWeeks(@Nullable LocalDate startDate, @Nullable LocalDate endDate) {
 		if (startDate == null || endDate == null) {
 			return null;
 		}
+		return weeksBetween(startDate, endDate);
+	}
+
+	/** {@link #totalWeeks} for a program with both dates: at least one week. */
+	public static int weeksBetween(LocalDate startDate, LocalDate endDate) {
 		long days = ChronoUnit.DAYS.between(startDate, endDate) + 1;
 		return (int) Math.max(1, (days + 6) / 7);
 	}
 
 	/** The running week, 1-based and capped at the total; null before the start or without a start date. */
-	public static Integer currentWeek(LocalDate startDate, LocalDate endDate, LocalDate today) {
+	public static @Nullable Integer currentWeek(
+			@Nullable LocalDate startDate, @Nullable LocalDate endDate, LocalDate today) {
 		if (startDate == null || today.isBefore(startDate)) {
 			return null;
 		}
+		return weekOn(startDate, endDate, today);
+	}
+
+	/** {@link #currentWeek} once the program has started ({@code today} is on or after {@code startDate}). */
+	public static int weekOn(LocalDate startDate, @Nullable LocalDate endDate, LocalDate today) {
 		int week = (int) (ChronoUnit.DAYS.between(startDate, today) / 7) + 1;
-		Integer total = totalWeeks(startDate, endDate);
-		return total == null ? week : Math.min(week, total);
+		return endDate == null ? week : Math.min(week, weeksBetween(startDate, endDate));
 	}
 
 	/**
 	 * The phase running today: the one whose dates contain today, else the latest one that has started.
 	 * Phases without dates never count as current.
 	 */
-	public static ProgramPhase currentPhase(List<ProgramPhase> phases, LocalDate today) {
+	public static @Nullable ProgramPhase currentPhase(List<ProgramPhase> phases, LocalDate today) {
+		@Nullable
 		ProgramPhase latestStarted = null;
 		for (ProgramPhase phase : phases) {
 			LocalDate start = phase.getStartDate();
@@ -69,7 +82,7 @@ public final class ProgramCalendar {
 	}
 
 	/** The last day of program week {@code week}: six days after its start, or the program's end if sooner. */
-	public static LocalDate weekEnd(LocalDate startDate, LocalDate endDate, int week) {
+	public static LocalDate weekEnd(LocalDate startDate, @Nullable LocalDate endDate, int week) {
 		LocalDate last = weekStart(startDate, week).plusDays(6);
 		return endDate != null && endDate.isBefore(last) ? endDate : last;
 	}

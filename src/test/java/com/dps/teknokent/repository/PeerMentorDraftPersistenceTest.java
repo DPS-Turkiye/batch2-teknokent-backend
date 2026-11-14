@@ -52,7 +52,9 @@ class PeerMentorDraftPersistenceTest {
 		assertThat(drafts.deleteByUserId(student.getId())).isZero();
 	}
 
-	/** PostgreSQL only (ON CONFLICT): run with the datasource pointed at PostgreSQL; skipped on the H2 test database. */
+	/**
+	 * PostgreSQL only (ON CONFLICT): run with the datasource pointed at PostgreSQL; skipped on the H2 test database.
+	 */
 	@Test
 	@EnabledIfSystemProperty(named = "spring.datasource.url", matches = "jdbc:postgresql:.*")
 	void aSecondFirstSaveLandsOnTheSameRow() {

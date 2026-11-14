@@ -84,7 +84,8 @@ public class StudentProfileCompletionService {
 		return categories.isEmpty() ? EnumSet.noneOf(PeerTopicCategory.class) : EnumSet.copyOf(categories);
 	}
 
-	private static StudentProfileCompletionResponse toResponse(StudentInterest interest, Set<PeerTopicCategory> active) {
+	private static StudentProfileCompletionResponse toResponse(StudentInterest interest,
+			Set<PeerTopicCategory> active) {
 		return new StudentProfileCompletionResponse(
 				visibleTopics(interest, active),
 				List.copyOf(interest.getSubtopics()),

@@ -24,8 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
@@ -118,7 +118,8 @@ class PeerMentoringControllerTest {
 
 	@Test
 	void aMentorTheDirectoryDoesNotListIsNotFound() throws Exception {
-		when(peerMentoringService.mentor(ACTOR, MENTOR)).thenThrow(new ResourceNotFoundException("Peer mentor not found"));
+		when(peerMentoringService.mentor(ACTOR, MENTOR))
+				.thenThrow(new ResourceNotFoundException("Peer mentor not found"));
 
 		mockMvc.perform(get("/api/peer-mentoring/mentors/" + MENTOR).param("actorId", ACTOR.toString())
 				.with(user("proxy")))
@@ -137,7 +138,8 @@ class PeerMentoringControllerTest {
 						""".formatted(ACTOR)))
 				.andExpect(status().isOk());
 
-		ArgumentCaptor<SavePeerMentorProfileRequest> saved = ArgumentCaptor.forClass(SavePeerMentorProfileRequest.class);
+		ArgumentCaptor<SavePeerMentorProfileRequest> saved = ArgumentCaptor
+				.forClass(SavePeerMentorProfileRequest.class);
 		verify(peerMentoringService).saveProfile(org.mockito.ArgumentMatchers.eq(ACTOR), saved.capture());
 		assertThat(saved.getValue().levels()).containsEntry(PeerTopicCategory.CAREER_INTERNSHIP,
 				PeerTopicLevel.INTERMEDIATE);
@@ -181,7 +183,8 @@ class PeerMentoringControllerTest {
 
 	@Test
 	void aDraftIsReadSavedAndRemovedForTheActor() throws Exception {
-		PeerMentorProfileDraft draft = new PeerMentorProfileDraft("topics", List.of(PeerTopicCategory.CAREER_INTERNSHIP),
+		PeerMentorProfileDraft draft = new PeerMentorProfileDraft("topics",
+				List.of(PeerTopicCategory.CAREER_INTERNSHIP),
 				null, null, null, null, "Sta", null, null, null);
 		when(peerMentorDraftService.find(ACTOR)).thenReturn(new PeerMentorProfileDraftResponse(draft,
 				java.time.Instant.parse("2026-11-12T11:05:00Z")));

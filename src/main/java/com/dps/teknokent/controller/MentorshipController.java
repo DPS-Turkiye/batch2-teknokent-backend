@@ -8,6 +8,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.PatchMapping;
 
 import com.dps.teknokent.dto.requests.CreateMentorshipGoalRequest;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequest;
@@ -26,6 +26,7 @@ import com.dps.teknokent.dto.requests.UpsertMentorshipWeekCheckRequest;
 import com.dps.teknokent.dto.responses.MentorshipGoalResponse;
 import com.dps.teknokent.dto.responses.MentorshipResponse;
 import com.dps.teknokent.dto.responses.MentorshipWeekCheckResponse;
+import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.MentorshipService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -59,8 +60,8 @@ public class MentorshipController {
 	}
 
 	@GetMapping("/{id}")
-	public MentorshipResponse findById(@PathVariable UUID id) {
-		return mentorshipService.findById(id);
+	public MentorshipResponse findById(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return mentorshipService.findById(id, CurrentActor.resolveOptional(actorId));
 	}
 
 	@PostMapping
@@ -72,40 +73,40 @@ public class MentorshipController {
 	@PatchMapping("/{id}")
 	public MentorshipResponse update(
 			@PathVariable UUID id,
-			@RequestParam UUID actorId,
+			@RequestParam(required = false) UUID actorId,
 			@Valid @RequestBody UpdateMentorshipRequest request) {
-		return mentorshipService.update(id, actorId, request);
+		return mentorshipService.update(id, CurrentActor.resolve(actorId), request);
 	}
 
 	@DeleteMapping("/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void delete(@PathVariable UUID id, @RequestParam UUID actorId) {
-		mentorshipService.delete(id, actorId);
+	public void delete(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		mentorshipService.delete(id, CurrentActor.resolve(actorId));
 	}
 
 	@PostMapping("/{id}/goals")
 	@ResponseStatus(HttpStatus.CREATED)
 	public MentorshipGoalResponse addGoal(
 			@PathVariable UUID id,
-			@RequestParam UUID actorId,
+			@RequestParam(required = false) UUID actorId,
 			@Valid @RequestBody CreateMentorshipGoalRequest request) {
-		return mentorshipService.addGoal(id, actorId, request);
+		return mentorshipService.addGoal(id, CurrentActor.resolve(actorId), request);
 	}
 
 	@PatchMapping("/{id}/goals/{goalId}")
 	public MentorshipGoalResponse updateGoal(
 			@PathVariable UUID id,
 			@PathVariable UUID goalId,
-			@RequestParam UUID actorId,
+			@RequestParam(required = false) UUID actorId,
 			@Valid @RequestBody UpdateMentorshipGoalRequest request) {
-		return mentorshipService.updateGoal(id, goalId, actorId, request);
+		return mentorshipService.updateGoal(id, goalId, CurrentActor.resolve(actorId), request);
 	}
 
 	@PutMapping("/{id}/week-checks")
 	public MentorshipWeekCheckResponse upsertWeekCheck(
 			@PathVariable UUID id,
-			@RequestParam UUID actorId,
+			@RequestParam(required = false) UUID actorId,
 			@Valid @RequestBody UpsertMentorshipWeekCheckRequest request) {
-		return mentorshipService.upsertWeekCheck(id, actorId, request);
+		return mentorshipService.upsertWeekCheck(id, CurrentActor.resolve(actorId), request);
 	}
 }

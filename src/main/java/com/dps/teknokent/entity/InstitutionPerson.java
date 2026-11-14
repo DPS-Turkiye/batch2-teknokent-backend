@@ -21,7 +21,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -31,8 +30,8 @@ import lombok.Setter;
  * from {@link AppUser} so the user's own profile edits and the institution's record never overwrite each other.
  */
 @Entity
-@Table(name = "institution_person",
-		uniqueConstraints = @UniqueConstraint(name = "uq_institution_person", columnNames = { "institution", "persistent_id" }))
+@Table(name = "institution_person", uniqueConstraints = @UniqueConstraint(name = "uq_institution_person", columnNames = {
+		"institution", "persistent_id" }))
 @Getter
 @Setter
 @NoArgsConstructor

@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -13,6 +14,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,14 +26,14 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.BottleneckRow;
-import com.dps.teknokent.dto.responses.AdminOverviewResponse.MentorMembershipRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.MeetingMark;
+import com.dps.teknokent.dto.responses.AdminOverviewResponse.MentorMembershipRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.MentorshipRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.ProgramRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.RequestRow;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.StartupRow;
-import com.dps.teknokent.dto.responses.MentorshipResponse;
 import com.dps.teknokent.dto.responses.AdminOverviewResponse.UserRow;
+import com.dps.teknokent.dto.responses.MentorshipResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Bottleneck;
 import com.dps.teknokent.entity.Meeting;
@@ -41,7 +43,6 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
-import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.BottleneckRepository;
 import com.dps.teknokent.repository.MeetingRepository;
@@ -52,6 +53,7 @@ import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.security.LoginProvisioner;
 import com.dps.teknokent.util.ProgramActivity;
 import com.dps.teknokent.util.ProgramCoordination;
@@ -67,6 +69,8 @@ public class AdminOverviewService {
 			MentorshipRequestStatus.PENDING,
 			MentorshipRequestStatus.MORE_INFO_REQUESTED,
 			MentorshipRequestStatus.COUNTER_PROPOSED);
+	private static final List<BottleneckStatus> OPEN_BOTTLENECKS = List.of(
+			BottleneckStatus.OPEN, BottleneckStatus.IN_PROGRESS);
 
 	private final DomainLookupService domainLookupService;
 	private final AppUserRepository appUserRepository;
@@ -84,23 +88,28 @@ public class AdminOverviewService {
 
 	@Transactional(readOnly = true)
 	public AdminOverviewResponse overview(UUID actorId) {
-		AppUser actor = domainLookupService.requireUser(actorId);
-		if (!actor.has(UserRole.ADMIN)) {
-			throw new InvalidRequestException("Only an admin can view the admin overview.");
-		}
+		AdminAccess.requireAdmin(domainLookupService.requireUser(actorId));
 		List<AppUser> userEntities = appUserRepository.findByStatusNot(UserAccountStatus.DELETED);
 		Map<String, Boolean> passwords = loginProvisioner.passwordsSet(userEntities.stream()
 				.filter(AdminOverviewService::mayLackPassword)
 				.map(AppUser::getFirebaseUid)
 				.toList());
 		List<UserRow> users = userEntities.stream()
-				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
+				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase(Locale.ROOT)))
 				.map(user -> toUser(user, mayLackPassword(user) ? passwords.get(user.getFirebaseUid()) : null))
 				.toList();
-		List<RequestRow> requests = mentorshipRequestRepository.findByStatusInOrderByCreatedAtDesc(OPEN_REQUESTS).stream()
+		List<RequestRow> requests = mentorshipRequestRepository.findByStatusInOrderByCreatedAtDesc(OPEN_REQUESTS)
+				.stream()
 				.map(AdminOverviewService::toRequest)
 				.toList();
-		return build(programRepository.findAllByOrderByCreatedAtDesc(), null, null, Set.of(), userEntities, users, requests);
+		Sources sources = new Sources(
+				userEntities.stream().collect(Collectors.toMap(AppUser::getId, Function.identity())),
+				organizationRepository.findAll(),
+				meetingRepository.findAllByOrderByScheduledAtDesc(),
+				mentorshipService.findAll(),
+				bottleneckRepository.findAll());
+		return build(programRepository.findAllByOrderByCreatedAtDesc(), null, null, Set.of(), sources, users,
+				requests);
 	}
 
 	/**
@@ -119,8 +128,37 @@ public class AdminOverviewService {
 				.map(MentorshipRepository.ProgramTeam::getOrganizationId)
 				.filter(organizationId -> !teams.contains(organizationId))
 				.collect(Collectors.toSet());
-		return build(List.of(program), program.getId(), teams, formerTeams,
-				appUserRepository.findByStatusNot(UserAccountStatus.DELETED), List.of(), List.of());
+		// Only the rows this program can show are loaded, not the whole platform's.
+		Set<UUID> reached = new HashSet<>(teams);
+		reached.addAll(formerTeams);
+		Sources sources = new Sources(
+				peopleOf(program),
+				teams.isEmpty() ? List.of() : organizationRepository.findAllById(teams),
+				reached.isEmpty() ? List.of() : meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(reached),
+				reached.isEmpty() ? List.of() : mentorshipService.findByOrganizations(reached),
+				teams.isEmpty() ? List.of()
+						: bottleneckRepository.findByOrganizationIdInAndStatusIn(teams, OPEN_BOTTLENECKS));
+		return build(List.of(program), program.getId(), teams, formerTeams, sources, List.of(), List.of());
+	}
+
+	/** The rows a report is built from: every one for the overview, only a program's own for its report. */
+	private record Sources(
+			Map<UUID, AppUser> usersById,
+			List<Organization> organizations,
+			List<Meeting> meetings,
+			List<MentorshipResponse> mentorships,
+			List<Bottleneck> bottlenecks) {
+	}
+
+	/** The accounts a program row names: its coordinators and its pool's mentors. A deleted account names nobody. */
+	private Map<UUID, AppUser> peopleOf(Program program) {
+		Set<UUID> ids = new HashSet<>(ProgramCoordination.coordinatorIds(program, programCoordinatorRepository));
+		programMentorRepository.findByProgramIdOrderByCreatedAtAsc(program.getId()).stream()
+				.map(ProgramMentor::getMentorId)
+				.forEach(ids::add);
+		return appUserRepository.findAllById(ids).stream()
+				.filter(user -> user.getStatus() != UserAccountStatus.DELETED)
+				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 	}
 
 	/**
@@ -130,26 +168,25 @@ public class AdminOverviewService {
 	 */
 	private AdminOverviewResponse build(
 			List<Program> programEntities,
-			UUID programId,
-			Set<UUID> teams,
+			@Nullable UUID programId,
+			@Nullable Set<UUID> teams,
 			Set<UUID> formerTeams,
-			List<AppUser> userEntities,
+			Sources sources,
 			List<UserRow> users,
 			List<RequestRow> requests) {
 		Instant now = Instant.now();
 		Predicate<UUID> inScope = organizationId -> teams == null || teams.contains(organizationId);
-		Map<UUID, AppUser> usersById = userEntities.stream()
-				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		Map<UUID, AppUser> usersById = sources.usersById();
 		Map<UUID, Organization> organizations = new HashMap<>();
-		for (Organization organization : organizationRepository.findAll()) {
+		for (Organization organization : sources.organizations()) {
 			organizations.put(organization.getId(), organization);
 		}
-		List<Meeting> allMeetings = meetingRepository.findAllByOrderByScheduledAtDesc();
+		List<Meeting> allMeetings = sources.meetings();
 		Map<String, Instant> lastMeeting = lastPastMeetingByPair(allMeetings, now);
 		List<ProgramRow> programs = programEntities.stream()
 				.map(program -> toProgram(program, usersById, organizations))
 				.toList();
-		List<MentorshipRow> mentorships = mentorshipService.findAll().stream()
+		List<MentorshipRow> mentorships = sources.mentorships().stream()
 				.filter(mentorship -> inScope.test(mentorship.organizationId())
 						|| formerTeams.contains(mentorship.organizationId()))
 				// One made before V82 has no program and counts while its team is still here.
@@ -158,9 +195,8 @@ public class AdminOverviewService {
 						: programId.equals(mentorship.programId())))
 				.map(mentorship -> toMentorship(mentorship, lastMeeting, now))
 				.toList();
-		List<BottleneckRow> bottlenecks = bottleneckRepository.findAll().stream()
-				.filter(item -> item.getStatus() == BottleneckStatus.OPEN
-						|| item.getStatus() == BottleneckStatus.IN_PROGRESS)
+		List<BottleneckRow> bottlenecks = sources.bottlenecks().stream()
+				.filter(item -> OPEN_BOTTLENECKS.contains(item.getStatus()))
 				.filter(item -> inScope.test(item.getOrganization().getId()))
 				.map(AdminOverviewService::toBottleneck)
 				.toList();
@@ -169,7 +205,8 @@ public class AdminOverviewService {
 						&& (inScope.test(meeting.getOrganization().getId())
 								|| formerTeams.contains(meeting.getOrganization().getId())))
 				.toList();
-		List<Meeting> meetingEntities = programId == null
+		// A program report always comes with its teams; the platform-wide overview has neither.
+		List<Meeting> meetingEntities = programId == null || teams == null
 				? ofTheseTeams
 				: ProgramActivity.heldIn(programId, ofTheseTeams, teams, mentorshipsByTeam(teams, formerTeams));
 		long meetingsLast8Weeks = meetingEntities.stream()
@@ -184,7 +221,7 @@ public class AdminOverviewService {
 						meeting.getMentor().getId(),
 						meeting.getOrganization().getId(),
 						meeting.getScheduledAt(),
-						meeting.getStatus().name()))
+						meeting.getStatus()))
 				.toList();
 		return new AdminOverviewResponse(
 				programs, users, mentorships, requests, bottlenecks, meetingsLast8Weeks, meetings);
@@ -205,7 +242,7 @@ public class AdminOverviewService {
 				&& user.getFirebaseUid() != null;
 	}
 
-	private static UserRow toUser(AppUser user, Boolean passwordSet) {
+	private static UserRow toUser(AppUser user, @Nullable Boolean passwordSet) {
 		return new UserRow(
 				user.getId(),
 				user.getEmail(),
@@ -258,7 +295,7 @@ public class AdminOverviewService {
 							membership.getMentorId(),
 							mentor == null ? "Mentor" : mentor.getFullName(),
 							mentor == null ? "" : mentor.getEmail(),
-							membership.getStatus().name());
+							membership.getStatus());
 				})
 				.toList();
 		int pending = (int) memberships.stream()
@@ -270,8 +307,8 @@ public class AdminOverviewService {
 		return new ProgramRow(
 				program.getId(),
 				program.getName(),
-				program.getStatus().name(),
-				program.getProgramType().name(),
+				program.getStatus(),
+				program.getProgramType(),
 				program.getCreatedAt(),
 				coordinators.isEmpty() ? null : coordinators.get(0).getId(),
 				coordinators.isEmpty()
@@ -297,7 +334,7 @@ public class AdminOverviewService {
 				mentorship.mentorName(),
 				mentorship.organizationId(),
 				mentorship.organizationName(),
-				mentorship.status().name(),
+				mentorship.status(),
 				mentorship.startDate(),
 				mentorship.endDate(),
 				mentorship.progressPercent(),
@@ -315,7 +352,7 @@ public class AdminOverviewService {
 				request.getMentor().getId(),
 				request.getMentor().getFullName(),
 				request.getSupportArea(),
-				request.getStatus().name(),
+				request.getStatus(),
 				request.getCreatedAt());
 	}
 
@@ -323,8 +360,8 @@ public class AdminOverviewService {
 		return new BottleneckRow(
 				bottleneck.getId(),
 				bottleneck.getTitle(),
-				bottleneck.getSeverity().name(),
-				bottleneck.getStatus().name(),
+				bottleneck.getSeverity(),
+				bottleneck.getStatus(),
 				bottleneck.getOrganization().getId(),
 				Organization.visibleName(bottleneck.getOrganization()),
 				bottleneck.getCreatedAt());

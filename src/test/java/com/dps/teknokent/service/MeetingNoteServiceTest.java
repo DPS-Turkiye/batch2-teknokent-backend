@@ -1,5 +1,15 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -12,11 +22,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.MeetingRoomEventType;
-import com.dps.teknokent.domain.MeetingTodoSource;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MeetingTodoSource;
 import com.dps.teknokent.dto.requests.CreateMeetingTodoRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
+import com.dps.teknokent.dto.requests.UpdateMeetingTodoRequest;
 import com.dps.teknokent.dto.responses.MeetingNoteResponse;
+import com.dps.teknokent.dto.responses.MeetingReportActionItem;
 import com.dps.teknokent.dto.responses.MeetingRoomEvent;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
@@ -26,18 +38,6 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingTodoRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingNoteServiceTest {
@@ -68,7 +68,7 @@ class MeetingNoteServiceTest {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
 		when(meetingNoteRepository.findByMeetingId(meetingId)).thenReturn(Optional.empty());
 
-		MeetingNoteResponse response = service().findNote(meetingId, organizationId);
+		MeetingNoteResponse response = service().findNote(meetingId, organizationId, null);
 
 		assertThat(response.content()).isEmpty();
 		assertThat(response.version()).isZero();
@@ -79,7 +79,7 @@ class MeetingNoteServiceTest {
 	void hidesMeetingsThatBelongToAnotherOrganization() {
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
 
-		assertThatThrownBy(() -> service().findNote(meetingId, UUID.randomUUID()))
+		assertThatThrownBy(() -> service().findNote(meetingId, UUID.randomUUID(), null))
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 
@@ -92,6 +92,7 @@ class MeetingNoteServiceTest {
 
 		MeetingNoteResponse response = service().updateNote(
 				meetingId,
+				userId,
 				new UpdateMeetingNoteRequest(organizationId, userId, "<p>new</p>"));
 
 		assertThat(response.content()).isEqualTo("<p>new</p>");
@@ -110,6 +111,7 @@ class MeetingNoteServiceTest {
 
 		MeetingNoteResponse response = service().updateNote(
 				meetingId,
+				userId,
 				new UpdateMeetingNoteRequest(organizationId, userId, "<p>merged</p>"));
 
 		assertThat(response.content()).isEqualTo("<p>merged</p>");
@@ -126,7 +128,8 @@ class MeetingNoteServiceTest {
 		when(meetingTodoRepository.findByMeetingIdOrderByDisplayOrderAsc(meetingId))
 				.thenReturn(List.of(MeetingTodo.of(meeting, "Demo hazirla", user(), 2)));
 
-		service().createTodo(meetingId, new CreateMeetingTodoRequest(organizationId, userId, "  Demo hazirla  "));
+		service().createTodo(meetingId, userId,
+				new CreateMeetingTodoRequest(organizationId, userId, "  Demo hazirla  "));
 
 		ArgumentCaptor<MeetingTodo> saved = ArgumentCaptor.forClass(MeetingTodo.class);
 		verify(meetingTodoRepository).saveAndFlush(saved.capture());
@@ -140,26 +143,84 @@ class MeetingNoteServiceTest {
 		assertThat(event.getValue().todos()).hasSize(1);
 	}
 
+	@Test
+	void aSignedInCallerCannotReadAnotherTeamsNoteOrTodosByNamingItsStartup() {
+		AppUser outsider = outsider();
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(domainLookupService.requireUser(outsider.getId())).thenReturn(outsider);
+
+		assertThatThrownBy(() -> service().findNote(meetingId, organizationId, outsider.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		assertThatThrownBy(() -> service().findTodos(meetingId, organizationId, outsider.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		verifyNoInteractions(meetingNoteRepository, meetingTodoRepository);
+	}
+
+	@Test
+	void someoneOutsideTheTeamCannotWriteTheNoteOrChangeItsTodos() {
+		AppUser outsider = outsider();
+		UUID todoId = UUID.randomUUID();
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting());
+		when(domainLookupService.requireUser(outsider.getId())).thenReturn(outsider);
+
+		assertThatThrownBy(() -> service().updateNote(meetingId, outsider.getId(),
+				new UpdateMeetingNoteRequest(organizationId, outsider.getId(), "<p>üzerine yaz</p>")))
+				.isInstanceOf(ResourceNotFoundException.class);
+		assertThatThrownBy(() -> service().createTodo(meetingId, outsider.getId(),
+				new CreateMeetingTodoRequest(organizationId, outsider.getId(), "Sahte görev")))
+				.isInstanceOf(ResourceNotFoundException.class);
+		assertThatThrownBy(() -> service().updateTodo(meetingId, todoId, outsider.getId(),
+				new UpdateMeetingTodoRequest(organizationId, null, true)))
+				.isInstanceOf(ResourceNotFoundException.class);
+		assertThatThrownBy(() -> service().deleteTodo(meetingId, todoId, organizationId, outsider.getId()))
+				.isInstanceOf(ResourceNotFoundException.class);
+		verifyNoInteractions(meetingNoteRepository, meetingTodoRepository, realtimePublisher);
+	}
+
+	@Test
+	void theMeetingsMentorCanReadItsTodos() {
+		Meeting meeting = meeting();
+		AppUser mentor = outsider();
+		meeting.setMentor(mentor);
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentor.getId())).thenReturn(mentor);
+		when(meetingTodoRepository.findByMeetingIdOrderByDisplayOrderAsc(meetingId)).thenReturn(List.of());
+
+		assertThat(service().findTodos(meetingId, organizationId, mentor.getId())).isEmpty();
+	}
+
+	@Test
+	void aTeamMemberTicksOffATodo() {
+		Meeting meeting = meeting();
+		MeetingTodo todo = MeetingTodo.of(meeting, "Demo hazirla", user(), 0);
+		UUID todoId = UUID.randomUUID();
+		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
+		when(domainLookupService.requireUser(userId)).thenReturn(user());
+		when(meetingTodoRepository.findByIdAndMeetingId(todoId, meetingId)).thenReturn(Optional.of(todo));
+		when(meetingTodoRepository.findByMeetingIdOrderByDisplayOrderAsc(meetingId)).thenReturn(List.of(todo));
+
+		service().updateTodo(meetingId, todoId, userId, new UpdateMeetingTodoRequest(organizationId, null, true));
+
+		assertThat(todo.getDone()).isTrue();
+	}
+
 	private static <T> org.mockito.stubbing.Answer<T> returnsArgument() {
 		return invocation -> invocation.getArgument(0);
 	}
 
 	@Test
-	void addsTheReportsActionItemsAsEditableAiTasksWithoutRepeatingOnes() throws Exception {
+	void addsTheReportsActionItemsAsEditableAiTasksWithoutRepeatingOnes() {
 		Meeting meeting = meeting();
 		when(domainLookupService.requireMeeting(meetingId)).thenReturn(meeting);
 		MeetingTodo typed = MeetingTodo.of(meeting, "Pitch deck güncelle", null, 0);
 		when(meetingTodoRepository.findByMeetingIdOrderByDisplayOrderAsc(meetingId)).thenReturn(List.of(typed));
-		JsonNode report = new ObjectMapper().readTree("""
-				{"actionItems": [
-				  {"task": "Finansal modeli tamamla", "owner": "Ayşe", "due": "3 Ekim"},
-				  {"task": "Kullanıcı görüşmelerini planla", "owner": null, "due": null},
-				  {"task": " pitch deck güncelle ", "owner": "", "due": ""},
-				  {"task": "", "owner": "Kerem"}
-				]}
-				""");
+		List<MeetingReportActionItem> items = List.of(
+				new MeetingReportActionItem("Ayşe", "Finansal modeli tamamla", "3 Ekim"),
+				new MeetingReportActionItem(null, "Kullanıcı görüşmelerini planla", null),
+				new MeetingReportActionItem("", " pitch deck güncelle ", ""),
+				new MeetingReportActionItem("Kerem", "", null));
 
-		service().addReportActionItems(meetingId, report);
+		service().addReportActionItems(meetingId, items);
 
 		ArgumentCaptor<MeetingTodo> saved = ArgumentCaptor.forClass(MeetingTodo.class);
 		verify(meetingTodoRepository, times(2)).save(saved.capture());
@@ -175,8 +236,8 @@ class MeetingNoteServiceTest {
 	}
 
 	@Test
-	void aReportWithoutActionItemsLeavesTheListAlone() throws Exception {
-		service().addReportActionItems(meetingId, new ObjectMapper().readTree("{\"summary\":\"Kısa\"}"));
+	void aReportWithoutActionItemsLeavesTheListAlone() {
+		service().addReportActionItems(meetingId, List.of());
 		service().addReportActionItems(meetingId, null);
 
 		verifyNoInteractions(meetingTodoRepository, realtimePublisher);
@@ -200,7 +261,18 @@ class MeetingNoteServiceTest {
 		AppUser user = new AppUser();
 		user.setId(userId);
 		user.setFullName("Elif Demir");
+		user.setOrganization(meeting().getOrganization());
 		return user;
+	}
+
+	private AppUser outsider() {
+		Organization elsewhere = new Organization();
+		elsewhere.setId(UUID.randomUUID());
+		AppUser outsider = new AppUser();
+		outsider.setId(UUID.randomUUID());
+		outsider.setFullName("Başka Ekip");
+		outsider.setOrganization(elsewhere);
+		return outsider;
 	}
 
 	private MeetingNote note(long version, String content) {

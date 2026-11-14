@@ -17,15 +17,17 @@ import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
 
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import jakarta.persistence.TypedQuery;
 
 @Repository
 public class MentorshipRequestWorkspaceQuery {
 
-	@PersistenceContext
-	private EntityManager entityManager;
+	private final EntityManager entityManager;
+
+	public MentorshipRequestWorkspaceQuery(EntityManager entityManager) {
+		this.entityManager = entityManager;
+	}
 
 	public Page<MentorshipRequest> findPage(
 			UUID mentorId,
@@ -90,23 +92,23 @@ public class MentorshipRequestWorkspaceQuery {
 		String hasOpen = hasOpenSql();
 		String hasEnded = hasEndedSql();
 		return switch (tab) {
-			case ACTIVE -> "r.status = 'ACCEPTED' AND " + hasOpen;
-			case REQUESTS -> """
-					r.status IN ('PENDING', 'MORE_INFO_REQUESTED', 'COUNTER_PROPOSED')
-					OR (
-					r.status = 'ACCEPTED'
-					AND NOT %s
-					)
-					""".formatted(hasRelated);
-			case HISTORY -> """
-					r.status IN ('DECLINED', 'WITHDRAWN')
-					OR (
-					r.status = 'ACCEPTED'
-					AND %s
-					AND %s
-					AND NOT %s
-					)
-					""".formatted(hasRelated, hasEnded, hasOpen);
+		case ACTIVE -> "r.status = 'ACCEPTED' AND " + hasOpen;
+		case REQUESTS -> """
+				r.status IN ('PENDING', 'MORE_INFO_REQUESTED', 'COUNTER_PROPOSED')
+				OR (
+				r.status = 'ACCEPTED'
+				AND NOT %s
+				)
+				""".formatted(hasRelated);
+		case HISTORY -> """
+				r.status IN ('DECLINED', 'WITHDRAWN')
+				OR (
+				r.status = 'ACCEPTED'
+				AND %s
+				AND %s
+				AND NOT %s
+				)
+				""".formatted(hasRelated, hasEnded, hasOpen);
 		};
 	}
 

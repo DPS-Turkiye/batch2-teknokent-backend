@@ -18,8 +18,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
-import com.dps.teknokent.util.JsonSchemaUtils;
 import com.dps.teknokent.util.JsonUtils;
+
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class TranscriptCleanupServiceTest {
@@ -27,7 +28,7 @@ class TranscriptCleanupServiceTest {
 	@Mock
 	private AiProviderClient aiProviderClient;
 
-	private final JsonUtils jsonUtils = new JsonUtils();
+	private final JsonUtils jsonUtils = new JsonUtils(new ObjectMapper());
 
 	private final List<TranscriptSegmentResponse> raw = List.of(
 			new TranscriptSegmentResponse("s1", "Arya", "we shouldn't use Lintal", "00:00"),
@@ -40,7 +41,7 @@ class TranscriptCleanupServiceTest {
 
 	private TranscriptCleanupService service(AiFeatures aiFeatures) {
 		return new TranscriptCleanupService(
-				aiProviderClient, new LocalPiiRedactionService(), new JsonSchemaUtils(jsonUtils), aiFeatures);
+				aiProviderClient, new LocalPiiRedactionService(), aiFeatures);
 	}
 
 	@Test

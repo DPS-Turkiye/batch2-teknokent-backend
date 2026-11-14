@@ -17,6 +17,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -118,8 +119,11 @@ class TeamChangeServiceTest {
 		assertThat(result.kind()).isEqualTo(TeamChangeKind.LEAVE);
 		assertThat(result.status()).isEqualTo(TeamChangeStatus.PENDING);
 		assertThat(member.getOrganization()).isSameAs(startup);
-		verify(teamChangeRequestRepository).saveAndFlush(argThat(request -> request.getProgramId().equals(PROGRAM_ID)
-				&& request.getRequestedBy() == member && request.getMember() == member));
+		ArgumentCaptor<TeamChangeRequest> saved = ArgumentCaptor.forClass(TeamChangeRequest.class);
+		verify(teamChangeRequestRepository).saveAndFlush(saved.capture());
+		assertThat(saved.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
+		assertThat(saved.getValue().getRequestedBy()).isSameAs(member);
+		assertThat(saved.getValue().getMember()).isSameAs(member);
 		verify(notificationService).create(eq(coordinator), anyString(), anyString(),
 				eq("/coordinator/programs/" + PROGRAM_ID + "/approvals"));
 	}

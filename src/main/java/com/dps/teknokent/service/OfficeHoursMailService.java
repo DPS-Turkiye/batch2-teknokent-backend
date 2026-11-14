@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 import com.dps.teknokent.domain.AppLanguage;
@@ -78,7 +79,7 @@ public class OfficeHoursMailService {
 	private final AppUserRepository appUserRepository;
 
 	/** Tells the side that did not act; {@code note} is their message, question, answer or reason, if any. */
-	public void requestChanged(OfficeHoursRequest request, Event event, String note) {
+	public void requestChanged(OfficeHoursRequest request, Event event, @Nullable String note) {
 		Map<UUID, OfficeHoursUser> people = people(request);
 		UUID to = request.getStudentId();
 		UUID from = request.getInstructorId();
@@ -87,11 +88,11 @@ public class OfficeHoursMailService {
 			from = request.getStudentId();
 		}
 		List<Instant> times = switch (event.times) {
-			case NONE -> List.of();
-			case PREFERRED -> instants(request.getPreferredSlots());
-			case PROPOSED -> instants(request.getProposedSlots());
-			case MEETING -> meetingRepository.findByRequestId(request.getId())
-					.map(meeting -> List.of(meeting.getScheduledAt())).orElse(List.of());
+		case NONE -> List.of();
+		case PREFERRED -> instants(request.getPreferredSlots());
+		case PROPOSED -> instants(request.getProposedSlots());
+		case MEETING -> meetingRepository.findByRequestId(request.getId())
+				.map(meeting -> List.of(meeting.getScheduledAt())).orElse(List.of());
 		};
 		compose(people.get(to), people.get(from), course(request), request.getTopic(), event.key, times, note,
 				event.toInstructor)
@@ -147,8 +148,9 @@ public class OfficeHoursMailService {
 	 * The e-mail for one person, or nothing when either side is gone or there is no address. A request from Menton has
 	 * no course: its text names no course and its subject names the other person.
 	 */
-	private Optional<Mail> compose(OfficeHoursUser to, OfficeHoursUser from, OfficeHoursCourse course, String topic,
-			String event, List<Instant> times, String note, boolean toInstructor) {
+	private Optional<Mail> compose(@Nullable OfficeHoursUser to, @Nullable OfficeHoursUser from,
+			@Nullable OfficeHoursCourse course, String topic, String event, List<Instant> times, @Nullable String note,
+			boolean toInstructor) {
 		if (to == null || from == null) {
 			return Optional.empty();
 		}
@@ -187,7 +189,8 @@ public class OfficeHoursMailService {
 	 * A Menton account's own address and language win over what Moodle shared, since the account is where they read
 	 * Menton's mail; a Moodle-only person needs a course to be sent to.
 	 */
-	private Optional<Recipient> recipient(OfficeHoursUser person, OfficeHoursCourse course, boolean instructor) {
+	private Optional<Recipient> recipient(OfficeHoursUser person, @Nullable OfficeHoursCourse course,
+			boolean instructor) {
 		if (person.getAppUserId() != null) {
 			Optional<AppUser> account = appUserRepository.findById(person.getAppUserId())
 					.filter(found -> found.getStatus() != UserAccountStatus.DELETED);
@@ -222,7 +225,7 @@ public class OfficeHoursMailService {
 	}
 
 	/** None for a request made from Menton. */
-	private OfficeHoursCourse course(OfficeHoursRequest request) {
+	private @Nullable OfficeHoursCourse course(OfficeHoursRequest request) {
 		if (request.getCourseId() == null) {
 			return null;
 		}

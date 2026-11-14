@@ -79,7 +79,8 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	@Query("select u from AppUser u where " + HAS_PERMISSION
 			+ " and u.programId = :programId and u.status = :status and u.organization is null order by u.fullName asc")
 	List<AppUser> findByProgramIdAndPermissionAndStatusAndOrganizationIsNullOrderByFullNameAsc(
-			@Param("programId") UUID programId, @Param("role") UserRole role, @Param("status") UserAccountStatus status);
+			@Param("programId") UUID programId, @Param("role") UserRole role,
+			@Param("status") UserAccountStatus status);
 
 	// One column only, so a profile edit saved at the same moment is not overwritten.
 	@Transactional

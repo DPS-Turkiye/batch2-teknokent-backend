@@ -4,11 +4,15 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 
-/** The coordinator's "Onaylar" tab: people and startups of one program waiting for a decision. */
-/** mentors: mentors who asked to join the program; teamChanges: leave and removal requests waiting in it. */
+/**
+ * The coordinator's "Onaylar" tab: people and startups of one program waiting for a decision.
+ * mentors: mentors who asked to join the program; teamChanges: leave and removal requests waiting in it.
+ */
 public record ProgramApprovalsResponse(
 		List<Person> people, List<Person> mentors, List<Startup> startups, List<TeamChangeResponse> teamChanges) {
 
@@ -22,7 +26,8 @@ public record ProgramApprovalsResponse(
 		}
 	}
 
-	public record Startup(UUID id, String name, String description, String founderName, String founderEmail,
+	public record Startup(UUID id, String name, String description, @Nullable String founderName,
+			@Nullable String founderEmail,
 			Instant createdAt) {
 
 		public static Startup of(Organization organization) {

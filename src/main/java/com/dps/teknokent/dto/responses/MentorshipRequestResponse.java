@@ -4,12 +4,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
-import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.MentorshipRequest;
+import com.dps.teknokent.entity.Organization;
 
 public record MentorshipRequestResponse(
 		UUID id,
@@ -32,19 +34,19 @@ public record MentorshipRequestResponse(
 		Instant createdAt,
 		Instant updatedAt,
 		List<MentorshipRequestMessageResponse> messages,
-		RecommendationSnapshotResponse recommendationSnapshot,
+		@Nullable RecommendationSnapshotResponse recommendationSnapshot,
 		Integer plannedSessionCount,
 		Instant mentorReadAt,
 		Instant menteeReadAt,
 		String expectedOutcome,
-		/** The mentee's program when they asked; null for a startup outside any program. */
-		UUID programId,
-		String programName) {
+		/* The mentee's program when they asked; null for a startup outside any program. */
+		@Nullable UUID programId,
+		@Nullable String programName) {
 
 	public static MentorshipRequestResponse fromEntity(
 			MentorshipRequest request,
 			List<MentorshipRequestMessageResponse> messages,
-			RecommendationSnapshotResponse recommendationSnapshot) {
+			@Nullable RecommendationSnapshotResponse recommendationSnapshot) {
 		return new MentorshipRequestResponse(
 				request.getId(),
 				request.getRequester().getId(),

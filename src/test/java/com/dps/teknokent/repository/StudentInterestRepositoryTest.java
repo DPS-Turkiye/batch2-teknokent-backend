@@ -33,7 +33,8 @@ class StudentInterestRepositoryTest {
 		student.setRole(UserRole.MENTEE);
 		entityManager.persist(student);
 		StudentInterest interest = new StudentInterest(student.getId());
-		interest.setTopics(new ArrayList<>(List.of(PeerTopicCategory.INTERNATIONAL, PeerTopicCategory.CAREER_INTERNSHIP)));
+		interest.setTopics(
+				new ArrayList<>(List.of(PeerTopicCategory.INTERNATIONAL, PeerTopicCategory.CAREER_INTERNSHIP)));
 		interest.setSubtopics(new ArrayList<>(List.of("fixture-exchange", "fixture-cv")));
 		interest.setGoal("Erasmus ve staj");
 		interest.setCompleted(true);
@@ -43,7 +44,8 @@ class StudentInterestRepositoryTest {
 
 		StudentInterest read = repository.findById(student.getId()).orElseThrow();
 
-		assertThat(read.getTopics()).containsExactly(PeerTopicCategory.INTERNATIONAL, PeerTopicCategory.CAREER_INTERNSHIP);
+		assertThat(read.getTopics()).containsExactly(PeerTopicCategory.INTERNATIONAL,
+				PeerTopicCategory.CAREER_INTERNSHIP);
 		assertThat(read.getSubtopics()).containsExactly("fixture-exchange", "fixture-cv");
 		assertThat(read.getGoal()).isEqualTo("Erasmus ve staj");
 		assertThat(read.isCompleted()).isTrue();

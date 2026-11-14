@@ -137,9 +137,9 @@ class ProgramAttendanceIntegrationTest {
 	@Test
 	void aSignedInParticipantCannotCheckInSomeoneElse() throws Exception {
 		mockMvc.perform(post(MINE)
-						.with(authentication(signedIn(otherProgramsMentee)))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + founder.getId() + "\",\"week\":1}"))
+				.with(authentication(signedIn(otherProgramsMentee)))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + founder.getId() + "\",\"week\":1}"))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.programId").value(otherProgram.getId().toString()));
 
@@ -166,7 +166,7 @@ class ProgramAttendanceIntegrationTest {
 	void signedOutCallsAreRefused() throws Exception {
 		mockMvc.perform(get(MINE).param("actorId", founder.getId().toString())).andExpect(status().isUnauthorized());
 		mockMvc.perform(post(MINE).contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + founder.getId() + "\",\"week\":2}"))
+				.content("{\"actorId\":\"" + founder.getId() + "\",\"week\":2}"))
 				.andExpect(status().isUnauthorized());
 		mockMvc.perform(get(REPORT, program.getId()).param("actorId", coordinator.getId().toString()))
 				.andExpect(status().isUnauthorized());
@@ -199,18 +199,18 @@ class ProgramAttendanceIntegrationTest {
 	void theDateRangeNarrowsTheWeeks() throws Exception {
 		LocalDate secondWeek = today.minusDays(10).plusDays(7);
 		mockMvc.perform(get(REPORT, program.getId())
-						.param("from", secondWeek.toString())
-						.param("to", today.toString())
-						.param("actorId", coordinator.getId().toString())
-						.with(httpBasic("test", "test")))
+				.param("from", secondWeek.toString())
+				.param("to", today.toString())
+				.param("actorId", coordinator.getId().toString())
+				.with(httpBasic("test", "test")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.weeks.length()").value(1))
 				.andExpect(jsonPath("$.weeks[0].number").value(2));
 		mockMvc.perform(get(REPORT, program.getId())
-						.param("from", today.toString())
-						.param("to", today.minusDays(1).toString())
-						.param("actorId", coordinator.getId().toString())
-						.with(httpBasic("test", "test")))
+				.param("from", today.toString())
+				.param("to", today.minusDays(1).toString())
+				.param("actorId", coordinator.getId().toString())
+				.with(httpBasic("test", "test")))
 				.andExpect(status().isBadRequest());
 	}
 
@@ -231,9 +231,9 @@ class ProgramAttendanceIntegrationTest {
 				.andExpect(header().string("Content-Type",
 						"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
 		String csv = new String(mockMvc.perform(get(REPORT + "/export", program.getId())
-						.param("format", "CSV")
-						.param("actorId", coordinator.getId().toString())
-						.with(httpBasic("test", "test")))
+				.param("format", "CSV")
+				.param("actorId", coordinator.getId().toString())
+				.with(httpBasic("test", "test")))
 				.andExpect(status().isOk())
 				.andReturn().getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
 		assertThat(csv).contains("Ad Soyad,E-posta,Takım,Hafta 1 (", "Hafta 2 (", "Katıldığı hafta");
@@ -321,9 +321,9 @@ class ProgramAttendanceIntegrationTest {
 		userRepository.saveAndFlush(founder);
 
 		String csv = new String(mockMvc.perform(get(REPORT + "/export", program.getId())
-						.param("format", "CSV")
-						.param("actorId", coordinator.getId().toString())
-						.with(httpBasic("test", "test")))
+				.param("format", "CSV")
+				.param("actorId", coordinator.getId().toString())
+				.with(httpBasic("test", "test")))
 				.andReturn().getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
 		assertThat(csv).contains("\"'=HYPERLINK(\"\"x\"\")\"");
 	}
@@ -387,6 +387,7 @@ class ProgramAttendanceIntegrationTest {
 
 	private static UsernamePasswordAuthenticationToken signedIn(AppUser user) {
 		return new UsernamePasswordAuthenticationToken(new AppUserPrincipal(
-				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), "attendance-test-uid"), null, List.of());
+				user.getId(), user.getEmail(), user.getRole(), user.getStatus(), "attendance-test-uid"), null,
+				List.of());
 	}
 }

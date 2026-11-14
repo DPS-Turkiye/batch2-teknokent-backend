@@ -6,6 +6,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,8 +14,10 @@ import com.dps.teknokent.dto.requests.CreateMeetingTodoRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingNoteRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingTodoRequest;
 import com.dps.teknokent.dto.responses.MeetingNoteResponse;
+import com.dps.teknokent.dto.responses.MeetingReportActionItem;
 import com.dps.teknokent.dto.responses.MeetingRoomEvent;
 import com.dps.teknokent.dto.responses.MeetingTodoResponse;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingNote;
 import com.dps.teknokent.entity.MeetingTodo;
@@ -22,10 +25,14 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.MeetingNoteRepository;
 import com.dps.teknokent.repository.MeetingTodoRepository;
 import com.dps.teknokent.util.TextUtils;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import lombok.RequiredArgsConstructor;
 
+/**
+ * A meeting's shared note and to-do list. The organizationId every call names is the team's startup: on the proxy's
+ * service credentials it comes from the session and is all the proxy sends, while a caller who is named (always, on a
+ * bearer token) must also take part in the meeting, so nobody reaches another team's notes by naming its startup.
+ */
 @Service
 @RequiredArgsConstructor
 public class MeetingNoteService {
@@ -37,46 +44,68 @@ public class MeetingNoteService {
 	private final MeetingTodoRepository meetingTodoRepository;
 	private final MeetingRealtimePublisher realtimePublisher;
 
+	/**
+	 * The note's last saved snapshot.
+	 *
+	 * @param callerId who reads; null only on the proxy's service credentials when it names nobody
+	 */
 	@Transactional(readOnly = true)
-	public MeetingNoteResponse findNote(UUID meetingId, UUID organizationId) {
-		Meeting meeting = requireMeetingInOrganization(meetingId, organizationId);
+	public MeetingNoteResponse findNote(UUID meetingId, UUID organizationId, @Nullable UUID callerId) {
+		Meeting meeting = requireMeetingInOrganization(meetingId, organizationId, callerId);
 		return MeetingNoteResponse.fromEntity(meetingNoteRepository.findByMeetingId(meeting.getId())
 				.orElseGet(() -> MeetingNote.emptyFor(meeting)));
 	}
 
+	/**
+	 * Stores the snapshot of the shared note. The note is edited together through its collaborative document, so
+	 * every editor's snapshot is the same merged text and the last one simply wins; the version only counts saves.
+	 */
 	@Transactional
-	public MeetingNoteResponse updateNote(UUID meetingId, UpdateMeetingNoteRequest request) {
-		Meeting meeting = requireMeetingInOrganization(meetingId, request.organizationId());
+	public MeetingNoteResponse updateNote(UUID meetingId, UUID authorId, UpdateMeetingNoteRequest request) {
+		Meeting meeting = requireMeetingInOrganization(meetingId, request.organizationId(), null);
+		AppUser author = requireParticipant(meeting, authorId);
 		MeetingNote note = requireNote(meeting);
 
 		note.setContent(request.content());
 		note.setVersion(note.getVersion() + 1);
-		note.setUpdatedBy(domainLookupService.requireUser(request.userId()));
+		note.setUpdatedBy(author);
 
 		return MeetingNoteResponse.fromEntity(meetingNoteRepository.saveAndFlush(note));
 	}
 
+	/**
+	 * The meeting's to-do list in order.
+	 *
+	 * @param callerId who reads; null only on the proxy's service credentials when it names nobody
+	 */
 	@Transactional(readOnly = true)
-	public List<MeetingTodoResponse> findTodos(UUID meetingId, UUID organizationId) {
-		requireMeetingInOrganization(meetingId, organizationId);
+	public List<MeetingTodoResponse> findTodos(UUID meetingId, UUID organizationId, @Nullable UUID callerId) {
+		requireMeetingInOrganization(meetingId, organizationId, callerId);
 		return todoResponses(meetingId);
 	}
 
 	@Transactional
-	public List<MeetingTodoResponse> createTodo(UUID meetingId, CreateMeetingTodoRequest request) {
-		Meeting meeting = requireMeetingInOrganization(meetingId, request.organizationId());
+	public List<MeetingTodoResponse> createTodo(UUID meetingId, UUID authorId, CreateMeetingTodoRequest request) {
+		Meeting meeting = requireMeetingInOrganization(meetingId, request.organizationId(), null);
+		AppUser author = requireParticipant(meeting, authorId);
 		int displayOrder = (int) meetingTodoRepository.countByMeetingId(meetingId);
 		meetingTodoRepository.saveAndFlush(MeetingTodo.of(
 				meeting,
 				request.title().trim(),
-				domainLookupService.requireUser(request.userId()),
+				author,
 				displayOrder));
 		return publishTodos(meetingId);
 	}
 
+	/**
+	 * Renames a to-do or ticks it off.
+	 *
+	 * @param callerId who changes it; null only on the proxy's service credentials when it names nobody
+	 */
 	@Transactional
-	public List<MeetingTodoResponse> updateTodo(UUID meetingId, UUID todoId, UpdateMeetingTodoRequest request) {
-		requireMeetingInOrganization(meetingId, request.organizationId());
+	public List<MeetingTodoResponse> updateTodo(
+			UUID meetingId, UUID todoId, @Nullable UUID callerId, UpdateMeetingTodoRequest request) {
+		requireMeetingInOrganization(meetingId, request.organizationId(), callerId);
 		MeetingTodo todo = requireTodo(meetingId, todoId);
 
 		String title = TextUtils.normalizeOptional(request.title());
@@ -91,9 +120,15 @@ public class MeetingNoteService {
 		return publishTodos(meetingId);
 	}
 
+	/**
+	 * Removes a to-do.
+	 *
+	 * @param callerId who deletes it; null only on the proxy's service credentials when it names nobody
+	 */
 	@Transactional
-	public List<MeetingTodoResponse> deleteTodo(UUID meetingId, UUID todoId, UUID organizationId) {
-		requireMeetingInOrganization(meetingId, organizationId);
+	public List<MeetingTodoResponse> deleteTodo(UUID meetingId, UUID todoId, UUID organizationId,
+			@Nullable UUID callerId) {
+		requireMeetingInOrganization(meetingId, organizationId, callerId);
 		meetingTodoRepository.delete(requireTodo(meetingId, todoId));
 		meetingTodoRepository.flush();
 		return publishTodos(meetingId);
@@ -105,9 +140,8 @@ public class MeetingNoteService {
 	 * so the same report stored again, or copied to a group session's other meetings, adds nothing twice.
 	 */
 	@Transactional
-	public List<MeetingTodoResponse> addReportActionItems(UUID meetingId, JsonNode report) {
-		JsonNode items = report == null ? null : report.path("actionItems");
-		if (items == null || !items.isArray() || items.isEmpty()) {
+	public List<MeetingTodoResponse> addReportActionItems(UUID meetingId, List<MeetingReportActionItem> items) {
+		if (items == null || items.isEmpty()) {
 			return List.of();
 		}
 		Meeting meeting = domainLookupService.requireMeeting(meetingId);
@@ -116,8 +150,8 @@ public class MeetingNoteService {
 		existing.forEach(todo -> titles.add(titleKey(todo.getTitle())));
 		int displayOrder = existing.size();
 		boolean added = false;
-		for (JsonNode item : items) {
-			String title = actionItemTitle(item);
+		for (MeetingReportActionItem item : items) {
+			String title = item == null ? null : actionItemTitle(item);
 			if (title == null || !titles.add(titleKey(title))) {
 				continue;
 			}
@@ -131,32 +165,21 @@ public class MeetingNoteService {
 		return publishTodos(meetingId);
 	}
 
-	static String actionItemTitle(JsonNode item) {
-		String task = item.isTextual() ? item.asText() : firstText(item, "task", "title");
-		task = TextUtils.normalizeOptional(task);
+	static @Nullable String actionItemTitle(MeetingReportActionItem item) {
+		String task = TextUtils.normalizeOptional(item.task());
 		if (task == null) {
 			return null;
 		}
 		StringBuilder title = new StringBuilder(task);
-		String owner = TextUtils.normalizeOptional(firstText(item, "owner"));
+		String owner = TextUtils.normalizeOptional(item.owner());
 		if (owner != null) {
 			title.append(" — ").append(owner);
 		}
-		String due = TextUtils.normalizeOptional(firstText(item, "due"));
+		String due = TextUtils.normalizeOptional(item.due());
 		if (due != null) {
 			title.append(" · ").append(due);
 		}
 		return title.length() > MAX_TODO_TITLE ? title.substring(0, MAX_TODO_TITLE) : title.toString();
-	}
-
-	private static String firstText(JsonNode item, String... fields) {
-		for (String field : fields) {
-			JsonNode value = item.path(field);
-			if (value.isTextual() && !value.asText().isBlank()) {
-				return value.asText();
-			}
-		}
-		return null;
 	}
 
 	private static String titleKey(String title) {
@@ -185,11 +208,26 @@ public class MeetingNoteService {
 				.orElseThrow(() -> new ResourceNotFoundException("Meeting todo not found: " + todoId));
 	}
 
-	private Meeting requireMeetingInOrganization(UUID meetingId, UUID organizationId) {
+	private Meeting requireMeetingInOrganization(UUID meetingId, UUID organizationId, @Nullable UUID callerId) {
 		Meeting meeting = domainLookupService.requireMeeting(meetingId);
 		if (!meeting.getOrganization().getId().equals(organizationId)) {
 			throw new ResourceNotFoundException("Meeting not found: " + meetingId);
 		}
+		if (callerId != null) {
+			requireParticipant(meeting, callerId);
+		}
 		return meeting;
+	}
+
+	/** A member of the meeting's team or its mentor; anyone else is told the meeting does not exist. */
+	private AppUser requireParticipant(Meeting meeting, UUID userId) {
+		AppUser user = domainLookupService.requireUser(userId);
+		boolean teamMember = user.getOrganization() != null
+				&& user.getOrganization().getId().equals(meeting.getOrganization().getId());
+		boolean mentor = meeting.getMentor() != null && meeting.getMentor().getId().equals(userId);
+		if (!teamMember && !mentor) {
+			throw new ResourceNotFoundException("Meeting not found: " + meeting.getId());
+		}
+		return user;
 	}
 }

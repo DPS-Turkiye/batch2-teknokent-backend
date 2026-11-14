@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.OfficeHoursRequestAction;
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 
@@ -22,18 +24,19 @@ public record OfficeHoursStudentRequestResponse(
 		Academician academician,
 		String topic,
 		String description,
-		String courseName,
-		OfficeHoursTimeResponse time,
+		@Nullable String courseName,
+		@Nullable OfficeHoursTimeResponse time,
 		List<OfficeHoursTimeResponse> proposedTimes,
 		String academicianMessage,
 		String rejectionReason,
-		String place,
-		String onlineLink,
+		@Nullable String place,
+		@Nullable String onlineLink,
 		Instant requestedAt,
 		List<OfficeHoursRequestAction> allowedActions,
-		OfficeHoursCancellationResponse cancellation) {
+		@Nullable OfficeHoursCancellationResponse cancellation) {
 
 	/** Who the request went to, as ODTÜ's record names them. */
-	public record Academician(UUID id, String fullName, String academicTitle, String department) {
+	public record Academician(UUID id, @Nullable String fullName, @Nullable String academicTitle,
+			@Nullable String department) {
 	}
 }

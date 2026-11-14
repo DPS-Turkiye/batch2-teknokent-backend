@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.PeerMentorSkill;
 import com.dps.teknokent.domain.PeerReportStatus;
 
@@ -15,22 +17,22 @@ import com.dps.teknokent.domain.PeerReportStatus;
  */
 public record PeerDailyReportResponse(
 		LocalDate date,
-		UUID id,
-		PeerReportStatus status,
+		@Nullable UUID id,
+		@Nullable PeerReportStatus status,
 		boolean editable,
 		Instant deadline,
 		boolean late,
 		List<PeerReportMeetingResponse> meetings,
 		List<PeerActivityResponse> activities,
-		String didToday,
-		String challenge,
+		@Nullable String didToday,
+		@Nullable String challenge,
 		Set<PeerMentorSkill> skills,
-		String learned,
-		String tomorrowPlan,
+		@Nullable String learned,
+		@Nullable String tomorrowPlan,
 		Set<PeerMentorSkill> suggestedSkills,
 		int recordedMinutes,
 		int missingMeetingReports,
-		Instant submittedAt,
-		String revisionNote,
-		Instant updatedAt) {
+		@Nullable Instant submittedAt,
+		@Nullable String revisionNote,
+		@Nullable Instant updatedAt) {
 }

@@ -2,6 +2,8 @@ package com.dps.teknokent.dto.responses;
 
 import java.time.Instant;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.OfficeHoursRole;
 
 /**
@@ -13,7 +15,7 @@ import com.dps.teknokent.domain.OfficeHoursRole;
  */
 public record OfficeHoursCancellationResponse(
 		OfficeHoursRole cancelledBy,
-		String reason,
+		@Nullable String reason,
 		Instant cancelledAt,
 		boolean late) {
 }

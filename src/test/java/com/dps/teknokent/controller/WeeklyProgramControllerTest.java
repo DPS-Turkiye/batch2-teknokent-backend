@@ -54,8 +54,8 @@ class WeeklyProgramControllerTest {
 	@Test
 	void requiresAuthentication() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/{id}/weekly-program/read", PROGRAM_ID)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"documentId\":\"" + DOCUMENT_ID + "\"}"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"documentId\":\"" + DOCUMENT_ID + "\"}"))
 				.andExpect(status().isUnauthorized());
 		verifyNoInteractions(weeklyProgramService);
 	}
@@ -74,9 +74,9 @@ class WeeklyProgramControllerTest {
 						List.of("Demo Day"), List.of(), 1, new WeeklyProgramProposalResponse.Existing(0, 0, null)));
 
 		mockMvc.perform(post("/api/coordinator/programs/{id}/weekly-program/read", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"actorId\":\"" + ACTOR_ID + "\",\"documentId\":\"" + DOCUMENT_ID + "\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + ACTOR_ID + "\",\"documentId\":\"" + DOCUMENT_ID + "\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.totalWeeks").value(11))
 				.andExpect(jsonPath("$.weeks[0].startDate").value("2026-10-27"))
@@ -91,9 +91,9 @@ class WeeklyProgramControllerTest {
 	@Test
 	void aReadNeedsADocument() throws Exception {
 		mockMvc.perform(post("/api/coordinator/programs/{id}/weekly-program/read", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(weeklyProgramService);
 	}
@@ -104,9 +104,9 @@ class WeeklyProgramControllerTest {
 				.thenReturn(new WeeklyProgramSavedResponse(null, new ProgramWeekPlanResponse(11, List.of())));
 
 		mockMvc.perform(put("/api/coordinator/programs/{id}/weekly-program", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(saveBody("Problemi Keşfet", 1, 3)))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(saveBody("Problemi Keşfet", 1, 3)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.plan.totalWeeks").value(11));
 	}
@@ -114,9 +114,9 @@ class WeeklyProgramControllerTest {
 	@Test
 	void aSaveWithAnInvalidPhaseIsRefusedBeforeTheService() throws Exception {
 		mockMvc.perform(put("/api/coordinator/programs/{id}/weekly-program", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(saveBody(" ", 0, 3)))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(saveBody(" ", 0, 3)))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(weeklyProgramService);
 	}
@@ -124,13 +124,13 @@ class WeeklyProgramControllerTest {
 	@Test
 	void aSaveWithoutWeeksIsRefusedSoItCannotWipeThePlan() throws Exception {
 		mockMvc.perform(put("/api/coordinator/programs/{id}/weekly-program", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{"documentId": "%s", "weeks": [],
-								 "phases": [{"name": "A", "expectedOutput": null, "firstWeek": 1, "lastWeek": 3}],
-								 "seenPhaseCount": 0, "seenWeekCount": 0, "keepPast": true}
-								""".formatted(DOCUMENT_ID)))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"documentId": "%s", "weeks": [],
+						 "phases": [{"name": "A", "expectedOutput": null, "firstWeek": 1, "lastWeek": 3}],
+						 "seenPhaseCount": 0, "seenWeekCount": 0, "keepPast": true}
+						""".formatted(DOCUMENT_ID)))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(weeklyProgramService);
 	}
@@ -141,9 +141,9 @@ class WeeklyProgramControllerTest {
 				.thenThrow(new ConflictException("The program's plan changed since the file was read; read it again."));
 
 		mockMvc.perform(put("/api/coordinator/programs/{id}/weekly-program", PROGRAM_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(saveBody("Problemi Keşfet", 1, 3)))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(saveBody("Problemi Keşfet", 1, 3)))
 				.andExpect(status().isConflict());
 	}
 

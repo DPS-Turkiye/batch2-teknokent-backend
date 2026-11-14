@@ -25,11 +25,21 @@ public class AiFeatures {
 			@Value("${ai.features.matching:true}") boolean matching,
 			@Value("${ai.features.meeting-report:true}") boolean meetingReport,
 			@Value("${ai.features.task-handover:true}") boolean taskHandover) {
-		if (profileParsing) enabled.add(AiFeature.PROFILE_PARSING);
-		if (syllabus) enabled.add(AiFeature.SYLLABUS);
-		if (matching) enabled.add(AiFeature.MATCHING);
-		if (meetingReport) enabled.add(AiFeature.MEETING_REPORT);
-		if (taskHandover) enabled.add(AiFeature.TASK_HANDOVER);
+		if (profileParsing) {
+			enabled.add(AiFeature.PROFILE_PARSING);
+		}
+		if (syllabus) {
+			enabled.add(AiFeature.SYLLABUS);
+		}
+		if (matching) {
+			enabled.add(AiFeature.MATCHING);
+		}
+		if (meetingReport) {
+			enabled.add(AiFeature.MEETING_REPORT);
+		}
+		if (taskHandover) {
+			enabled.add(AiFeature.TASK_HANDOVER);
+		}
 	}
 
 	public boolean isEnabled(AiFeature feature) {

@@ -33,8 +33,8 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
-import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramCoordinator;
+import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.TeamMembership;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -109,8 +109,8 @@ class PersonAccessServiceTest {
 			Collection<?> ids = invocation.getArgument(0);
 			return coordinators.stream().filter(row -> ids.contains(row.getProgramId())).toList();
 		});
-		when(programCoordinatorRepository.existsByProgramIdAndUserId(any(), any())).thenAnswer(invocation ->
-				coordinators.stream().anyMatch(row -> row.getProgramId().equals(invocation.getArgument(0))
+		when(programCoordinatorRepository.existsByProgramIdAndUserId(any(), any())).thenAnswer(
+				invocation -> coordinators.stream().anyMatch(row -> row.getProgramId().equals(invocation.getArgument(0))
 						&& row.getUserId().equals(invocation.getArgument(1))));
 		when(teamMembershipRepository.findByUserIdOrderByJoinedAtDesc(any())).thenAnswer(invocation -> {
 			UUID userId = invocation.getArgument(0);

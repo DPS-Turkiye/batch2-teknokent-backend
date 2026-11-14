@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,7 +59,8 @@ import lombok.RequiredArgsConstructor;
 public class ProgramMatchingService {
 
 	private static final Set<MentorshipStatus> MATCHED = EnumSet.of(MentorshipStatus.ACTIVE, MentorshipStatus.PLANNED);
-	private static final Set<MentorshipStatus> ENDED = EnumSet.of(MentorshipStatus.COMPLETED, MentorshipStatus.CANCELLED);
+	private static final Set<MentorshipStatus> ENDED = EnumSet.of(MentorshipStatus.COMPLETED,
+			MentorshipStatus.CANCELLED);
 	private static final Set<MentorshipRequestStatus> OPEN_REQUEST = EnumSet.of(
 			MentorshipRequestStatus.PENDING,
 			MentorshipRequestStatus.MORE_INFO_REQUESTED,
@@ -102,7 +104,8 @@ public class ProgramMatchingService {
 				mentor.fullName(),
 				mentor.professionalTitle(),
 				mentor.specialties(),
-				mentor.availabilityLabel() == null || mentor.availabilityLabel().isBlank() ? null : mentor.availabilityLabel(),
+				mentor.availabilityLabel() == null || mentor.availabilityLabel().isBlank() ? null
+						: mentor.availabilityLabel(),
 				load.getOrDefault(mentor.id(), 0L).intValue(),
 				capacity.getOrDefault(mentor.id(), input.defaultCapacity()),
 				mentor.recommendationReasons() == null ? List.of() : mentor.recommendationReasons());
@@ -111,7 +114,7 @@ public class ProgramMatchingService {
 				.map(mentor -> candidate.apply(mentor.withRecommendation(List.of(), List.of())))
 				.sorted(Comparator.comparing(ProgramMatchingResponse.Candidate::fullName))
 				.toList();
-		return new ProgramMatchingResponse.Suggestions(ranked.matchingMethod(), recommended, everyone);
+		return new ProgramMatchingResponse.Suggestions(ranked.matchingMethod().name(), recommended, everyone);
 	}
 
 	private SuggestionInput suggestionInput(UUID actorId, UUID programId, UUID organizationId) {
@@ -219,7 +222,8 @@ public class ProgramMatchingService {
 				matches(mentorships, ENDED));
 	}
 
-	private ProgramMatchingResponse.WaitingTeam waitingTeam(Organization team, ProgramStartup startup, LocalDate today) {
+	private ProgramMatchingResponse.WaitingTeam waitingTeam(Organization team, ProgramStartup startup,
+			LocalDate today) {
 		Need need = needOf(team);
 		LocalDate joined = startup.getCreatedAt().atZone(MeetingSlotTimes.APP_ZONE).toLocalDate();
 		return new ProgramMatchingResponse.WaitingTeam(
@@ -234,7 +238,8 @@ public class ProgramMatchingService {
 				need.text());
 	}
 
-	private static List<ProgramMatchingResponse.Match> matches(List<Mentorship> mentorships, Set<MentorshipStatus> statuses) {
+	private static List<ProgramMatchingResponse.Match> matches(List<Mentorship> mentorships,
+			Set<MentorshipStatus> statuses) {
 		return mentorships.stream()
 				.filter(mentorship -> statuses.contains(mentorship.getStatus()))
 				.sorted(Comparator.comparing(Mentorship::getStartDate).reversed())
@@ -269,7 +274,8 @@ public class ProgramMatchingService {
 
 	/** A request to the matched mentor counts as accepted; the ones to other mentors are withdrawn. */
 	private void closeOpenRequests(Organization team, UUID mentorId) {
-		for (MentorshipRequest request : mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(team.getId())) {
+		for (MentorshipRequest request : mentorshipRequestRepository
+				.findByOrganizationIdOrderByCreatedAtDesc(team.getId())) {
 			if (!OPEN_REQUEST.contains(request.getStatus())) {
 				continue;
 			}
@@ -283,8 +289,9 @@ public class ProgramMatchingService {
 	}
 
 	private Organization requireTeam(Program program, UUID organizationId) {
-		programStartupRepository.findByProgramIdAndOrganizationId(program.getId(), organizationId)
-				.orElseThrow(() -> new ResourceNotFoundException("Team is not in this program: " + organizationId));
+		if (programStartupRepository.findByProgramIdAndOrganizationId(program.getId(), organizationId).isEmpty()) {
+			throw new ResourceNotFoundException("Team is not in this program: " + organizationId);
+		}
 		Organization team = organizationRepository.findById(organizationId)
 				.orElseThrow(() -> new ResourceNotFoundException("Team not found: " + organizationId));
 		if (!team.isApprovedForProgram()) {
@@ -300,7 +307,7 @@ public class ProgramMatchingService {
 				.toList();
 	}
 
-	private static String firstPresent(String... values) {
+	private static String firstPresent(@Nullable String... values) {
 		for (String value : values) {
 			if (value != null && !value.isBlank()) {
 				return value;
@@ -309,7 +316,7 @@ public class ProgramMatchingService {
 		return GENERAL_TOPIC;
 	}
 
-	private record Need(MatchNeedSource source, String topic, String text) {
+	private record Need(MatchNeedSource source, @Nullable String topic, @Nullable String text) {
 	}
 
 	private record SuggestionInput(List<UUID> pool, RecommendMentorsRequest request, int defaultCapacity) {

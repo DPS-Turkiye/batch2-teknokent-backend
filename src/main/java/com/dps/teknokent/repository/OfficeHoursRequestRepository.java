@@ -10,10 +10,10 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import jakarta.persistence.LockModeType;
-
 import com.dps.teknokent.domain.OfficeHoursRequestStatus;
 import com.dps.teknokent.entity.OfficeHoursRequest;
+
+import jakarta.persistence.LockModeType;
 
 public interface OfficeHoursRequestRepository extends JpaRepository<OfficeHoursRequest, UUID> {
 
@@ -32,5 +32,6 @@ public interface OfficeHoursRequestRepository extends JpaRepository<OfficeHoursR
 
 	List<OfficeHoursRequest> findByCourseIdAndInstructorIdOrderByCreatedAtDesc(UUID courseId, UUID instructorId);
 
-	List<OfficeHoursRequest> findByInstructorIdAndStatusIn(UUID instructorId, Collection<OfficeHoursRequestStatus> statuses);
+	List<OfficeHoursRequest> findByInstructorIdAndStatusIn(UUID instructorId,
+			Collection<OfficeHoursRequestStatus> statuses);
 }

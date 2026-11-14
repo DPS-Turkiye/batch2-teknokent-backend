@@ -45,9 +45,8 @@ __pycache__/
 *.py[cod]
 .venv/
 
-# Prototype tools and generated reports are maintained outside the product repository.
+# Prototype tools are maintained outside the product repository.
 /tools/
-/docs/
 
 # Local-only Docker/Firebase seed users — never push.
 /local/

@@ -17,6 +17,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +66,7 @@ import com.dps.teknokent.repository.PeerMentorDraftRepository;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
+import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -117,7 +119,7 @@ public class PeerMentoringService {
 		}
 		String department = departmentOf(student.getId(), null);
 		String needle = query == null || query.isBlank() ? null : query.trim().toLowerCase(TR);
-		String wantedSubTopic = blankToNull(subTopic);
+		String wantedSubTopic = TextUtils.normalizeOptional(subTopic);
 		List<MentorProfileResponse> mentors = peerMentorsFor(student, null).stream()
 				.filter(profile -> wantedSubTopic == null || offers(profile, wantedSubTopic))
 				.toList();
@@ -147,7 +149,8 @@ public class PeerMentoringService {
 		if (card.categories().isEmpty()) {
 			throw mentorNotFound(mentorId);
 		}
-		MentorProfile published = mentorProfileRepository.findById(mentorId).orElseThrow(() -> mentorNotFound(mentorId));
+		MentorProfile published = mentorProfileRepository.findById(mentorId)
+				.orElseThrow(() -> mentorNotFound(mentorId));
 		return PeerMentorDetailResponse.of(card, profile,
 				webLinkOrNull(domainLookupService.requireUser(mentorId).getLinkedinUrl()),
 				mentorProfileService.findAvailabilityRules(mentorId), levelsFor(published, card.categories()),
@@ -283,11 +286,11 @@ public class PeerMentoringService {
 		profile.setOfferings(new ArrayList<>(cleaned(request.subTopics())));
 		profile.setStrongCourses(new ArrayList<>(cleaned(request.strongCourses())));
 		profile.setProjects(new ArrayList<>(cleaned(request.projects())));
-		profile.setErasmus(blankToNull(request.erasmus()));
+		profile.setErasmus(TextUtils.normalizeOptional(request.erasmus()));
 		profile.setAbout(request.helpWith().trim());
 		person.map(InstitutionPerson::getDepartmentName).ifPresent(profile::setDepartment);
 		person.map(InstitutionPerson::getClassYear).map(String::valueOf).ifPresent(profile::setStudyYear);
-		mentor.setLinkedinUrl(blankToNull(request.linkedinUrl()));
+		mentor.setLinkedinUrl(TextUtils.normalizeOptional(request.linkedinUrl()));
 		appUserRepository.save(mentor);
 		peerMentorDraftRepository.deleteByUserId(mentor.getId());
 		return toProfileResponse(mentor, mentorProfileRepository.save(profile));
@@ -317,8 +320,8 @@ public class PeerMentoringService {
 		if (card.endedOn() != null && card.endedOn().isBefore(card.startedOn())) {
 			throw new InvalidRequestException(Texts.forRequest("error.peerExperienceMonths"));
 		}
-		return new MentorExperience(card.title().trim(), blankToNull(card.organization()), null,
-				blankToNull(card.summary()), card.kind(), card.startedOn().atDay(1),
+		return new MentorExperience(card.title().trim(), TextUtils.normalizeOptional(card.organization()), null,
+				TextUtils.normalizeOptional(card.summary()), card.kind(), card.startedOn().atDay(1),
 				card.endedOn() == null ? null : card.endedOn().atDay(1));
 	}
 
@@ -338,19 +341,17 @@ public class PeerMentoringService {
 	}
 
 	private static List<String> cleaned(List<String> values) {
-		return values == null ? List.of() : values.stream().map(String::trim).filter(value -> !value.isEmpty())
-				.distinct().toList();
-	}
-
-	private static String blankToNull(String value) {
-		return value == null || value.isBlank() ? null : value.trim();
+		return values == null ? List.of()
+				: values.stream().map(String::trim).filter(value -> !value.isEmpty())
+						.distinct().toList();
 	}
 
 	/**
-	 * The peer mentors of the student's program, the student left out; with {@code onlyMentorId}, at most that one, so a
+	 * The peer mentors of the student's program, the student left out; with {@code onlyMentorId}, at most that one, so
+	 * a
 	 * single profile counts mentees and meetings for that mentor alone.
 	 */
-	private List<MentorProfileResponse> peerMentorsFor(AppUser student, UUID onlyMentorId) {
+	private List<MentorProfileResponse> peerMentorsFor(AppUser student, @Nullable UUID onlyMentorId) {
 		Optional<UUID> program = menteeProgramService.programOf(student);
 		if (program.isEmpty()) {
 			return List.of();
@@ -391,7 +392,7 @@ public class PeerMentoringService {
 	 * Only the peer wizard checks that the LinkedIn address is a web link; sign-up and the profile form do not, so
 	 * anything else is held back rather than handed to another student's browser.
 	 */
-	private static String webLinkOrNull(String url) {
+	private static @Nullable String webLinkOrNull(@Nullable String url) {
 		return url != null && WEB_LINK.matcher(url.trim()).matches() ? url.trim() : null;
 	}
 
@@ -403,7 +404,8 @@ public class PeerMentoringService {
 	AppUser requireStudent(UUID actorId) {
 		AppUser user = domainLookupService.requireUser(actorId);
 		if (!user.has(UserRole.MENTEE) || !isStudent(user)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.peerMentoringStudentsOnly"));
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					Texts.forRequest("error.peerMentoringStudentsOnly"));
 		}
 		return user;
 	}
@@ -417,7 +419,8 @@ public class PeerMentoringService {
 	AppUser requirePeerMentor(UUID actorId) {
 		AppUser user = domainLookupService.requireUser(actorId);
 		if (!isPeerMentor(user)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.peerMentoringStudentsOnly"));
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+					Texts.forRequest("error.peerMentoringStudentsOnly"));
 		}
 		return user;
 	}
@@ -467,13 +470,15 @@ public class PeerMentoringService {
 	}
 
 	/** Only the categories active in the student's program show on the card. */
-	private PeerMentorCardResponse toCard(MentorProfileResponse profile, String studentDepartment,
+	private PeerMentorCardResponse toCard(MentorProfileResponse profile, @Nullable String studentDepartment,
 			Set<PeerTopicCategory> active, boolean availableThisWeek) {
-		Optional<InstitutionPerson> person = institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(profile.id());
+		Optional<InstitutionPerson> person = institutionPersonRepository
+				.findFirstByUserIdOrderBySyncedAtDesc(profile.id());
 		String fallbackDepartment = profile.studentProfile() == null ? null : profile.studentProfile().department();
 		String department = person.map(InstitutionPerson::getDepartmentName).orElse(fallbackDepartment);
 		Integer classYear = person.map(InstitutionPerson::getClassYear)
-				.orElseGet(() -> parseYear(profile.studentProfile() == null ? null : profile.studentProfile().studyYear()));
+				.orElseGet(() -> parseYear(
+						profile.studentProfile() == null ? null : profile.studentProfile().studyYear()));
 		List<PeerTopicCategory> categories = offeredCategories(profile.specialties(), active);
 		String helpWith = profile.about() != null && !profile.about().isBlank()
 				? profile.about()
@@ -502,7 +507,8 @@ public class PeerMentoringService {
 				request.getAcceptedAt());
 	}
 
-	String departmentOf(UUID userId, String fallback) {
+	@Nullable
+	String departmentOf(UUID userId, @Nullable String fallback) {
 		return institutionPersonRepository.findFirstByUserIdOrderBySyncedAtDesc(userId)
 				.map(InstitutionPerson::getDepartmentName)
 				.orElse(fallback);
@@ -513,11 +519,11 @@ public class PeerMentoringService {
 				|| contains(card.helpWith(), needle);
 	}
 
-	private static boolean contains(String text, String needle) {
+	private static boolean contains(@Nullable String text, String needle) {
 		return text != null && text.toLowerCase(TR).contains(needle);
 	}
 
-	private static Integer parseYear(String text) {
+	private static @Nullable Integer parseYear(@Nullable String text) {
 		if (text == null) {
 			return null;
 		}

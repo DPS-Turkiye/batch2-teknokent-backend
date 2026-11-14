@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 
 import com.dps.teknokent.domain.DocumentKind;
@@ -32,6 +33,9 @@ import jakarta.persistence.EntityManager;
  * because the service flushes the deletes before inserting.
  */
 @DataJpaTest
+// The pooled test database: H2 checks the stored_document.kind enum constraint against the session that created
+// it, which the unpooled embedded database has already closed.
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({ CoordinatorProgramService.class, DomainLookupService.class })
 class ProgramPhasePersistenceTest {
 
@@ -69,7 +73,8 @@ class ProgramPhasePersistenceTest {
 		LocalDate start = LocalDate.of(2026, 2, 1);
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(), new ReplaceProgramPhasesRequest(
 				null, List.of(new PhaseInput("Başvuru", start, start.plusDays(27), null, null),
-						new PhaseInput("Seçim", null, null, null, null)), null));
+						new PhaseInput("Seçim", null, null, null, null)),
+				null));
 		entityManager.flush();
 
 		var detail = coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(),
@@ -92,7 +97,8 @@ class ProgramPhasePersistenceTest {
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(), new ReplaceProgramPhasesRequest(
 				null, List.of(new PhaseInput("Problem", null, null, null, null),
 						new PhaseInput("Çözüm", null, null, null, null),
-						new PhaseInput("Pazar", null, null, null, null)), null));
+						new PhaseInput("Pazar", null, null, null, null)),
+				null));
 		entityManager.flush();
 		List<ProgramPhase> first = programPhaseRepository.findByProgramIdOrderByPositionAsc(program.getId());
 		UUID problem = first.get(0).getId();
@@ -101,7 +107,8 @@ class ProgramPhasePersistenceTest {
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(), new ReplaceProgramPhasesRequest(
 				null, List.of(new PhaseInput("Çözüm ve Değer", null, null, null, solution),
 						new PhaseInput("Problem", null, null, null, problem),
-						new PhaseInput("Doğrulama", null, null, null, null)), null));
+						new PhaseInput("Doğrulama", null, null, null, null)),
+				null));
 		entityManager.flush();
 		entityManager.clear();
 
@@ -116,7 +123,8 @@ class ProgramPhasePersistenceTest {
 	@Test
 	void anEmptyListClearsThePhases() {
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(),
-				new ReplaceProgramPhasesRequest(null, List.of(new PhaseInput("Başvuru", null, null, null, null)), null));
+				new ReplaceProgramPhasesRequest(null, List.of(new PhaseInput("Başvuru", null, null, null, null)),
+						null));
 		coordinatorProgramService.replacePhases(coordinator.getId(), program.getId(),
 				new ReplaceProgramPhasesRequest(null, List.of(), null));
 		entityManager.flush();
@@ -162,7 +170,7 @@ class ProgramPhasePersistenceTest {
 		StoredDocument document = new StoredDocument();
 		document.setId(UUID.randomUUID());
 		document.setUserId(owner.getId());
-		document.setKind(DocumentKind.SYLLABUS.value());
+		document.setKind(DocumentKind.SYLLABUS);
 		document.setOriginalFilename("METU-Stars-2026-mufredat.pdf");
 		document.setContentType("application/pdf");
 		document.setSizeBytes(1_200_000L);

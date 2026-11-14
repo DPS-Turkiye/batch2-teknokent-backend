@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,7 +92,7 @@ public class OfficeHoursSlotService {
 	 * don't count.
 	 */
 	@Transactional(readOnly = true)
-	public Set<Instant> heldTimes(UUID instructorId, UUID exceptRequestId) {
+	public Set<Instant> heldTimes(UUID instructorId, @Nullable UUID exceptRequestId) {
 		return requestRepository.findByInstructorIdAndStatusIn(instructorId, HOLDING).stream()
 				.filter(request -> !request.getId().equals(exceptRequestId))
 				.flatMap(OfficeHoursSlotService::timesHeldBy)
@@ -128,8 +129,8 @@ public class OfficeHoursSlotService {
 					continue;
 				}
 				ZonedDateTime end = day.with(rule.getEndTime());
-				for (ZonedDateTime at = day.with(rule.getStartTime());
-						!at.plusMinutes(rule.getSlotMinutes()).isAfter(end); at = at.plusMinutes(rule.getSlotMinutes())) {
+				for (ZonedDateTime at = day.with(rule.getStartTime()); !at.plusMinutes(rule.getSlotMinutes())
+						.isAfter(end); at = at.plusMinutes(rule.getSlotMinutes())) {
 					Instant startsAt = at.toInstant();
 					Duration length = Duration.ofMinutes(rule.getSlotMinutes());
 					if (!startsAt.isBefore(earliest) && !overlaps(meetings, startsAt, length, buffer)) {

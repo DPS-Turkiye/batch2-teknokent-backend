@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Post-meeting ratings of a program's teams, as numbers only.
  * {@code questionAverages} follows the order of the questions the client asks; {@code distribution} counts the
@@ -13,7 +15,7 @@ public record ProgramMeetingRatingsResponse(
 		int heldMeetingCount,
 		int ratedMeetingCount,
 		int feedbackCount,
-		Double average,
+		@Nullable Double average,
 		List<Double> questionAverages,
 		List<Integer> distribution) {
 }

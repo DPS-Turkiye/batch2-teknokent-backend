@@ -1,5 +1,9 @@
 package com.dps.teknokent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -12,15 +16,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.dps.teknokent.config.AiProperties;
+import com.dps.teknokent.config.AiProperties.AiProvider;
 import com.dps.teknokent.domain.AiFeature;
+import com.dps.teknokent.domain.MeetingMode;
+import com.dps.teknokent.domain.MentorMatchingMethod;
+import com.dps.teknokent.domain.MentorshipRequestFormat;
+import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.dto.requests.RecommendMentorsRequest;
 import com.dps.teknokent.dto.responses.MentorEvidenceResponse;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.StudentProfileResponse;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MentorRecommendationServiceTest {
@@ -32,15 +38,15 @@ class MentorRecommendationServiceTest {
 	@Mock
 	private MenteeProgramService menteeProgramService;
 
+	private static final AiProperties OPENROUTER = new AiProperties(AiProvider.OPENROUTER, null,
+			new AiProperties.OpenRouter("key", null, null, null, "openai/text-embedding-3-small", null));
+
 	private MentorRecommendationService recommendationService;
 
 	@BeforeEach
 	void setUp() {
 		recommendationService = new MentorRecommendationService(mentorProfileService, pgVectorRetrievalService,
-				menteeProgramService, TestAiFeatures.allOn());
-		ReflectionTestUtils.setField(recommendationService, "provider", "openrouter");
-		ReflectionTestUtils.setField(recommendationService, "openRouterModel", "openai/text-embedding-3-small");
-		ReflectionTestUtils.setField(recommendationService, "openAiModel", "text-embedding-3-small");
+				menteeProgramService, TestAiFeatures.allOn(), OPENROUTER);
 		try {
 			org.mockito.Mockito.lenient().when(pgVectorRetrievalService.shortlist(
 					org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList(),
@@ -62,16 +68,16 @@ class MentorRecommendationServiceTest {
 		var result = recommendationService.recommend(new RecommendMentorsRequest(
 				"Yazılım ve teknoloji",
 				"Yazılım yazılım mimarisi ve yapay zeka desteği",
-				"THIS_WEEK",
-				"SINGLE_MEETING",
-				"ONLINE",
+				MentorshipRequestUrgency.THIS_WEEK,
+				MentorshipRequestFormat.SINGLE_MEETING,
+				MeetingMode.ONLINE,
 				"Sağlık Teknolojileri",
 				"MVP",
 				"B2B SaaS platformu",
 				List.of("Java", "Python"),
 				null));
 
-		assertThat(result.matchingMethod()).isEqualTo("DETERMINISTIC");
+		assertThat(result.matchingMethod()).isEqualTo(MentorMatchingMethod.DETERMINISTIC);
 		assertThat(result.mentors()).extracting(MentorProfileResponse::fullName)
 				.containsExactly("Ali Yazılım", "Zeynep Finans");
 		assertThat(result.mentors().getFirst().recommendationReasons())
@@ -80,16 +86,18 @@ class MentorRecommendationServiceTest {
 
 	@Test
 	void ranksByTheRulesWithoutAnyEmbeddingCallWhenAiMatchingIsSwitchedOff() {
-		ReflectionTestUtils.setField(recommendationService, "aiFeatures", TestAiFeatures.allOnExcept(AiFeature.MATCHING));
+		ReflectionTestUtils.setField(recommendationService, "aiFeatures",
+				TestAiFeatures.allOnExcept(AiFeature.MATCHING));
 		MentorProfileResponse financeMentor = mentor("Zeynep Finans", "Finans ve yatırım", List.of("Yatırım"));
 		MentorProfileResponse softwareMentor = mentor("Ali Yazılım", "Yazılım mimarı", List.of("Yazılım"));
 		when(mentorProfileService.findAll()).thenReturn(List.of(financeMentor, softwareMentor));
 
 		var result = recommendationService.recommend(new RecommendMentorsRequest(
-				"Yazılım", "Yazılım mimarisi desteği", "THIS_WEEK", "SINGLE_MEETING", "ONLINE",
+				"Yazılım", "Yazılım mimarisi desteği", MentorshipRequestUrgency.THIS_WEEK,
+				MentorshipRequestFormat.SINGLE_MEETING, MeetingMode.ONLINE,
 				null, null, null, List.of(), null));
 
-		assertThat(result.matchingMethod()).isEqualTo("DETERMINISTIC");
+		assertThat(result.matchingMethod()).isEqualTo(MentorMatchingMethod.DETERMINISTIC);
 		assertThat(result.mentors()).extracting(MentorProfileResponse::fullName).first().isEqualTo("Ali Yazılım");
 		verifyNoInteractions(pgVectorRetrievalService);
 	}
@@ -106,8 +114,9 @@ class MentorRecommendationServiceTest {
 		when(mentorProfileService.findAll()).thenReturn(List.of(mentor));
 
 		var result = recommendationService.recommend(new RecommendMentorsRequest(
-				"Yapay zeka", "Yapay zeka mimarisi desteği", "THIS_WEEK", "SINGLE_MEETING",
-				"ONLINE", "Teknoloji", "MVP", "Dijital platform", List.of(), null));
+				"Yapay zeka", "Yapay zeka mimarisi desteği", MentorshipRequestUrgency.THIS_WEEK,
+				MentorshipRequestFormat.SINGLE_MEETING,
+				MeetingMode.ONLINE, "Teknoloji", "MVP", "Dijital platform", List.of(), null));
 
 		assertThat(result.mentors().getFirst().recommendationEvidence())
 				.extracting(MentorEvidenceResponse::claim)
@@ -127,12 +136,55 @@ class MentorRecommendationServiceTest {
 				.thenReturn(List.of(softwareMentor, financeMentor));
 
 		var result = recommendationService.recommend(new RecommendMentorsRequest(
-				"Yapay zeka", "Yapay zeka mimarisi", "THIS_WEEK", "SINGLE_MEETING",
-				"ONLINE", "Teknoloji", "MVP", "Platform", List.of("Java"), null));
+				"Yapay zeka", "Yapay zeka mimarisi", MentorshipRequestUrgency.THIS_WEEK,
+				MentorshipRequestFormat.SINGLE_MEETING,
+				MeetingMode.ONLINE, "Teknoloji", "MVP", "Platform", List.of("Java"), null));
 
-		assertThat(result.matchingMethod()).isEqualTo("PGVECTOR_SEMANTIC");
+		assertThat(result.matchingMethod()).isEqualTo(MentorMatchingMethod.PGVECTOR_SEMANTIC);
 		assertThat(result.mentors()).extracting(MentorProfileResponse::fullName)
 				.containsExactly("Ali Yazılım", "Zeynep Finans");
+	}
+
+	// One setting for both: before, an unset AI_PROVIDER made this service ask for openrouter vectors while the
+	// client was on OpenAI, so the shortlist always failed its consistency check.
+	@Test
+	void theShortlistIsAskedForAndLabelledWithTheProviderAndModelTheClientSendsTo() throws Exception {
+		recommendationService = new MentorRecommendationService(mentorProfileService, pgVectorRetrievalService,
+				menteeProgramService, TestAiFeatures.allOn(), new AiProperties(null, null, null));
+		MentorProfileResponse mentor = mentor("Ali Yazılım", "Mimar", List.of("Yapay zeka"));
+		List<MentorProfileResponse> pool = List.of(mentor);
+		when(mentorProfileService.findAll()).thenReturn(pool);
+		when(pgVectorRetrievalService.shortlist(
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(pool),
+				org.mockito.ArgumentMatchers.eq("openai"), org.mockito.ArgumentMatchers.eq("text-embedding-3-small"),
+				org.mockito.ArgumentMatchers.anyInt()))
+				.thenReturn(pool);
+
+		var result = recommendationService.recommend(new RecommendMentorsRequest(
+				"Yapay zeka", "Yapay zeka mimarisi", null, null, null, null, null, null, null, null));
+
+		assertThat(result.matchingMethod()).isEqualTo(MentorMatchingMethod.PGVECTOR_SEMANTIC);
+		assertThat(result.matchingModel()).isEqualTo("openai:text-embedding-3-small");
+	}
+
+	@Test
+	void requestedTimingAndMeetingModeAddTheirOwnReasons() {
+		MentorProfileResponse mentor = new MentorProfileResponse(UUID.randomUUID(), "Zeynep Finans",
+				"mentor@example.com", "ZF", "Finans", "DPS", "Bu hafta müsait", "24 saat", "Online", "E-posta",
+				"Yapılandırılmış", "Yüksek", "Kıdemli", "Finans", "MVP", List.of("Yatırım"), List.of(), List.of());
+		when(mentorProfileService.findAll()).thenReturn(List.of(mentor));
+
+		var online = recommendationService.recommend(new RecommendMentorsRequest("İş modeli", "Gelir modeli",
+				MentorshipRequestUrgency.NEXT_TWO_WEEKS, MentorshipRequestFormat.SINGLE_MEETING, MeetingMode.ONLINE,
+				null, null, null, List.of(), null));
+		var inPerson = recommendationService.recommend(new RecommendMentorsRequest("İş modeli", "Gelir modeli",
+				MentorshipRequestUrgency.THIS_MONTH, MentorshipRequestFormat.REGULAR, MeetingMode.IN_PERSON,
+				null, null, null, List.of(), null));
+
+		assertThat(online.mentors().getFirst().recommendationReasons()).containsExactly(
+				"Online görüşme tercihinizle uyumlu", "Talebinizin zamanlamasına uygun: Bu hafta müsait");
+		assertThat(inPerson.mentors().getFirst().recommendationReasons())
+				.containsExactly("İş modeli talebiyle uzmanlık yakınlığı");
 	}
 
 	@Test
@@ -147,8 +199,9 @@ class MentorRecommendationServiceTest {
 				.thenReturn(pool);
 
 		var result = recommendationService.recommend(new RecommendMentorsRequest(
-				"İş modeli ve strateji", "Gelir modeli oluşturma desteği", "WHENEVER", "SINGLE_MEETING",
-				"ASYNCHRONOUS", "Sağlık", "Fikir", "Mobil uygulama", List.of(), null));
+				"İş modeli ve strateji", "Gelir modeli oluşturma desteği", MentorshipRequestUrgency.NOT_URGENT,
+				MentorshipRequestFormat.SINGLE_MEETING,
+				MeetingMode.NO_PREFERENCE, "Sağlık", "Fikir", "Mobil uygulama", List.of(), null));
 
 		assertThat(result.mentors().getFirst().recommendationReasons())
 				.containsExactly("İş modeli ve strateji talebiyle uzmanlık yakınlığı");
@@ -165,7 +218,6 @@ class MentorRecommendationServiceTest {
 				"Kıdemli", "Teknoloji", "MVP", specialties, List.of(), evidence);
 	}
 
-
 	private static MentorProfileResponse withStudent(MentorProfileResponse m, StudentProfileResponse student) {
 		return new MentorProfileResponse(m.id(), m.fullName(), m.email(), m.initials(), m.professionalTitle(),
 				m.company(), m.availabilityLabel(), m.responseTimeLabel(), m.meetingMode(),
@@ -178,7 +230,8 @@ class MentorRecommendationServiceTest {
 	}
 
 	private static RecommendMentorsRequest studentRequest(String supportArea, String summary) {
-		return new RecommendMentorsRequest(supportArea, summary, "THIS_WEEK", "SINGLE_MEETING", "ONLINE", null,
+		return new RecommendMentorsRequest(supportArea, summary, MentorshipRequestUrgency.THIS_WEEK,
+				MentorshipRequestFormat.SINGLE_MEETING, MeetingMode.ONLINE, null,
 				null, null, List.of(), null);
 	}
 
@@ -244,7 +297,8 @@ class MentorRecommendationServiceTest {
 	}
 
 	private static RecommendMentorsRequest request(UUID excludedMentorId) {
-		return new RecommendMentorsRequest("Yazılım", "Yazılım mimarisi desteği", "THIS_WEEK", "SINGLE_MEETING",
-				"ONLINE", null, "MVP", null, List.of(), excludedMentorId);
+		return new RecommendMentorsRequest("Yazılım", "Yazılım mimarisi desteği", MentorshipRequestUrgency.THIS_WEEK,
+				MentorshipRequestFormat.SINGLE_MEETING,
+				MeetingMode.ONLINE, null, "MVP", null, List.of(), excludedMentorId);
 	}
 }

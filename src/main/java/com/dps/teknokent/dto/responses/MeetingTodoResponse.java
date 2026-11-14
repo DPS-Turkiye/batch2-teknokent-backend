@@ -3,6 +3,8 @@ package com.dps.teknokent.dto.responses;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.domain.MeetingTodoSource;
 import com.dps.teknokent.entity.MeetingTodo;
 
@@ -12,7 +14,7 @@ public record MeetingTodoResponse(
 		String title,
 		Boolean done,
 		Integer displayOrder,
-		String createdByName,
+		@Nullable String createdByName,
 		MeetingTodoSource source,
 		Instant updatedAt) {
 

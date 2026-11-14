@@ -63,13 +63,15 @@ class AdminCoordinatorControllerTest {
 
 	@Test
 	void checksACandidateAsTheSignedInAdminWhateverActorIdIsSent() throws Exception {
-		when(adminCoordinatorService.candidate(ADMIN_ID, "ayse@mentor.com")).thenReturn(new CoordinatorCandidateResponse(
-				"ayse@mentor.com", CoordinatorCandidateStatus.PROMOTABLE, OTHER_ID, "Ayşe Demir", UserRole.MENTOR));
+		when(adminCoordinatorService.candidate(ADMIN_ID, "ayse@mentor.com"))
+				.thenReturn(new CoordinatorCandidateResponse(
+						"ayse@mentor.com", CoordinatorCandidateStatus.PROMOTABLE, OTHER_ID, "Ayşe Demir",
+						UserRole.MENTOR));
 
 		mockMvc.perform(get("/api/admin/coordinators/candidate")
-						.param("email", "ayse@mentor.com")
-						.param("actorId", OTHER_ID.toString())
-						.with(authentication(signedIn())))
+				.param("email", "ayse@mentor.com")
+				.param("actorId", OTHER_ID.toString())
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("PROMOTABLE"))
 				.andExpect(jsonPath("$.role").value("MENTOR"));
@@ -89,10 +91,10 @@ class AdminCoordinatorControllerTest {
 				new CoordinatorSearchResult(COORDINATOR_ID, "Ayşe Aydın", "ayse@teknokent.org")));
 
 		mockMvc.perform(get("/api/admin/coordinators/search")
-						.param("q", "ayse")
-						.param("programId", programId.toString())
-						.param("actorId", OTHER_ID.toString())
-						.with(authentication(signedIn())))
+				.param("q", "ayse")
+				.param("programId", programId.toString())
+				.param("actorId", OTHER_ID.toString())
+				.with(authentication(signedIn())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].id").value(COORDINATOR_ID.toString()))
 				.andExpect(jsonPath("$[0].email").value("ayse@teknokent.org"));
@@ -113,9 +115,9 @@ class AdminCoordinatorControllerTest {
 				CoordinatorCandidateStatus.NEW));
 
 		mockMvc.perform(post("/api/admin/coordinators")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"fullName\":\"Elif Demir\",\"email\":\"elif@teknokent.org\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"fullName\":\"Elif Demir\",\"email\":\"elif@teknokent.org\"}"))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.outcome").value("NEW"));
 	}
@@ -126,9 +128,9 @@ class AdminCoordinatorControllerTest {
 				HttpStatus.BAD_GATEWAY, "Koordinatörün giriş hesabı Firebase'de oluşturulamadı (PERMISSION_DENIED)."));
 
 		mockMvc.perform(post("/api/admin/coordinators")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"fullName\":\"Elif Demir\",\"email\":\"elif@teknokent.org\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"fullName\":\"Elif Demir\",\"email\":\"elif@teknokent.org\"}"))
 				.andExpect(status().isBadGateway())
 				.andExpect(jsonPath("$.message")
 						.value("Koordinatörün giriş hesabı Firebase'de oluşturulamadı (PERMISSION_DENIED)."));
@@ -137,22 +139,23 @@ class AdminCoordinatorControllerTest {
 	@Test
 	void rejectsABadEmailBeforeReachingTheService() throws Exception {
 		mockMvc.perform(post("/api/admin/coordinators")
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"fullName\":\"Elif\",\"email\":\"not-an-email\"}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"fullName\":\"Elif\",\"email\":\"not-an-email\"}"))
 				.andExpect(status().isBadRequest());
 		verifyNoInteractions(adminCoordinatorService);
 	}
 
 	@Test
 	void deactivatesACoordinator() throws Exception {
-		when(adminCoordinatorService.setAccess(ADMIN_ID, COORDINATOR_ID, false)).thenReturn(new CoordinatorAccountResponse(
-				COORDINATOR_ID, "elif@teknokent.org", "Elif Demir", UserAccountStatus.REJECTED, null));
+		when(adminCoordinatorService.setAccess(ADMIN_ID, COORDINATOR_ID, false))
+				.thenReturn(new CoordinatorAccountResponse(
+						COORDINATOR_ID, "elif@teknokent.org", "Elif Demir", UserAccountStatus.REJECTED, null));
 
 		mockMvc.perform(put("/api/admin/coordinators/{id}/access", COORDINATOR_ID)
-						.with(authentication(signedIn()))
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"active\":false}"))
+				.with(authentication(signedIn()))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"active\":false}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("REJECTED"));
 		verify(adminCoordinatorService).setAccess(ADMIN_ID, COORDINATOR_ID, false);

@@ -56,7 +56,8 @@ class MentorshipRequestListBatchLoadTest {
 		AppUser mentor = persistUser("mentor-list@tekno.com", UserRole.MENTOR, null);
 		List<MentorshipRequest> requests = new ArrayList<>();
 		for (int i = 0; i < REQUESTS; i++) {
-			MentorshipRequest request = persistRequest(mentee, organization, mentor, Instant.parse("2026-10-20T10:00:00Z").plusSeconds(i));
+			MentorshipRequest request = persistRequest(mentee, organization, mentor,
+					Instant.parse("2026-10-20T10:00:00Z").plusSeconds(i));
 			persistMessage(request, mentee, "first " + i, Instant.parse("2026-10-20T11:00:00Z"));
 			persistMessage(request, mentor, "second " + i, Instant.parse("2026-10-20T12:00:00Z"));
 			requests.add(request);
@@ -94,7 +95,8 @@ class MentorshipRequestListBatchLoadTest {
 		return user;
 	}
 
-	private MentorshipRequest persistRequest(AppUser mentee, Organization organization, AppUser mentor, Instant createdAt) {
+	private MentorshipRequest persistRequest(AppUser mentee, Organization organization, AppUser mentor,
+			Instant createdAt) {
 		MentorshipRequest request = new MentorshipRequest();
 		request.setRequester(mentee);
 		request.setOrganization(organization);
