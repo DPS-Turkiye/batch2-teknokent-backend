@@ -70,4 +70,7 @@ public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursM
 			""")
 	int cancelIfLive(@Param("id") UUID id, @Param("now") Instant now, @Param("by") UUID by,
 			@Param("reason") String reason);
+
+	List<OfficeHoursMeeting> findByInstructorIdAndCancelledAtIsNullAndScheduledAtAfterOrderByScheduledAtAsc(UUID instructorId,
+			Instant after);
 }

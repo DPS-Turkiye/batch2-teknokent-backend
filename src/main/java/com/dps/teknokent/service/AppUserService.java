@@ -49,6 +49,7 @@ public class AppUserService {
 	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final LoginProvisioner loginProvisioner;
 	private final TeamMembershipService teamMembershipService;
+	private final EmailDomainPolicy emailDomainPolicy;
 	private final ProgramEligibilityService programEligibilityService;
 	private final MenteeProgramService menteeProgramService;
 	private final PersonAccessService personAccessService;
@@ -67,7 +68,7 @@ public class AppUserService {
 
 	@Transactional(readOnly = true)
 	public List<UserResponse> findAll(UserRole role, UserAccountStatus status) {
-		return appUserRepository.findAll().stream()
+		return appUserRepository.findByStatusNot(UserAccountStatus.DELETED).stream()
 				.filter(user -> role == null || user.has(role))
 				.filter(user -> status == null || user.getStatus() == status)
 				.sorted(Comparator.comparing(user -> user.getFullName().toLowerCase()))
@@ -183,6 +184,7 @@ public class AppUserService {
 			throw new InvalidRequestException("Only the organization founder can add team members");
 		}
 		String email = TextUtils.trim(request.email());
+		emailDomainPolicy.requireAllowed(email);
 		if (appUserRepository.existsByEmailIgnoreCase(email)) {
 			throw new InvalidRequestException("A user with this email already exists.");
 		}

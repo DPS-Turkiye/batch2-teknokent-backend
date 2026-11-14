@@ -6,12 +6,16 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramCoordinator;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 
@@ -46,6 +50,20 @@ class ProgramCoordinationTest {
 				.thenReturn(List.of(row(program.getId(), BURCU), row(program.getId(), ELIF)));
 
 		assertThat(ProgramCoordination.coordinatorIds(program, coordinators)).containsExactly(ELIF, BURCU);
+	}
+
+	// The creator runs a program nobody else runs; a deleted creator runs nothing, and gets no notifications.
+	@Test
+	void aDeletedCreatorIsNotARunner() {
+		Program program = program("METU", ELIF, "2026-02-01T00:00:00Z");
+		AppUser tombstone = new AppUser();
+		tombstone.setId(ELIF);
+		tombstone.setStatus(UserAccountStatus.DELETED);
+		AppUserRepository users = mock(AppUserRepository.class);
+		when(coordinators.findByProgramIdIn(Set.of(program.getId()))).thenReturn(List.of());
+		when(users.findAllById(Set.of(ELIF))).thenReturn(List.of(tombstone));
+
+		assertThat(ProgramCoordination.runners(program, coordinators, users)).isEmpty();
 	}
 
 	private static Program program(String name, UUID creator, String createdAt) {

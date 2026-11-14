@@ -9,23 +9,32 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientResponseException;
+import com.dps.teknokent.domain.MeetingBotEndReason;
+import com.dps.teknokent.domain.MeetingBotState;
+import com.dps.teknokent.util.Texts;
 import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.util.TimeFormatUtils;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
 import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
+import com.dps.teknokent.dto.provider.ProviderBotSummary;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptSegment;
 import com.dps.teknokent.dto.requests.AddBotRequest;
 import com.dps.teknokent.dto.responses.AddBotResponse;
+import com.dps.teknokent.dto.responses.BotStateResponse;
 import com.dps.teknokent.dto.responses.MeetingReportResponse;
 import com.dps.teknokent.dto.responses.TranscriptResponse;
 import com.dps.teknokent.dto.responses.TranscriptSegmentResponse;
 import com.dps.teknokent.exception.ConflictException;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AssistantService {
@@ -46,13 +55,65 @@ public class AssistantService {
     var parsed = accessService.requireAccess(callerId, link.platform(), link.nativeMeetingId());
     Set<String> running = runningBotKeys()
         .orElseThrow(() -> new IllegalStateException("Running bots are unknown"));
+    boolean alreadyThere = running.contains(botKey(parsed.platform(), parsed.nativeMeetingId()));
+    if (alreadyThere) {
+      AddBotResponse existing = liveBot(parsed.platform(), parsed.nativeMeetingId());
+      if (existing != null) {
+        return existing;
+      }
+    }
     // ponytail: no lock, so two requests at the same moment can both pass, and a meeting booked later does not see
     // ad-hoc bots; the dispatcher's retry on Vexa's 429 covers that until a shared ledger is worth it.
-    if (!running.contains(botKey(parsed.platform(), parsed.nativeMeetingId()))
+    if (!alreadyThere
         && running.size() + capacityService.reservedWithinHour(Instant.now()) >= capacityService.capacity()) {
       throw new ConflictException("All recording slots are in use.");
     }
-    return addBot(request);
+    try {
+      return addBot(request);
+    } catch (RestClientResponseException refused) {
+      if (refused.getStatusCode().value() != HttpStatus.CONFLICT.value()) {
+        throw refused;
+      }
+      // Vexa answers 409 when this link already has a bot, or when the signed-in bot account is busy elsewhere.
+      AddBotResponse existing = liveBot(parsed.platform(), parsed.nativeMeetingId());
+      if (existing != null) {
+        return existing;
+      }
+      throw new ConflictException(Texts.forRequest("error.recordingBotBusy"));
+    }
+  }
+
+  /** The bot already holding this meeting, or null, so a second send does not look like a failure. */
+  private AddBotResponse liveBot(String platform, String nativeMeetingId) {
+    ProviderBotSummary latest = providerClient.findLatestBot(platform, nativeMeetingId);
+    if (latest == null || !MeetingBotState.fromProvider(latest.status()).holdsMeeting()) {
+      return null;
+    }
+    return new AddBotResponse(
+        latest.id() != null ? String.valueOf(latest.id()) : "",
+        platform,
+        nativeMeetingId,
+        latest.status(),
+        "New meeting bot"
+    );
+  }
+
+  /** Where the meeting's latest recording bot is; checked like the other assistant calls. */
+  public BotStateResponse botState(UUID callerId, String platform, String nativeMeetingId) {
+    var parsed = accessService.requireAccess(callerId, platform, nativeMeetingId);
+    ProviderBotSummary latest = providerClient.findLatestBot(parsed.platform(), parsed.nativeMeetingId());
+    if (latest == null) {
+      return new BotStateResponse(parsed.platform(), parsed.nativeMeetingId(), MeetingBotState.NONE, null, null);
+    }
+    MeetingBotState state = MeetingBotState.fromProvider(latest.status());
+    boolean ended = state == MeetingBotState.COMPLETED || state == MeetingBotState.FAILED;
+    return new BotStateResponse(
+        parsed.platform(),
+        parsed.nativeMeetingId(),
+        state,
+        ended ? MeetingBotEndReason.fromProvider(latest.completionReason()) : null,
+        latest.createdAt()
+    );
   }
 
   /** Unchecked: for the dispatcher's booked meetings. Callers acting for a user go through addAdHocBot. */
@@ -115,8 +176,20 @@ public class AssistantService {
     stopBot(parsed.platform(), parsed.nativeMeetingId());
   }
 
+  /**
+   * A 404 means the provider holds no stoppable bot for the link: it already left, or it sits in Vexa's
+   * {@code needs_help} state, which its stop route does not reach and its own reaper ends. Either way there
+   * is nothing more to stop, so the meeting can be closed.
+   */
   void stopBot(String platform, String nativeMeetingId) {
-    providerClient.stopBot(platform, nativeMeetingId);
+    try {
+      providerClient.stopBot(platform, nativeMeetingId);
+    } catch (RestClientResponseException missing) {
+      if (missing.getStatusCode().value() != HttpStatus.NOT_FOUND.value()) {
+        throw missing;
+      }
+      log.warn("No stoppable bot for {}; treating it as stopped", nativeMeetingId);
+    }
   }
 
   public Optional<Set<String>> runningBotKeys() {

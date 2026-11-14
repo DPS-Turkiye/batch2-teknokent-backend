@@ -23,10 +23,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.AppLanguage;
+import com.dps.teknokent.domain.UserAccountStatus;
+import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.OfficeHoursCourse;
 import com.dps.teknokent.entity.OfficeHoursMeeting;
 import com.dps.teknokent.entity.OfficeHoursRequest;
 import com.dps.teknokent.entity.OfficeHoursUser;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OfficeHoursCourseRepository;
 import com.dps.teknokent.repository.OfficeHoursMeetingRepository;
 import com.dps.teknokent.repository.OfficeHoursRequestRepository;
@@ -54,6 +57,8 @@ class OfficeHoursMailServiceTest {
     private OfficeHoursMeetingRepository meetingRepository;
     @Mock
     private OfficeHoursMailOutboxService outbox;
+    @Mock
+    private AppUserRepository appUserRepository;
     @InjectMocks
     private OfficeHoursMailService service;
 
@@ -175,5 +180,53 @@ class OfficeHoursMailServiceTest {
         when(mailService.isConfigured()).thenReturn(false);
         assertThat(service.meetingSoon(meeting, Side.INSTRUCTOR)).isEqualTo(Delivery.NOTHING_TO_SEND);
         verify(mailService, never()).sendNow(any(), any(), any());
+    }
+
+    /** Both sides signed in to Menton through ODTÜ: no course, and Moodle never shared an address or language. */
+    private AppUser mentonRequest() {
+        request.setCourseId(null);
+        student.setEmail(null);
+        academic.setEmail(null);
+        AppUser account = new AppUser();
+        account.setEmail("ali.kaya@metu.edu.tr");
+        account.setPreferredLanguage(AppLanguage.TR);
+        academic.setAppUserId(UUID.randomUUID());
+        lenient().when(appUserRepository.findById(academic.getAppUserId())).thenReturn(Optional.of(account));
+        lenient().when(mailService.link(any())).thenAnswer(call -> "https://menton.com.tr" + call.getArgument(0));
+        return account;
+    }
+
+    @Test
+    void aMentonRequestReachesTheAccountsAddressInItsLanguageNamingNoCourseAndLinkingToMenton() {
+        mentonRequest();
+
+        service.requestChanged(request, Event.NEW_REQUEST, null);
+
+        String[] mail = sentTo("ali.kaya@metu.edu.tr");
+        assertThat(mail[0]).isEqualTo("Yeni ofis saati talebi · Ayşe Yılmaz");
+        assertThat(mail[1]).startsWith("Merhaba Ali Kaya,\n\nAyşe Yılmaz sizden ofis saati istedi.")
+                .contains("https://menton.com.tr/academician/appointments")
+                .doesNotContain("Moodle");
+        verify(courseRepository, never()).findById(any());
+    }
+
+    @Test
+    void aDeletedMentonAccountGetsNoMail() {
+        mentonRequest().setStatus(UserAccountStatus.DELETED);
+
+        service.requestChanged(request, Event.NEW_REQUEST, null);
+
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void aMentonMeetingIsRemindedWithoutACourseRatherThanFailingTheRun() {
+        mentonRequest();
+        OfficeHoursMeeting meeting = meeting();
+        when(mailService.sendNow(eq("ali.kaya@metu.edu.tr"), any(), any())).thenReturn(true);
+
+        assertThat(service.meetingSoon(meeting, Side.INSTRUCTOR)).isEqualTo(Delivery.SENT);
+        // The student's account has no Menton link in this test and Moodle shared no address: nothing to send.
+        assertThat(service.meetingSoon(meeting, Side.STUDENT)).isEqualTo(Delivery.NOTHING_TO_SEND);
     }
 }

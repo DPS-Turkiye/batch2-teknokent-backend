@@ -32,8 +32,10 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.CoordinatorAccountResponse;
 import com.dps.teknokent.dto.responses.CoordinatorCandidateResponse;
+import com.dps.teknokent.dto.responses.CoordinatorSearchResult;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AdminCoordinatorService;
+import com.dps.teknokent.service.CoordinatorSearchService;
 
 @WebMvcTest(AdminCoordinatorController.class)
 @Import(SecurityConfig.class)
@@ -44,6 +46,9 @@ class AdminCoordinatorControllerTest {
 
 	@MockitoBean
 	private AdminCoordinatorService adminCoordinatorService;
+
+	@MockitoBean
+	private CoordinatorSearchService coordinatorSearchService;
 
 	private static final UUID ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000a9");
 	private static final UUID OTHER_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
@@ -68,6 +73,37 @@ class AdminCoordinatorControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("PROMOTABLE"))
 				.andExpect(jsonPath("$.role").value("MENTOR"));
+	}
+
+	@Test
+	void searchRequiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/admin/coordinators/search").param("q", "ayse"))
+				.andExpect(status().isUnauthorized());
+		verifyNoInteractions(coordinatorSearchService);
+	}
+
+	@Test
+	void searchesAsTheSignedInAdminWhateverActorIdIsSent() throws Exception {
+		UUID programId = UUID.fromString("00000000-0000-0000-0000-0000000000f1");
+		when(coordinatorSearchService.search(ADMIN_ID, "ayse", programId)).thenReturn(List.of(
+				new CoordinatorSearchResult(COORDINATOR_ID, "Ayşe Aydın", "ayse@teknokent.org")));
+
+		mockMvc.perform(get("/api/admin/coordinators/search")
+						.param("q", "ayse")
+						.param("programId", programId.toString())
+						.param("actorId", OTHER_ID.toString())
+						.with(authentication(signedIn())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].id").value(COORDINATOR_ID.toString()))
+				.andExpect(jsonPath("$[0].email").value("ayse@teknokent.org"));
+		verify(coordinatorSearchService).search(ADMIN_ID, "ayse", programId);
+	}
+
+	@Test
+	void searchWithoutAQueryIsABadRequest() throws Exception {
+		mockMvc.perform(get("/api/admin/coordinators/search").with(authentication(signedIn())))
+				.andExpect(status().isBadRequest());
+		verifyNoInteractions(coordinatorSearchService);
 	}
 
 	@Test

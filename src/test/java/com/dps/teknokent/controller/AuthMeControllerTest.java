@@ -29,10 +29,11 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.EditionService;
 import com.dps.teknokent.service.InstitutionDirectoryService;
 
 @WebMvcTest(AuthMeController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, EditionService.class})
 class AuthMeControllerTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000811");
@@ -84,7 +85,8 @@ class AuthMeControllerTest {
                 .andExpect(jsonPath("$.id").value(USER_ID.toString()))
                 .andExpect(jsonPath("$.email").value("ayse@startup.com"))
                 .andExpect(jsonPath("$.organizationId").value(organizationId.toString()))
-                .andExpect(jsonPath("$.permissions[0]").value("MENTEE"));
+                .andExpect(jsonPath("$.permissions[0]").value("MENTEE"))
+                .andExpect(jsonPath("$.edition").value("TEKNOKENT"));
     }
 
     @Test

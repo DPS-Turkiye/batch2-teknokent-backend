@@ -4,8 +4,11 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -14,6 +17,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.WeeklyProgramWarning;
 import com.dps.teknokent.dto.requests.ReadWeeklyProgramRequest;
@@ -69,9 +73,12 @@ public class WeeklyProgramService {
 	private final LocalPiiRedactionService piiRedactionService;
 	private final AiProviderClient aiProviderClient;
 	private final JsonUtils jsonUtils;
+	private final AiFeatures aiFeatures;
 
 	public WeeklyProgramProposalResponse read(UUID actorId, UUID programId, ReadWeeklyProgramRequest request) {
 		Program program = coordinatorProgramService.requireSettingsEditor(actorId, programId);
+		// The same switch as the syllabus read: no file is read and nothing reaches the AI while it is off.
+		aiFeatures.require(AiFeature.SYLLABUS);
 		int totalWeeks = requireDates(program);
 		StoredDocument document = requireReadable(actorId, program, request.documentId());
 		ExtractionResult extraction = textExtractor.extract(objectStorage.get(document.getS3Key()), "auto");
@@ -103,16 +110,15 @@ public class WeeklyProgramService {
 		LocalDate today = today();
 		LocalDate start = program.getStartDate();
 		LocalDate end = program.getEndDate();
+		Map<String, UUID> savedIds = idsByName(savedPhases);
 		List<ReplaceProgramPhasesRequest.PhaseInput> phases = request.phases().stream()
 				.map(phase -> new ReplaceProgramPhasesRequest.PhaseInput(phase.name().trim(),
 						ProgramCalendar.weekStart(start, phase.firstWeek()),
-						ProgramCalendar.weekEnd(start, end, phase.lastWeek()), phase.expectedOutput()))
+						ProgramCalendar.weekEnd(start, end, phase.lastWeek()), phase.expectedOutput(),
+						savedIds.get(nameKey(phase.name()))))
 				.toList();
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = request.weeks();
-		// After the end every week is past, so the last one is kept as well.
-		Integer currentWeek = today.isAfter(end)
-				? Integer.valueOf(totalWeeks + 1)
-				: ProgramCalendar.currentWeek(start, end, today);
+		Integer currentWeek = firstReplacedWeek(start, end, today);
 		if (request.keepPast() && currentWeek != null) {
 			phases = keepCompletedPhases(savedPhases, phases, today);
 			weeks = keepPastWeeks(savedWeeks, weeks, currentWeek);
@@ -125,6 +131,20 @@ public class WeeklyProgramService {
 		ProgramWeekPlanResponse plan = programWeekPlanService.writeWeeks(program, actorId, weeks);
 		coordinatorProgramService.attachSyllabus(program, actorId, request.documentId());
 		return new WeeklyProgramSavedResponse(coordinatorProgramService.detail(actorId, programId), plan);
+	}
+
+	/**
+	 * A saved phase whose name comes back keeps its id, so Süreç assignments linked to it stay linked when the plan
+	 * is read again from a file.
+	 */
+	private static Map<String, UUID> idsByName(List<ProgramPhase> saved) {
+		Map<String, UUID> ids = new HashMap<>();
+		saved.forEach(phase -> ids.putIfAbsent(nameKey(phase.getName()), phase.getId()));
+		return ids;
+	}
+
+	private static String nameKey(String name) {
+		return name.trim().toLowerCase(Locale.ROOT);
 	}
 
 	/** Weeks and phases are only placed on a calendar, so the program needs both dates first. */
@@ -169,7 +189,7 @@ public class WeeklyProgramService {
 		for (ProgramPhase phase : saved) {
 			if (phase.getEndDate() != null && phase.getEndDate().isBefore(today)) {
 				phases.add(new ReplaceProgramPhasesRequest.PhaseInput(phase.getName(), phase.getStartDate(),
-						phase.getEndDate(), phase.getExpectedOutput()));
+						phase.getEndDate(), phase.getExpectedOutput(), phase.getId()));
 				keptUntil = keptUntil == null || phase.getEndDate().isAfter(keptUntil) ? phase.getEndDate() : keptUntil;
 			}
 		}
@@ -184,7 +204,7 @@ public class WeeklyProgramService {
 				continue;
 			}
 			phases.add(new ReplaceProgramPhasesRequest.PhaseInput(phase.name(), start, phase.endDate(),
-					phase.expectedOutput()));
+					phase.expectedOutput(), phase.id()));
 		}
 		return phases;
 	}
@@ -212,7 +232,18 @@ public class WeeklyProgramService {
 				new WeeklyProgramProposalResponse.Existing(
 						programPhaseRepository.findByProgramIdOrderByPositionAsc(programId).size(),
 						programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId).size(),
-						ProgramCalendar.currentWeek(program.getStartDate(), program.getEndDate(), today)));
+						firstReplacedWeek(program.getStartDate(), program.getEndDate(), today)));
+	}
+
+	/**
+	 * The first week a keep-past save replaces, which the read reports so the coordinator is told what the save
+	 * does: the running week, or one past the last after the end, when every week is past. Null before the start.
+	 */
+	static Integer firstReplacedWeek(LocalDate start, LocalDate end, LocalDate today) {
+		if (today.isAfter(end)) {
+			return ProgramCalendar.totalWeeks(start, end) + 1;
+		}
+		return ProgramCalendar.currentWeek(start, end, today);
 	}
 
 	/**

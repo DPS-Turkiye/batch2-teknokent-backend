@@ -107,7 +107,16 @@ public class ActionItem {
 	@Column(name = "deadline_reminded_at")
 	private Instant deadlineRemindedAt;
 
-	// The four below are only set on Süreç "Ödevler"; plain action items leave them null.
+	/** A Süreç "Ödev" rather than a plain action item. */
+	@Column(name = "process_assignment", nullable = false)
+	private boolean processAssignment;
+
+	/** The program phase the Ödev belongs to; without one it is placed by its date. */
+	@Column(name = "program_phase_id")
+	private UUID programPhaseId;
+
+	// The four below are only set on Süreç "Ödevler"; plain action items leave them null. The stage is no longer
+	// written and its column is dropped in a later release.
 	@Enumerated(EnumType.STRING)
 	@Column(length = 32)
 	private StartupStage stage;

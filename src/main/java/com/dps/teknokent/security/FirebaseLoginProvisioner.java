@@ -1,6 +1,8 @@
 package com.dps.teknokent.security;
 
+import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -35,6 +37,8 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	private final FirebaseAuth firebaseAuth;
 
+	private static final SecureRandom RANDOM = new SecureRandom();
+
 	public FirebaseLoginProvisioner(FirebaseAuth firebaseAuth) {
 		this.firebaseAuth = firebaseAuth;
 	}
@@ -42,7 +46,9 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 	@Override
 	public String loginFor(String email, String displayName) {
 		try {
-			return firebaseAuth.getUserByEmail(email).getUid();
+			UserRecord existing = firebaseAuth.getUserByEmail(email);
+			lockOutIfUnverified(existing);
+			return existing.getUid();
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() != AuthErrorCode.USER_NOT_FOUND) {
 				throw loginUnavailable(email, exception);
@@ -60,6 +66,23 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 			}
 			throw loginUnavailable(email, exception);
 		}
+	}
+
+	/**
+	 * Anyone can create an unverified Firebase login for any address, so a login that never proved the address may
+	 * belong to someone other than the person being made a coordinator. Its password is replaced with a random one
+	 * and its sessions are ended; the real owner sets a password through the setup link we mail.
+	 */
+	private void lockOutIfUnverified(UserRecord login) throws FirebaseAuthException {
+		if (login.isEmailVerified()) {
+			return;
+		}
+		byte[] secret = new byte[32];
+		RANDOM.nextBytes(secret);
+		firebaseAuth.updateUser(new UserRecord.UpdateRequest(login.getUid())
+				.setPassword(Base64.getUrlEncoder().withoutPadding().encodeToString(secret)));
+		firebaseAuth.revokeRefreshTokens(login.getUid());
+		log.warn("Locked out an unverified Firebase login before linking it to a coordinator: {}", login.getUid());
 	}
 
 	/**
@@ -206,6 +229,35 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		log.error("Could not prepare a Firebase login: {} {}", exception.getErrorCode(), exception.getMessage());
 		return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Firebase could not start the session.",
 				exception);
+	}
+
+	@Override
+	public Optional<String> uidForEmail(String email) {
+		try {
+			return Optional.of(firebaseAuth.getUserByEmail(email).getUid());
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				return Optional.empty();
+			}
+			log.error("Could not look up a Firebase login before deleting its account: {} {}",
+					exception.getErrorCode(), exception.getMessage());
+			throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+					Texts.forRequest("error.userDeleteLoginLookupFailed", exception.getErrorCode()), exception);
+		}
+	}
+
+	@Override
+	public void deleteLogin(String uid) {
+		try {
+			firebaseAuth.revokeRefreshTokens(uid);
+			firebaseAuth.deleteUser(uid);
+		} catch (FirebaseAuthException exception) {
+			if (exception.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+				return;
+			}
+			throw new IllegalStateException("Firebase could not delete the login: " + exception.getErrorCode(),
+					exception);
+		}
 	}
 
 	@Override

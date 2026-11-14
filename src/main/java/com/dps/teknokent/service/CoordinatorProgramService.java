@@ -76,6 +76,7 @@ import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.MeetingSlotTimes;
+import com.dps.teknokent.util.ProgramActivity;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.Texts;
@@ -212,21 +213,43 @@ public class CoordinatorProgramService {
 		return detailOf(program);
 	}
 
-	/** Replaces the program's phases with {@code inputs}, in that order. */
+	/**
+	 * Replaces the program's phases with {@code inputs}, in that order. A phase is kept, and updated in place, when
+	 * its id is sent back, so whatever points at it (Süreç assignments and rounds) stays linked; the rest are new,
+	 * and saved phases left out are deleted.
+	 */
 	public void writePhases(UUID programId, List<ReplaceProgramPhasesRequest.PhaseInput> inputs) {
 		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
 			requireOrderedDates(input.startDate(), input.endDate(), "A phase cannot end before it starts.");
 		}
-		programPhaseRepository.deleteByProgramId(programId);
-		// Hibernate runs inserts before deletes at flush; without this, reusing a position would hit
-		// uq_program_phase_position.
+		Map<UUID, ProgramPhase> saved = new HashMap<>();
+		programPhaseRepository.findByProgramIdOrderByPositionAsc(programId)
+				.forEach(phase -> saved.put(phase.getId(), phase));
+		Set<UUID> kept = new HashSet<>();
+		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
+			if (input.id() != null && saved.containsKey(input.id())) {
+				kept.add(input.id());
+			}
+		}
+		programPhaseRepository.deleteAll(saved.values().stream().filter(phase -> !kept.contains(phase.getId())).toList());
+		// Positions are unique per program and Hibernate runs inserts before updates; parking the kept phases on
+		// negative positions first lets every row take its new place without a collision.
+		int parked = -1;
+		for (UUID id : kept) {
+			saved.get(id).setPosition(parked--);
+		}
 		programPhaseRepository.flush();
 		List<ProgramPhase> phases = new ArrayList<>();
+		Set<UUID> placed = new HashSet<>();
 		int position = 0;
 		for (ReplaceProgramPhasesRequest.PhaseInput input : inputs) {
-			ProgramPhase phase = new ProgramPhase();
-			phase.setId(UUID.randomUUID());
-			phase.setProgramId(programId);
+			// The same id sent twice keeps the phase once; the second becomes a new phase.
+			boolean keeps = input.id() != null && kept.contains(input.id()) && placed.add(input.id());
+			ProgramPhase phase = keeps ? saved.get(input.id()) : new ProgramPhase();
+			if (!keeps) {
+				phase.setId(UUID.randomUUID());
+				phase.setProgramId(programId);
+			}
 			phase.setName(input.name().trim());
 			phase.setPosition(position++);
 			phase.setStartDate(input.startDate());
@@ -350,12 +373,10 @@ public class CoordinatorProgramService {
 			}
 		}
 		Set<UUID> organizationIds = programOf.keySet();
-		List<Meeting> meetings = organizationIds.isEmpty()
-				? List.of()
-				: meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds);
+		List<Meeting> meetings = programMeetings(scope, snapshot);
 		return new CoordinatorOverviewResponse(
 				options,
-				overviewMetrics(programOf, idsOf(scope), snapshot),
+				overviewMetrics(scope, programOf, snapshot),
 				nextMeeting(meetings, snapshot.now()),
 				agenda(scope, organizationIds, meetings, snapshot),
 				new CoordinatorOverviewResponse.Actions(
@@ -364,29 +385,26 @@ public class CoordinatorProgramService {
 						missingNotes(meetings, snapshot.now())));
 	}
 
-	private static Set<UUID> idsOf(List<Program> programs) {
-		return programs.stream().map(Program::getId).collect(Collectors.toSet());
-	}
-
 	private CoordinatorOverviewResponse.Metrics overviewMetrics(
-			Map<UUID, Program> programOf, Set<UUID> scopeIds, Snapshot snapshot) {
+			List<Program> scope, Map<UUID, Program> programOf, Snapshot snapshot) {
 		Set<UUID> matchedMentorships = new HashSet<>();
 		Set<UUID> mentoredTeams = new HashSet<>();
 		Set<UUID> activeMentors = new HashSet<>();
 		int stale = 0;
 		int bottlenecks = 0;
-		for (Map.Entry<UUID, Program> entry : programOf.entrySet()) {
-			UUID organizationId = entry.getKey();
+		for (UUID organizationId : programOf.keySet()) {
 			bottlenecks += snapshot.openBottlenecks().getOrDefault(organizationId, List.of()).size();
-			for (Mentorship mentorship : mentorshipsOf(snapshot, scopeIds, organizationId)) {
-				if (!MATCHED.contains(mentorship.getStatus())) {
+		}
+		for (Program program : scope) {
+			for (Mentorship mentorship : programMentorships(snapshot, program)) {
+				// One made before V82 has no program and comes up under each of its team's programs.
+				if (!MATCHED.contains(mentorship.getStatus()) || !matchedMentorships.add(mentorship.getId())) {
 					continue;
 				}
-				matchedMentorships.add(mentorship.getId());
-				mentoredTeams.add(organizationId);
+				mentoredTeams.add(mentorship.getOrganization().getId());
 				activeMentors.add(mentorship.getMentor().getId());
 				if (mentorship.getStatus() == MentorshipStatus.ACTIVE
-						&& daysSinceContact(mentorship, snapshot) >= entry.getValue().getStaleAfterDays()) {
+						&& daysSinceContact(mentorship, snapshot) >= program.getStaleAfterDays()) {
 					stale++;
 				}
 			}
@@ -630,18 +648,13 @@ public class CoordinatorProgramService {
 						program.getEligibleEmailDomain(),
 						program.isRosterOnly(),
 						program.isIndividualMentees()),
-				health(program, startups, snapshot),
+				health(program, snapshot),
 				awaitingTeams,
 				upcoming,
 				new CoordinatorProgramResponse.TeamDistribution(startups.size() - awaiting.size(), awaiting.size()),
-				mentorDistribution(snapshot.mentors().getOrDefault(program.getId(), List.of())),
+				mentorDistribution(program, snapshot.mentors().getOrDefault(program.getId(), List.of())),
 				coordinatorsOf(program),
-				missingNotes(
-						startups.stream()
-								.flatMap(startup -> snapshot.meetingsByOrganization()
-										.getOrDefault(startup.getOrganizationId(), List.of()).stream())
-								.toList(),
-						snapshot.now()).size(),
+				missingNotes(programMeetings(List.of(program), snapshot), snapshot.now()).size(),
 				syllabusOf(program),
 				pendingApprovalCount(program.getId()));
 	}
@@ -688,14 +701,9 @@ public class CoordinatorProgramService {
 		List<ProgramMentor> mentors = snapshot.mentors().getOrDefault(program.getId(), List.of());
 		List<ProgramPhase> phases = snapshot.phases().getOrDefault(program.getId(), List.of());
 		List<ProgramStartup> awaiting = awaitingMatch(program, startups, snapshot);
-		int activeMentorships = 0;
-		for (ProgramStartup startup : startups) {
-			for (Mentorship mentorship : mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId())) {
-				if (MATCHED.contains(mentorship.getStatus())) {
-					activeMentorships++;
-				}
-			}
-		}
+		int activeMentorships = (int) programMentorships(snapshot, program).stream()
+				.filter(mentorship -> MATCHED.contains(mentorship.getStatus()))
+				.count();
 		Integer oldestWaiting = awaiting.stream()
 				.map(startup -> waitingDays(startup, snapshot.today()))
 				.max(Integer::compare)
@@ -717,7 +725,7 @@ public class CoordinatorProgramService {
 				(int) mentors.stream().filter(m -> m.getStatus() == ProgramMentorStatus.ACCEPTED).count(),
 				(int) mentors.stream().filter(m -> m.getStatus() == ProgramMentorStatus.PENDING).count(),
 				activeMentorships,
-				health(program, startups, snapshot).risky(),
+				health(program, snapshot).risky(),
 				awaiting.size(),
 				oldestWaiting,
 				current == null ? null : toPhase(current),
@@ -726,33 +734,32 @@ public class CoordinatorProgramService {
 				ProgramCalendar.totalWeeks(program.getStartDate(), program.getEndDate()));
 	}
 
-	private CoordinatorProgramResponse.Health health(Program program, List<ProgramStartup> startups, Snapshot snapshot) {
+	private CoordinatorProgramResponse.Health health(Program program, Snapshot snapshot) {
 		int healthy = 0;
 		int followUp = 0;
 		int risky = 0;
 		Map<String, Set<UUID>> topicTeams = new LinkedHashMap<>();
-		for (ProgramStartup startup : startups) {
-			UUID organizationId = startup.getOrganizationId();
+		// Every mentorship the card counts as active, a team that left the program included.
+		for (Mentorship mentorship : programMentorships(snapshot, program)) {
+			if (mentorship.getStatus() != MentorshipStatus.ACTIVE) {
+				continue;
+			}
+			UUID organizationId = mentorship.getOrganization().getId();
 			List<Bottleneck> openIssues = snapshot.openBottlenecks().getOrDefault(organizationId, List.of());
 			boolean hasOpenIssue = !openIssues.isEmpty() || snapshot.overdueActionOrganizations().contains(organizationId);
-			for (Mentorship mentorship : mentorshipsOf(snapshot, Set.of(program.getId()), organizationId)) {
-				if (mentorship.getStatus() != MentorshipStatus.ACTIVE) {
-					continue;
-				}
-				HealthBucket bucket = classify(
-						daysSinceContact(mentorship, snapshot),
-						hasOpenIssue,
-						program.getMeetingFrequencyDays(),
-						program.getStaleAfterDays());
-				switch (bucket) {
-					case HEALTHY -> healthy++;
-					case FOLLOW_UP -> followUp++;
-					case RISKY -> risky++;
-				}
-				if (bucket != HealthBucket.HEALTHY) {
-					for (Bottleneck issue : openIssues) {
-						topicTeams.computeIfAbsent(issue.getTitle(), key -> new HashSet<>()).add(organizationId);
-					}
+			HealthBucket bucket = classify(
+					daysSinceContact(mentorship, snapshot),
+					hasOpenIssue,
+					program.getMeetingFrequencyDays(),
+					program.getStaleAfterDays());
+			switch (bucket) {
+				case HEALTHY -> healthy++;
+				case FOLLOW_UP -> followUp++;
+				case RISKY -> risky++;
+			}
+			if (bucket != HealthBucket.HEALTHY) {
+				for (Bottleneck issue : openIssues) {
+					topicTeams.computeIfAbsent(issue.getTitle(), key -> new HashSet<>()).add(organizationId);
 				}
 			}
 		}
@@ -764,7 +771,9 @@ public class CoordinatorProgramService {
 		return new CoordinatorProgramResponse.Health(healthy, followUp, risky, topics);
 	}
 
-	private CoordinatorProgramResponse.MentorDistribution mentorDistribution(List<ProgramMentor> memberships) {
+	private CoordinatorProgramResponse.MentorDistribution mentorDistribution(
+			Program program,
+			List<ProgramMentor> memberships) {
 		int pending = (int) memberships.stream().filter(m -> m.getStatus() == ProgramMentorStatus.PENDING).count();
 		List<UUID> accepted = memberships.stream()
 				.filter(m -> m.getStatus() == ProgramMentorStatus.ACCEPTED)
@@ -787,8 +796,9 @@ public class CoordinatorProgramService {
 		int idle = 0;
 		for (UUID mentorId : accepted) {
 			long teams = load.getOrDefault(mentorId, 0L);
-			Integer limit = capacity.get(mentorId);
-			if (limit != null && teams >= limit) {
+			// Same rule as the Mentor Havuzu: the mentor's own limit, otherwise the program's default.
+			int limit = capacity.getOrDefault(mentorId, program.getDefaultMentorCapacity());
+			if (teams >= limit) {
 				full++;
 			} else if (teams == 0) {
 				idle++;
@@ -843,10 +853,10 @@ public class CoordinatorProgramService {
 				.collect(Collectors.groupingBy(ProgramStartup::getProgramId));
 		Map<UUID, List<ProgramMentor>> mentors = programMentorRepository.findByProgramIdIn(programIds).stream()
 				.collect(Collectors.groupingBy(ProgramMentor::getProgramId));
-		Set<UUID> organizationIds = startups.values().stream()
-				.flatMap(List::stream)
-				.map(ProgramStartup::getOrganizationId)
-				.collect(Collectors.toSet());
+		Map<UUID, List<UUID>> formerTeams = teamsThatLeft(programIds, startups);
+		Set<UUID> organizationIds = new HashSet<>();
+		startups.values().forEach(rows -> rows.forEach(row -> organizationIds.add(row.getOrganizationId())));
+		formerTeams.values().forEach(organizationIds::addAll);
 		if (organizationIds.isEmpty()) {
 			return new Snapshot(today, now, coordinators, phases, startups, mentors, Map.of(), Map.of(), Map.of(),
 					Map.of(), Map.of(), Set.of());
@@ -884,7 +894,25 @@ public class CoordinatorProgramService {
 				.collect(Collectors.toSet());
 		return new Snapshot(today, now, coordinators, phases, teams, mentors, organizations, mentorships,
 				lastMeeting, meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
-				openBottlenecks, overdue);
+				openBottlenecks, overdue, formerTeams);
+	}
+
+	/**
+	 * Per program, the teams that made a mentorship in it and are no longer in it: an admin moved them to another
+	 * program, or a coordinator removed them. What they did in the program still counts there.
+	 */
+	private Map<UUID, List<UUID>> teamsThatLeft(List<UUID> programIds, Map<UUID, List<ProgramStartup>> startups) {
+		Map<UUID, Set<UUID>> current = new HashMap<>();
+		startups.forEach((programId, rows) -> current.put(programId, rows.stream()
+				.map(ProgramStartup::getOrganizationId)
+				.collect(Collectors.toSet())));
+		Map<UUID, List<UUID>> left = new HashMap<>();
+		for (MentorshipRepository.ProgramTeam team : mentorshipRepository.findTeamsWithMentorshipIn(programIds)) {
+			if (!current.getOrDefault(team.getProgramId(), Set.of()).contains(team.getOrganizationId())) {
+				left.computeIfAbsent(team.getProgramId(), id -> new ArrayList<>()).add(team.getOrganizationId());
+			}
+		}
+		return left;
 	}
 
 	public List<Program> managedPrograms(AppUser actor) {
@@ -953,6 +981,60 @@ public class CoordinatorProgramService {
 		return mentorship.getProgram() == null || programIds.contains(mentorship.getProgram().getId());
 	}
 
+	/**
+	 * The program's mentorships: its teams' own (see {@link #mentorshipsOf}), and the ones a team made here before
+	 * it left the program. A former team's mentorship with no program does not count: the team is not here.
+	 */
+	static List<Mentorship> programMentorships(Snapshot snapshot, Program program) {
+		List<Mentorship> all = new ArrayList<>();
+		for (ProgramStartup startup : snapshot.startups().getOrDefault(program.getId(), List.of())) {
+			all.addAll(mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId()));
+		}
+		for (UUID organizationId : snapshot.formerTeams().getOrDefault(program.getId(), List.of())) {
+			snapshot.mentorships().getOrDefault(organizationId, List.of()).stream()
+					.filter(mentorship -> mentorship.getProgram() != null
+							&& mentorship.getProgram().getId().equals(program.getId()))
+					.forEach(all::add);
+		}
+		return all;
+	}
+
+	/** The teams whose meetings can count in the program: the ones in it, then the ones that left it. */
+	static List<UUID> activityTeams(Snapshot snapshot, Program program) {
+		List<UUID> teams = new ArrayList<>();
+		snapshot.startups().getOrDefault(program.getId(), List.of())
+				.forEach(startup -> teams.add(startup.getOrganizationId()));
+		teams.addAll(snapshot.formerTeams().getOrDefault(program.getId(), List.of()));
+		return teams;
+	}
+
+	/** Whether the meeting counts in the program (see {@link ProgramActivity#countsIn}). */
+	static boolean countsIn(Meeting meeting, Program program, Snapshot snapshot) {
+		UUID organizationId = meeting.getOrganization().getId();
+		boolean teamIsIn = snapshot.startups().getOrDefault(program.getId(), List.of()).stream()
+				.anyMatch(startup -> startup.getOrganizationId().equals(organizationId));
+		return ProgramActivity.countsIn(meeting, program.getId(), teamIsIn,
+				snapshot.mentorships().getOrDefault(organizationId, List.of()));
+	}
+
+	/** The meetings that count in these programs, newest first; each once. */
+	static List<Meeting> programMeetings(List<Program> programs, Snapshot snapshot) {
+		Map<UUID, Meeting> meetings = new LinkedHashMap<>();
+		for (Program program : programs) {
+			for (UUID organizationId : activityTeams(snapshot, program)) {
+				for (Meeting meeting : snapshot.meetingsByOrganization().getOrDefault(organizationId, List.of())) {
+					if (countsIn(meeting, program, snapshot)) {
+						meetings.putIfAbsent(meeting.getId(), meeting);
+					}
+				}
+			}
+		}
+		return meetings.values().stream()
+				.sorted(Comparator.comparing(
+						Meeting::getScheduledAt, Comparator.nullsLast(Comparator.reverseOrder())))
+				.toList();
+	}
+
 	static String organizationName(Snapshot snapshot, UUID organizationId) {
 		Organization organization = snapshot.organizations().get(organizationId);
 		return organization == null ? Texts.forRequest("label.team") : organization.getName();
@@ -983,8 +1065,11 @@ public class CoordinatorProgramService {
 				event.getDescription());
 	}
 
-	/** Everything the summaries need, fetched once per call for a set of programs. */
-	/** {@code coordinators}: the coordinator each program names, by program id. */
+	/**
+	 * Everything the summaries need, fetched once per call for a set of programs. {@code coordinators}: the
+	 * coordinator each program names, by program id. {@code formerTeams}: per program, the teams that made a
+	 * mentorship in it and have since left it (see {@link #programMentorships}).
+	 */
 	public record Snapshot(
 			LocalDate today,
 			Instant now,
@@ -997,6 +1082,25 @@ public class CoordinatorProgramService {
 			Map<String, Instant> lastMeetingByPair,
 			Map<UUID, List<Meeting>> meetingsByOrganization,
 			Map<UUID, List<Bottleneck>> openBottlenecks,
-			Set<UUID> overdueActionOrganizations) {
+			Set<UUID> overdueActionOrganizations,
+			Map<UUID, List<UUID>> formerTeams) {
+
+		/** A snapshot of programs that no team has left. */
+		public Snapshot(
+				LocalDate today,
+				Instant now,
+				Map<UUID, AppUser> coordinators,
+				Map<UUID, List<ProgramPhase>> phases,
+				Map<UUID, List<ProgramStartup>> startups,
+				Map<UUID, List<ProgramMentor>> mentors,
+				Map<UUID, Organization> organizations,
+				Map<UUID, List<Mentorship>> mentorships,
+				Map<String, Instant> lastMeetingByPair,
+				Map<UUID, List<Meeting>> meetingsByOrganization,
+				Map<UUID, List<Bottleneck>> openBottlenecks,
+				Set<UUID> overdueActionOrganizations) {
+			this(today, now, coordinators, phases, startups, mentors, organizations, mentorships, lastMeetingByPair,
+					meetingsByOrganization, openBottlenecks, overdueActionOrganizations, Map.of());
+		}
 	}
 }

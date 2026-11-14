@@ -93,6 +93,54 @@ public class AdminCoordinatorService {
 		return toResponse(coordinator, outcome);
 	}
 
+	/** An email the admin typed as a program coordinator, checked but not acted on: {@code existing} is set for an
+	 * approved coordinator, null for an email that will get a new account. Only this service makes one. */
+	record CheckedInvite(String email, String fullName, AppUser existing) {
+	}
+
+	/**
+	 * Checks an email typed in "Yeni Program Oluştur" or Koordinatörler without changing anything, so a request's
+	 * invites can all be checked before any of them creates a login or sends a mail. An approved coordinator joins as
+	 * is (the same test as choosing one by id); an email with no account may be invited; any other account is
+	 * refused, since promoting a mentor or mentee, or reactivating a coordinator, stays a deliberate step in
+	 * Koordinatör ekle.
+	 */
+	@Transactional
+	CheckedInvite checkNewProgramCoordinator(UUID actorId, String email, String fullName) {
+		requireAdmin(actorId);
+		String normalized = normalize(email);
+		Optional<AppUser> existing = appUserRepository.findByEmailIgnoreCase(normalized);
+		if (existing.isPresent() && existing.get().has(UserRole.COORDINATOR)
+				&& existing.get().getStatus() == UserAccountStatus.APPROVED) {
+			return new CheckedInvite(normalized, existing.get().getFullName(), existing.get());
+		}
+		CoordinatorCandidateStatus status = classify(existing);
+		if (status != CoordinatorCandidateStatus.NEW) {
+			throw new InvalidRequestException(newProgramRefusal(status, normalized));
+		}
+		return new CheckedInvite(normalized, fullName.trim(), null);
+	}
+
+	/**
+	 * Acts on a {@link CheckedInvite}: an approved coordinator is returned as is; a new email gets an approved
+	 * coordinator account and a login now, and after the program commits a mail that names the program and carries
+	 * a password setup link.
+	 */
+	@Transactional
+	AppUser coordinatorForNewProgram(UUID actorId, CheckedInvite invite, String programName) {
+		requireAdmin(actorId);
+		if (invite.existing() != null) {
+			return invite.existing();
+		}
+		AppUser coordinator = newCoordinator(invite.email(), invite.fullName());
+		coordinator.setFirebaseUid(loginProvisioner.loginFor(invite.email(), coordinator.getFullName()));
+		coordinator.setRole(UserRole.COORDINATOR);
+		coordinator.setStatus(UserAccountStatus.APPROVED);
+		appUserRepository.save(coordinator);
+		sendProgramInvite(coordinator, programName);
+		return coordinator;
+	}
+
 	/** "Şifre belirleme e-postasını tekrar gönder": a fresh link for a coordinator who lost or never got it. */
 	@Transactional(readOnly = true)
 	public CoordinatorAccountResponse resendPasswordSetup(UUID actorId, UUID coordinatorId) {
@@ -140,6 +188,20 @@ public class AdminCoordinatorService {
 				.orElse(false);
 	}
 
+	/**
+	 * Firebase's reset link works once and expires within about an hour, so the mail says how to get a new one. If
+	 * Firebase gives no link, the mail still goes out with the sign-in page, where "Şifremi unuttum" makes one.
+	 */
+	private void sendProgramInvite(AppUser coordinator, String programName) {
+		String login = mailService.link("/login");
+		String setup = loginProvisioner.passwordSetupLink(coordinator.getEmail(), login).orElse(login);
+		mailService.sendAfterCommit(
+				coordinator.getEmail(),
+				Texts.get(coordinator, "mail.programCoordinatorInvite.subject", programName),
+				Texts.get(coordinator, "mail.programCoordinatorInvite.body",
+						coordinator.getFullName(), programName, setup, login));
+	}
+
 	private CoordinatorCandidateStatus classify(Optional<AppUser> existing) {
 		if (existing.isEmpty()) {
 			return CoordinatorCandidateStatus.NEW;
@@ -167,6 +229,14 @@ public class AdminCoordinatorService {
 			case TEAM_MEMBER -> "A startup team member cannot become a coordinator.";
 			case MENTOR_IN_MENTORSHIP -> "This mentor still has a planned or active mentorship.";
 			default -> "This email cannot become a coordinator.";
+		};
+	}
+
+	private static String newProgramRefusal(CoordinatorCandidateStatus status, String email) {
+		return switch (status) {
+			case ADMIN -> Texts.forRequest("error.programCoordinatorIsAdmin", email);
+			case REACTIVATABLE -> Texts.forRequest("error.programCoordinatorDeactivated", email);
+			default -> Texts.forRequest("error.programCoordinatorHasAccount", email);
 		};
 	}
 

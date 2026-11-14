@@ -132,7 +132,7 @@ public class InstitutionLoginService {
 		}
 		AppUser user = users.findById(UUID.fromString(userId))
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-		if (user.getStatus() == UserAccountStatus.REJECTED) {
+		if (user.getStatus() == UserAccountStatus.REJECTED || user.getStatus() == UserAccountStatus.DELETED) {
 			throw noAccess();
 		}
 		return loginProvisioner.customToken(user.getFirebaseUid(), user.getEmail(), user.getFullName(), false);
@@ -154,7 +154,7 @@ public class InstitutionLoginService {
 			user = users.save(linkByEmail(provider, identity).orElseGet(() -> newUser(identity, backed)));
 			identities.save(new AppUserIdentity(user, provider.id(), persistentId, now));
 		}
-		if (user.getStatus() == UserAccountStatus.REJECTED) {
+		if (user.getStatus() == UserAccountStatus.REJECTED || user.getStatus() == UserAccountStatus.DELETED) {
 			throw noAccess();
 		}
 		for (UserRole permission : backed) {
@@ -207,7 +207,7 @@ public class InstitutionLoginService {
 			user = holder.get();
 			identities.save(new AppUserIdentity(user, provider.id(), persistentId, now));
 		}
-		if (user.getStatus() == UserAccountStatus.REJECTED) {
+		if (user.getStatus() == UserAccountStatus.REJECTED || user.getStatus() == UserAccountStatus.DELETED) {
 			throw noAccess();
 		}
 		// Checked on every login, not only the first: an account promoted later keeps its own sign-in.

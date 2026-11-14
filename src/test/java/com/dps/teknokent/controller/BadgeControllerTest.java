@@ -20,6 +20,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
@@ -35,6 +36,8 @@ import com.dps.teknokent.service.BadgeService;
 
 @WebMvcTest(BadgeController.class)
 @Import(SecurityConfig.class)
+// These endpoints belong to the ODTÜ deployment; the Teknokent default answers them with a 404.
+@TestPropertySource(properties = "app.edition=ODTU")
 class BadgeControllerTest {
 
 	private static final UUID ACTOR = UUID.fromString("00000000-0000-0000-0000-0000000000c1");

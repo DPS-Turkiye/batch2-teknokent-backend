@@ -257,8 +257,10 @@ public class StartupDocumentService {
 		return actor.has(UserRole.ADMIN) || actor.has(UserRole.COORDINATOR);
 	}
 
+	/** Peer mentor evidence has its own visibility rules (PeerMentorDocumentService), so it reads as missing here. */
 	private StoredDocument requireDocument(UUID documentId) {
 		return storedDocumentRepository.findById(documentId)
+				.filter(document -> !DocumentKind.PEER_EVIDENCE.value().equals(document.getKind()))
 				.orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 	}
 

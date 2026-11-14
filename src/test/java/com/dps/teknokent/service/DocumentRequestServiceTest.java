@@ -32,12 +32,15 @@ import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramTeamMoveRepository;
 import com.dps.teknokent.dto.responses.DocumentRequestItemResponse;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.ProgramTeamMove;
 import com.dps.teknokent.dto.requests.AttachDocumentRequestUploadRequest;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -66,6 +69,8 @@ class DocumentRequestServiceTest {
 	private ProgramCoordinatorRepository programCoordinatorRepository;
 	@Mock
 	private ProgramStartupRepository programStartupRepository;
+	@Mock
+	private ProgramTeamMoveRepository programTeamMoveRepository;
 
 	@InjectMocks
 	private DocumentRequestService documentRequestService;
@@ -284,6 +289,32 @@ class DocumentRequestServiceTest {
 		assertThat(kept.getSortOrder()).isEqualTo(1);
 		assertThat(kept.getDueDate()).isEqualTo(dueDate);
 		verify(itemRepository).deleteAll(List.of(dropped));
+	}
+
+	@Test
+	void replaceOnProgramDropsWhatAStartupThatLeftStillOwedButKeepsWhatAMovedTeamUploaded() {
+		UUID programId = UUID.randomUUID();
+		AppUser coordinator = user(UserRole.COORDINATOR, "Koordinatör Ece");
+		Program program = new Program();
+		program.setId(programId);
+		program.setCreatedBy(coordinator.getId());
+		Organization removed = organization();
+		Organization moved = organization();
+		DocumentRequestItem ofRemoved = programItem(programId, removed, "Pitch deck", coordinator);
+		DocumentRequestItem ofMoved = programItem(programId, moved, "Pitch deck", coordinator);
+
+		when(programRepository.findById(programId)).thenReturn(Optional.of(program));
+		when(domainLookupService.requireUser(coordinator.getId())).thenReturn(coordinator);
+		when(itemRepository.findByProgramIdOrderBySortOrderAscCreatedAtAsc(programId))
+				.thenReturn(List.of(ofRemoved, ofMoved));
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(programId)).thenReturn(List.of());
+		when(programTeamMoveRepository.findByFromProgramId(programId)).thenReturn(List.of(new ProgramTeamMove(
+				moved.getId(), programId, UUID.randomUUID(), UUID.randomUUID(), Instant.now(), Instant.now())));
+
+		documentRequestService.replaceOnProgram(
+				programId, coordinator.getId(), List.of("Finansal tablolar"), LocalDate.of(2026, 9, 30));
+
+		verify(itemRepository).deleteAll(List.of(ofRemoved));
 	}
 
 	@Test

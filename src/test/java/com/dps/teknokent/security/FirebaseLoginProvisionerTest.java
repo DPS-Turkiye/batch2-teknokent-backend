@@ -48,6 +48,33 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-1");
 	}
 
+	@Test
+	void reusesAVerifiedLoginForTheEmailAsItIs() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-owner");
+		when(login.isEmailVerified()).thenReturn(true);
+		when(firebaseAuth.getUserByEmail("ayse@tekno.com")).thenReturn(login);
+
+		assertThat(provisioner.loginFor("ayse@tekno.com", "Ayşe")).isEqualTo("uid-owner");
+		verify(firebaseAuth, never()).updateUser(any(UserRecord.UpdateRequest.class));
+		verify(firebaseAuth, never()).revokeRefreshTokens(anyString());
+	}
+
+	// Someone could have made that login with a password of their own before the admin invited the address.
+	@Test
+	void locksOutAnUnverifiedLoginBeforeReusingIt() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-unverified");
+		when(login.isEmailVerified()).thenReturn(false);
+		when(firebaseAuth.getUserByEmail("yeni@tekno.com")).thenReturn(login);
+
+		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-unverified");
+
+		verify(firebaseAuth).updateUser(any(UserRecord.UpdateRequest.class));
+		verify(firebaseAuth).revokeRefreshTokens("uid-unverified");
+		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
+	}
+
 	// A custom-token user has no e-mail of its own, and the bearer filter refuses a token without one.
 	@Test
 	void createsTheInstitutionLoginWithItsEmailBeforeMintingItsToken() throws Exception {
@@ -174,6 +201,56 @@ class FirebaseLoginProvisionerTest {
 		assertThatThrownBy(() -> provisioner.revokeSignIns("ayse@startup.com"))
 				.isInstanceOfSatisfying(ResponseStatusException.class,
 						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
+	}
+
+	@Test
+	void findsTheUidOfTheLoginThatUsesAnAddressAndNoneWhenThereIsNoLogin() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-current");
+		when(firebaseAuth.getUserByEmail("ayse@startup.com")).thenReturn(login);
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		when(firebaseAuth.getUserByEmail("gone@startup.com")).thenThrow(notFound);
+
+		assertThat(provisioner.uidForEmail("ayse@startup.com")).contains("uid-current");
+		assertThat(provisioner.uidForEmail("gone@startup.com")).isEmpty();
+	}
+
+	// Before a deletion: an answer Firebase could not give must stop it, not read as "no login".
+	@Test
+	void aFailedUidLookupIsABadGatewayNotAMissingLogin() throws Exception {
+		FirebaseAuthException denied = failure(ErrorCode.PERMISSION_DENIED, null);
+		when(firebaseAuth.getUserByEmail("ayse@startup.com")).thenThrow(denied);
+
+		assertThatThrownBy(() -> provisioner.uidForEmail("ayse@startup.com"))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
+	}
+
+	@Test
+	void deletesALoginByUidAfterEndingItsSignIns() throws Exception {
+		provisioner.deleteLogin("uid-1");
+
+		verify(firebaseAuth).revokeRefreshTokens("uid-1");
+		verify(firebaseAuth).deleteUser("uid-1");
+	}
+
+	// The cleanup retries, so a login that is already gone is the wanted end state.
+	@Test
+	void aLoginThatIsAlreadyGoneCountsAsDeleted() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		doThrow(notFound).when(firebaseAuth).revokeRefreshTokens("uid-gone");
+
+		provisioner.deleteLogin("uid-gone");
+
+		verify(firebaseAuth, never()).deleteUser(anyString());
+	}
+
+	@Test
+	void anyOtherFailureToDeleteALoginIsThrownSoItIsRetried() throws Exception {
+		FirebaseAuthException internal = failure(ErrorCode.INTERNAL, null);
+		doThrow(internal).when(firebaseAuth).deleteUser("uid-1");
+
+		assertThatThrownBy(() -> provisioner.deleteLogin("uid-1")).isInstanceOf(IllegalStateException.class);
 	}
 
 	private static UserRecord user(String uid, UserInfo[] providers) {

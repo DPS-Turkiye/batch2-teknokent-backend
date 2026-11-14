@@ -9,6 +9,8 @@ import org.springframework.web.client.RestClient;
 
 import com.dps.teknokent.domain.TranscriptBotConstants;
 import com.dps.teknokent.dto.provider.ProviderBotDetails;
+import com.dps.teknokent.dto.provider.ProviderBotListResponse;
+import com.dps.teknokent.dto.provider.ProviderBotSummary;
 import com.dps.teknokent.dto.provider.ProviderBotResponse;
 import com.dps.teknokent.dto.provider.ProviderBotStatusResponse;
 import com.dps.teknokent.dto.provider.ProviderTranscriptResponse;
@@ -17,6 +19,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 @Component
 public class MeetingProviderClient {
+
+  private static final int RECENT_BOTS_SCANNED = 25;
 
   private final RestClient client;
   private final JsonMapper jsonMapper;
@@ -59,6 +63,27 @@ public class MeetingProviderClient {
         .uri("/bots/status")
         .retrieve()
         .body(ProviderBotStatusResponse.class);
+  }
+
+  /**
+   * The newest bot the provider has for this meeting link, finished or not, or null. Vexa 0.12 has no
+   * per-meeting read, so this scans its newest-first list for the platform.
+   */
+  public ProviderBotSummary findLatestBot(String platform, String nativeMeetingId) {
+    ProviderBotListResponse body = client.get()
+        .uri(uri -> uri.path("/bots")
+            .queryParam("platform", platform)
+            .queryParam("limit", RECENT_BOTS_SCANNED)
+            .build())
+        .retrieve()
+        .body(ProviderBotListResponse.class);
+    if (body == null || body.meetings() == null) {
+      return null;
+    }
+    return body.meetings().stream()
+        .filter(bot -> nativeMeetingId.equalsIgnoreCase(bot.nativeMeetingId()))
+        .findFirst()
+        .orElse(null);
   }
 
   public ProviderBotDetails getBot(String platform, String nativeMeetingId) {

@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.dps.teknokent.domain.ConsentAnswer;
 import com.dps.teknokent.dto.responses.ProfileAnalysisResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.dps.teknokent.dto.requests.CreateManualProfileRequest;
@@ -55,14 +56,16 @@ public class ProfileAnalysisController {
 			@RequestParam(required = false) UUID appUserId,
 			@RequestParam(defaultValue = "mentee") String profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
+			@RequestParam(required = false) String consentTextVersion,
 			@RequestParam(defaultValue = "auto") String ocrMode,
 			@RequestPart("file") MultipartFile file) {
 		UUID callerUserId = resolveCallerUserId();
+		ConsentAnswer consent = new ConsentAnswer(consentAccepted, consentTextVersion);
 		return callerUserId == null
 				? profileAnalysisService.parse(
-						organizationId, appUserId, profileType, consentAccepted, ocrMode, file)
+						organizationId, appUserId, profileType, consent, ocrMode, file)
 				: profileAnalysisService.parseForCaller(
-						callerUserId, appUserId, profileType, consentAccepted, ocrMode, file);
+						callerUserId, appUserId, profileType, consent, ocrMode, file);
 	}
 
 	/**
@@ -87,9 +90,11 @@ public class ProfileAnalysisController {
 	public Map<String, Object> parsePreview(
 			@RequestParam(defaultValue = "individual_mentee") String profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
+			@RequestParam(required = false) String consentTextVersion,
 			@RequestParam(defaultValue = "auto") String ocrMode,
 			@RequestPart("file") MultipartFile file) {
-		return profileAnalysisService.parsePreview(profileType, consentAccepted, ocrMode, file);
+		return profileAnalysisService.parsePreview(
+				profileType, new ConsentAnswer(consentAccepted, consentTextVersion), ocrMode, file);
 	}
 
 	/** Parse only, from a CV the signed-in user already uploaded. */
@@ -98,9 +103,11 @@ public class ProfileAnalysisController {
 			@PathVariable UUID documentId,
 			@RequestParam(defaultValue = "individual_mentee") String profileType,
 			@RequestParam(defaultValue = "false") boolean consentAccepted,
+			@RequestParam(required = false) String consentTextVersion,
 			@RequestParam(defaultValue = "auto") String ocrMode) {
 		return profileAnalysisService.parseStoredCvPreview(
-				resolveCallerUserId(), documentId, profileType, consentAccepted, ocrMode);
+				resolveCallerUserId(), documentId, profileType, new ConsentAnswer(consentAccepted, consentTextVersion),
+				ocrMode);
 	}
 
 	@PostMapping("/manual")

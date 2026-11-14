@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -23,6 +24,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.WeeklyProgramWarning;
 import com.dps.teknokent.dto.requests.ReadWeeklyProgramRequest;
@@ -35,6 +37,7 @@ import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.entity.StoredDocument;
+import com.dps.teknokent.exception.AiFeatureDisabledException;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -88,7 +91,7 @@ class WeeklyProgramServiceTest {
 	void setUp() {
 		service = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService, programPhaseRepository,
 				programWeekRepository, storedDocumentRepository, objectStorage, textExtractor, piiRedactionService,
-				aiProviderClient, jsonUtils);
+				aiProviderClient, jsonUtils, TestAiFeatures.allOn());
 		program = new Program();
 		program.setId(PROGRAM_ID);
 		program.setStartDate(START);
@@ -129,6 +132,18 @@ class WeeklyProgramServiceTest {
 		assertThat(proposal.notes()).containsExactly("9 Ocak Cumartesi — Demo Day");
 		assertThat(proposal.existing()).isEqualTo(new WeeklyProgramProposalResponse.Existing(0, 0,
 				ProgramCalendar.currentWeek(START, END, LocalDate.now(MeetingSlotTimes.APP_ZONE))));
+	}
+
+	@Test
+	void refusesBeforeReadingTheFileWhenSyllabusReadingIsSwitchedOff() {
+		editing();
+		WeeklyProgramService switchedOff = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService,
+				programPhaseRepository, programWeekRepository, storedDocumentRepository, objectStorage, textExtractor,
+				piiRedactionService, aiProviderClient, jsonUtils, TestAiFeatures.allOnExcept(AiFeature.SYLLABUS));
+
+		assertThatThrownBy(() -> switchedOff.read(COORDINATOR_ID, PROGRAM_ID, readRequest()))
+				.isInstanceOf(AiFeatureDisabledException.class);
+		verifyNoInteractions(storedDocumentRepository, objectStorage, textExtractor, aiProviderClient);
 	}
 
 	@Test
@@ -249,8 +264,8 @@ class WeeklyProgramServiceTest {
 
 		verify(coordinatorProgramService).writePhases(PROGRAM_ID, List.of(
 				new ReplaceProgramPhasesRequest.PhaseInput("Problem", START, LocalDate.of(2026, 11, 16),
-						"Problem tanımı"),
-				new ReplaceProgramPhasesRequest.PhaseInput("Fikir", LocalDate.of(2026, 11, 17), END, null)));
+						"Problem tanımı", null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Fikir", LocalDate.of(2026, 11, 17), END, null, null)));
 		verify(programWeekPlanService).writeWeeks(program, COORDINATOR_ID, weeks);
 		verify(coordinatorProgramService).attachSyllabus(program, COORDINATOR_ID, DOCUMENT_ID);
 	}
@@ -336,25 +351,51 @@ class WeeklyProgramServiceTest {
 	}
 
 	@Test
+	void readingForAnEndedProgramReportsTheSameKeptWeeksTheSaveKeeps() {
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		program.setStartDate(today.minusDays(70));
+		program.setEndDate(today.minusDays(8));
+		editing();
+		when(storedDocumentRepository.findById(DOCUMENT_ID)).thenReturn(Optional.of(weeklyProgram(COORDINATOR_ID)));
+		stubText("Hafta 1", "Hafta 1", 1);
+		when(aiProviderClient.weeklyProgram(anyString(), any(), any(), any())).thenReturn(lookAlikeAnswer());
+
+		WeeklyProgramProposalResponse proposal = service.read(COORDINATOR_ID, PROGRAM_ID, readRequest());
+
+		assertThat(proposal.totalWeeks()).isEqualTo(9);
+		assertThat(proposal.existing().currentWeek())
+				.as("every week is past, so a keep-past save keeps the last one too")
+				.isEqualTo(10);
+	}
+
+	@Test
+	void theFirstReplacedWeekIsNullBeforeTheStartTheRunningWeekThenOnePastTheEnd() {
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, START.minusDays(1))).isNull();
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, START)).isEqualTo(1);
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, END)).isEqualTo(11);
+		assertThat(WeeklyProgramService.firstReplacedWeek(START, END, END.plusDays(1))).isEqualTo(12);
+	}
+
+	@Test
 	void completedPhasesStayAndAPhaseRunningIntoTodayStartsAfterThem() {
 		LocalDate today = LocalDate.of(2026, 11, 20);
 		List<ReplaceProgramPhasesRequest.PhaseInput> kept = WeeklyProgramService.keepCompletedPhases(
 				List.of(phase("Keşif", START, LocalDate.of(2026, 11, 9)),
 						phase("Şimdiki", LocalDate.of(2026, 11, 10), LocalDate.of(2026, 11, 30))),
 				List.of(
-						new ReplaceProgramPhasesRequest.PhaseInput("Yeni geçmiş", START, LocalDate.of(2026, 11, 2), null),
+						new ReplaceProgramPhasesRequest.PhaseInput("Yeni geçmiş", START, LocalDate.of(2026, 11, 2), null, null),
 						new ReplaceProgramPhasesRequest.PhaseInput("Yeni şimdiki", LocalDate.of(2026, 11, 3),
-								LocalDate.of(2026, 11, 23), null),
+								LocalDate.of(2026, 11, 23), null, null),
 						new ReplaceProgramPhasesRequest.PhaseInput("Yeni sonraki", LocalDate.of(2026, 11, 24),
-								LocalDate.of(2026, 12, 7), null)),
+								LocalDate.of(2026, 12, 7), null, null)),
 				today);
 
 		assertThat(kept).containsExactly(
-				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", START, LocalDate.of(2026, 11, 9), null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", START, LocalDate.of(2026, 11, 9), null, null),
 				new ReplaceProgramPhasesRequest.PhaseInput("Yeni şimdiki", LocalDate.of(2026, 11, 10),
-						LocalDate.of(2026, 11, 23), null),
+						LocalDate.of(2026, 11, 23), null, null),
 				new ReplaceProgramPhasesRequest.PhaseInput("Yeni sonraki", LocalDate.of(2026, 11, 24),
-						LocalDate.of(2026, 12, 7), null));
+						LocalDate.of(2026, 12, 7), null, null));
 	}
 
 	private void editing() {
