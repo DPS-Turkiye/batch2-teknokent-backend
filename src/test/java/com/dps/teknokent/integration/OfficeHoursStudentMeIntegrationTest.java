@@ -218,7 +218,7 @@ class OfficeHoursStudentMeIntegrationTest {
 				.andExpect(jsonPath("$.length()").value(0));
 
 		postAs(academician, "/api/office-hours/me/requests/" + requestId + "/cancel", "{}")
-				.andExpect(status().isBadRequest());
+				.andExpect(status().isConflict());
 	}
 
 	@Test

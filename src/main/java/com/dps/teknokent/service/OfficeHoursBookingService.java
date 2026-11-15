@@ -343,13 +343,13 @@ public class OfficeHoursBookingService {
 			throw forbidden("Only the student and the academic of the meeting can cancel it.");
 		}
 		if (request.getStatus() != OfficeHoursRequestStatus.ACCEPTED) {
-			throw new InvalidRequestException("Only an accepted meeting can be cancelled");
+			throw new ConflictException("Only an accepted meeting can be cancelled");
 		}
 		OfficeHoursMeeting meeting = meetingRepository.findByRequestId(request.getId())
-				.orElseThrow(() -> new InvalidRequestException("Only an accepted meeting can be cancelled"));
+				.orElseThrow(() -> new ConflictException("Only an accepted meeting can be cancelled"));
 		Instant now = clock.instant();
 		if (!meeting.getScheduledAt().isAfter(now)) {
-			throw new InvalidRequestException("A meeting that has started can no longer be cancelled");
+			throw new ConflictException("A meeting that has started can no longer be cancelled");
 		}
 		String reason = TextUtils.normalizeOptional(cancellation.reason());
 		// FR-OH-14: the student was planning around it, so an academic calling it off this close has to say why.

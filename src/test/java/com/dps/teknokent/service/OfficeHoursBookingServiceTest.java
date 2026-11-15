@@ -443,15 +443,16 @@ class OfficeHoursBookingServiceTest {
 
 	@Test
 	void aMeetingThatStartedOrWasNeverAcceptedCannotBeCancelledNorBySomeoneElse() {
+		// The meeting's state rules it out, not the request: a conflict (409), not a bad request.
 		acceptedMeetingAt(NOW.minusSeconds(60));
 		assertThatThrownBy(() -> service.cancel(STUDENT, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null)))
-				.isInstanceOf(InvalidRequestException.class);
+				.isInstanceOf(ConflictException.class);
 		assertThatThrownBy(() -> service.cancel(UUID.randomUUID(), COURSE, REQUEST,
 				new CancelOfficeHoursMeetingRequest(null))).isInstanceOf(ResponseStatusException.class);
 
 		existing(OfficeHoursRequestStatus.PENDING);
 		assertThatThrownBy(() -> service.cancel(STUDENT, COURSE, REQUEST, new CancelOfficeHoursMeetingRequest(null)))
-				.isInstanceOf(InvalidRequestException.class);
+				.isInstanceOf(ConflictException.class);
 		verifyNoInteractions(mailService);
 	}
 

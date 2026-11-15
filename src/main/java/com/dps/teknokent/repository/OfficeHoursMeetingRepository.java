@@ -35,18 +35,22 @@ public interface OfficeHoursMeetingRepository extends JpaRepository<OfficeHoursM
 
 	// A side is claimed before its reminder is sent, so two servers never both send it, and released when sending
 	// failed, so the next run tries again. Each runs in its own transaction: the claim must be visible to the other
-	// server before the slow send starts.
+	// server before the slow send starts. The claim also requires the meeting to be live, in the same update: one
+	// cancelled after findReminderDue read the list is not claimed, so it gets no reminder (no check-then-act gap).
 
 	@Transactional
 	@Modifying
-	@Query("update OfficeHoursMeeting m set m.studentRemindedAt = :now where m.id = :id and m.studentRemindedAt is null")
+	@Query("""
+			update OfficeHoursMeeting m set m.studentRemindedAt = :now
+			where m.id = :id and m.studentRemindedAt is null and m.cancelledAt is null
+			""")
 	int claimStudentReminder(@Param("id") UUID id, @Param("now") Instant now);
 
 	@Transactional
 	@Modifying
 	@Query("""
 			update OfficeHoursMeeting m set m.instructorRemindedAt = :now
-			where m.id = :id and m.instructorRemindedAt is null
+			where m.id = :id and m.instructorRemindedAt is null and m.cancelledAt is null
 			""")
 	int claimInstructorReminder(@Param("id") UUID id, @Param("now") Instant now);
 
