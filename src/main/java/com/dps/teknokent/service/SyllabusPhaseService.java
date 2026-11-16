@@ -141,9 +141,9 @@ public class SyllabusPhaseService {
 			}
 			weeks.put(number, new ProgramWeekPlanResponse.Week(number,
 					programStart == null ? null : ProgramCalendar.weekStart(programStart, number),
-					programStart == null ? null : ProgramCalendar.weekEnd(programStart, programEnd, number),
+					programStart == null ? null : ProgramCalendar.weekEnd(programStart, programEnd, number), false,
 					title, lines(node.path("topics")), lines(node.path("activities")),
-					lines(node.path("deliverables")), node.path("inferred").asBoolean(false)));
+					lines(node.path("deliverables")), node.path("inferred").asBoolean(false), List.of()));
 		}
 		return List.copyOf(weeks.values());
 	}

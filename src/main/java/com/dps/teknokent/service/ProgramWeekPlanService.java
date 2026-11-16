@@ -14,9 +14,11 @@ import com.dps.teknokent.dto.requests.ReplaceProgramWeeksRequest;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramWeek;
+import com.dps.teknokent.entity.ProgramWeekSession;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.util.ProgramCalendar;
+import com.dps.teknokent.util.ProgramSchedule;
 
 import lombok.RequiredArgsConstructor;
 
@@ -50,10 +52,14 @@ public class ProgramWeekPlanService {
 		Integer total = ProgramCalendar.totalWeeks(program.getStartDate(), program.getEndDate());
 		Set<Integer> seen = new HashSet<>();
 		for (ReplaceProgramWeeksRequest.WeekInput input : inputs) {
+			if ((input.startDate() == null) != (input.endDate() == null)
+					|| (input.startDate() != null && input.endDate().isBefore(input.startDate()))) {
+				throw new InvalidRequestException("Both week dates are required in chronological order.");
+			}
 			if (!seen.add(input.week())) {
 				throw new InvalidRequestException("Each week can appear only once in the plan.");
 			}
-			if (total != null && input.week() > total) {
+			if (total != null && input.week() > total && input.startDate() == null) {
 				throw new InvalidRequestException("The program has only " + total + " weeks.");
 			}
 		}
@@ -69,6 +75,13 @@ public class ProgramWeekPlanService {
 					week.setProgramId(programId);
 					week.setWeekNumber(input.week());
 					week.setTitle(input.title().trim());
+					week.setStartDate(input.startDate());
+					week.setEndDate(input.endDate());
+					if (input.sessions() != null) {
+						week.getSessions().addAll(input.sessions().stream().map(session -> new ProgramWeekSession(
+								session.date(), session.startTime(), session.endTime(), session.place(),
+								session.title())).toList());
+					}
 					week.setTopics(ProgramWeek.joined(input.topics()));
 					week.setActivities(ProgramWeek.joined(input.activities()));
 					week.setDeliverables(ProgramWeek.joined(input.deliverables()));
@@ -90,10 +103,14 @@ public class ProgramWeekPlanService {
 
 	static ProgramWeekPlanResponse.Week weekOf(ProgramWeek week, LocalDate start, LocalDate end) {
 		int number = week.getWeekNumber();
+		ProgramSchedule schedule = ProgramSchedule.of(start, end, List.of(week));
+		ProgramSchedule.Dates dates = schedule.datesOf(number);
 		return new ProgramWeekPlanResponse.Week(number,
-				start == null ? null : ProgramCalendar.weekStart(start, number),
-				start == null ? null : ProgramCalendar.weekEnd(start, end, number),
+				dates == null ? null : dates.start(), dates == null ? null : dates.end(), schedule.printed(number),
 				week.getTitle(), ProgramWeek.lines(week.getTopics()), ProgramWeek.lines(week.getActivities()),
-				ProgramWeek.lines(week.getDeliverables()), week.isInferred());
+				ProgramWeek.lines(week.getDeliverables()), week.isInferred(),
+				week.getSessions().stream().map(session -> new ProgramWeekPlanResponse.Session(session.getDate(),
+						session.getStartTime(), session.getEndTime(), session.getPlace(), session.getTitle()))
+						.toList());
 	}
 }

@@ -101,6 +101,38 @@ class ProgramWeekPlanServiceTest {
 		verify(weeks, never()).deleteByProgramId(any());
 	}
 
+	@Test
+	void printedDatesSurviveSavingEvenWhenTheProgramCalendarDiffers() {
+		LocalDate printed = LocalDate.of(2026, 11, 9);
+		var session = new ReplaceProgramWeeksRequest.SessionInput(printed, null, null, "Salon", "Oturum");
+		var input = new ReplaceProgramWeeksRequest.WeekInput(5, "PDF week", List.of(), List.of(), List.of(),
+				false, printed, printed.plusDays(4), List.of(session));
+		var saved = service.replace(COORDINATOR, PROGRAM_ID, new ReplaceProgramWeeksRequest(null, List.of(input)));
+		assertThat(saved.weeks()).singleElement().satisfies(week -> {
+			assertThat(week.week()).isEqualTo(5);
+			assertThat(week.startDate()).isEqualTo(printed);
+			assertThat(week.endDate()).isEqualTo(printed.plusDays(4));
+			assertThat(week.datesFromSource()).isTrue();
+			assertThat(week.sessions()).singleElement().satisfies(row -> {
+				assertThat(row.date()).isEqualTo(printed);
+				assertThat(row.place()).isEqualTo("Salon");
+			});
+		});
+	}
+
+	@Test
+	void incompleteOrReversedPrintedDatesAreRejectedBeforeDeletingAnything() {
+		LocalDate date = LocalDate.of(2026, 11, 9);
+		for (LocalDate end : new LocalDate[] { null, date.minusDays(1) }) {
+			var input = new ReplaceProgramWeeksRequest.WeekInput(1, "PDF week", List.of(), List.of(), List.of(),
+					false, date, end, List.of());
+			assertThatThrownBy(() -> service.replace(COORDINATOR, PROGRAM_ID,
+					new ReplaceProgramWeeksRequest(null, List.of(input))))
+					.isInstanceOf(InvalidRequestException.class);
+		}
+		verify(weeks, never()).deleteByProgramId(any());
+	}
+
 	private static ReplaceProgramWeeksRequest.WeekInput input(int week, String title) {
 		return new ReplaceProgramWeeksRequest.WeekInput(week, title, List.of(), List.of(), List.of(), false);
 	}
