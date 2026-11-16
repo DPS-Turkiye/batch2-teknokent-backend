@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Arrays;
@@ -71,11 +72,14 @@ public class StartupProcessService {
 	private final MenteeProgramService menteeProgramService;
 	private final ProgramPhaseRepository programPhaseRepository;
 	private final StartupAccessService startupAccessService;
+	private final ProgramAssignmentService programAssignmentService;
 
-	@Transactional(readOnly = true)
+	/** Not read-only: a team that joined late is handed the program's open Ödevler here (ProgramAssignmentService). */
+	@Transactional
 	public StartupProcessResponse get(UUID organizationId, UUID actorId) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
 		requireTeamOrEditor(organization, actorId);
+		programAssignmentService.catchUp(organization);
 		return describe(organization, today());
 	}
 
@@ -158,13 +162,24 @@ public class StartupProcessService {
 		ActionItem item = actionItemRepository.findByIdAndOrganizationId(assignmentId, organizationId)
 				.filter(StartupProcessService::isAssignment)
 				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
-		StoredDocument document = storedDocumentRepository.findById(request.documentId())
-				.orElseThrow(() -> new ResourceNotFoundException("Document not found: " + request.documentId()));
-		if (!organizationId.equals(document.getOrganizationId())) {
-			throw new InvalidRequestException("The submitted document belongs to another startup");
+		UUID documentId = request.documentId();
+		if (documentId == null) {
+			if (item.getProgramAssignment() == null || item.getProgramAssignment().isFileRequired()) {
+				throw new InvalidRequestException(Texts.forRequest("error.assignmentFileRequired"));
+			}
+		} else {
+			StoredDocument document = storedDocumentRepository.findById(documentId)
+					.orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+			if (!organizationId.equals(document.getOrganizationId())) {
+				throw new InvalidRequestException("The submitted document belongs to another startup");
+			}
+			item.setSubmissionDocumentId(document.getId());
 		}
 
-		item.setSubmissionDocumentId(document.getId());
+		// The first hand-in dates it; a file sent again later does not make an on-time Ödev late.
+		if (item.getSubmittedAt() == null) {
+			item.setSubmittedAt(Instant.now());
+		}
 		item.setStatus(ActionItemStatus.COMPLETED);
 		actionItemRepository.saveAndFlush(item);
 		return describe(organization, today());

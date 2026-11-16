@@ -24,12 +24,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "action_item")
+@Table(name = "action_item", uniqueConstraints = @UniqueConstraint(name = "uq_action_item_program_assignment", columnNames = {
+		"program_assignment_id", "organization_id" }))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -139,6 +141,15 @@ public class ActionItem {
 
 	@Column(name = "submission_document_id")
 	private UUID submissionDocumentId;
+
+	/** When the team handed the Ödev in; null for older hand-ins and for Ödevler not handed in. */
+	@Column(name = "submitted_at")
+	private Instant submittedAt;
+
+	/** The program Ödev this is the team's copy of; null for any other action item or Ödev. */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "program_assignment_id")
+	private ProgramAssignment programAssignment;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "created_by_id")
