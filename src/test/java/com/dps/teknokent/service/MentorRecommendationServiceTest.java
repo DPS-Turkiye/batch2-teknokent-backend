@@ -39,7 +39,7 @@ class MentorRecommendationServiceTest {
 	private MenteeProgramService menteeProgramService;
 
 	private static final AiProperties OPENROUTER = new AiProperties(AiProvider.OPENROUTER, null,
-			new AiProperties.OpenRouter("key", null, null, null, "openai/text-embedding-3-small", null));
+			new AiProperties.OpenRouter("key", null, null, null, null, "openai/text-embedding-3-small", null));
 
 	private MentorRecommendationService recommendationService;
 

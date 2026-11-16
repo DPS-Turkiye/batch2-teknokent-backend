@@ -6,7 +6,7 @@ public enum WeeklyProgramWarning {
 	TEXT_CUT,
 	/** The file prints a date for these weeks that falls outside that week on the program calendar. */
 	DATES_DIFFER,
-	/** These weeks were left out: past the program's last week, repeated, or without a title. */
+	/** These weeks were left out: past the program's last week, or without a title. */
 	WEEKS_DROPPED,
 	/** The AI's phase ranges did not fit the weeks, so the phases were rebuilt from each week's phase. */
 	PHASES_REBUILT,

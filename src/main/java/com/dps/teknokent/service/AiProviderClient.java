@@ -66,7 +66,9 @@ public class AiProviderClient {
 				- Put document/extraction limitations in warnings.
 				- The source may be Turkish, English, or contain both languages.
 				""";
-		return structuredCompletion(instructions, redactedDocumentText, profileType + "_profile", schema, "profile");
+		return structuredCompletion(profileModel(), instructions, redactedDocumentText, profileType + "_profile",
+				schema,
+				"profile");
 	}
 
 	/**
@@ -80,8 +82,12 @@ public class AiProviderClient {
 				The supplied text is a program's week-by-week schedule (often a table with one row per week). Read it
 				into weeks, then group the weeks into phases.
 				Weeks: one entry per week row of the source, in order.
-				- week: the week number the source gives (for example "3 · ZİYARET / GEZİ 1" is week 3). When the source
-				  gives no number, count the rows from 1.
+				- week: the week number the source gives (for example "3 · ZİYARET / GEZİ 1" or "3. Hafta" is week 3).
+				  A row without a week number of its own (an event such as a bootcamp, a rehearsal or a demo day) gets
+				  null when it prints a date; its date places it. Only when the source gives neither week numbers nor
+				  dates, count the rows from 1.
+				- When several rows (sessions on different days) share a week number, return them as one entry for that
+				  week and keep every session's theme, speakers, workshop and tasks.
 				- source_date: the date the source prints for that week, as an ISO date (YYYY-MM-DD), or null. Copy it
 				  even when it does not fit the program calendar; never change it to fit.
 				- title: the week's own name or theme as written (for example "Keşfetmeye Başla"); when the week has no
@@ -116,7 +122,10 @@ public class AiProviderClient {
 				""".formatted(programStart == null ? "unknown" : programStart,
 				programEnd == null ? "unknown" : programEnd,
 				totalWeeks == null ? "unknown" : totalWeeks);
-		return structuredCompletion(instructions, redactedDocumentText, "weekly_program", schema, "weekly program");
+		// Its own model setting (OPENROUTER_PROGRAM_MODEL), so a stronger reader can be tried here without changing
+		// CV parsing or the syllabus read.
+		return structuredCompletion(programModel(), instructions, redactedDocumentText, "weekly_program", schema,
+				"weekly program");
 	}
 
 	/**
@@ -153,13 +162,14 @@ public class AiProviderClient {
 				""".formatted(programStart == null ? "unknown" : programStart,
 				programEnd == null ? "unknown" : programEnd,
 				totalWeeks == null ? "unknown" : totalWeeks);
-		return structuredCompletion(instructions, redactedDocumentText, "syllabus_phases", schema, "phase list");
+		return structuredCompletion(profileModel(), instructions, redactedDocumentText, "syllabus_phases", schema,
+				"phase list");
 	}
 
 	private JsonNode structuredCompletion(
-			String instructions, String userText, String schemaName, JsonNode schema, String resultName) {
+			String model, String instructions, String userText, String schemaName, JsonNode schema, String resultName) {
 		Map<String, Object> payload = Map.of(
-				"model", profileModel(),
+				"model", model,
 				"messages", List.of(
 						Map.of("role", "system", "content", instructions),
 						Map.of("role", "user", "content", userText)),
@@ -393,6 +403,10 @@ public class AiProviderClient {
 
 	private String profileModel() {
 		return properties.profileModel();
+	}
+
+	private String programModel() {
+		return properties.programModel();
 	}
 
 	private String reportModel() {

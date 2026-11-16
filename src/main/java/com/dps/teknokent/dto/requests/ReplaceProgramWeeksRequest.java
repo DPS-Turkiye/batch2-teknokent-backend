@@ -18,9 +18,9 @@ public record ReplaceProgramWeeksRequest(
 	public record WeekInput(
 			@Min(1) @Max(104) int week,
 			@NotBlank @Size(max = 160) String title,
-			@Size(max = 8) List<@NotBlank @Size(max = 200) String> topics,
-			@Size(max = 8) List<@NotBlank @Size(max = 200) String> activities,
-			@Size(max = 8) List<@NotBlank @Size(max = 200) String> deliverables,
+			@Size(max = 12) List<@NotBlank @Size(max = 200) String> topics,
+			@Size(max = 12) List<@NotBlank @Size(max = 200) String> activities,
+			@Size(max = 12) List<@NotBlank @Size(max = 200) String> deliverables,
 			boolean inferred) {
 	}
 }

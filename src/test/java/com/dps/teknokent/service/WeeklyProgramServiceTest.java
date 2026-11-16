@@ -149,17 +149,15 @@ class WeeklyProgramServiceTest {
 	}
 
 	@Test
-	void weeksPastTheProgramAreDroppedAndFlaggedAndARepeatedWeekKeepsItsFirstEntry() {
+	void weeksPastTheProgramAreDroppedAndFlaggedAndADatedRowWithoutANumberIsPlacedByItsDate() {
 		JsonNode answer = json("""
 				{"weeks": [
-				  %s,
 				  %s,
 				  %s,
 				  {"week": null, "source_date": "2026-11-04", "title": "Yalnızca tarihli", "topics": [],
 				   "activities": [], "deliverables": [], "phase": "Problem"}
 				], "phases": [], "notes": [], "warnings": []}
-				""".formatted(week(1, null, "Tanışma", "Problem"), week(1, null, "Yine 1", "Problem"),
-				week(12, null, "Program dışı", "Problem")));
+				""".formatted(week(1, null, "Tanışma", "Problem"), week(12, null, "Program dışı", "Problem")));
 
 		WeeklyProgramProposalResponse proposal = WeeklyProgramService.proposalOf(answer, START, END, 11,
 				List.of(), 1);
@@ -171,6 +169,109 @@ class WeeklyProgramServiceTest {
 				new WeeklyProgramProposalResponse.Warning(WeeklyProgramWarning.WEEKS_DROPPED, List.of(12)),
 				new WeeklyProgramProposalResponse.Warning(WeeklyProgramWarning.PHASES_REBUILT, List.of()));
 		assertThat(proposal.phases()).extracting(WeeklyProgramProposalResponse.Phase::name).containsExactly("Problem");
+	}
+
+	/** A program printed one row per session (Monday, Wednesday, Friday) gives the same week number three times. */
+	@Test
+	void aWeekThatComesBackOncePerSessionIsMergedIntoOneWeek() {
+		JsonNode answer = json("""
+				{"weeks": [
+				  {"week": 1, "source_date": "2026-10-27", "title": "Müşteri ve Pazar", "phase": "Keşif",
+				   "topics": ["Yapılandırılmış eğitim", "Konuşmacı: Ayşe Örnek", "Kitap: Örnek Kitap"],
+				   "activities": [], "deliverables": ["Müşteri profili"]},
+				  {"week": 1, "source_date": "2026-10-29", "title": "Müşteri ve Pazar", "phase": null,
+				   "topics": ["Uygulayıcı oturumu", "Konuşmacı: Mehmet Örnek"],
+				   "activities": [], "deliverables": ["PMF hipotezi", "Müşteri profili"]},
+				  {"week": 1, "source_date": "2026-10-31", "title": "Kurucu Atölyesi", "phase": null,
+				   "topics": ["Konuşmacı: Zeynep Örnek"],
+				   "activities": ["Workshop: Görüşme atölyesi"], "deliverables": ["5 müşteri görüşmesi"]},
+				  %s
+				], "phases": [], "notes": [], "warnings": []}
+				""".formatted(week(2, "2026-11-03", "Problem", "Keşif")));
+
+		WeeklyProgramProposalResponse proposal = WeeklyProgramService.proposalOf(answer, START, END, 11,
+				List.of(), 1);
+
+		assertThat(proposal.weeks()).extracting(ProgramWeekPlanResponse.Week::week).containsExactly(1, 2);
+		ProgramWeekPlanResponse.Week first = proposal.weeks().get(0);
+		assertThat(first.title()).isEqualTo("Müşteri ve Pazar");
+		assertThat(first.topics()).containsExactly("Yapılandırılmış eğitim", "Konuşmacı: Ayşe Örnek",
+				"Kitap: Örnek Kitap", "Uygulayıcı oturumu", "Konuşmacı: Mehmet Örnek", "Kurucu Atölyesi",
+				"Konuşmacı: Zeynep Örnek");
+		assertThat(first.activities()).containsExactly("Workshop: Görüşme atölyesi");
+		assertThat(first.deliverables()).as("a task named twice is kept once")
+				.containsExactly("Müşteri profili", "PMF hipotezi", "5 müşteri görüşmesi");
+		assertThat(first.inferred()).isFalse();
+		assertThat(proposal.warnings()).as("merging is not a loss, so nothing is flagged")
+				.extracting(WeeklyProgramProposalResponse.Warning::code)
+				.doesNotContain(WeeklyProgramWarning.WEEKS_DROPPED, WeeklyProgramWarning.DATES_DIFFER);
+	}
+
+	@Test
+	void aMergedWeekKeepsAtMostTwelveLinesPerList() {
+		List<String> rows = new ArrayList<>();
+		for (int session = 1; session <= 5; session++) {
+			rows.add("""
+					{"week": 1, "source_date": null, "title": "Hafta 1", "phase": null, "activities": [],
+					 "topics": ["Oturum %1$d", "Konuşmacı: Kişi %1$d", "Kitap: Kitap %1$d"], "deliverables": []}"""
+					.formatted(session));
+		}
+		JsonNode answer = json("{\"weeks\": [" + String.join(",", rows) + "], \"phases\": [], \"notes\": [], "
+				+ "\"warnings\": []}");
+
+		WeeklyProgramProposalResponse proposal = WeeklyProgramService.proposalOf(answer, START, END, 11,
+				List.of(), 1);
+
+		assertThat(proposal.weeks().get(0).topics()).hasSize(12).startsWith("Oturum 1").endsWith("Kitap: Kitap 4");
+	}
+
+	@Test
+	void aWeekNumberOutsideTheProgramIsPlacedByTheDateItPrints() {
+		JsonNode answer = json("""
+				{"weeks": [
+				  {"week": 0, "source_date": "2026-10-27", "title": "Açılış Günü", "topics": [], "activities": [],
+				   "deliverables": ["Yol haritası"], "phase": "Keşif"},
+				  %s
+				], "phases": [], "notes": [], "warnings": []}
+				""".formatted(week(1, "2026-10-28", "Tanışma", "Keşif")));
+
+		WeeklyProgramProposalResponse proposal = WeeklyProgramService.proposalOf(answer, START, END, 11,
+				List.of(), 1);
+
+		assertThat(proposal.weeks()).hasSize(1);
+		ProgramWeekPlanResponse.Week first = proposal.weeks().get(0);
+		assertThat(first.title()).isEqualTo("Açılış Günü");
+		assertThat(first.topics()).startsWith("Tanışma");
+		assertThat(first.deliverables()).containsExactly("Yol haritası", "Haftalık görev");
+		assertThat(first.inferred()).as("one of its rows carries the week's own number").isFalse();
+		assertThat(proposal.warnings()).extracting(WeeklyProgramProposalResponse.Warning::code)
+				.doesNotContain(WeeklyProgramWarning.WEEKS_DROPPED);
+	}
+
+	@Test
+	void rowsTheCalendarCannotPlaceBecomeNotesInsteadOfDisappearing() {
+		JsonNode answer = json("""
+				{"weeks": [
+				  {"week": null, "source_date": "2026-10-25", "title": "Ön Kamp", "topics": [], "activities": [],
+				   "deliverables": [], "phase": null},
+				  {"week": null, "source_date": null, "title": "Mezuniyet Töreni", "topics": [], "activities": [],
+				   "deliverables": [], "phase": null},
+				  {"week": null, "source_date": "2027-02-01", "title": "Demo Day", "topics": [], "activities": [],
+				   "deliverables": [], "phase": null},
+				  {"week": null, "source_date": null, "title": "", "topics": [], "activities": [], "deliverables": [],
+				   "phase": null},
+				  %s
+				], "phases": [], "notes": ["Ağaç dikme günü"], "warnings": []}
+				""".formatted(week(1, null, "Tanışma", "Keşif")));
+
+		WeeklyProgramProposalResponse proposal = WeeklyProgramService.proposalOf(answer, START, END, 11,
+				List.of(), 1);
+
+		assertThat(proposal.weeks()).extracting(ProgramWeekPlanResponse.Week::title).containsExactly("Tanışma");
+		assertThat(proposal.notes()).containsExactly("Ağaç dikme günü", "25.10.2026 — Ön Kamp",
+				"Mezuniyet Töreni", "01.02.2027 — Demo Day");
+		assertThat(proposal.warnings()).extracting(WeeklyProgramProposalResponse.Warning::code)
+				.doesNotContain(WeeklyProgramWarning.WEEKS_DROPPED);
 	}
 
 	@Test
