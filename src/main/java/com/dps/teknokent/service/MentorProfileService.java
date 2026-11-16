@@ -326,6 +326,36 @@ public class MentorProfileService {
 				.orElseThrow(() -> new ResourceNotFoundException("Mentor not found: " + id));
 	}
 
+	/**
+	 * A mentor's profile as {@code actorId} may read it. Anyone reads an approved mentor. Before approval (and
+	 * after a rejection) only the mentor reads their own: onboarding fills the profile in while they are PENDING.
+	 */
+	@Transactional(readOnly = true)
+	public MentorProfileResponse findReadable(UUID id, @Nullable UUID actorId) {
+		requireReadable(id, actorId);
+		return findById(id);
+	}
+
+	/** The mentor's open slots, under the same rule as {@link #findReadable}. */
+	@Transactional(readOnly = true)
+	public List<MentorAvailabilitySlotResponse> findReadableAvailability(UUID mentorId, @Nullable UUID actorId) {
+		requireReadable(mentorId, actorId);
+		return findAvailability(mentorId);
+	}
+
+	// Missing and not-yet-approved answer alike, so the endpoint does not tell which ids are waiting accounts.
+	private void requireReadable(UUID mentorId, @Nullable UUID actorId) {
+		if (mentorId.equals(actorId)) {
+			return;
+		}
+		boolean approved = mentorProfileRepository.findOneById(mentorId)
+				.map(profile -> profile.getUser().getStatus() == UserAccountStatus.APPROVED)
+				.orElse(false);
+		if (!approved) {
+			throw new ResourceNotFoundException("Mentor not found: " + mentorId);
+		}
+	}
+
 	@Transactional(readOnly = true)
 	public List<MentorAvailabilitySlotResponse> findAvailability(UUID mentorId) {
 		requireMentor(mentorId);

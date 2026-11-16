@@ -1,6 +1,7 @@
 package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -24,6 +25,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
+import com.dps.teknokent.domain.AnnouncementAudience;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.PostProgramAnnouncementRequest;
@@ -54,7 +56,7 @@ class ProgramAnnouncementControllerTest {
 	void aCoordinatorPostsAndReadsAndAMemberReadsTheirs() throws Exception {
 		ProgramAnnouncementResponse announcement = new ProgramAnnouncementResponse(
 				UUID.randomUUID(), PROGRAM_ID, "METU Stars 2026", "Elif Demir", "Atölye bugün 16:00'da", Instant.now(),
-				42, 28);
+				AnnouncementAudience.EVERYONE, false, 42, 28);
 		when(announcementService.post(eq(SIGNED_IN_ID), eq(PROGRAM_ID), any(PostProgramAnnouncementRequest.class)))
 				.thenReturn(announcement);
 		when(announcementService.coordinatorList(SIGNED_IN_ID, PROGRAM_ID)).thenReturn(List.of(announcement));
@@ -65,13 +67,43 @@ class ProgramAnnouncementControllerTest {
 				.content("{\"body\":\"Atölye bugün 16:00'da\"}")
 				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.teamCount").value(42));
+				.andExpect(jsonPath("$.teamCount").value(42))
+				.andExpect(jsonPath("$.audience").value("EVERYONE"));
 		mockMvc.perform(get("/api/coordinator/programs/{id}/announcements", PROGRAM_ID)
 				.with(authentication(signedIn(UserRole.COORDINATOR))))
 				.andExpect(status().isOk());
 		mockMvc.perform(get("/api/program-announcements").with(authentication(signedIn(UserRole.MENTEE))))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].programName").value("METU Stars 2026"));
+	}
+
+	@Test
+	void theAudienceTravelsWithThePost() throws Exception {
+		ProgramAnnouncementResponse announcement = new ProgramAnnouncementResponse(
+				UUID.randomUUID(), PROGRAM_ID, "İŞKUR 2026", "Elif Demir", "Mentor toplantısı", Instant.now(),
+				AnnouncementAudience.MENTORS, true, 0, 5);
+		when(announcementService.post(eq(SIGNED_IN_ID), eq(PROGRAM_ID),
+				argThat(request -> request.audienceOrDefault() == AnnouncementAudience.MENTORS)))
+				.thenReturn(announcement);
+
+		mockMvc.perform(post("/api/coordinator/programs/{id}/announcements", PROGRAM_ID)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"body\":\"Mentor toplantısı\",\"audience\":\"MENTORS\"}")
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.audience").value("MENTORS"))
+				.andExpect(jsonPath("$.individualProgram").value(true))
+				.andExpect(jsonPath("$.mentorCount").value(5));
+	}
+
+	@Test
+	void anUnknownAudienceIsRejected() throws Exception {
+		mockMvc.perform(post("/api/coordinator/programs/{id}/announcements", PROGRAM_ID)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"body\":\"Duyuru\",\"audience\":\"ADMINS\"}")
+				.with(authentication(signedIn(UserRole.COORDINATOR))))
+				.andExpect(status().isBadRequest());
+		verifyNoInteractions(announcementService);
 	}
 
 	@Test

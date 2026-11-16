@@ -48,9 +48,10 @@ public class MentorProfileController {
 		return mentorProfileService.findReachable(CurrentActor.resolveOptional(actorId));
 	}
 
+	/** An approved mentor for anyone; a mentor who is not approved yet only for themselves. */
 	@GetMapping("/{id}")
-	public MentorProfileResponse findById(@PathVariable UUID id) {
-		return mentorProfileService.findById(id);
+	public MentorProfileResponse findById(@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return mentorProfileService.findReadable(id, CurrentActor.resolveOptional(actorId));
 	}
 
 	@GetMapping("/{id}/rating")
@@ -106,8 +107,9 @@ public class MentorProfileController {
 	}
 
 	@GetMapping("/{id}/availability")
-	public List<MentorAvailabilitySlotResponse> findAvailability(@PathVariable UUID id) {
-		return mentorProfileService.findAvailability(id);
+	public List<MentorAvailabilitySlotResponse> findAvailability(
+			@PathVariable UUID id, @RequestParam(required = false) UUID actorId) {
+		return mentorProfileService.findReadableAvailability(id, CurrentActor.resolveOptional(actorId));
 	}
 
 	@PostMapping("/{id}/availability")
