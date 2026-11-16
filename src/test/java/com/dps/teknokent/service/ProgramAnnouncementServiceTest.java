@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -23,7 +24,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dps.teknokent.domain.AnnouncementAudience;
 import com.dps.teknokent.domain.NotificationCategory;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.PostProgramAnnouncementRequest;
@@ -81,14 +84,16 @@ class ProgramAnnouncementServiceTest {
 	}
 
 	@Test
-	void postsAndNotifiesEveryTeamMemberAndAcceptedMentor() {
+	void withoutAnAudienceItPostsToEveryTeamMemberAndAcceptedMentor() {
 		when(programService.requireManagedProgram(coordinator.getId(), program.getId())).thenReturn(program);
 		when(announcementRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 		when(appUserRepository.findById(coordinator.getId())).thenReturn(Optional.of(coordinator));
 
 		ProgramAnnouncementResponse response = service.post(coordinator.getId(), program.getId(),
-				new PostProgramAnnouncementRequest(null, "  Ürün-Pazar Uyumu Atölyesi bugün 16:00'da  "));
+				new PostProgramAnnouncementRequest(null, "  Ürün-Pazar Uyumu Atölyesi bugün 16:00'da  ", null));
 
+		assertThat(response.audience()).isEqualTo(AnnouncementAudience.EVERYONE);
+		assertThat(response.individualProgram()).isFalse();
 		assertThat(response.body()).isEqualTo("Ürün-Pazar Uyumu Atölyesi bugün 16:00'da");
 		assertThat(response.authorName()).isEqualTo("Elif Demir");
 		assertThat(response.teamCount()).isEqualTo(1);
@@ -105,7 +110,8 @@ class ProgramAnnouncementServiceTest {
 		when(programService.requireManagedProgram(coordinator.getId(), program.getId())).thenReturn(program);
 		when(announcementRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-		service.post(coordinator.getId(), program.getId(), new PostProgramAnnouncementRequest(null, "a".repeat(300)));
+		service.post(coordinator.getId(), program.getId(),
+				new PostProgramAnnouncementRequest(null, "a".repeat(300), null));
 
 		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
 		verify(notificationService).create(eq(deniz), any(), anyString(), body.capture(), anyString());
@@ -113,14 +119,63 @@ class ProgramAnnouncementServiceTest {
 	}
 
 	@Test
-	void aTeamMemberReadsTheirProgramsAnnouncements() {
-		ProgramAnnouncement announcement = announcement();
+	void aMentorsOnlyAnnouncementNotifiesOnlyTheMentors() {
+		when(programService.requireManagedProgram(coordinator.getId(), program.getId())).thenReturn(program);
+		when(announcementRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		ProgramAnnouncementResponse response = service.post(coordinator.getId(), program.getId(),
+				new PostProgramAnnouncementRequest(null, "Mentor toplantısı", AnnouncementAudience.MENTORS));
+
+		assertThat(response.audience()).isEqualTo(AnnouncementAudience.MENTORS);
+		assertThat(response.teamCount()).isZero();
+		assertThat(response.mentorCount()).isEqualTo(1);
+		verify(notificationService).create(eq(ayse), any(), anyString(), anyString(),
+				eq("/mentor-dashboard/messages"));
+		verify(notificationService, never()).create(eq(deniz), any(), anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void aParticipantsOnlyAnnouncementNotifiesOnlyTheTeams() {
+		program.setIndividualMentees(true);
+		when(programService.requireManagedProgram(coordinator.getId(), program.getId())).thenReturn(program);
+		when(announcementRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		ProgramAnnouncementResponse response = service.post(coordinator.getId(), program.getId(),
+				new PostProgramAnnouncementRequest(null, "Demo günü", AnnouncementAudience.PARTICIPANTS));
+
+		assertThat(response.audience()).isEqualTo(AnnouncementAudience.PARTICIPANTS);
+		assertThat(response.individualProgram()).isTrue();
+		assertThat(response.teamCount()).isEqualTo(1);
+		assertThat(response.mentorCount()).isZero();
+		verify(notificationService).create(eq(deniz), any(), anyString(), anyString(), eq("/messages"));
+		verify(notificationService, never()).create(eq(ayse), any(), anyString(), anyString(), anyString());
+	}
+
+	@Test
+	void theCoordinatorSeesEveryAudienceWithWhoEachOneReaches() {
+		when(programService.requireManagedProgram(coordinator.getId(), program.getId())).thenReturn(program);
+		when(announcementRepository.findByProgramIdOrderByCreatedAtDesc(program.getId())).thenReturn(List.of(
+				announcement(AnnouncementAudience.PARTICIPANTS),
+				announcement(AnnouncementAudience.MENTORS),
+				announcement(AnnouncementAudience.EVERYONE)));
+
+		List<ProgramAnnouncementResponse> list = service.coordinatorList(coordinator.getId(), program.getId());
+
+		assertThat(list).extracting(ProgramAnnouncementResponse::audience).containsExactly(
+				AnnouncementAudience.PARTICIPANTS, AnnouncementAudience.MENTORS, AnnouncementAudience.EVERYONE);
+		assertThat(list).extracting(ProgramAnnouncementResponse::teamCount).containsExactly(1, 0, 1);
+		assertThat(list).extracting(ProgramAnnouncementResponse::mentorCount).containsExactly(0, 1, 1);
+	}
+
+	@Test
+	void aTeamMemberReadsOnlyWhatIsForEveryoneOrForParticipants() {
+		ProgramAnnouncement announcement = announcement(AnnouncementAudience.PARTICIPANTS);
 		when(appUserRepository.findById(deniz.getId())).thenReturn(Optional.of(deniz));
 		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(lumen.getId()))
 				.thenReturn(List.of(startup(lumen.getId())));
 		when(programRepository.findAllById(List.of(program.getId()))).thenReturn(List.of(program));
-		when(announcementRepository.findByProgramIdInOrderByCreatedAtDesc(Set.of(program.getId())))
-				.thenReturn(List.of(announcement));
+		when(announcementRepository.findByProgramIdInAndAudienceIn(Set.of(program.getId()),
+				AnnouncementAudience.FOR_PARTICIPANTS)).thenReturn(List.of(announcement));
 		when(appUserRepository.findAllById(List.of(coordinator.getId()))).thenReturn(List.of(coordinator));
 
 		List<ProgramAnnouncementResponse> mine = service.mine(deniz.getId());
@@ -128,7 +183,63 @@ class ProgramAnnouncementServiceTest {
 		assertThat(mine).singleElement().satisfies(item -> {
 			assertThat(item.programName()).isEqualTo("METU Stars 2026");
 			assertThat(item.authorName()).isEqualTo("Elif Demir");
+			assertThat(item.audience()).isEqualTo(AnnouncementAudience.PARTICIPANTS);
 		});
+		verify(announcementRepository, never()).findByProgramIdInAndAudienceIn(any(),
+				eq(AnnouncementAudience.FOR_MENTORS));
+	}
+
+	@Test
+	void aMentorReadsOnlyWhatIsForEveryoneOrForMentors() {
+		ProgramAnnouncement announcement = announcement(AnnouncementAudience.MENTORS);
+		when(appUserRepository.findById(ayse.getId())).thenReturn(Optional.of(ayse));
+		when(programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(ayse.getId(),
+				ProgramMentorStatus.ACCEPTED))
+				.thenReturn(List.of(programMentor(ayse.getId(), ProgramMentorStatus.ACCEPTED)));
+		when(programRepository.findAllById(List.of(program.getId()))).thenReturn(List.of(program));
+		when(announcementRepository.findByProgramIdInAndAudienceIn(Set.of(program.getId()),
+				AnnouncementAudience.FOR_MENTORS)).thenReturn(List.of(announcement));
+		when(appUserRepository.findAllById(List.of(coordinator.getId()))).thenReturn(List.of(coordinator));
+
+		assertThat(service.mine(ayse.getId())).singleElement()
+				.satisfies(item -> assertThat(item.audience()).isEqualTo(AnnouncementAudience.MENTORS));
+		verify(announcementRepository, never()).findByProgramIdInAndAudienceIn(any(),
+				eq(AnnouncementAudience.FOR_PARTICIPANTS));
+	}
+
+	@Test
+	void aMentorWithAnOrganizationReadsNoParticipantsAnnouncements() {
+		AppUser mentorWithOrganization = user("Selin Tan", UserRole.MENTOR, lumen);
+		when(appUserRepository.findById(mentorWithOrganization.getId()))
+				.thenReturn(Optional.of(mentorWithOrganization));
+
+		assertThat(service.mine(mentorWithOrganization.getId())).isEmpty();
+		verifyNoInteractions(programStartupRepository, announcementRepository);
+	}
+
+	@Test
+	void someoneWhoIsBothReadsEachAnnouncementOnceNewestFirst() {
+		AppUser both = user("Mert Kaya", UserRole.MENTOR, lumen);
+		both.grant(UserRole.MENTEE, PermissionSource.ADMIN, Instant.now());
+		ProgramAnnouncement older = announcement(AnnouncementAudience.EVERYONE);
+		older.setCreatedAt(Instant.parse("2026-11-01T09:00:00Z"));
+		ProgramAnnouncement newer = announcement(AnnouncementAudience.MENTORS);
+		newer.setCreatedAt(Instant.parse("2026-11-02T09:00:00Z"));
+		when(appUserRepository.findById(both.getId())).thenReturn(Optional.of(both));
+		when(programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(both.getId(),
+				ProgramMentorStatus.ACCEPTED))
+				.thenReturn(List.of(programMentor(both.getId(), ProgramMentorStatus.ACCEPTED)));
+		when(programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(lumen.getId()))
+				.thenReturn(List.of(startup(lumen.getId())));
+		when(announcementRepository.findByProgramIdInAndAudienceIn(Set.of(program.getId()),
+				AnnouncementAudience.FOR_MENTORS)).thenReturn(List.of(older, newer));
+		when(announcementRepository.findByProgramIdInAndAudienceIn(Set.of(program.getId()),
+				AnnouncementAudience.FOR_PARTICIPANTS)).thenReturn(List.of(older));
+		when(programRepository.findAllById(List.of(program.getId()))).thenReturn(List.of(program));
+		when(appUserRepository.findAllById(List.of(coordinator.getId()))).thenReturn(List.of(coordinator));
+
+		assertThat(service.mine(both.getId())).extracting(ProgramAnnouncementResponse::id)
+				.containsExactly(newer.getId(), older.getId());
 	}
 
 	@Test
@@ -137,14 +248,16 @@ class ProgramAnnouncementServiceTest {
 		when(appUserRepository.findById(loner.getId())).thenReturn(Optional.of(loner));
 
 		assertThat(service.mine(loner.getId())).isEmpty();
+		verifyNoInteractions(announcementRepository);
 	}
 
-	private ProgramAnnouncement announcement() {
+	private ProgramAnnouncement announcement(AnnouncementAudience audience) {
 		ProgramAnnouncement announcement = new ProgramAnnouncement();
 		announcement.setId(UUID.randomUUID());
 		announcement.setProgramId(program.getId());
 		announcement.setAuthorId(coordinator.getId());
 		announcement.setBody("Duyuru");
+		announcement.setAudience(audience);
 		announcement.setCreatedAt(Instant.now());
 		return announcement;
 	}

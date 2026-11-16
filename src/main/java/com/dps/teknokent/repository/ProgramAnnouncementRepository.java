@@ -6,11 +6,13 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import com.dps.teknokent.domain.AnnouncementAudience;
 import com.dps.teknokent.entity.ProgramAnnouncement;
 
 public interface ProgramAnnouncementRepository extends JpaRepository<ProgramAnnouncement, UUID> {
 
 	List<ProgramAnnouncement> findByProgramIdOrderByCreatedAtDesc(UUID programId);
 
-	List<ProgramAnnouncement> findByProgramIdInOrderByCreatedAtDesc(Collection<UUID> programIds);
+	List<ProgramAnnouncement> findByProgramIdInAndAudienceIn(
+			Collection<UUID> programIds, Collection<AnnouncementAudience> audiences);
 }
