@@ -259,8 +259,8 @@ public class WeeklyProgramService {
 	 * The AI's answer on the program calendar. Week numbers win over printed dates: a printed date places a week
 	 * that has no number, or one whose number is not a program week, and one that falls outside its numbered week
 	 * is flagged. A week number that comes back more than once (a table with one row per session) is merged into
-	 * one week. Weeks past the program or without a title are dropped and flagged; a row the calendar cannot place
-	 * at all (no number, no date in the program) becomes a note, so nothing the file says disappears silently.
+	 * one week. Weeks past the program or without a title are dropped and flagged; a titled row the calendar cannot
+	 * place at all (no number, no date in the program) becomes a note instead of disappearing.
 	 */
 	static WeeklyProgramProposalResponse proposalOf(JsonNode result, LocalDate start, LocalDate end, int totalWeeks,
 			List<WeeklyProgramProposalResponse.Warning> warnings, int pageCount) {
@@ -314,8 +314,9 @@ public class WeeklyProgramService {
 						range.firstWeek(), range.lastWeek(), ProgramCalendar.weekStart(start, range.firstWeek()),
 						ProgramCalendar.weekEnd(start, end, range.lastWeek())))
 				.toList();
-		List<String> notes = new ArrayList<>(lines(result.path("notes"), MAX_NOTES));
-		unplaced.stream().filter(note -> !notes.contains(note)).forEach(notes::add);
+		// Unplaced rows first: the AI's own notes must not push file content past the cap.
+		List<String> notes = new ArrayList<>(unplaced);
+		lines(result.path("notes"), MAX_NOTES).stream().filter(note -> !notes.contains(note)).forEach(notes::add);
 		return new WeeklyProgramProposalResponse(totalWeeks, List.copyOf(weeks.values()), phases, all,
 				List.copyOf(notes.subList(0, Math.min(notes.size(), MAX_NOTES))),
 				lines(result.path("warnings"), MAX_NOTES), pageCount, null);
@@ -336,15 +337,26 @@ public class WeeklyProgramService {
 	 */
 	private static ProgramWeekPlanResponse.Week merged(ProgramWeekPlanResponse.Week first,
 			ProgramWeekPlanResponse.Week next) {
-		List<String> nextTopics = new ArrayList<>();
-		if (!next.title().isEmpty() && !next.title().equalsIgnoreCase(first.title())) {
-			nextTopics.add(cut(next.title()));
-		}
-		nextTopics.addAll(next.topics());
-		String title = first.title().isEmpty() ? next.title() : first.title();
+		// The title of a row that carries the week's printed number wins over one placed only by its date (an event
+		// such as a bootcamp in the same week); the other title stays as a topic line where its row's lines are.
+		boolean nextNames = first.title().isEmpty()
+				|| (first.inferred() && !next.inferred() && !next.title().isEmpty());
+		String title = nextNames ? next.title() : first.title();
+		List<String> firstTopics = withTitle(first, title);
+		List<String> nextTopics = withTitle(next, title);
 		return new ProgramWeekPlanResponse.Week(first.week(), first.startDate(), first.endDate(), title,
-				joined(first.topics(), nextTopics), joined(first.activities(), next.activities()),
+				joined(firstTopics, nextTopics), joined(first.activities(), next.activities()),
 				joined(first.deliverables(), next.deliverables()), first.inferred() && next.inferred());
+	}
+
+	/** The entry's topics, led by its own title when that is not the week's title. */
+	private static List<String> withTitle(ProgramWeekPlanResponse.Week entry, String weekTitle) {
+		List<String> topics = new ArrayList<>();
+		if (!entry.title().isEmpty() && !entry.title().equalsIgnoreCase(weekTitle)) {
+			topics.add(cut(entry.title()));
+		}
+		topics.addAll(entry.topics());
+		return topics;
 	}
 
 	private static List<String> joined(List<String> first, List<String> next) {

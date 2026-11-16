@@ -240,8 +240,8 @@ class WeeklyProgramServiceTest {
 
 		assertThat(proposal.weeks()).hasSize(1);
 		ProgramWeekPlanResponse.Week first = proposal.weeks().get(0);
-		assertThat(first.title()).isEqualTo("Açılış Günü");
-		assertThat(first.topics()).startsWith("Tanışma");
+		assertThat(first.title()).as("the row with the printed number names the week").isEqualTo("Tanışma");
+		assertThat(first.topics()).startsWith("Açılış Günü");
 		assertThat(first.deliverables()).containsExactly("Yol haritası", "Haftalık görev");
 		assertThat(first.inferred()).as("one of its rows carries the week's own number").isFalse();
 		assertThat(proposal.warnings()).extracting(WeeklyProgramProposalResponse.Warning::code)
@@ -268,8 +268,8 @@ class WeeklyProgramServiceTest {
 				List.of(), 1);
 
 		assertThat(proposal.weeks()).extracting(ProgramWeekPlanResponse.Week::title).containsExactly("Tanışma");
-		assertThat(proposal.notes()).containsExactly("Ağaç dikme günü", "25.10.2026 — Ön Kamp",
-				"Mezuniyet Töreni", "01.02.2027 — Demo Day");
+		assertThat(proposal.notes()).containsExactly("25.10.2026 — Ön Kamp", "Mezuniyet Töreni",
+				"01.02.2027 — Demo Day", "Ağaç dikme günü");
 		assertThat(proposal.warnings()).extracting(WeeklyProgramProposalResponse.Warning::code)
 				.doesNotContain(WeeklyProgramWarning.WEEKS_DROPPED);
 	}
@@ -504,6 +504,24 @@ class WeeklyProgramServiceTest {
 						LocalDate.of(2026, 11, 23), null, null),
 				new ReplaceProgramPhasesRequest.PhaseInput("Yeni sonraki", LocalDate.of(2026, 11, 24),
 						LocalDate.of(2026, 12, 7), null, null));
+	}
+
+	@Test
+	void anUnplacedRowIsKeptWhenTheAiFillsTheNotes() {
+		List<String> aiNotes = new ArrayList<>();
+		for (int note = 1; note <= 10; note++) {
+			aiNotes.add("\"Not " + note + "\"");
+		}
+		JsonNode answer = json("""
+				{"weeks": [{"week": null, "source_date": null, "title": "Mezuniyet Töreni", "topics": [],
+				  "activities": [], "deliverables": [], "phase": null}],
+				 "phases": [], "notes": [%s], "warnings": []}
+				""".formatted(String.join(",", aiNotes)));
+
+		WeeklyProgramProposalResponse proposal = WeeklyProgramService.proposalOf(answer, START, END, 11,
+				List.of(), 1);
+
+		assertThat(proposal.notes()).hasSize(10).startsWith("Mezuniyet Töreni");
 	}
 
 	private void editing() {
