@@ -25,7 +25,17 @@ public record ProgramWeekResponse(
 		boolean ended,
 		boolean hasSyllabus,
 		ProgramWeekPlanResponse.@Nullable Week plan,
-		List<Phase> phases) {
+		List<Phase> phases,
+		List<ProgramWeekPlanResponse.SpecialDay> specialDays) {
+
+	public ProgramWeekResponse(UUID programId, String programName, LocalDate programStart, LocalDate programEnd,
+			@Nullable Integer week, @Nullable Integer totalWeeks, @Nullable LocalDate weekStart,
+			@Nullable LocalDate weekEnd,
+			boolean notStarted, boolean ended, boolean hasSyllabus, ProgramWeekPlanResponse.@Nullable Week plan,
+			List<Phase> phases) {
+		this(programId, programName, programStart, programEnd, week, totalWeeks, weekStart, weekEnd, notStarted, ended,
+				hasSyllabus, plan, phases, List.of());
+	}
 
 	/** {@code current} marks the phase whose dates contain today. */
 	public record Phase(

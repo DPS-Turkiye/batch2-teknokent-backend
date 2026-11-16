@@ -82,6 +82,16 @@ public class AiProviderClient {
 				The supplied text is a program's week-by-week schedule (often a table with one row per week). Read it
 				into weeks, then group the weeks into phases.
 				Weeks: one entry per week row of the source, in order.
+				- Copy the PDF's own week range to source_date/source_end_date (ISO dates). Never shift it to program dates.
+				- sessions: each session's own date, start_time/end_time (HH:mm), place and title; null for absent time/place.
+				  Keep full names verbatim. Session fields supplement, never replace the week's topics, activities and tasks.
+				  An explicitly dated workshop/visit/speaker (e.g. 12 Kasım or 4 Ocak) gets its own session on that date,
+				  even when the week heading prints a different date.
+				- special_days: rows of their own that are an event rather than a week (a bootcamp, a demo day, a
+				  rehearsal, Kanıt ve Sahne), with date, times, place, title and details; do not also put them in weeks.
+				  Keep all event content. A cell inside a week row that only mentions an event (for example another
+				  program's demo day on a date) stays in that week's lines, and as a session when it has a date.
+				- If a week prints only a start date, source_end_date is null; never invent an end date.
 				- week: the week number the source gives (for example "3 · ZİYARET / GEZİ 1" or "3. Hafta" is week 3).
 				  A row without a week number of its own (an event such as a bootcamp, a rehearsal or a demo day) gets
 				  null when it prints a date; its date places it. Only when the source gives neither week numbers nor
@@ -119,9 +129,10 @@ public class AiProviderClient {
 				- Use only what the source says; never invent sessions, tasks, dates or people.
 				- Write titles, lines and names in the source language. The source may be Turkish, English, or both.
 				Program start date: %s. Program end date: %s. Program weeks: %s.
-				""".formatted(programStart == null ? "unknown" : programStart,
-				programEnd == null ? "unknown" : programEnd,
-				totalWeeks == null ? "unknown" : totalWeeks);
+				"""
+				.formatted(programStart == null ? "unknown" : programStart,
+						programEnd == null ? "unknown" : programEnd,
+						totalWeeks == null ? "unknown" : totalWeeks);
 		// Its own model setting (OPENROUTER_PROGRAM_MODEL), so a stronger reader can be tried here without changing
 		// CV parsing or the syllabus read.
 		return structuredCompletion(programModel(), instructions, redactedDocumentText, "weekly_program", schema,

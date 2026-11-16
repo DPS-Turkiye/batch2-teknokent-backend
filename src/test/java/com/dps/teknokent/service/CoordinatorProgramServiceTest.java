@@ -70,6 +70,7 @@ import com.dps.teknokent.entity.ProgramEvent;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.entity.StoredDocument;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -89,6 +90,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.service.CoordinatorProgramService.HealthBucket;
@@ -107,6 +109,8 @@ class CoordinatorProgramServiceTest {
 	private ProgramCoordinatorRepository programCoordinatorRepository;
 	@Mock
 	private ProgramPhaseRepository programPhaseRepository;
+	@Mock
+	private ProgramWeekRepository programWeekRepository;
 	@Mock
 	private StoredDocumentRepository storedDocumentRepository;
 	@Mock
@@ -192,6 +196,42 @@ class CoordinatorProgramServiceTest {
 		assertThat(summary.currentWeek()).isEqualTo(6);
 		assertThat(summary.totalWeeks()).isEqualTo(16);
 		verify(programRepository, never()).findAllByOrderByCreatedAtDesc();
+	}
+
+	@Test
+	void theCurrentWeekFollowsTheDatesTheSavedPlanPrints() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR));
+		Program program = program(COORDINATOR_ID);
+		// The program calendar puts today in week 6; the syllabus prints week 4 around today.
+		program.setStartDate(today.minusDays(35));
+		program.setEndDate(today.minusDays(35).plusDays(111));
+		when(programRepository.findByCreatedByOrderByCreatedAtDesc(COORDINATOR_ID)).thenReturn(List.of(program));
+		ProgramWeek printed = new ProgramWeek();
+		printed.setProgramId(program.getId());
+		printed.setWeekNumber(4);
+		printed.setStartDate(today.minusDays(2));
+		printed.setEndDate(today.plusDays(4));
+		when(programWeekRepository.findByProgramIdIn(List.of(program.getId()))).thenReturn(List.of(printed));
+		stubProgramRows(List.of(), List.of(), List.of());
+
+		var summary = service.list(COORDINATOR_ID).getFirst();
+
+		assertThat(summary.currentWeek()).isEqualTo(4);
+		assertThat(summary.totalWeeks()).isEqualTo(16);
+	}
+
+	@Test
+	void anEndedProgramWithoutPrintedDatesStaysOnItsLastWeek() {
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(user(COORDINATOR_ID, UserRole.COORDINATOR));
+		Program program = program(COORDINATOR_ID);
+		program.setStartDate(today.minusDays(70));
+		program.setEndDate(today.minusDays(1));
+		when(programRepository.findByCreatedByOrderByCreatedAtDesc(COORDINATOR_ID)).thenReturn(List.of(program));
+		stubProgramRows(List.of(), List.of(), List.of());
+
+		var summary = service.list(COORDINATOR_ID).getFirst();
+
+		assertThat(summary.currentWeek()).isEqualTo(10);
 	}
 
 	@Test

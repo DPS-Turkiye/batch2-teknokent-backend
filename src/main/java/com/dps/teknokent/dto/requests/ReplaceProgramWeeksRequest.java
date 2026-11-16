@@ -15,7 +15,7 @@ import jakarta.validation.constraints.Size;
 /**
  * The program's whole weekly plan and its special days; an empty list removes them. Week numbers must be unique.
  * A week's {@code startDate}/{@code endDate} are its own dates (both or neither); without them it follows the
- * program calendar. Missing lists count as empty.
+ * program calendar. A missing week list counts as empty; left out, {@code specialDays} keeps the saved ones.
  */
 public record ReplaceProgramWeeksRequest(
 		UUID actorId,

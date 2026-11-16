@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -17,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.ReplaceProgramWeeksRequest;
 import com.dps.teknokent.dto.requests.ReplaceProgramWeeksRequest.WeekInput;
 import com.dps.teknokent.dto.requests.SaveWeeklyProgramRequest;
 import com.dps.teknokent.dto.requests.SaveWeeklyProgramRequest.PhaseInput;
@@ -24,6 +26,7 @@ import com.dps.teknokent.dto.responses.WeeklyProgramSavedResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.StoredDocument;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.util.JsonUtils;
@@ -44,6 +47,8 @@ class WeeklyProgramPersistenceTest {
 
 	@Autowired
 	private WeeklyProgramService weeklyProgramService;
+	@Autowired
+	private ProgramWeekPlanService weekPlanService;
 	@Autowired
 	private ProgramPhaseRepository programPhaseRepository;
 	@Autowired
@@ -116,6 +121,41 @@ class WeeklyProgramPersistenceTest {
 		assertThat(saved.plan().weeks()).hasSize(3);
 		assertThat(saved.program().syllabus().id()).isEqualTo(file.getId());
 		assertThat(saved.program().syllabus().kind()).isEqualTo(DocumentKind.WEEKLY_PROGRAM);
+	}
+
+	@Test
+	void persistsSessionAndSpecialDayDatesAndOnlyTheOwnerCanAlignTheProgram() {
+		LocalDate printed = START.plusDays(7);
+		var session = new ReplaceProgramWeeksRequest.SessionInput(printed.plusDays(2), java.time.LocalTime.of(17, 0),
+				java.time.LocalTime.of(19, 0), "Online", "Session");
+		var week = new WeekInput(1, "Printed week", List.of(), List.of(), List.of(), false,
+				printed, printed.plusDays(4), List.of(session));
+		var day = new ReplaceProgramWeeksRequest.SpecialDayInput(printed.minusDays(1), null, null, "KKM", "Bootcamp",
+				List.of("Opening"));
+		weekPlanService.replace(coordinator.getId(), program.getId(),
+				new ReplaceProgramWeeksRequest(null, List.of(week), List.of(day)));
+		entityManager.flush();
+		entityManager.clear();
+		var plan = weekPlanService.plan(coordinator.getId(), program.getId());
+		assertThat(plan.weeks().getFirst().sessions().getFirst().date()).isEqualTo(session.date());
+		assertThat(plan.specialDays().getFirst().date()).isEqualTo(day.date());
+		for (UserRole role : List.of(UserRole.ADMIN, UserRole.COORDINATOR)) {
+			AppUser outsider = new AppUser();
+			outsider.setEmail(role.name().toLowerCase(java.util.Locale.ROOT) + "@outside.test");
+			outsider.setFullName("Outside user");
+			outsider.setRole(role);
+			entityManager.persist(outsider);
+			entityManager.flush();
+			assertThatThrownBy(() -> weekPlanService.alignDates(outsider.getId(), program.getId()))
+					.isInstanceOf(InvalidRequestException.class);
+		}
+		assertThat(entityManager.find(Program.class, program.getId()).getStartDate()).isEqualTo(START);
+		weekPlanService.alignDates(coordinator.getId(), program.getId());
+		entityManager.flush();
+		entityManager.clear();
+		Program aligned = entityManager.find(Program.class, program.getId());
+		assertThat(aligned.getStartDate()).isEqualTo(printed.minusDays(1));
+		assertThat(aligned.getEndDate()).isEqualTo(printed.plusDays(4));
 	}
 
 	private WeeklyProgramSavedResponse save(List<WeekInput> weeks, List<PhaseInput> phases, int seenPhases,

@@ -53,6 +53,7 @@ import com.dps.teknokent.util.ProgramCalendar;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 @ExtendWith(MockitoExtension.class)
 class WeeklyProgramServiceTest {
@@ -101,6 +102,130 @@ class WeeklyProgramServiceTest {
 	}
 
 	@Test
+	void previewAndKeepPastUseStoredDatesWhenTheConfiguredProgramStartsLater() {
+		LocalDate today = LocalDate.of(2026, 11, 16);
+		program.setStartDate(today.plusDays(14));
+		program.setEndDate(today.plusDays(42));
+		ProgramWeek past = savedWeek(1, "Keep past");
+		past.setStartDate(today.minusDays(14));
+		past.setEndDate(today.minusDays(8));
+		ProgramWeek current = savedWeek(2, "Replace current");
+		current.setStartDate(today.minusDays(1));
+		current.setEndDate(today.plusDays(5));
+		List<ProgramWeek> saved = List.of(past, current);
+		assertThat(WeeklyProgramService.firstReplacedWeek(program, saved, today)).isEqualTo(2);
+		assertThat(WeeklyProgramService.keepPastWeeks(program, saved,
+				List.of(weekInput(1, "New past"), weekInput(2, "New current")), today))
+				.extracting(ReplaceProgramWeeksRequest.WeekInput::title).containsExactly("Keep past", "New current");
+	}
+
+	@Test
+	void futureStoredWeeksAreReplaceableEvenWhenConfiguredProgramHasEnded() {
+		LocalDate today = LocalDate.of(2026, 11, 16);
+		program.setStartDate(today.minusDays(28));
+		program.setEndDate(today.minusDays(1));
+		ProgramWeek future = savedWeek(1, "Old future");
+		future.setStartDate(today.plusDays(7));
+		future.setEndDate(today.plusDays(13));
+		var replacement = new ReplaceProgramWeeksRequest.WeekInput(1, "New future", List.of(), List.of(), List.of(),
+				false,
+				future.getStartDate(), future.getEndDate(), List.of());
+		assertThat(WeeklyProgramService.firstReplacedWeek(program, List.of(future), today)).isNull();
+		assertThat(WeeklyProgramService.keepPastWeeks(program, List.of(future), List.of(replacement), today))
+				.extracting(ReplaceProgramWeeksRequest.WeekInput::title).containsExactly("New future");
+	}
+
+	@Test
+	void aDatedMentionOfAnotherProgramsDemoDayStaysASessionOfItsWeek() {
+		JsonNode raw = JsonMapper.builder().build().readTree(
+				"""
+						{"weeks":[{"week":1,"source_date":"2026-12-14","title":"Visit","topics":[],"activities":[],"deliverables":[],
+						"sessions":[{"date":"2026-12-15","title":"Growth Circuit Demo Day","place":"KKM"},
+						{"date":"2026-12-16","title":"Demo Day / Retro Simülasyonu","place":"ODTÜ 70"}]}],
+						"special_days":[],"phases":[],"notes":[],"warnings":[]}
+						""");
+		var proposal = WeeklyProgramService.proposalOf(raw, LocalDate.of(2026, 12, 14), LocalDate.of(2027, 1, 9), 4,
+				List.of(), 1);
+		assertThat(proposal.specialDays()).isEmpty();
+		assertThat(proposal.weeks().getFirst().sessions()).extracting(ProgramWeekPlanResponse.Session::title)
+				.containsExactly("Growth Circuit Demo Day", "Demo Day / Retro Simülasyonu");
+	}
+
+	@Test
+	void aPhaseRunsFromThePrintedStartOfItsFirstWeekToThePrintedEndOfItsLast() {
+		JsonNode result = JsonMapper.builder().build().readTree(
+				"""
+						{"weeks":[{"week":1,"source_date":"2026-10-27","source_end_date":null,"title":"Bir",
+						"topics":[],"activities":[],"deliverables":[],"phase":"Keşif","sessions":[]},
+						{"week":2,"source_date":"2026-11-03","source_end_date":"2026-11-05","title":"İki",
+						"topics":[],"activities":[],"deliverables":[],"phase":"Keşif","sessions":[]}],
+						"phases":[{"name":"Keşif","expected_output":null,"first_week":1,"last_week":2}],
+						"notes":[],"warnings":[],"special_days":[]}
+						""");
+		// The program calendar starts a day earlier than the file.
+		var proposal = WeeklyProgramService.proposalOf(result, LocalDate.of(2026, 10, 26), LocalDate.of(2026, 11, 8),
+				2, List.of(), 1);
+
+		assertThat(proposal.phases()).singleElement().satisfies(phase -> {
+			assertThat(phase.startDate()).isEqualTo(LocalDate.of(2026, 10, 27));
+			assertThat(phase.endDate()).isEqualTo(LocalDate.of(2026, 11, 5));
+		});
+	}
+
+	@Test
+	void theReadReportsTheFirstReplacedWeekByTheSavedPlansPrintedDates() {
+		editing();
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		// The program calendar has not started, but the saved plan prints week 1 as running.
+		program.setStartDate(today.plusDays(14));
+		program.setEndDate(today.plusDays(84));
+		ProgramWeek running = savedWeek(1, "Running");
+		running.setStartDate(today.minusDays(1));
+		running.setEndDate(today.plusDays(5));
+		when(programWeekRepository.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of(running));
+		when(storedDocumentRepository.findById(DOCUMENT_ID)).thenReturn(Optional.of(weeklyProgram(COORDINATOR_ID)));
+		stubText("raw", "redacted", 1);
+		when(aiProviderClient.weeklyProgram(anyString(), any(), any(), any())).thenReturn(JsonMapper.builder().build()
+				.readTree("""
+						{"weeks":[{"week":1,"source_date":null,"source_end_date":null,"title":"Bir","topics":[],
+						"activities":[],"deliverables":[],"phase":null,"sessions":[]}],
+						"phases":[],"notes":[],"warnings":[],"special_days":[]}
+						"""));
+
+		var proposal = service.read(COORDINATOR_ID, PROGRAM_ID, readRequest());
+
+		assertThat(proposal.existing().currentWeek()).isEqualTo(1);
+	}
+
+	@Test
+	void keepsPrintedDatesSessionsAndStandaloneEventsWhenProgramDatesDiffer() {
+		JsonNode result = JsonMapper.builder().build().readTree(
+				"""
+						{"weeks":[{"week":2,"source_date":"2026-11-09","source_end_date":"2026-11-13",
+						"title":"Circuit","topics":[],"activities":[],"deliverables":[],"phase":null,
+						"sessions":[{"date":"2026-11-11","start_time":"10:00","end_time":"12:00","place":"Salon","title":"Atölye"}]}],
+						"phases":[],"notes":[],"warnings":[],"special_days":[{"date":"2026-11-08","start_time":"09:00",
+						"end_time":null,"place":"Kampüs","title":"Bootcamp","details":["Açılış"]}]}
+						""");
+		var proposal = WeeklyProgramService.proposalOf(result, LocalDate.of(2026, 10, 26), LocalDate.of(2026, 11, 1),
+				1, List.of(), 1);
+		assertThat(proposal.weeks()).singleElement().satisfies(week -> {
+			assertThat(week.week()).isEqualTo(2);
+			assertThat(week.startDate()).isEqualTo(LocalDate.of(2026, 11, 9));
+			assertThat(week.endDate()).isEqualTo(LocalDate.of(2026, 11, 13));
+			assertThat(week.datesFromSource()).isTrue();
+			assertThat(week.sessions()).singleElement().satisfies(session -> {
+				assertThat(session.date()).isEqualTo(LocalDate.of(2026, 11, 11));
+				assertThat(session.place()).isEqualTo("Salon");
+			});
+		});
+		assertThat(proposal.specialDays()).singleElement().satisfies(day -> {
+			assertThat(day.title()).isEqualTo("Bootcamp");
+			assertThat(day.date()).isEqualTo(LocalDate.of(2026, 11, 8));
+		});
+	}
+
+	@Test
 	void readsTheRedactedFileIntoWeeksAndPhasesOnTheProgramCalendar() {
 		editing();
 		when(storedDocumentRepository.findById(DOCUMENT_ID)).thenReturn(Optional.of(weeklyProgram(COORDINATOR_ID)));
@@ -126,9 +251,9 @@ class WeeklyProgramServiceTest {
 				new WeeklyProgramProposalResponse.Phase("Fikir ve Değer", null, 4, 5,
 						LocalDate.of(2026, 11, 17), LocalDate.of(2026, 11, 30)),
 				new WeeklyProgramProposalResponse.Phase("Pazar ve İş Modeli", null, 6, 8,
-						LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 21)),
+						LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 20)),
 				new WeeklyProgramProposalResponse.Phase("Doğrula ve Sun", "Sunum ve 90 günlük plan", 9, 10,
-						LocalDate.of(2026, 12, 22), LocalDate.of(2027, 1, 4)));
+						LocalDate.of(2026, 12, 22), LocalDate.of(2027, 1, 3)));
 		assertThat(proposal.warnings()).containsExactly(
 				new WeeklyProgramProposalResponse.Warning(WeeklyProgramWarning.DATES_DIFFER, List.of(8, 10)));
 		assertThat(proposal.notes()).containsExactly("9 Ocak Cumartesi — Demo Day");
@@ -469,7 +594,8 @@ class WeeklyProgramServiceTest {
 
 		WeeklyProgramProposalResponse proposal = service.read(COORDINATOR_ID, PROGRAM_ID, readRequest());
 
-		assertThat(proposal.totalWeeks()).isEqualTo(9);
+		assertThat(proposal.totalWeeks()).as("the dated PDF week beyond the configured length is retained")
+				.isEqualTo(10);
 		assertThat(proposal.existing().currentWeek())
 				.as("every week is past, so a keep-past save keeps the last one too")
 				.isEqualTo(10);

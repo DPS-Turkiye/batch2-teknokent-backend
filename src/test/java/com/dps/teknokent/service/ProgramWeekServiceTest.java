@@ -25,10 +25,12 @@ import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.ProgramWeek;
+import com.dps.teknokent.entity.ProgramWeekSession;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramSpecialDayRepository;
 import com.dps.teknokent.repository.ProgramWeekRepository;
 
 class ProgramWeekServiceTest {
@@ -55,7 +57,8 @@ class ProgramWeekServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new ProgramWeekService(lookup, menteePrograms, programs, phases, programMentors, weeks);
+		service = new ProgramWeekService(lookup, menteePrograms, programs, phases, programMentors, weeks,
+				mock(ProgramSpecialDayRepository.class));
 		program = new Program();
 		program.setId(PROGRAM_ID);
 		program.setName("İŞKUR Gençlik Programı");
@@ -67,6 +70,32 @@ class ProgramWeekServiceTest {
 		when(programs.findById(PROGRAM_ID)).thenReturn(Optional.of(program));
 		phaseRows = List.of(discovery, prototype, demo, phase(3, "Tarihsiz", null, null, null));
 		when(phases.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(phaseRows);
+	}
+
+	@Test
+	void januaryFourthPitchSessionRemainsVisibleInItsPdfWeekTen() {
+		ProgramWeek saved = week(10, "Pitch");
+		saved.setStartDate(LocalDate.of(2026, 12, 28));
+		saved.setEndDate(LocalDate.of(2027, 1, 3));
+		LocalDate sessionDay = LocalDate.of(2027, 1, 4);
+		saved.getSessions().add(new ProgramWeekSession(sessionDay, null, null, null, "Pitch"));
+		program.setEndDate(LocalDate.of(2027, 1, 9));
+		var response = ProgramWeekService.build(program, List.of(), List.of(saved), sessionDay);
+		assertThat(response.week()).isEqualTo(10);
+		assertThat(response.plan().sessions()).singleElement()
+				.satisfies(session -> assertThat(session.date()).isEqualTo(sessionDay));
+	}
+
+	@Test
+	void storedDatesSelectTheSameWeekNumberAsAttendanceBeforeProgramStart() {
+		ProgramWeek saved = week(3, "PDF week");
+		saved.setStartDate(START.minusDays(7));
+		saved.setEndDate(START.minusDays(1));
+		ProgramWeekResponse response = ProgramWeekService.build(program, List.of(), List.of(saved), START.minusDays(3));
+		assertThat(response.week()).isEqualTo(3);
+		assertThat(response.notStarted()).isFalse();
+		assertThat(response.weekStart()).isEqualTo(saved.getStartDate());
+		assertThat(response.plan().title()).isEqualTo("PDF week");
 	}
 
 	@Test

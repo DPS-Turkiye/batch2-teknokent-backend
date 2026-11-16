@@ -10,7 +10,9 @@ import static com.dps.teknokent.util.JsonSchema.string;
 import static com.dps.teknokent.util.JsonSchema.stringArray;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,10 +20,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
@@ -52,6 +56,7 @@ import com.dps.teknokent.service.PdfDocumentTextExtractor.ExtractionResult;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ModelOutput;
 import com.dps.teknokent.util.ProgramCalendar;
+import com.dps.teknokent.util.ProgramSchedule;
 
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
@@ -109,7 +114,8 @@ public class WeeklyProgramService {
 	@Transactional
 	public WeeklyProgramSavedResponse save(UUID actorId, UUID programId, SaveWeeklyProgramRequest request) {
 		Program program = coordinatorProgramService.requireSettingsEditor(actorId, programId);
-		int totalWeeks = requireDates(program);
+		int totalWeeks = Math.max(requireDates(program),
+				request.weeks().stream().mapToInt(ReplaceProgramWeeksRequest.WeekInput::week).max().orElse(0));
 		requireOrderedPhases(request.phases(), totalWeeks);
 		List<ProgramPhase> savedPhases = programPhaseRepository.findByProgramIdOrderByPositionAsc(programId);
 		List<ProgramWeek> savedWeeks = programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId);
@@ -122,15 +128,19 @@ public class WeeklyProgramService {
 		Map<String, UUID> savedIds = idsByName(savedPhases);
 		List<ReplaceProgramPhasesRequest.PhaseInput> phases = request.phases().stream()
 				.map(phase -> new ReplaceProgramPhasesRequest.PhaseInput(phase.name().trim(),
-						ProgramCalendar.weekStart(start, phase.firstWeek()),
-						ProgramCalendar.weekEnd(start, end, phase.lastWeek()), phase.expectedOutput(),
+						request.weeks().stream().filter(week -> week.week() == phase.firstWeek())
+								.map(ReplaceProgramWeeksRequest.WeekInput::startDate).filter(Objects::nonNull)
+								.findFirst().orElse(ProgramCalendar.weekStart(start, phase.firstWeek())),
+						request.weeks().stream().filter(week -> week.week() == phase.lastWeek())
+								.map(ReplaceProgramWeeksRequest.WeekInput::endDate).filter(Objects::nonNull)
+								.findFirst().orElse(ProgramCalendar.weekEnd(start, end, phase.lastWeek())),
+						phase.expectedOutput(),
 						savedIds.get(nameKey(phase.name()))))
 				.toList();
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = request.weeks();
-		Integer currentWeek = firstReplacedWeek(start, end, today);
-		if (request.keepPast() && currentWeek != null) {
+		if (request.keepPast()) {
 			phases = keepCompletedPhases(savedPhases, phases, today);
-			weeks = keepPastWeeks(savedWeeks, weeks, currentWeek);
+			weeks = keepPastWeeks(program, savedWeeks, weeks, today);
 		}
 		if (phases.size() > WeeklyProgramPhases.MAX_PHASES) {
 			throw new InvalidRequestException("A program has at most " + WeeklyProgramPhases.MAX_PHASES + " phases.");
@@ -138,6 +148,13 @@ public class WeeklyProgramService {
 		requireReadable(actorId, program, request.documentId());
 		coordinatorProgramService.writePhases(programId, phases);
 		ProgramWeekPlanResponse plan = programWeekPlanService.writeWeeks(program, actorId, weeks);
+		if (request.specialDays() != null) {
+			List<ReplaceProgramWeeksRequest.SpecialDayInput> events = request.keepPast()
+					? programWeekPlanService.keepPastSpecialDays(programId, request.specialDays(), today)
+					: request.specialDays();
+			programWeekPlanService.writeSpecialDays(program, actorId, events);
+			plan = programWeekPlanService.plan(actorId, programId);
+		}
 		coordinatorProgramService.attachSyllabus(program, actorId, request.documentId());
 		return new WeeklyProgramSavedResponse(coordinatorProgramService.detail(actorId, programId), plan);
 	}
@@ -219,29 +236,64 @@ public class WeeklyProgramService {
 	}
 
 	/** Saved weeks before the current one stay; the new plan fills the current week and those after it. */
-	static List<ReplaceProgramWeeksRequest.WeekInput> keepPastWeeks(List<ProgramWeek> saved,
-			List<ReplaceProgramWeeksRequest.WeekInput> proposed, int currentWeek) {
+	static List<ReplaceProgramWeeksRequest.WeekInput> keepPastWeeks(Program program, List<ProgramWeek> saved,
+			List<ReplaceProgramWeeksRequest.WeekInput> proposed, LocalDate today) {
+		ProgramSchedule schedule = ProgramSchedule.of(program.getStartDate(), program.getEndDate(), saved);
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = new ArrayList<>();
+		Set<Integer> kept = new LinkedHashSet<>();
 		for (ProgramWeek week : saved) {
-			if (week.getWeekNumber() < currentWeek) {
+			if (schedule.isPast(week.getWeekNumber(), today)) {
+				kept.add(week.getWeekNumber());
 				weeks.add(new ReplaceProgramWeeksRequest.WeekInput(week.getWeekNumber(), week.getTitle(),
 						ProgramWeek.lines(week.getTopics()), ProgramWeek.lines(week.getActivities()),
-						ProgramWeek.lines(week.getDeliverables()), week.isInferred()));
+						ProgramWeek.lines(week.getDeliverables()), week.isInferred(), week.getStartDate(),
+						week.getEndDate(),
+						week.getSessions().stream().map(session -> new ReplaceProgramWeeksRequest.SessionInput(
+								session.getDate(), session.getStartTime(), session.getEndTime(), session.getPlace(),
+								session.getTitle())).toList()));
 			}
 		}
-		proposed.stream().filter(week -> week.week() >= currentWeek).forEach(weeks::add);
+		for (ReplaceProgramWeeksRequest.WeekInput week : proposed) {
+			LocalDate end = week.endDate() != null ? week.endDate()
+					: ProgramCalendar.weekEnd(program.getStartDate(), program.getEndDate(), week.week());
+			boolean futureSession = week.sessions() != null
+					&& week.sessions().stream().anyMatch(session -> !session.date().isBefore(today));
+			if (!kept.contains(week.week()) && (!end.isBefore(today) || futureSession)) {
+				weeks.add(week);
+			}
+		}
 		return weeks;
+	}
+
+	static @Nullable Integer firstReplacedWeek(Program program, List<ProgramWeek> saved, LocalDate today) {
+		boolean ownDates = saved.stream()
+				.anyMatch(week -> week.getStartDate() != null || !week.getSessions().isEmpty());
+		if (!ownDates) {
+			return firstReplacedWeek(program.getStartDate(), program.getEndDate(), today);
+		}
+		ProgramSchedule schedule = ProgramSchedule.of(program.getStartDate(), program.getEndDate(), saved);
+		boolean begun = saved.stream().anyMatch(week -> {
+			ProgramSchedule.Dates dates = schedule.datesOf(week.getWeekNumber());
+			return dates != null && !dates.start().isAfter(today);
+		});
+		if (!begun) {
+			return null;
+		}
+		return saved.stream().filter(week -> !schedule.isPast(week.getWeekNumber(), today))
+				.mapToInt(ProgramWeek::getWeekNumber)
+				.min().orElse(saved.stream().mapToInt(ProgramWeek::getWeekNumber).max().orElse(0) + 1);
 	}
 
 	private WeeklyProgramProposalResponse withExisting(WeeklyProgramProposalResponse proposal, Program program,
 			LocalDate today) {
 		UUID programId = program.getId();
+		List<ProgramWeek> saved = programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId);
 		return new WeeklyProgramProposalResponse(proposal.totalWeeks(), proposal.weeks(), proposal.phases(),
 				proposal.warnings(), proposal.notes(), proposal.readingWarnings(), proposal.pageCount(),
 				new WeeklyProgramProposalResponse.Existing(
 						programPhaseRepository.findByProgramIdOrderByPositionAsc(programId).size(),
-						programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId).size(),
-						firstReplacedWeek(program.getStartDate(), program.getEndDate(), today)));
+						saved.size(), firstReplacedWeek(program, saved, today)),
+				proposal.specialDays());
 	}
 
 	/**
@@ -272,9 +324,10 @@ public class WeeklyProgramService {
 		for (JsonNode node : result.path("weeks")) {
 			LocalDate printed = ModelOutput.date(node.path("source_date"));
 			Integer byDate = weekOfDate(printed, start, totalWeeks);
+			LocalDate printedEnd = ModelOutput.date(node.path("source_end_date"));
 			boolean numbered = isWeekNumber(node.path("week"));
 			Integer number = numbered ? node.path("week").asInt() : null;
-			if (number == null || ((number < 1 || number > totalWeeks) && byDate != null)) {
+			if (number == null || ((number < 1 || number > 104) && byDate != null)) {
 				numbered = false;
 				number = byDate;
 			}
@@ -284,25 +337,30 @@ public class WeeklyProgramService {
 				continue;
 			}
 			ProgramWeekPlanResponse.Week earlier = weeks.get(number);
-			if (number < 1 || number > totalWeeks || (title == null && earlier == null)) {
+			if (number < 1 || number > 104 || (number > totalWeeks && printed == null)
+					|| (title == null && earlier == null)) {
 				dropped.add(number);
 				continue;
 			}
-			LocalDate weekStart = ProgramCalendar.weekStart(start, number);
-			LocalDate weekEnd = ProgramCalendar.weekEnd(start, end, number);
+			LocalDate weekStart = printed == null ? ProgramCalendar.weekStart(start, number) : printed;
+			LocalDate weekEnd = printed == null ? ProgramCalendar.weekEnd(start, end, number)
+					: printedEnd != null && !printedEnd.isBefore(printed) ? printedEnd : printed.plusDays(6);
 			if (numbered && printed != null
-					&& (printed.isBefore(weekStart) || printed.isAfter(weekStart.plusDays(6)))) {
+					&& (printed.isBefore(ProgramCalendar.weekStart(start, number))
+							|| printed.isAfter(ProgramCalendar.weekStart(start, number).plusDays(6)))) {
 				datesDiffer.add(number);
 			}
 			ProgramWeekPlanResponse.Week week = new ProgramWeekPlanResponse.Week(number, weekStart, weekEnd,
+					printed != null,
 					title == null ? "" : title, lines(node.path("topics")), lines(node.path("activities")),
-					lines(node.path("deliverables")), !numbered);
+					lines(node.path("deliverables")), !numbered, sessionsOf(node.path("sessions")));
 			weeks.put(number, earlier == null ? week : merged(earlier, week));
 			if (weekPhases.get(number) == null) {
 				weekPhases.put(number, ModelOutput.text(node.path("phase"), MAX_PHASE_NAME_LENGTH));
 			}
 		}
-		WeeklyProgramPhases.Result grouped = WeeklyProgramPhases.group(rangesOf(result, totalWeeks), weekPhases);
+		int planWeeks = Math.max(totalWeeks, weeks.isEmpty() ? 0 : weeks.lastKey());
+		WeeklyProgramPhases.Result grouped = WeeklyProgramPhases.group(rangesOf(result, planWeeks), weekPhases);
 		List<WeeklyProgramProposalResponse.Warning> all = new ArrayList<>(warnings);
 		addWarning(all, WeeklyProgramWarning.DATES_DIFFER, datesDiffer, false);
 		addWarning(all, WeeklyProgramWarning.WEEKS_DROPPED, dropped, false);
@@ -311,15 +369,29 @@ public class WeeklyProgramService {
 		addWarning(all, WeeklyProgramWarning.NO_PHASES, Set.of(), !weeks.isEmpty() && grouped.phases().isEmpty());
 		List<WeeklyProgramProposalResponse.Phase> phases = grouped.phases().stream()
 				.map(range -> new WeeklyProgramProposalResponse.Phase(range.name(), range.expectedOutput(),
-						range.firstWeek(), range.lastWeek(), ProgramCalendar.weekStart(start, range.firstWeek()),
-						ProgramCalendar.weekEnd(start, end, range.lastWeek())))
+						range.firstWeek(), range.lastWeek(), phaseStart(weeks.get(range.firstWeek()), start,
+								range.firstWeek()),
+						phaseEnd(weeks.get(range.lastWeek()), start, end, range.lastWeek())))
 				.toList();
 		// Unplaced rows first: the AI's own notes must not push file content past the cap.
 		List<String> notes = new ArrayList<>(unplaced);
 		lines(result.path("notes"), MAX_NOTES).stream().filter(note -> !notes.contains(note)).forEach(notes::add);
-		return new WeeklyProgramProposalResponse(totalWeeks, List.copyOf(weeks.values()), phases, all,
+		List<ProgramWeekPlanResponse.SpecialDay> specialDays = specialDaysOf(result.path("special_days"));
+		List<ProgramWeekPlanResponse.Week> planned = List.copyOf(weeks.values());
+		return new WeeklyProgramProposalResponse(planWeeks, planned, phases, all,
 				List.copyOf(notes.subList(0, Math.min(notes.size(), MAX_NOTES))),
-				lines(result.path("warnings"), MAX_NOTES), pageCount, null);
+				lines(result.path("warnings"), MAX_NOTES), pageCount, null, List.copyOf(specialDays));
+	}
+
+	/** A phase starts on the first day of its first week: the printed one when the file prints it. */
+	private static LocalDate phaseStart(ProgramWeekPlanResponse.@Nullable Week first, LocalDate start, int week) {
+		return first != null && first.startDate() != null ? first.startDate() : ProgramCalendar.weekStart(start, week);
+	}
+
+	/** A phase ends on the last day of its last week: the printed one when the file prints it. */
+	private static LocalDate phaseEnd(ProgramWeekPlanResponse.@Nullable Week last, LocalDate start, LocalDate end,
+			int week) {
+		return last != null && last.endDate() != null ? last.endDate() : ProgramCalendar.weekEnd(start, end, week);
 	}
 
 	/** The program week a printed date falls in; null without a date or outside the program. */
@@ -344,9 +416,13 @@ public class WeeklyProgramService {
 		String title = nextNames ? next.title() : first.title();
 		List<String> firstTopics = withTitle(first, title);
 		List<String> nextTopics = withTitle(next, title);
-		return new ProgramWeekPlanResponse.Week(first.week(), first.startDate(), first.endDate(), title,
+		ProgramWeekPlanResponse.Week dated = first.datesFromSource() ? first : next;
+		return new ProgramWeekPlanResponse.Week(first.week(), dated.startDate(), dated.endDate(),
+				first.datesFromSource() || next.datesFromSource(), title,
 				joined(firstTopics, nextTopics), joined(first.activities(), next.activities()),
-				joined(first.deliverables(), next.deliverables()), first.inferred() && next.inferred());
+				joined(first.deliverables(), next.deliverables()), first.inferred() && next.inferred(),
+				Stream.concat(first.sessions().stream(), next.sessions().stream()).distinct()
+						.toList());
 	}
 
 	/** The entry's topics, led by its own title when that is not the week's title. */
@@ -422,13 +498,56 @@ public class WeeklyProgramService {
 		return ModelOutput.lines(array, max, MAX_LINE_LENGTH, true);
 	}
 
+	private static @Nullable LocalTime timeOf(JsonNode node) {
+		try {
+			return node.isString() ? LocalTime.parse(node.stringValue()) : null;
+		} catch (DateTimeParseException ignored) {
+			return null;
+		}
+	}
+
+	private static List<ProgramWeekPlanResponse.Session> sessionsOf(JsonNode nodes) {
+		List<ProgramWeekPlanResponse.Session> sessions = new ArrayList<>();
+		for (JsonNode node : nodes) {
+			LocalDate date = ModelOutput.date(node.path("date"));
+			if (date != null && sessions.size() < ReplaceProgramWeeksRequest.MAX_SESSIONS) {
+				sessions.add(new ProgramWeekPlanResponse.Session(date, timeOf(node.path("start_time")),
+						timeOf(node.path("end_time")), ModelOutput.text(node.path("place"), 160),
+						ModelOutput.text(node.path("title"), 160)));
+			}
+		}
+		return sessions;
+	}
+
+	private static List<ProgramWeekPlanResponse.SpecialDay> specialDaysOf(JsonNode nodes) {
+		List<ProgramWeekPlanResponse.SpecialDay> days = new ArrayList<>();
+		for (JsonNode node : nodes) {
+			LocalDate date = ModelOutput.date(node.path("date"));
+			String title = ModelOutput.text(node.path("title"), 160);
+			if (date != null && title != null && days.size() < ReplaceProgramWeeksRequest.MAX_SPECIAL_DAYS) {
+				days.add(new ProgramWeekPlanResponse.SpecialDay(date, timeOf(node.path("start_time")),
+						timeOf(node.path("end_time")), ModelOutput.text(node.path("place"), 160), title,
+						lines(node.path("details"))));
+			}
+		}
+		return days;
+	}
+
 	private static JsonNode schema() {
+		JsonNode session = object(property("date", string()), property("start_time", nullableString()),
+				property("end_time", nullableString()), property("place", nullableString()),
+				property("title", nullableString()));
+		JsonNode specialDay = object(property("date", string()), property("start_time", nullableString()),
+				property("end_time", nullableString()), property("place", nullableString()),
+				property("title", string()), property("details", stringArray()));
 		JsonNode week = object(property("week", nullableInteger()), property("source_date", nullableString()),
+				property("source_end_date", nullableString()), property("sessions", arrayOf(session)),
 				property("title", string()), property("topics", stringArray()), property("activities", stringArray()),
 				property("deliverables", stringArray()), property("phase", nullableString()));
 		JsonNode phase = object(property("name", string()), property("expected_output", nullableString()),
 				property("first_week", integer()), property("last_week", integer()));
 		return object(property("weeks", arrayOf(week)), property("phases", arrayOf(phase)),
-				property("notes", stringArray()), property("warnings", stringArray()));
+				property("notes", stringArray()), property("warnings", stringArray()),
+				property("special_days", arrayOf(specialDay)));
 	}
 }

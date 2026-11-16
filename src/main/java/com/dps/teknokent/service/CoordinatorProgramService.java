@@ -57,6 +57,7 @@ import com.dps.teknokent.entity.ProgramEvent;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
@@ -75,6 +76,7 @@ import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
 import com.dps.teknokent.repository.TeamChangeRequestRepository;
 import com.dps.teknokent.security.AdminAccess;
@@ -83,6 +85,7 @@ import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramActivity;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramCoordination;
+import com.dps.teknokent.util.ProgramSchedule;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -114,6 +117,7 @@ public class CoordinatorProgramService {
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final ProgramPhaseRepository programPhaseRepository;
+	private final ProgramWeekRepository programWeekRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final ProgramEventRepository programEventRepository;
 	private final ProgramStartupRepository programStartupRepository;
@@ -153,7 +157,11 @@ public class CoordinatorProgramService {
 	public List<CoordinatorProgramResponse> list(UUID actorId) {
 		List<Program> programs = managedPrograms(requireCoordinatorOrAdmin(actorId));
 		Snapshot snapshot = snapshot(programs);
-		return programs.stream().map(program -> summarize(program, snapshot)).toList();
+		Map<UUID, List<ProgramWeek>> weeks = weeksOf(programs);
+		return programs.stream()
+				.map(program -> summarize(program, snapshot,
+						weeks.getOrDefault(program.getId(), List.of())))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -633,7 +641,8 @@ public class CoordinatorProgramService {
 
 	private CoordinatorProgramResponse.Detail detailOf(Program program) {
 		Snapshot snapshot = snapshot(List.of(program));
-		CoordinatorProgramResponse summary = summarize(program, snapshot);
+		CoordinatorProgramResponse summary = summarize(program, snapshot,
+				weeksOf(List.of(program)).getOrDefault(program.getId(), List.of()));
 		List<ProgramStartup> startups = snapshot.startups().getOrDefault(program.getId(), List.of());
 		List<ProgramStartup> awaiting = awaitingMatch(program, startups, snapshot);
 		List<CoordinatorProgramResponse.AwaitingTeam> awaitingTeams = awaiting.stream()
@@ -714,7 +723,25 @@ public class CoordinatorProgramService {
 				.toList();
 	}
 
-	private CoordinatorProgramResponse summarize(Program program, Snapshot snapshot) {
+	/**
+	 * The week the saved plan's printed dates place today in, as participants see it; outside them the program
+	 * calendar's week, which stays at the last week once the program has ended.
+	 */
+	private static @Nullable Integer currentWeek(Program program, List<ProgramWeek> weeks, LocalDate today) {
+		Integer week = ProgramSchedule.of(program.getStartDate(), program.getEndDate(), weeks).weekOn(today);
+		return week != null ? week : ProgramCalendar.currentWeek(program.getStartDate(), program.getEndDate(), today);
+	}
+
+	/** The saved weekly plans, so a program's current week follows the dates its syllabus prints. */
+	private Map<UUID, List<ProgramWeek>> weeksOf(List<Program> programs) {
+		if (programs.isEmpty()) {
+			return Map.of();
+		}
+		return programWeekRepository.findByProgramIdIn(programs.stream().map(Program::getId).toList()).stream()
+				.collect(Collectors.groupingBy(ProgramWeek::getProgramId));
+	}
+
+	private CoordinatorProgramResponse summarize(Program program, Snapshot snapshot, List<ProgramWeek> weeks) {
 		List<ProgramStartup> startups = snapshot.startups().getOrDefault(program.getId(), List.of());
 		List<ProgramMentor> mentors = snapshot.mentors().getOrDefault(program.getId(), List.of());
 		List<ProgramPhase> phases = snapshot.phases().getOrDefault(program.getId(), List.of());
@@ -748,7 +775,7 @@ public class CoordinatorProgramService {
 				oldestWaiting,
 				current == null ? null : toPhase(current),
 				phases.stream().map(CoordinatorProgramService::toPhase).toList(),
-				ProgramCalendar.currentWeek(program.getStartDate(), program.getEndDate(), snapshot.today()),
+				currentWeek(program, weeks, snapshot.today()),
 				ProgramCalendar.totalWeeks(program.getStartDate(), program.getEndDate()));
 	}
 
