@@ -39,6 +39,7 @@ import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramAssignment;
 import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.StartupRound;
 import com.dps.teknokent.entity.StoredDocument;
@@ -92,6 +93,9 @@ class StartupProcessServiceTest {
 
 	@Mock
 	private ProgramPhaseRepository programPhaseRepository;
+
+	@Mock
+	private ProgramAssignmentService programAssignmentService;
 
 	@InjectMocks
 	private StartupProcessService startupProcessService;
@@ -540,6 +544,120 @@ class StartupProcessServiceTest {
 		assertThatThrownBy(() -> startupProcessService.submitAssignment(ORG_ID, plain.getId(),
 				new SubmitProcessAssignmentRequest(TEAMMATE_ID, UUID.randomUUID())))
 				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	void submitAssignment_datesTheFirstHandIn() {
+		Organization organization = startup();
+		ActionItem finance = assignment("Finansal model", StartupStage.FINANCE);
+		StoredDocument document = document(ORG_ID);
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(actionItemRepository.findByIdAndOrganizationId(finance.getId(), ORG_ID)).thenReturn(Optional.of(finance));
+		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
+		Instant first = Instant.parse("2026-08-12T10:00:00Z");
+		finance.setSubmittedAt(first);
+
+		startupProcessService.submitAssignment(ORG_ID, finance.getId(),
+				new SubmitProcessAssignmentRequest(TEAMMATE_ID, document.getId()));
+
+		assertThat(finance.getSubmittedAt()).isEqualTo(first);
+		assertThat(finance.getSubmissionDocumentId()).isEqualTo(document.getId());
+	}
+
+	@Test
+	void submitAssignment_marksAProgramOdevThatAsksForNoFileDoneWithoutOne() {
+		Organization organization = startup();
+		ActionItem homework = programCopy(false);
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(actionItemRepository.findByIdAndOrganizationId(homework.getId(), ORG_ID))
+				.thenReturn(Optional.of(homework));
+
+		var process = startupProcessService.submitAssignment(ORG_ID, homework.getId(),
+				new SubmitProcessAssignmentRequest(TEAMMATE_ID, null));
+
+		assertThat(homework.getStatus()).isEqualTo(ActionItemStatus.COMPLETED);
+		assertThat(homework.getSubmissionDocumentId()).isNull();
+		assertThat(homework.getSubmittedAt()).isNotNull();
+		assertThat(process).isNotNull();
+	}
+
+	@Test
+	void submitAssignment_withoutAFileRefusesAProgramOdevThatAsksForOne() {
+		Organization organization = startup();
+		ActionItem homework = programCopy(true);
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(actionItemRepository.findByIdAndOrganizationId(homework.getId(), ORG_ID))
+				.thenReturn(Optional.of(homework));
+
+		assertThatThrownBy(() -> startupProcessService.submitAssignment(ORG_ID, homework.getId(),
+				new SubmitProcessAssignmentRequest(TEAMMATE_ID, null)))
+				.isInstanceOf(InvalidRequestException.class);
+
+		assertThat(homework.getStatus()).isEqualTo(ActionItemStatus.OPEN);
+		assertThat(homework.getSubmittedAt()).isNull();
+	}
+
+	@Test
+	void submitAssignment_withoutAFileRefusesAMentorsOdev() {
+		Organization organization = startup();
+		ActionItem finance = assignment("Finansal model", StartupStage.FINANCE);
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(actionItemRepository.findByIdAndOrganizationId(finance.getId(), ORG_ID)).thenReturn(Optional.of(finance));
+
+		assertThatThrownBy(() -> startupProcessService.submitAssignment(ORG_ID, finance.getId(),
+				new SubmitProcessAssignmentRequest(TEAMMATE_ID, null)))
+				.isInstanceOf(InvalidRequestException.class);
+
+		assertThat(finance.getStatus()).isEqualTo(ActionItemStatus.OPEN);
+	}
+
+	@Test
+	void get_handsALateJoiningTeamTheProgramsOpenOdevlerFirst() {
+		Organization organization = startup();
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(menteeProgramService.programOf(organization)).thenReturn(Optional.empty());
+
+		startupProcessService.get(ORG_ID, TEAMMATE_ID);
+
+		verify(programAssignmentService).catchUp(organization);
+	}
+
+	@Test
+	void describe_saysWhichOdevComesFromTheProgramAndWhetherItNeedsAFile() {
+		Organization organization = startup();
+		ActionItem homework = programCopy(false);
+		ActionItem finance = assignment("Finansal model", StartupStage.FINANCE);
+		when(actionItemRepository.findByOrganizationIdOrderByCreatedAtDesc(ORG_ID))
+				.thenReturn(List.of(finance, homework));
+		when(menteeProgramService.programOf(organization)).thenReturn(Optional.empty());
+
+		var process = startupProcessService.describe(organization, TODAY);
+
+		assertThat(process.assignments())
+				.extracting(a -> a.programAssignmentId() != null, a -> a.fileRequired())
+				.containsExactly(tuple(true, false), tuple(false, true));
+	}
+
+	private static ActionItem programCopy(boolean fileRequired) {
+		ProgramAssignment program = new ProgramAssignment();
+		program.setId(UUID.randomUUID());
+		program.setProgramId(PROGRAM_ID);
+		program.setTitle("Pazar araştırması");
+		program.setFileRequired(fileRequired);
+		ActionItem item = assignment("Pazar araştırması", null);
+		item.setProcessAssignment(true);
+		item.setProgramAssignment(program);
+		return item;
 	}
 
 	private static Organization startup() {

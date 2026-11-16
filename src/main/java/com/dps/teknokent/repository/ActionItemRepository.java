@@ -8,6 +8,8 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.entity.ActionItem;
@@ -50,4 +52,12 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 			Collection<ActionItemStatus> statuses,
 			LocalDate from,
 			LocalDate to);
+
+	@EntityGraph(attributePaths = "organization")
+	List<ActionItem> findByProgramAssignmentIdIn(Collection<UUID> programAssignmentIds);
+
+	/** The program Ödevler the team already holds a copy of. */
+	@Query("select item.programAssignment.id from ActionItem item"
+			+ " where item.organization.id = :organizationId and item.programAssignment is not null")
+	List<UUID> findProgramAssignmentIdsOfOrganization(@Param("organizationId") UUID organizationId);
 }
