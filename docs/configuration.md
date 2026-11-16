@@ -44,7 +44,7 @@ Never commit `.env`: it holds real keys.
 |---|---|
 | `AI_PROVIDER` | `openai` (default) or `openrouter`; anything else stops start-up. |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `OPENAI_EMBEDDING_MODEL` | OpenAI. |
-| `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OPENROUTER_MODEL`, `OPENROUTER_REPORT_MODEL`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_APP_NAME` | OpenRouter. |
+| `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OPENROUTER_MODEL`, `OPENROUTER_REPORT_MODEL`, `OPENROUTER_PROGRAM_MODEL`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_APP_NAME` | OpenRouter. `OPENROUTER_REPORT_MODEL` (meeting reports) and `OPENROUTER_PROGRAM_MODEL` (weekly program files) fall back to `OPENROUTER_MODEL` when empty. |
 | `AI_PROFILE_PARSING_ENABLED`, `AI_SYLLABUS_ENABLED`, `AI_MATCHING_ENABLED`, `AI_MEETING_REPORT_ENABLED`, `AI_TASK_HANDOVER_ENABLED` | Per-feature switches, all on when unset (see [AI features](ai.md)). |
 | `MATCHING_PGVECTOR_ENABLED` | Use the pgvector shortlist before ranking. |
 | `TESSERACT_EXECUTABLE`, `TESSERACT_LANGUAGES`, `TESSERACT_TIMEOUT_SECONDS` | Local OCR for scanned PDFs; the image ships Turkish and English. |

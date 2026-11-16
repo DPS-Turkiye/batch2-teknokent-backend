@@ -10,6 +10,7 @@ import static com.dps.teknokent.util.JsonSchema.string;
 import static com.dps.teknokent.util.JsonSchema.stringArray;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -64,12 +65,13 @@ import tools.jackson.databind.JsonNode;
 public class WeeklyProgramService {
 
 	private static final int MAX_WEEK_TITLE_LENGTH = 160;
-	private static final int MAX_WEEK_LINES = 8;
+	private static final int MAX_WEEK_LINES = 12;
 	private static final int MAX_LINE_LENGTH = 200;
 	private static final int MAX_PHASE_NAME_LENGTH = 120;
 	private static final int MAX_NOTES = 10;
 	// A weekly program is a page or two; anything longer is cut, not chunked.
 	static final int MAX_TEXT_LENGTH = 60_000;
+	private static final DateTimeFormatter NOTE_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.ROOT);
 
 	private final CoordinatorProgramService coordinatorProgramService;
 	private final ProgramWeekPlanService programWeekPlanService;
@@ -254,9 +256,11 @@ public class WeeklyProgramService {
 	}
 
 	/**
-	 * The AI's answer on the program calendar. Week numbers win over printed dates (a printed date only places a
-	 * week that has no number, and one that falls outside its week is flagged); weeks past the program or without a
-	 * title are dropped and flagged, and a repeated week keeps its first entry.
+	 * The AI's answer on the program calendar. Week numbers win over printed dates: a printed date places a week
+	 * that has no number, or one whose number is not a program week, and one that falls outside its numbered week
+	 * is flagged. A week number that comes back more than once (a table with one row per session) is merged into
+	 * one week. Weeks past the program or without a title are dropped and flagged; a titled row the calendar cannot
+	 * place at all (no number, no date in the program) becomes a note instead of disappearing.
 	 */
 	static WeeklyProgramProposalResponse proposalOf(JsonNode result, LocalDate start, LocalDate end, int totalWeeks,
 			List<WeeklyProgramProposalResponse.Warning> warnings, int pageCount) {
@@ -264,21 +268,23 @@ public class WeeklyProgramService {
 		SortedMap<Integer, @Nullable String> weekPhases = new TreeMap<>();
 		Set<Integer> dropped = new LinkedHashSet<>();
 		Set<Integer> datesDiffer = new LinkedHashSet<>();
+		List<String> unplaced = new ArrayList<>();
 		for (JsonNode node : result.path("weeks")) {
 			LocalDate printed = ModelOutput.date(node.path("source_date"));
+			Integer byDate = weekOfDate(printed, start, totalWeeks);
 			boolean numbered = isWeekNumber(node.path("week"));
 			Integer number = numbered ? node.path("week").asInt() : null;
-			if (number == null && printed != null && !printed.isBefore(start)) {
-				number = (int) (ChronoUnit.DAYS.between(start, printed) / 7) + 1;
+			if (number == null || ((number < 1 || number > totalWeeks) && byDate != null)) {
+				numbered = false;
+				number = byDate;
 			}
 			String title = ModelOutput.text(node.path("title"), MAX_WEEK_TITLE_LENGTH);
 			if (number == null) {
+				addUnplaced(unplaced, title, printed);
 				continue;
 			}
-			if (weeks.containsKey(number)) {
-				continue;
-			}
-			if (number < 1 || number > totalWeeks || title == null) {
+			ProgramWeekPlanResponse.Week earlier = weeks.get(number);
+			if (number < 1 || number > totalWeeks || (title == null && earlier == null)) {
 				dropped.add(number);
 				continue;
 			}
@@ -288,10 +294,13 @@ public class WeeklyProgramService {
 					&& (printed.isBefore(weekStart) || printed.isAfter(weekStart.plusDays(6)))) {
 				datesDiffer.add(number);
 			}
-			weeks.put(number, new ProgramWeekPlanResponse.Week(number, weekStart, weekEnd, title,
-					lines(node.path("topics")), lines(node.path("activities")),
-					lines(node.path("deliverables")), !numbered));
-			weekPhases.put(number, ModelOutput.text(node.path("phase"), MAX_PHASE_NAME_LENGTH));
+			ProgramWeekPlanResponse.Week week = new ProgramWeekPlanResponse.Week(number, weekStart, weekEnd,
+					title == null ? "" : title, lines(node.path("topics")), lines(node.path("activities")),
+					lines(node.path("deliverables")), !numbered);
+			weeks.put(number, earlier == null ? week : merged(earlier, week));
+			if (weekPhases.get(number) == null) {
+				weekPhases.put(number, ModelOutput.text(node.path("phase"), MAX_PHASE_NAME_LENGTH));
+			}
 		}
 		WeeklyProgramPhases.Result grouped = WeeklyProgramPhases.group(rangesOf(result, totalWeeks), weekPhases);
 		List<WeeklyProgramProposalResponse.Warning> all = new ArrayList<>(warnings);
@@ -305,8 +314,69 @@ public class WeeklyProgramService {
 						range.firstWeek(), range.lastWeek(), ProgramCalendar.weekStart(start, range.firstWeek()),
 						ProgramCalendar.weekEnd(start, end, range.lastWeek())))
 				.toList();
+		// Unplaced rows first: the AI's own notes must not push file content past the cap.
+		List<String> notes = new ArrayList<>(unplaced);
+		lines(result.path("notes"), MAX_NOTES).stream().filter(note -> !notes.contains(note)).forEach(notes::add);
 		return new WeeklyProgramProposalResponse(totalWeeks, List.copyOf(weeks.values()), phases, all,
-				lines(result.path("notes"), MAX_NOTES), lines(result.path("warnings"), MAX_NOTES), pageCount, null);
+				List.copyOf(notes.subList(0, Math.min(notes.size(), MAX_NOTES))),
+				lines(result.path("warnings"), MAX_NOTES), pageCount, null);
+	}
+
+	/** The program week a printed date falls in; null without a date or outside the program. */
+	private static @Nullable Integer weekOfDate(@Nullable LocalDate printed, LocalDate start, int totalWeeks) {
+		if (printed == null || printed.isBefore(start)) {
+			return null;
+		}
+		int week = (int) (ChronoUnit.DAYS.between(start, printed) / 7) + 1;
+		return week <= totalWeeks ? week : null;
+	}
+
+	/**
+	 * A second entry for a week, as a table with one row per session gives: its lines follow the first entry's,
+	 * and its own title, when it differs, becomes a topic line so the session is not lost.
+	 */
+	private static ProgramWeekPlanResponse.Week merged(ProgramWeekPlanResponse.Week first,
+			ProgramWeekPlanResponse.Week next) {
+		// The title of a row that carries the week's printed number wins over one placed only by its date (an event
+		// such as a bootcamp in the same week); the other title stays as a topic line where its row's lines are.
+		boolean nextNames = first.title().isEmpty()
+				|| (first.inferred() && !next.inferred() && !next.title().isEmpty());
+		String title = nextNames ? next.title() : first.title();
+		List<String> firstTopics = withTitle(first, title);
+		List<String> nextTopics = withTitle(next, title);
+		return new ProgramWeekPlanResponse.Week(first.week(), first.startDate(), first.endDate(), title,
+				joined(firstTopics, nextTopics), joined(first.activities(), next.activities()),
+				joined(first.deliverables(), next.deliverables()), first.inferred() && next.inferred());
+	}
+
+	/** The entry's topics, led by its own title when that is not the week's title. */
+	private static List<String> withTitle(ProgramWeekPlanResponse.Week entry, String weekTitle) {
+		List<String> topics = new ArrayList<>();
+		if (!entry.title().isEmpty() && !entry.title().equalsIgnoreCase(weekTitle)) {
+			topics.add(cut(entry.title()));
+		}
+		topics.addAll(entry.topics());
+		return topics;
+	}
+
+	private static List<String> joined(List<String> first, List<String> next) {
+		Set<String> lines = new LinkedHashSet<>(first);
+		lines.addAll(next);
+		return lines.stream().limit(MAX_WEEK_LINES).toList();
+	}
+
+	private static void addUnplaced(List<String> unplaced, @Nullable String title, @Nullable LocalDate printed) {
+		if (title == null) {
+			return;
+		}
+		String note = cut(printed == null ? title : NOTE_DATE.format(printed) + " — " + title);
+		if (!unplaced.contains(note)) {
+			unplaced.add(note);
+		}
+	}
+
+	private static String cut(String line) {
+		return line.length() > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH).trim() : line;
 	}
 
 	/** The AI's phase ranges, cut to the program; a range wholly past the program is left out. */

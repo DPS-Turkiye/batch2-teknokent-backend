@@ -62,6 +62,7 @@ class AiPropertiesTest {
 				"OPENROUTER_BASE_URL", "https://router.example/v1/",
 				"OPENROUTER_MODEL", "openai/gpt-4o-mini",
 				"OPENROUTER_REPORT_MODEL", "google/gemini-3-flash-preview",
+				"OPENROUTER_PROGRAM_MODEL", "google/gemini-3-flash-preview",
 				"OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-large",
 				"OPENROUTER_APP_NAME", "Menton",
 				"OPENAI_API_KEY", "oa-key",
@@ -72,6 +73,7 @@ class AiPropertiesTest {
 		assertThat(properties.baseUrl()).isEqualTo("https://router.example/v1");
 		assertThat(properties.profileModel()).isEqualTo("openai/gpt-4o-mini");
 		assertThat(properties.reportModel()).isEqualTo("google/gemini-3-flash-preview");
+		assertThat(properties.programModel()).isEqualTo("google/gemini-3-flash-preview");
 		assertThat(properties.embeddingModel()).isEqualTo("openai/text-embedding-3-large");
 		assertThat(properties.openrouter().appName()).isEqualTo("Menton");
 		assertThat(properties.openai().apiKey()).isEqualTo("oa-key");
@@ -89,7 +91,20 @@ class AiPropertiesTest {
 		assertThat(properties.reportModel()).isEqualTo("gpt-4o-mini");
 		assertThat(properties.embeddingModel()).isEqualTo("text-embedding-3-small");
 		assertThat(properties.openrouter().reportModel()).isEqualTo("openai/gpt-4o-mini");
+		assertThat(properties.openrouter().programModel()).isEqualTo("openai/gpt-4o-mini");
 		assertThat(properties.openrouter().appName()).isEqualTo("TeamTNT Spring Backend");
+	}
+
+	// SSM can hold a parameter with no value; that must read weekly programs with the profile model, not fail.
+	@Test
+	void anEmptyProgramModelFallsBackToTheProfileModel() throws IOException {
+		AiProperties properties = bindFromApplicationYml(Map.of(
+				"AI_PROVIDER", "openrouter",
+				"OPENROUTER_MODEL", "openai/gpt-4o-mini",
+				"OPENROUTER_PROGRAM_MODEL", ""));
+
+		assertThat(properties.programModel()).isEqualTo("openai/gpt-4o-mini");
+		assertThat(properties.profileModel()).isEqualTo("openai/gpt-4o-mini");
 	}
 
 	@Test
@@ -101,19 +116,21 @@ class AiPropertiesTest {
 	@Test
 	void eachSettingFollowsTheChosenProvider() {
 		AiProperties.OpenAi openAi = new AiProperties.OpenAi("oa", null, "gpt-x", "embed-oa");
-		AiProperties.OpenRouter openRouter = new AiProperties.OpenRouter("or", null, "or/profile", null, "or/embed",
-				null);
+		AiProperties.OpenRouter openRouter = new AiProperties.OpenRouter("or", null, "or/profile", null, null,
+				"or/embed", null);
 
 		AiProperties onOpenAi = new AiProperties(AiProvider.OPENAI, openAi, openRouter);
 		assertThat(onOpenAi.apiKey()).isEqualTo("oa");
 		assertThat(onOpenAi.embeddingModel()).isEqualTo("embed-oa");
 		assertThat(onOpenAi.reportModel()).isEqualTo("gpt-x");
+		assertThat(onOpenAi.programModel()).as("OpenAI reads weekly programs with its one model").isEqualTo("gpt-x");
 		assertThat(onOpenAi.provider().wireName()).isEqualTo("openai");
 
 		AiProperties onOpenRouter = new AiProperties(AiProvider.OPENROUTER, openAi, openRouter);
 		assertThat(onOpenRouter.apiKey()).isEqualTo("or");
 		assertThat(onOpenRouter.embeddingModel()).isEqualTo("or/embed");
 		assertThat(onOpenRouter.reportModel()).as("no report model: the profile model").isEqualTo("or/profile");
+		assertThat(onOpenRouter.programModel()).as("no program model: the profile model").isEqualTo("or/profile");
 		assertThat(onOpenRouter.baseUrl()).isEqualTo("https://openrouter.ai/api/v1");
 		assertThat(onOpenRouter.provider().wireName()).isEqualTo("openrouter");
 	}

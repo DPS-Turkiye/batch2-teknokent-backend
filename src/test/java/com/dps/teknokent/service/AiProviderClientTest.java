@@ -48,7 +48,8 @@ class AiProviderClientTest {
 	@Test
 	void providerNameAndModelSelection_useOpenrouterSettings() throws Exception {
 		AiProviderClient client = client(new AiProperties(AiProvider.OPENROUTER, null,
-				new AiProperties.OpenRouter(null, null, "openrouter-profile", null, "openrouter-embedding", null)));
+				new AiProperties.OpenRouter(null, null, "openrouter-profile", null, null, "openrouter-embedding",
+						null)));
 
 		assertThat(client.providerName()).isEqualTo("openrouter");
 		assertThat(client.embeddingModel()).isEqualTo("openrouter-embedding");
@@ -233,7 +234,10 @@ class AiProviderClientTest {
 		JsonNode request = requests.get(0);
 		assertThat(request.path("model").asString()).isEqualTo("openrouter-profile");
 		assertThat(systemPrompt(request))
-				.contains("Program start date: 2026-11-02. Program end date: 2026-12-13. Program weeks: 6.");
+				.contains("Program start date: 2026-11-02. Program end date: 2026-12-13. Program weeks: 6.")
+				.as("an event row is placed by its date, and a week's sessions stay together")
+				.contains("null when it prints a date; its date places it")
+				.contains("keep every session's theme, speakers, workshop and tasks");
 		assertThat(userText(request)).isEqualTo("1 · Keşfetmeye Başla");
 		JsonNode format = request.path("response_format");
 		assertThat(format.path("type").asString()).isEqualTo("json_schema");
@@ -396,13 +400,29 @@ class AiProviderClientTest {
 		assertThat(client(openRouterReportModel(null)).resolveReportModel()).isEqualTo("openai/gpt-4o-mini");
 
 		AiProviderClient openAi = client(new AiProperties(AiProvider.OPENAI, null,
-				new AiProperties.OpenRouter(null, null, null, "google/gemini-2.5-flash", null, null)));
+				new AiProperties.OpenRouter(null, null, null, "google/gemini-2.5-flash", null, null, null)));
 		assertThat(openAi.resolveReportModel()).isEqualTo("gpt-4o-mini");
+	}
+
+	@Test
+	void onlyTheWeeklyProgramIsReadWithTheProgramModel() throws Exception {
+		List<JsonNode> requests = new CopyOnWriteArrayList<>();
+		HttpServer server = provider(requests, answer("{\"weeks\":[],\"phases\":[]}"));
+		AiProviderClient client = client(new AiProperties(AiProvider.OPENROUTER, null,
+				new AiProperties.OpenRouter("test-key", baseUrl(server), "openai/gpt-4o-mini",
+						"google/gemini-2.5-flash", "google/gemini-3-flash-preview", null, null)));
+
+		client.weeklyProgram("Hafta 1", null, null, ANY_SCHEMA);
+		client.syllabusPhases("Hafta 1", null, null, ANY_SCHEMA);
+		client.structuredProfile("mentee", "CV metni", ANY_SCHEMA);
+
+		assertThat(requests).extracting(request -> request.path("model").asString())
+				.containsExactly("google/gemini-3-flash-preview", "openai/gpt-4o-mini", "openai/gpt-4o-mini");
 	}
 
 	private static AiProperties openRouterReportModel(String reportModel) {
 		return new AiProperties(AiProvider.OPENROUTER, null,
-				new AiProperties.OpenRouter(null, null, "openai/gpt-4o-mini", reportModel, null, null));
+				new AiProperties.OpenRouter(null, null, "openai/gpt-4o-mini", reportModel, null, null, null));
 	}
 
 	@Test
@@ -706,7 +726,7 @@ class AiProviderClientTest {
 
 	private static AiProperties openRouterSettings(HttpServer server, String apiKey, String reportModel) {
 		return new AiProperties(AiProvider.OPENROUTER, null, new AiProperties.OpenRouter(apiKey, baseUrl(server),
-				"openrouter-profile", reportModel, "openrouter-embedding", "TeamTNT Spring Backend"));
+				"openrouter-profile", reportModel, null, "openrouter-embedding", "TeamTNT Spring Backend"));
 	}
 
 	private AiProviderClient openAi(HttpServer server) {

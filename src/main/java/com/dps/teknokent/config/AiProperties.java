@@ -54,7 +54,7 @@ public record AiProperties(AiProvider provider, OpenAi openai, OpenRouter openro
 
 	/** Like {@link OpenAi}: only {@code apiKey} can be null once constructed. */
 	public record OpenRouter(@Nullable String apiKey, String baseUrl, String profileModel, String reportModel,
-			String embeddingModel, String appName) {
+			String programModel, String embeddingModel, String appName) {
 		private static final String BASE_URL = "https://openrouter.ai/api/v1";
 		private static final String PROFILE_MODEL = "openai/gpt-4o-mini";
 		private static final String EMBEDDING_MODEL = "openai/text-embedding-3-small";
@@ -65,12 +65,15 @@ public record AiProperties(AiProvider provider, OpenAi openai, OpenRouter openro
 			profileModel = orDefault(profileModel, PROFILE_MODEL);
 			// A blank report model falls back to the profile model, as OPENROUTER_REPORT_MODEL documents.
 			reportModel = orDefault(reportModel, profileModel);
+			// Likewise OPENROUTER_PROGRAM_MODEL: unset, the weekly program is read with the profile model.
+			programModel = orDefault(programModel, profileModel);
 			embeddingModel = orDefault(embeddingModel, EMBEDDING_MODEL);
 			appName = orDefault(appName, APP_NAME);
 		}
 
 		static OpenRouter unset() {
-			return new OpenRouter(null, BASE_URL, PROFILE_MODEL, PROFILE_MODEL, EMBEDDING_MODEL, APP_NAME);
+			return new OpenRouter(null, BASE_URL, PROFILE_MODEL, PROFILE_MODEL, PROFILE_MODEL, EMBEDDING_MODEL,
+					APP_NAME);
 		}
 	}
 
@@ -89,6 +92,11 @@ public record AiProperties(AiProvider provider, OpenAi openai, OpenRouter openro
 
 	public String reportModel() {
 		return provider == AiProvider.OPENROUTER ? openrouter.reportModel() : openai.profileModel();
+	}
+
+	/** The model that reads weekly program files; the profile model unless OPENROUTER_PROGRAM_MODEL names another. */
+	public String programModel() {
+		return provider == AiProvider.OPENROUTER ? openrouter.programModel() : openai.profileModel();
 	}
 
 	public String embeddingModel() {
