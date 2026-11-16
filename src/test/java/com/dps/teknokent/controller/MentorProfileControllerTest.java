@@ -160,6 +160,33 @@ class MentorProfileControllerTest {
 	}
 
 	@Test
+	void readsAMentorAsTheCallerTheServiceCredentialsName() throws Exception {
+		UUID mentor = UUID.fromString("00000000-0000-0000-0000-000000000811");
+		UUID mentee = UUID.fromString("00000000-0000-0000-0000-000000000812");
+
+		mockMvc.perform(get("/api/mentors/{id}", mentor).param("actorId", mentee.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk());
+		mockMvc.perform(get("/api/mentors/{id}/availability", mentor).with(user("test-user")))
+				.andExpect(status().isOk());
+
+		verify(mentorProfileService).findReadable(mentor, mentee);
+		verify(mentorProfileService).findReadableAvailability(mentor, null);
+	}
+
+	@Test
+	void aSignedInCallerReadsAMentorAsThemselvesWhateverActorIsSent() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000813");
+		UUID mentor = UUID.fromString("00000000-0000-0000-0000-000000000814");
+
+		mockMvc.perform(get("/api/mentors/{id}", mentor).param("actorId", mentor.toString())
+				.with(authentication(signedInAs(signedIn))))
+				.andExpect(status().isOk());
+
+		verify(mentorProfileService).findReadable(mentor, signedIn);
+	}
+
+	@Test
 	void refusesToReadAnotherMentorsAvailabilitySettings() throws Exception {
 		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000801");
 		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000802");

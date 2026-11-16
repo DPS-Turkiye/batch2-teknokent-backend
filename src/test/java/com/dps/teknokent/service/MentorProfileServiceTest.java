@@ -255,6 +255,59 @@ class MentorProfileServiceTest {
 		assertThat(result.get(0).booked()).isTrue();
 	}
 
+	@Test
+	void anyoneReadsAnApprovedMentorsProfileAndSlots() {
+		when(mentorProfileRepository.findOneById(mentorId))
+				.thenReturn(Optional.of(profileOf(UserAccountStatus.APPROVED)));
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+
+		assertThat(mentorProfileService.findReadable(mentorId, UUID.randomUUID()).id()).isEqualTo(mentorId);
+		assertThat(mentorProfileService.findReadable(mentorId, null).id()).isEqualTo(mentorId);
+		assertThat(mentorProfileService.findReadableAvailability(mentorId, null)).isEmpty();
+	}
+
+	@Test
+	void aMentorWhoIsNotApprovedYetIsMissingToEveryoneElse() {
+		for (UserAccountStatus status : List.of(UserAccountStatus.PENDING, UserAccountStatus.REJECTED,
+				UserAccountStatus.DELETED)) {
+			when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.of(profileOf(status)));
+
+			assertThatThrownBy(() -> mentorProfileService.findReadable(mentorId, UUID.randomUUID()))
+					.isInstanceOf(ResourceNotFoundException.class);
+			assertThatThrownBy(() -> mentorProfileService.findReadable(mentorId, null))
+					.isInstanceOf(ResourceNotFoundException.class);
+			assertThatThrownBy(() -> mentorProfileService.findReadableAvailability(mentorId, UUID.randomUUID()))
+					.isInstanceOf(ResourceNotFoundException.class);
+		}
+	}
+
+	@Test
+	void aPendingMentorStillReadsTheirOwnProfileAndSlots() {
+		when(mentorProfileRepository.findOneById(mentorId))
+				.thenReturn(Optional.of(profileOf(UserAccountStatus.PENDING)));
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor());
+
+		assertThat(mentorProfileService.findReadable(mentorId, mentorId).id()).isEqualTo(mentorId);
+		assertThat(mentorProfileService.findReadableAvailability(mentorId, mentorId)).isEmpty();
+	}
+
+	@Test
+	void anUnknownMentorIsMissing() {
+		when(mentorProfileRepository.findOneById(mentorId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> mentorProfileService.findReadable(mentorId, UUID.randomUUID()))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	private MentorProfile profileOf(UserAccountStatus status) {
+		AppUser user = mentor();
+		user.setStatus(status);
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(user);
+		return profile;
+	}
+
 	private UpdateMentorProfileRequest updateRequest() {
 		return new UpdateMentorProfileRequest(
 				"Ürün Danışmanı", "Acme", "Bu hafta müsait", "~24 saat", "Online",
