@@ -18,8 +18,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.BottleneckStatus;
@@ -947,10 +949,17 @@ public class CoordinatorProgramService {
 				: managed.stream().filter(program -> program.getStatus() != ProgramStatus.COMPLETED).toList();
 	}
 
+	/**
+	 * A coordinator or an admin whose account is approved. A deactivated coordinator's browser session lives on until
+	 * the frontend re-checks it, so the role alone must not open program data.
+	 */
 	public AppUser requireCoordinatorOrAdmin(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		if (!actor.has(UserRole.COORDINATOR) && !actor.has(UserRole.ADMIN)) {
 			throw new InvalidRequestException("Only a coordinator can manage programs.");
+		}
+		if (actor.getStatus() != UserAccountStatus.APPROVED) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, Texts.forRequest("error.accountNotApproved"));
 		}
 		return actor;
 	}
