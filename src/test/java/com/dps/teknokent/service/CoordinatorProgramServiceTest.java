@@ -430,6 +430,7 @@ class CoordinatorProgramServiceTest {
 
 		assertThat(program.isIndividualMentees()).isTrue();
 		assertThat(detail.rules().individualMentees()).isTrue();
+		assertThat(detail.program().individualMentees()).isTrue();
 		assertThat(detail.program().type()).isEqualTo(ProgramType.PEER_MENTORING);
 	}
 

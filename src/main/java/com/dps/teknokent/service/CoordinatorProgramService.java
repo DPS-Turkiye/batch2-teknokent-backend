@@ -761,6 +761,7 @@ public class CoordinatorProgramService {
 				program.getStatus(),
 				ProgramCalendar.lifecycle(program.getStatus(), program.getStartDate(), snapshot.today()),
 				program.getProgramType(),
+				program.isIndividualMentees(),
 				program.getDescription(),
 				program.getStartDate(),
 				program.getEndDate(),

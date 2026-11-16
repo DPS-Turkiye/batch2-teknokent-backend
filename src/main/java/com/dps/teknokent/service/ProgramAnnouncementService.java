@@ -1,7 +1,9 @@
 package com.dps.teknokent.service;
 
-import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,6 +15,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.AnnouncementAudience;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -34,8 +37,9 @@ import com.dps.teknokent.util.Texts;
 import lombok.RequiredArgsConstructor;
 
 /**
- * "Duyurular": a coordinator posts to a whole program. Every team member and accepted mentor gets a notification,
- * and reads the announcements in a read-only thread in their Mesajlar. Newest first.
+ * "Duyurular": a coordinator posts to a program, for everyone in it, only its accepted mentors, or only its teams'
+ * members. Exactly that group gets a notification and reads the announcement in a read-only thread in their Mesajlar.
+ * Newest first.
  */
 @Service
 @RequiredArgsConstructor
@@ -59,9 +63,10 @@ public class ProgramAnnouncementService {
 		announcement.setProgramId(programId);
 		announcement.setAuthorId(actorId);
 		announcement.setBody(request.body().strip());
+		announcement.setAudience(request.audienceOrDefault());
 		ProgramAnnouncement saved = announcementRepository.saveAndFlush(announcement);
 
-		Audience audience = audience(programId);
+		Audience audience = audience(programId).reachedBy(saved.getAudience());
 		String preview = preview(saved.getBody());
 		for (AppUser member : audience.members()) {
 			notificationService.create(member, NotificationCategory.GENERAL,
@@ -82,26 +87,45 @@ public class ProgramAnnouncementService {
 				Map.of(programId, program));
 	}
 
-	/** The announcements of every program the viewer's team is in, or that they mentor in. */
+	/**
+	 * The announcements meant for the viewer: in programs they mentor in, those for everyone or for mentors; in
+	 * programs their team is in, those for everyone or for participants. A team counts only for a mentee, the same
+	 * people {@link #post} notifies.
+	 */
 	@Transactional(readOnly = true)
 	public List<ProgramAnnouncementResponse> mine(UUID actorId) {
 		AppUser actor = appUserRepository.findById(actorId)
 				.orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorId));
-		List<UUID> programIds = new ArrayList<>();
+		Set<UUID> mentorProgramIds = new HashSet<>();
 		if (actor.has(UserRole.MENTOR)) {
 			programMentorRepository.findByMentorIdAndStatusOrderByCreatedAtDesc(actorId, ProgramMentorStatus.ACCEPTED)
-					.forEach(row -> programIds.add(row.getProgramId()));
+					.forEach(row -> mentorProgramIds.add(row.getProgramId()));
 		}
-		if (actor.getOrganization() != null) {
+		Set<UUID> teamProgramIds = new HashSet<>();
+		if (actor.has(UserRole.MENTEE) && actor.getOrganization() != null) {
 			programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(actor.getOrganization().getId())
-					.forEach(row -> programIds.add(row.getProgramId()));
+					.forEach(row -> teamProgramIds.add(row.getProgramId()));
 		}
-		if (programIds.isEmpty()) {
+		Map<UUID, ProgramAnnouncement> visible = new HashMap<>();
+		readable(mentorProgramIds, AnnouncementAudience.FOR_MENTORS).forEach(a -> visible.put(a.getId(), a));
+		readable(teamProgramIds, AnnouncementAudience.FOR_PARTICIPANTS).forEach(a -> visible.put(a.getId(), a));
+		if (visible.isEmpty()) {
 			return List.of();
 		}
-		Map<UUID, Program> programs = programRepository.findAllById(programIds).stream()
+		List<ProgramAnnouncement> newestFirst = visible.values().stream()
+				.sorted(Comparator.comparing(ProgramAnnouncement::getCreatedAt).reversed()
+						.thenComparing(ProgramAnnouncement::getId))
+				.toList();
+		Map<UUID, Program> programs = programRepository
+				.findAllById(newestFirst.stream().map(ProgramAnnouncement::getProgramId).distinct().toList()).stream()
 				.collect(Collectors.toMap(Program::getId, Function.identity()));
-		return responses(announcementRepository.findByProgramIdInOrderByCreatedAtDesc(programs.keySet()), programs);
+		return responses(newestFirst, programs);
+	}
+
+	private List<ProgramAnnouncement> readable(Set<UUID> programIds, Collection<AnnouncementAudience> audiences) {
+		return programIds.isEmpty()
+				? List.of()
+				: announcementRepository.findByProgramIdInAndAudienceIn(programIds, audiences);
 	}
 
 	private List<ProgramAnnouncementResponse> responses(List<ProgramAnnouncement> announcements,
@@ -115,7 +139,8 @@ public class ProgramAnnouncementService {
 						announcement,
 						programs.get(announcement.getProgramId()),
 						authors.get(announcement.getAuthorId()),
-						audiences.computeIfAbsent(announcement.getProgramId(), this::audience)))
+						audiences.computeIfAbsent(announcement.getProgramId(), this::audience)
+								.reachedBy(announcement.getAudience())))
 				.toList();
 	}
 
@@ -152,10 +177,20 @@ public class ProgramAnnouncementService {
 				authorName,
 				announcement.getBody(),
 				announcement.getCreatedAt(),
+				announcement.getAudience(),
+				program != null && program.isIndividualMentees(),
 				audience.teamCount(),
 				audience.mentors().size());
 	}
 
+	/** Everyone in a program today; {@link #reachedBy} narrows it to one announcement's audience. */
 	private record Audience(int teamCount, List<AppUser> members, List<AppUser> mentors) {
+
+		Audience reachedBy(AnnouncementAudience audience) {
+			return new Audience(
+					audience.reachesParticipants() ? teamCount : 0,
+					audience.reachesParticipants() ? members : List.of(),
+					audience.reachesMentors() ? mentors : List.of());
+		}
 	}
 }

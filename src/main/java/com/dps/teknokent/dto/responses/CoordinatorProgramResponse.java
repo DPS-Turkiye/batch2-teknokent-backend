@@ -14,7 +14,8 @@ import com.dps.teknokent.domain.ProgramType;
 
 /**
  * A program as its coordinator sees it: the list card, and with {@link Detail} the overview tab. The detail's
- * {@code pendingApprovalCount} is the Onaylar tab's badge.
+ * {@code pendingApprovalCount} is the Onaylar tab's badge. {@code individualMentees}: the teams are single
+ * participants (İŞKUR), so the coordinator's screens say "katılımcılar" instead of "takımlar".
  */
 public record CoordinatorProgramResponse(
 		UUID id,
@@ -22,6 +23,7 @@ public record CoordinatorProgramResponse(
 		ProgramStatus status,
 		ProgramLifecycle lifecycle,
 		ProgramType type,
+		boolean individualMentees,
 		String description,
 		LocalDate startDate,
 		LocalDate endDate,
