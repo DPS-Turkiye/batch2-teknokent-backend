@@ -138,7 +138,8 @@ public class ProgramApprovalService {
 		List<ProgramApprovalsResponse.Startup> startups = organizationIds.isEmpty()
 				? List.of()
 				: organizationRepository
-						.findByIdInAndApprovalStatusOrderByCreatedAtAsc(organizationIds, UserAccountStatus.PENDING)
+						.findByIdInAndApprovalStatusAndArchivedAtIsNullOrderByCreatedAtAsc(organizationIds,
+								UserAccountStatus.PENDING)
 						.stream()
 						.map(ProgramApprovalsResponse.Startup::of)
 						.toList();

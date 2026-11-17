@@ -35,10 +35,12 @@ import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramMemberSummaryResponse;
 import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
+import com.dps.teknokent.dto.responses.ProgramStartupRosterResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
@@ -258,6 +260,44 @@ class ProgramServiceTest {
 				.satisfies(mentor -> assertThat(mentor.fullName()).isEqualTo("Ece Demir"));
 		assertThat(result.get(1).startups()).isEmpty();
 		assertThat(result.get(1).mentors()).isEmpty();
+	}
+
+	@Test
+	void listLeavesOutAStartupThatWasArchived() {
+		Organization archived = archivedStartup();
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(coordinator());
+		when(programRepository.findByCreatedByOrderByCreatedAtDesc(COORDINATOR_ID)).thenReturn(List.of(program()));
+		when(programStartupRepository.findByProgramIdInOrderByCreatedAtAsc(List.of(PROGRAM_ID)))
+				.thenReturn(List.of(assignment(PROGRAM_ID), assignment(PROGRAM_ID, archived.getId())));
+		when(organizationRepository.findAllById(any()))
+				.thenReturn(List.of(mentee(null).getOrganization(), archived));
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		var result = programService.list(COORDINATOR_ID);
+
+		assertThat(result.getFirst().startups()).extracting(OrganizationResponse::name)
+				.containsExactly("NovaMed AI");
+	}
+
+	@Test
+	void findDetailLeavesOutAStartupThatWasArchived() {
+		Organization archived = archivedStartup();
+		AppUser admin = coordinator();
+		admin.setRole(UserRole.ADMIN);
+		when(domainLookupService.requireUser(COORDINATOR_ID)).thenReturn(admin);
+		when(programRepository.findById(PROGRAM_ID)).thenReturn(Optional.of(program()));
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID))
+				.thenReturn(List.of(assignment(PROGRAM_ID), assignment(PROGRAM_ID, archived.getId())));
+		when(programMentorRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID)).thenReturn(List.of());
+		when(organizationRepository.findAllById(any()))
+				.thenReturn(List.of(mentee(null).getOrganization(), archived));
+		when(appUserRepository.findByOrganizationIdInOrderByFullNameAsc(any())).thenReturn(List.of());
+		when(appUserRepository.findAllById(any())).thenReturn(List.of(coordinator()));
+
+		var detail = programService.findDetail(COORDINATOR_ID, PROGRAM_ID);
+
+		assertThat(detail.startups()).extracting(ProgramStartupRosterResponse::name)
+				.containsExactly("NovaMed AI");
 	}
 
 	@Test
@@ -1031,12 +1071,25 @@ class ProgramServiceTest {
 	}
 
 	private static com.dps.teknokent.entity.ProgramStartup assignment(UUID programId) {
+		return assignment(programId, ORG_ID);
+	}
+
+	private static com.dps.teknokent.entity.ProgramStartup assignment(UUID programId, UUID organizationId) {
 		var row = new com.dps.teknokent.entity.ProgramStartup();
 		row.setId(UUID.randomUUID());
 		row.setProgramId(programId);
-		row.setOrganizationId(ORG_ID);
+		row.setOrganizationId(organizationId);
 		row.setCreatedAt(Instant.parse("2026-09-01T08:00:00Z"));
 		return row;
+	}
+
+	/** A startup whose only member was deleted: archived, no members, no founder. */
+	private static Organization archivedStartup() {
+		Organization organization = new Organization();
+		organization.setId(UUID.fromString("10000000-0000-0000-0000-0000000000a1"));
+		organization.setName("karar verilmedi");
+		organization.setArchivedAt(Instant.parse("2026-11-17T07:30:58Z"));
+		return organization;
 	}
 
 	private static AppUser coordinator() {

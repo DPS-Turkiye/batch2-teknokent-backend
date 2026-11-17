@@ -268,9 +268,14 @@ public class AdminOverviewService {
 				.map(usersById::get)
 				.filter(user -> user != null && user.has(UserRole.COORDINATOR))
 				.toList();
+		// An archived startup keeps its program row for history but is neither listed nor counted as a team.
 		List<StartupRow> startups = programStartupRepository
 				.findByProgramIdOrderByCreatedAtAsc(program.getId())
 				.stream()
+				.filter(row -> {
+					Organization organization = organizations.get(row.getOrganizationId());
+					return organization == null || !organization.isArchived();
+				})
 				.map(row -> {
 					Organization organization = organizations.get(row.getOrganizationId());
 					AppUser founder = organization == null ? null : organization.getFounder();

@@ -382,6 +382,31 @@ class AdminOverviewServiceTest {
 	}
 
 	@Test
+	void anArchivedStartupIsNeitherListedNorCountedButItsMentorshipsStay() {
+		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
+		AppUser kemal = person("Kemal Arslan", UserRole.MENTOR);
+		Program stars = program("METU Stars 2026", admin.getId());
+		Organization vega = organization("Vega");
+		Organization archived = organization("karar verilmedi");
+		archived.setArchivedAt(Instant.parse("2026-11-17T07:30:58Z"));
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, kemal));
+		when(programRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(stars));
+		when(organizationRepository.findAll()).thenReturn(List.of(vega, archived));
+		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(stars.getId()))
+				.thenReturn(List.of(startup(stars, vega.getId()), startup(stars, archived.getId())));
+		when(mentorshipService.findAll()).thenReturn(List.of(mentorship(kemal, archived, stars)));
+
+		var overview = service.overview(admin.getId());
+
+		var row = overview.programs().getFirst();
+		assertThat(row.startupCount()).isEqualTo(1);
+		assertThat(row.startups()).extracting(AdminOverviewResponse.StartupRow::name).containsExactly("Vega");
+		assertThat(overview.mentorships()).extracting(AdminOverviewResponse.MentorshipRow::organizationId)
+				.containsExactly(archived.getId());
+	}
+
+	@Test
 	void countsTheMeetingsHeldInTheLastEightWeeksAndMarksEveryMeetingThatHasAMentor() {
 		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
 		AppUser kemal = person("Kemal Arslan", UserRole.MENTOR);
