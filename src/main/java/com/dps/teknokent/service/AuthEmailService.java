@@ -91,18 +91,22 @@ public class AuthEmailService {
 	/**
 	 * The login is born verified because its setup link goes only to this address, and the bearer filter claims an
 	 * account by e-mail for a verified login only. A Firebase failure answers like an unknown address: Firebase
-	 * creates a login whole or not at all, so nothing is left that blocks a later sign-up or reset.
+	 * creates a login whole or not at all, so nothing is left that blocks a later sign-up or reset. A mail SES refuses
+	 * is a 503, as for an existing login: the frontend then sends Firebase's own e-mail, which now finds the login.
 	 */
 	private void sendLoginSetup(AppUser account, String address, String login) {
 		try {
 			loginProvisioner.verifiedLoginFor(address, account.getFullName());
 		} catch (RuntimeException failure) {
+			// The provisioner logs Firebase's answer; this public endpoint logs no address.
 			log.warn("Could not create a login for account {} on a password reset: {}", account.getId(),
-					failure.getMessage());
+					failure.getClass().getSimpleName());
 			return;
 		}
-		loginProvisioner.passwordSetupLink(address, login)
-				.ifPresent(link -> send(address, "mail.accountSetup", account.getFullName(), link, login));
+		loginProvisioner.passwordSetupLink(address, login).ifPresentOrElse(
+				link -> send(address, "mail.accountSetup", account.getFullName(), link, login),
+				() -> log.warn("No setup link for the new login of account {}; its next reset sends one",
+						account.getId()));
 	}
 
 	private String requireMail(String email) {

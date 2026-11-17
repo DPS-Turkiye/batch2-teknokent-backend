@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -30,6 +31,7 @@ import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserIdentityRepository;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.InstitutionPersonRepository;
@@ -177,11 +179,15 @@ class AuthEmailServiceTest {
 		verify(mailService, times(3)).sendNow(eq("uye@tekno.com"), anyString(), anyString());
 	}
 
-	@Test
-	void answersAFirebaseFailureLikeAnUnknownAddress() {
+	// A 502 when Firebase fails; a 400 when a login appeared meanwhile or Firebase is not configured.
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void answersAFirebaseFailureLikeAnUnknownAddress(boolean firebaseDown) {
 		waitingMember(UserAccountStatus.APPROVED);
-		when(loginProvisioner.verifiedLoginFor(eq("uye@tekno.com"), any()))
-				.thenThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Firebase is down"));
+		RuntimeException failure = firebaseDown
+				? new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Firebase is down")
+				: new InvalidRequestException("A login for this email was created at the same time; try again.");
+		when(loginProvisioner.verifiedLoginFor(eq("uye@tekno.com"), any())).thenThrow(failure);
 
 		service.sendPasswordReset("uye@tekno.com");
 

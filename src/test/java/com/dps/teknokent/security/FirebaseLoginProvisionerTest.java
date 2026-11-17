@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
@@ -61,13 +62,13 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.verifiedLoginFor("uye@tekno.com", "Üye Kişi")).isEqualTo("uid-1");
 		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-1");
 
-		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+		verify(firebaseAuth).createUser(argThat(request -> {
 			Map<String, Object> properties = createProperties(request);
 			return "uye@tekno.com".equals(properties.get("email"))
 					&& Boolean.TRUE.equals(properties.get("emailVerified"))
 					&& "Üye Kişi".equals(properties.get("displayName"));
 		}));
-		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+		verify(firebaseAuth).createUser(argThat(request -> {
 			Map<String, Object> properties = createProperties(request);
 			return "yeni@tekno.com".equals(properties.get("email"))
 					&& Boolean.FALSE.equals(properties.get("emailVerified"));
@@ -84,8 +85,21 @@ class FirebaseLoginProvisionerTest {
 
 		provisioner.verifiedLoginFor("uye@tekno.com", " ");
 
-		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(
+		verify(firebaseAuth).createUser(argThat(
 				request -> !createProperties(request).containsKey("displayName")));
+	}
+
+	@Test
+	void reusesAVerifiedLoginFoundWhenMakingTheResetLogin() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-owner");
+		when(login.isEmailVerified()).thenReturn(true);
+		when(firebaseAuth.getUserByEmail("uye@tekno.com")).thenReturn(login);
+
+		assertThat(provisioner.verifiedLoginFor("uye@tekno.com", "Üye Kişi")).isEqualTo("uid-owner");
+
+		verify(firebaseAuth, never()).updateUser(any(UserRecord.UpdateRequest.class));
+		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
 	}
 
 	// A login made meanwhile by someone who never proved the address must not inherit the account.
