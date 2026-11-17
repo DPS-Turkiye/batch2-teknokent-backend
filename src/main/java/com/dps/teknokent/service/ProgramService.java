@@ -426,9 +426,11 @@ public class ProgramService {
 						.collect(Collectors.groupingBy(user -> user.getOrganization().getId()));
 		Map<UUID, AppUser> users = usersById(accepted.stream().map(ProgramMentor::getMentorId).toList());
 		AppUser coordinator = leadOf(program);
+		// An archived startup keeps its program row for history but is no longer one of the program's teams.
 		List<ProgramStartupRosterResponse> startups = rows.stream()
-				.map(row -> {
-					Organization organization = require(organizations, row.getOrganizationId(), "Organization");
+				.map(row -> require(organizations, row.getOrganizationId(), "Organization"))
+				.filter(organization -> !organization.isArchived())
+				.map(organization -> {
 					List<ProgramMemberSummaryResponse> members = membersByOrganization
 							.getOrDefault(organization.getId(), List.of())
 							.stream()
@@ -493,8 +495,9 @@ public class ProgramService {
 				.map(program -> {
 					AppUser coordinator = leadOf(program, runners);
 					List<OrganizationResponse> startups = startupRows.getOrDefault(program.getId(), List.of()).stream()
-							.map(row -> OrganizationResponse.fromEntity(
-									require(organizations, row.getOrganizationId(), "Organization")))
+							.map(row -> require(organizations, row.getOrganizationId(), "Organization"))
+							.filter(organization -> !organization.isArchived())
+							.map(OrganizationResponse::fromEntity)
 							.toList();
 					List<ProgramMentorResponse> mentors = mentorRows.getOrDefault(program.getId(), List.of()).stream()
 							.map(membership -> toMentorResponse(

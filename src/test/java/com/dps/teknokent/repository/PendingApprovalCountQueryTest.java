@@ -86,11 +86,14 @@ class PendingApprovalCountQueryTest {
 		joins(PROGRAM, organization("Bekleyen", UserAccountStatus.PENDING));
 		joins(PROGRAM, organization("Onaylı", UserAccountStatus.APPROVED));
 		joins(OTHER_PROGRAM, organization("Başka", UserAccountStatus.PENDING));
+		Organization archived = organization("Arşivlenen", UserAccountStatus.PENDING);
+		archived.setArchivedAt(NOW);
+		joins(PROGRAM, archived);
 		entityManager.flush();
 
 		long counted = organizations.countInProgramByApprovalStatus(PROGRAM, UserAccountStatus.PENDING);
 		assertThat(counted).isEqualTo(1);
-		assertThat(counted).isEqualTo(organizations.findByIdInAndApprovalStatusOrderByCreatedAtAsc(
+		assertThat(counted).isEqualTo(organizations.findByIdInAndApprovalStatusAndArchivedAtIsNullOrderByCreatedAtAsc(
 				programStartups.findByProgramIdOrderByCreatedAtAsc(PROGRAM).stream()
 						.map(ProgramStartup::getOrganizationId)
 						.collect(Collectors.toSet()),

@@ -120,7 +120,8 @@ class ProgramApprovalServiceTest {
 				UserAccountStatus.PENDING)).thenReturn(List.of(person));
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(PROGRAM_ID))
 				.thenReturn(List.of(membership()));
-		when(organizationRepository.findByIdInAndApprovalStatusOrderByCreatedAtAsc(Set.of(ORGANIZATION_ID),
+		when(organizationRepository.findByIdInAndApprovalStatusAndArchivedAtIsNullOrderByCreatedAtAsc(
+				Set.of(ORGANIZATION_ID),
 				UserAccountStatus.PENDING)).thenReturn(List.of(startup));
 
 		var result = service.approvals(ACTOR_ID, PROGRAM_ID);

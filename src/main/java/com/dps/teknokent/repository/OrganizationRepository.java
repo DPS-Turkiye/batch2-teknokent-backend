@@ -27,11 +27,15 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
 	boolean existsByInviteCode(String inviteCode);
 
-	List<Organization> findByIdInAndApprovalStatusOrderByCreatedAtAsc(Collection<UUID> ids, UserAccountStatus status);
+	/** An archived startup is no one's to approve any more, so it leaves the Onaylar list and its count alike. */
+	List<Organization> findByIdInAndApprovalStatusAndArchivedAtIsNullOrderByCreatedAtAsc(
+			Collection<UUID> ids,
+			UserAccountStatus status);
 
 	@Query("""
 			select count(distinct o.id) from Organization o, ProgramStartup ps
 			where ps.organizationId = o.id and ps.programId = :programId and o.approvalStatus = :status
+			and o.archivedAt is null
 			""")
 	long countInProgramByApprovalStatus(@Param("programId") UUID programId, @Param("status") UserAccountStatus status);
 }

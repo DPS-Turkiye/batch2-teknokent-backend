@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -61,6 +62,20 @@ class OrganizationServiceTest {
 		personal.setPersonal(true);
 		when(organizationRepository.findAll(any(org.springframework.data.domain.Sort.class)))
 				.thenReturn(List.of(personal, startup));
+
+		assertThat(organizationService.findAll()).extracting(OrganizationResponse::name)
+				.containsExactly("Flexvision");
+	}
+
+	@Test
+	void findAll_leavesOutArchivedStartups() {
+		Organization startup = new Organization();
+		startup.setName("Flexvision");
+		Organization archived = new Organization();
+		archived.setName("karar verilmedi");
+		archived.setArchivedAt(Instant.parse("2026-11-17T07:30:58Z"));
+		when(organizationRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+				.thenReturn(List.of(startup, archived));
 
 		assertThat(organizationService.findAll()).extracting(OrganizationResponse::name)
 				.containsExactly("Flexvision");

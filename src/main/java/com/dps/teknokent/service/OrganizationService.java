@@ -41,7 +41,7 @@ public class OrganizationService {
 	@Transactional(readOnly = true)
 	public List<OrganizationResponse> findAll() {
 		return organizationRepository.findAll(Sort.by(Sort.Direction.ASC, "name")).stream()
-				.filter(organization -> !organization.isPersonal())
+				.filter(organization -> !organization.isPersonal() && !organization.isArchived())
 				.map(OrganizationResponse::fromEntity)
 				.toList();
 	}

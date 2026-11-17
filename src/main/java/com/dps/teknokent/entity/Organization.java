@@ -147,13 +147,18 @@ public class Organization {
 	@Column(name = "current_stage", length = 32)
 	private StartupStage currentStage;
 
+	/** Its last member left or was deleted: kept for history, never listed as a startup again. */
+	public boolean isArchived() {
+		return archivedAt != null;
+	}
+
 	/**
 	 * A program team: approved itself and, for a startup from signup, its founder approved too. Anything still
 	 * waiting is listed only in the coordinator's "Onaylar" tab, not among the teams or in matching; an archived
 	 * startup (everyone left) is no team either.
 	 */
 	public boolean isApprovedForProgram() {
-		return approvalStatus == UserAccountStatus.APPROVED && archivedAt == null
+		return approvalStatus == UserAccountStatus.APPROVED && !isArchived()
 				&& (founder == null || founder.getStatus() == UserAccountStatus.APPROVED);
 	}
 
