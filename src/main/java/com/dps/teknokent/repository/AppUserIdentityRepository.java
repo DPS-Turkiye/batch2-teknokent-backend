@@ -13,6 +13,8 @@ public interface AppUserIdentityRepository extends JpaRepository<AppUserIdentity
 
 	Optional<AppUserIdentity> findByProviderAndPersistentId(String provider, String persistentId);
 
+	boolean existsByUserId(UUID userId);
+
 	boolean existsByUserIdAndProvider(UUID userId, String provider);
 
 	boolean existsByUserIdAndProviderNot(UUID userId, String provider);

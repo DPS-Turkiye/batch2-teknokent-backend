@@ -13,6 +13,13 @@ public interface LoginProvisioner {
 	String loginFor(String email, String displayName);
 
 	/**
+	 * Like {@link #loginFor}, but a login created here is marked verified, so the bearer filter can link it to the
+	 * account by e-mail. Only for a caller that mails the setup link to {@code email} and nowhere else: whoever sets
+	 * the password has then proved the address. An existing login is treated as {@link #loginFor} treats it.
+	 */
+	String verifiedLoginFor(String email, @Nullable String displayName);
+
+	/**
 	 * A Firebase link that lets the owner of {@code email} set a new password, returning to {@code continueUrl}
 	 * afterwards; empty when no link can be made.
 	 */

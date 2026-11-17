@@ -23,6 +23,9 @@ class DisabledLoginProvisionerTest {
 		assertThatThrownBy(() -> provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör"))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("Firebase is not configured");
+		assertThatThrownBy(() -> provisioner.verifiedLoginFor("uye@tekno.com", null))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Firebase is not configured");
 	}
 
 	// A 503 is what makes the frontend fall back to Firebase's own e-mail; an empty answer would read as "no login".
