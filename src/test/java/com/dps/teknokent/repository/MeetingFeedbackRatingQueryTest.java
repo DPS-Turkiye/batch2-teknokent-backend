@@ -72,6 +72,19 @@ class MeetingFeedbackRatingQueryTest {
 		assertThat(feedbackRepository.ratingsByMentorship(UUID.randomUUID())).isEmpty();
 	}
 
+	@Test
+	void groupsFeedbackOnAMeetingWithoutARequestUnderANullRequestId() {
+		feedback(meeting(null), mentee, List.of(4, 4, 4, 4));
+		entityManager.flush();
+		entityManager.clear();
+
+		assertThat(feedbackRepository.ratingsByMentorship(mentor.getId())).singleElement().satisfies(row -> {
+			assertThat(row.getRequestId()).isNull();
+			assertThat(row.getAverage()).isEqualTo(4.0);
+			assertThat(row.getFeedbackCount()).isEqualTo(1);
+		});
+	}
+
 	private AppUser user(String email, UserRole role, Organization organization) {
 		AppUser user = new AppUser();
 		user.setEmail(email);
