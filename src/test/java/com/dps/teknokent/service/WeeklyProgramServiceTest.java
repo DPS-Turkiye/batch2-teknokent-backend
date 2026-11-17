@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -149,6 +151,79 @@ class WeeklyProgramServiceTest {
 		assertThat(proposal.specialDays()).isEmpty();
 		assertThat(proposal.weeks().getFirst().sessions()).extracting(ProgramWeekPlanResponse.Session::title)
 				.containsExactly("Growth Circuit Demo Day", "Demo Day / Retro Simülasyonu");
+	}
+
+	@Test
+	void anUndatedWorkshopBecomesASessionTwoDaysAfterItsWeeksPrintedStartAndADatedOneKeepsItsDate() {
+		JsonNode raw = JsonMapper.builder().build().readTree(
+				"""
+						{"weeks":[
+						{"week":1,"source_date":"2026-10-27","title":"Keşfetmeye Başla","topics":[],"deliverables":[],
+						 "activities":["Workshop: Helin & Çağrı"],
+						 "sessions":[{"date":"2026-10-27","title":"Girişimcilik Mindset"}]},
+						{"week":3,"source_date":"2026-11-10","title":"Ziyaret","topics":[],"deliverables":[],
+						 "activities":["Workshop: Naim Zaheir – 12 Kasım Perşembe"],
+						 "sessions":[{"date":"2026-11-12","title":"Naim Zaheir"}]},
+						{"week":4,"source_date":null,"title":"Tarihsiz","topics":[],"deliverables":[],
+						 "activities":["Workshop: Sarper"],"sessions":[]},
+						{"week":null,"source_date":"2026-11-30","title":"Kanıt ve Sahne","topics":[],"deliverables":[],
+						 "activities":["Workshop: Demet"],"sessions":[]},
+						{"week":10,"source_date":"2026-12-28","title":"Geleceğe Bak","topics":[],"deliverables":[],
+						 "activities":["Workshop: –"],"sessions":[{"date":"2027-01-04","title":"Deniz Erbil"}]}],
+						"special_days":[],"phases":[],"notes":[],"warnings":[]}
+						""");
+
+		var proposal = WeeklyProgramService.proposalOf(raw, START, END, 11, List.of(), 1);
+
+		Map<Integer, List<LocalDate>> sessionDays = new TreeMap<>();
+		proposal.weeks().forEach(week -> sessionDays.put(week.week(),
+				week.sessions().stream().map(ProgramWeekPlanResponse.Session::date).toList()));
+		assertThat(sessionDays).containsExactly(
+				Map.entry(1, List.of(LocalDate.of(2026, 10, 27), LocalDate.of(2026, 10, 29))),
+				Map.entry(3, List.of(LocalDate.of(2026, 11, 12))),
+				Map.entry(4, List.of()),
+				// A row placed only by its own date is an event, not the week's printed start.
+				Map.entry(5, List.of()),
+				Map.entry(10, List.of(LocalDate.of(2027, 1, 4))));
+		assertThat(proposal.weeks().getFirst().sessions().getLast().title()).isEqualTo("Workshop: Helin & Çağrı");
+		assertThat(proposal.weeks().getFirst().activities()).containsExactly("Workshop: Helin & Çağrı");
+	}
+
+	@Test
+	void aWeekReadAsTwoNumberedRowsGetsOneWorkshopFromItsFirstPrintedStart() {
+		JsonNode raw = JsonMapper.builder().build().readTree(
+				"""
+						{"weeks":[
+						{"week":2,"source_date":"2026-11-03","title":"Problem","topics":[],"deliverables":[],
+						 "activities":["Workshop: Helin & Çağrı"],"sessions":[]},
+						{"week":2,"source_date":"2026-11-04","title":"Problem","topics":[],"deliverables":[],
+						 "activities":[],"sessions":[]}],
+						"special_days":[],"phases":[],"notes":[],"warnings":[]}
+						""");
+
+		var proposal = WeeklyProgramService.proposalOf(raw, START, END, 11, List.of(), 1);
+
+		assertThat(proposal.weeks()).singleElement()
+				.satisfies(week -> assertThat(week.sessions())
+						.extracting(ProgramWeekPlanResponse.Session::date, ProgramWeekPlanResponse.Session::title)
+						.containsExactly(tuple(LocalDate.of(2026, 11, 5), "Workshop: Helin & Çağrı")));
+	}
+
+	@Test
+	void aLaterRowsEventDateIsNotTakenAsTheWeeksPrintedStart() {
+		JsonNode raw = JsonMapper.builder().build().readTree(
+				"""
+						{"weeks":[
+						{"week":2,"source_date":null,"title":"Problem","topics":[],"deliverables":[],
+						 "activities":["Workshop: Helin & Çağrı"],"sessions":[]},
+						{"week":2,"source_date":"2026-11-05","title":"Problem","topics":[],"deliverables":[],
+						 "activities":[],"sessions":[]}],
+						"special_days":[],"phases":[],"notes":[],"warnings":[]}
+						""");
+
+		var proposal = WeeklyProgramService.proposalOf(raw, START, END, 11, List.of(), 1);
+
+		assertThat(proposal.weeks()).singleElement().satisfies(week -> assertThat(week.sessions()).isEmpty());
 	}
 
 	@Test

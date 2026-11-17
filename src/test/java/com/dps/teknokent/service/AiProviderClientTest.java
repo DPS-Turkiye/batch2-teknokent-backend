@@ -237,7 +237,10 @@ class AiProviderClientTest {
 				.contains("Program start date: 2026-11-02. Program end date: 2026-12-13. Program weeks: 6.")
 				.as("an event row is placed by its date, and a week's sessions stay together")
 				.contains("null when it prints a date; its date places it")
-				.contains("keep every session's theme, speakers, workshop and tasks");
+				.contains("keep every session's theme, speakers, workshop and tasks")
+				.as("a table without borders keeps its columns, so a speaker is not read as the workshop")
+				.contains("A table read without column borders keeps the header's column order")
+				.contains("A \"–\" in the workshop column means the week has no workshop.");
 		assertThat(userText(request)).isEqualTo("1 · Keşfetmeye Başla");
 		JsonNode format = request.path("response_format");
 		assertThat(format.path("type").asString()).isEqualTo("json_schema");

@@ -108,6 +108,9 @@ public class AiProviderClient {
 				  "Workshop: " (even when it only names who runs it), visits and trips as lines starting "Ziyaret: ",
 				  with any date or place the source gives.
 				- Keep every non-empty cell of a week row in one of these lists; drop nothing the row says.
+				- A table read without column borders keeps the header's column order: give each cell the column its
+				  position names (after the training title come the speaker, then the workshop), even when a speaker
+				  cell reads like a workshop title. A "–" in the workshop column means the week has no workshop.
 				- deliverables: the tasks participants must complete or hand in that week, one per line.
 				- Lines are short (at most 150 characters), at most 6 per list, and an empty list when the source has
 				  nothing. Leave out empty placeholders such as "–".

@@ -16,6 +16,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -312,7 +313,9 @@ public class WeeklyProgramService {
 	 * that has no number, or one whose number is not a program week, and one that falls outside its numbered week
 	 * is flagged. A week number that comes back more than once (a table with one row per session) is merged into
 	 * one week. Weeks past the program or without a title are dropped and flagged; a titled row the calendar cannot
-	 * place at all (no number, no date in the program) becomes a note instead of disappearing.
+	 * place at all (no number, no date in the program) becomes a note instead of disappearing. A workshop cell
+	 * without a date of its own becomes a session a fixed number of days after its week's printed start
+	 * ({@link WeeklyProgramWorkshops}).
 	 */
 	static WeeklyProgramProposalResponse proposalOf(JsonNode result, LocalDate start, LocalDate end, int totalWeeks,
 			List<WeeklyProgramProposalResponse.Warning> warnings, int pageCount) {
@@ -320,6 +323,8 @@ public class WeeklyProgramService {
 		SortedMap<Integer, @Nullable String> weekPhases = new TreeMap<>();
 		Set<Integer> dropped = new LinkedHashSet<>();
 		Set<Integer> datesDiffer = new LinkedHashSet<>();
+		Map<Integer, LocalDate> printedStarts = new HashMap<>();
+		Set<Integer> numberedRows = new HashSet<>();
 		List<String> unplaced = new ArrayList<>();
 		for (JsonNode node : result.path("weeks")) {
 			LocalDate printed = ModelOutput.date(node.path("source_date"));
@@ -358,7 +363,14 @@ public class WeeklyProgramService {
 			if (weekPhases.get(number) == null) {
 				weekPhases.put(number, ModelOutput.text(node.path("phase"), MAX_PHASE_NAME_LENGTH));
 			}
+			// Only the first row that carries the week's own number prints the week's start; a later row, or one placed
+			// by its date, is an event inside the week.
+			if (numbered && numberedRows.add(number) && printed != null) {
+				printedStarts.put(number, printed);
+			}
 		}
+		printedStarts.forEach((number, printed) -> weeks.computeIfPresent(number,
+				(key, week) -> WeeklyProgramWorkshops.placed(week, printed, start, end)));
 		int planWeeks = Math.max(totalWeeks, weeks.isEmpty() ? 0 : weeks.lastKey());
 		WeeklyProgramPhases.Result grouped = WeeklyProgramPhases.group(rangesOf(result, planWeeks), weekPhases);
 		List<WeeklyProgramProposalResponse.Warning> all = new ArrayList<>(warnings);
