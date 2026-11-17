@@ -48,6 +48,67 @@ class FirebaseLoginProvisionerTest {
 		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-1");
 	}
 
+	// Its setup link goes only to that mailbox, and the bearer filter claims an account by e-mail for a verified
+	// login only.
+	@Test
+	void createsTheResetLoginVerifiedAndTheCoordinatorLoginUnverified() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		UserRecord created = mock(UserRecord.class);
+		when(created.getUid()).thenReturn("uid-1");
+		when(firebaseAuth.getUserByEmail(anyString())).thenThrow(notFound);
+		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(created);
+
+		assertThat(provisioner.verifiedLoginFor("uye@tekno.com", "Üye Kişi")).isEqualTo("uid-1");
+		assertThat(provisioner.loginFor("yeni@tekno.com", "Yeni Koordinatör")).isEqualTo("uid-1");
+
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+			Map<String, Object> properties = createProperties(request);
+			return "uye@tekno.com".equals(properties.get("email"))
+					&& Boolean.TRUE.equals(properties.get("emailVerified"))
+					&& "Üye Kişi".equals(properties.get("displayName"));
+		}));
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(request -> {
+			Map<String, Object> properties = createProperties(request);
+			return "yeni@tekno.com".equals(properties.get("email"))
+					&& Boolean.FALSE.equals(properties.get("emailVerified"));
+		}));
+	}
+
+	@Test
+	void givesFirebaseNoBlankDisplayNameForTheResetLogin() throws Exception {
+		FirebaseAuthException notFound = failure(ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+		UserRecord created = mock(UserRecord.class);
+		when(created.getUid()).thenReturn("uid-1");
+		when(firebaseAuth.getUserByEmail("uye@tekno.com")).thenThrow(notFound);
+		when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(created);
+
+		provisioner.verifiedLoginFor("uye@tekno.com", " ");
+
+		verify(firebaseAuth).createUser(org.mockito.ArgumentMatchers.argThat(
+				request -> !createProperties(request).containsKey("displayName")));
+	}
+
+	// A login made meanwhile by someone who never proved the address must not inherit the account.
+	@Test
+	void locksOutAnUnverifiedLoginFoundWhenMakingTheResetLogin() throws Exception {
+		UserRecord login = mock(UserRecord.class);
+		when(login.getUid()).thenReturn("uid-unverified");
+		when(login.isEmailVerified()).thenReturn(false);
+		when(firebaseAuth.getUserByEmail("uye@tekno.com")).thenReturn(login);
+
+		assertThat(provisioner.verifiedLoginFor("uye@tekno.com", "Üye Kişi")).isEqualTo("uid-unverified");
+
+		verify(firebaseAuth).updateUser(any(UserRecord.UpdateRequest.class));
+		verify(firebaseAuth).revokeRefreshTokens("uid-unverified");
+		verify(firebaseAuth, never()).createUser(any(UserRecord.CreateRequest.class));
+	}
+
+	private static Map<String, Object> createProperties(UserRecord.CreateRequest request) {
+		Map<String, Object> properties = org.springframework.test.util.ReflectionTestUtils.invokeMethod(request,
+				"getProperties");
+		return properties == null ? Map.of() : properties;
+	}
+
 	@Test
 	void reusesAVerifiedLoginForTheEmailAsItIs() throws Exception {
 		UserRecord login = mock(UserRecord.class);

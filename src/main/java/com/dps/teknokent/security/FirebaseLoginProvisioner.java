@@ -43,6 +43,15 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	@Override
 	public String loginFor(String email, String displayName) {
+		return login(email, displayName, false);
+	}
+
+	@Override
+	public String verifiedLoginFor(String email, @Nullable String displayName) {
+		return login(email, displayName, true);
+	}
+
+	private String login(String email, @Nullable String displayName, boolean emailVerified) {
 		try {
 			UserRecord existing = firebaseAuth.getUserByEmail(email);
 			lockOutIfUnverified(existing);
@@ -52,12 +61,15 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 				throw loginUnavailable(email, exception);
 			}
 		}
+		UserRecord.CreateRequest request = new UserRecord.CreateRequest()
+				.setEmail(email)
+				.setEmailVerified(emailVerified);
+		// Firebase refuses a blank display name.
+		if (displayName != null && !displayName.isBlank()) {
+			request.setDisplayName(displayName);
+		}
 		try {
-			return firebaseAuth.createUser(new UserRecord.CreateRequest()
-					.setEmail(email)
-					.setDisplayName(displayName)
-					.setEmailVerified(false))
-					.getUid();
+			return firebaseAuth.createUser(request).getUid();
 		} catch (FirebaseAuthException exception) {
 			if (exception.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {
 				throw new InvalidRequestException("A login for this email was created at the same time; try again.");
@@ -68,7 +80,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 
 	/**
 	 * Anyone can create an unverified Firebase login for any address, so a login that never proved the address may
-	 * belong to someone other than the person being made a coordinator. Its password is replaced with a random one
+	 * belong to someone other than the person the account is for. Its password is replaced with a random one
 	 * and its sessions are ended; the real owner sets a password through the setup link we mail.
 	 */
 	private void lockOutIfUnverified(UserRecord login) throws FirebaseAuthException {
@@ -77,7 +89,7 @@ public class FirebaseLoginProvisioner implements LoginProvisioner {
 		}
 		firebaseAuth.updateUser(new UserRecord.UpdateRequest(login.getUid()).setPassword(RandomTokens.urlSafe(32)));
 		firebaseAuth.revokeRefreshTokens(login.getUid());
-		log.warn("Locked out an unverified Firebase login before linking it to a coordinator: {}", login.getUid());
+		log.warn("Locked out an unverified Firebase login before linking it to an account: {}", login.getUid());
 	}
 
 	/**

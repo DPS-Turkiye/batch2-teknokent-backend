@@ -18,6 +18,11 @@ public class DisabledLoginProvisioner implements LoginProvisioner {
 	}
 
 	@Override
+	public String verifiedLoginFor(String email, @Nullable String displayName) {
+		return loginFor(email, "");
+	}
+
+	@Override
 	public Optional<String> passwordSetupLink(String email, String continueUrl) {
 		return Optional.empty();
 	}
