@@ -10,9 +10,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +34,7 @@ import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramAttendance;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
@@ -39,8 +42,10 @@ import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramAttendanceRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
+import com.dps.teknokent.util.ProgramSchedule;
 
 import lombok.RequiredArgsConstructor;
 
@@ -63,6 +68,7 @@ public class ProgramAttendanceService {
 	private final OrganizationRepository organizationRepository;
 	private final AppUserRepository appUserRepository;
 	private final ProgramAttendanceRepository attendanceRepository;
+	private final ProgramWeekRepository programWeeks;
 
 	/** Where a program stands on {@code today}: the running week and its days, or why no week is open. */
 	record Window(AttendanceState state, @Nullable Integer week, @Nullable Integer totalWeeks,
@@ -70,12 +76,27 @@ public class ProgramAttendanceService {
 	}
 
 	static Window window(Program program, LocalDate today) {
+		return window(program, today, List.of());
+	}
+
+	static Window window(Program program, LocalDate today, List<ProgramWeek> weeks) {
 		LocalDate start = program.getStartDate();
 		LocalDate end = program.getEndDate();
-		if (program.getStatus() != ProgramStatus.ACTIVE || start == null) {
+		if (program.getStatus() != ProgramStatus.ACTIVE) {
 			return new Window(AttendanceState.UNSCHEDULED, null, null, null, null);
 		}
 		Integer total = ProgramCalendar.totalWeeks(start, end);
+		ProgramSchedule schedule = ProgramSchedule.of(start, end, weeks);
+		Integer storedWeek = schedule.weekOn(today);
+		if (storedWeek != null) {
+			ProgramSchedule.Dates dates = schedule.datesOf(storedWeek);
+			if (dates != null) {
+				return new Window(AttendanceState.OPEN, storedWeek, total, dates.start(), dates.end());
+			}
+		}
+		if (start == null) {
+			return new Window(AttendanceState.UNSCHEDULED, null, total, null, null);
+		}
 		if (today.isBefore(start)) {
 			return new Window(AttendanceState.NOT_STARTED, null, total, null, null);
 		}
@@ -103,7 +124,8 @@ public class ProgramAttendanceService {
 		if (program.isEmpty()) {
 			return new AttendanceStatusResponse(null, null, AttendanceState.NO_PROGRAM, null, null, null, null, null);
 		}
-		return statusOf(actor, program.get(), window(program.get(), today()));
+		return statusOf(actor, program.get(), window(program.get(), today(),
+				programWeeks.findByProgramIdOrderByWeekNumberAsc(program.get().getId())));
 	}
 
 	@Transactional
@@ -112,7 +134,7 @@ public class ProgramAttendanceService {
 		Program program = programOf(actor)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
 						"Only a program's participants check in to it."));
-		Window window = window(program, today());
+		Window window = window(program, today(), programWeeks.findByProgramIdOrderByWeekNumberAsc(program.getId()));
 		Integer running = window.week();
 		if (window.state() != AttendanceState.OPEN || running == null) {
 			throw new ConflictException("No program week is open for check-in.");
@@ -151,16 +173,29 @@ public class ProgramAttendanceService {
 		LocalDate today = today();
 		LocalDate start = program.getStartDate();
 		LocalDate end = program.getEndDate();
-		int lastBegun = lastBegunWeek(start, end, today);
+		List<ProgramWeek> savedWeeks = programWeeks.findByProgramIdOrderByWeekNumberAsc(programId);
+		ProgramSchedule schedule = ProgramSchedule.of(start, end, savedWeeks);
+		int total = Math.max(
+				ProgramCalendar.totalWeeks(start, end) == null ? 0 : ProgramCalendar.weeksBetween(start, end),
+				savedWeeks.stream().mapToInt(ProgramWeek::getWeekNumber).max().orElse(0));
+		int lastBegun = schedule.lastBegunWeek(total, today);
 		if (lastBegun == 0) {
 			return new ProgramAttendanceReportResponse(program.getId(), from, to, List.of(), List.of());
 		}
-		LocalDate first = from != null ? from : start;
-		LocalDate last = to != null ? to : (end != null && end.isBefore(today) ? end : today);
+		LocalDate printedFirst = IntStream.rangeClosed(1, lastBegun).mapToObj(schedule::datesOf)
+				.filter(Objects::nonNull).map(ProgramSchedule.Dates::start).min(LocalDate::compareTo)
+				.orElse(start);
+		LocalDate first = from != null ? from : printedFirst;
+		LocalDate printedLast = savedWeeks.stream().map(ProgramWeek::getEndDate).filter(Objects::nonNull)
+				.max(LocalDate::compareTo).orElse(end);
+		LocalDate effectiveEnd = end == null || (printedLast != null && printedLast.isAfter(end)) ? printedLast : end;
+		LocalDate last = to != null ? to
+				: (effectiveEnd != null && effectiveEnd.isBefore(today) ? effectiveEnd : today);
 
 		List<Integer> weekNumbers = new ArrayList<>();
 		for (int week = 1; week <= lastBegun; week++) {
-			if (!weekStart(start, week).isAfter(last) && !weekEnd(start, end, week).isBefore(first)) {
+			ProgramSchedule.Dates dates = schedule.datesOf(week);
+			if (dates != null && !dates.start().isAfter(last) && !dates.end().isBefore(first)) {
 				weekNumbers.add(week);
 			}
 		}
@@ -188,7 +223,8 @@ public class ProgramAttendanceService {
 			}
 			Integer rate = expected == 0 ? null : Math.round(count * 100f / expected);
 			return new ProgramAttendanceReportResponse.Week(
-					week, weekStart(start, week), weekEnd(start, end, week), count, expected, rate);
+					week, Objects.requireNonNull(schedule.datesOf(week)).start(),
+					Objects.requireNonNull(schedule.datesOf(week)).end(), count, expected, rate);
 		}).toList();
 		List<ProgramAttendanceReportResponse.Participant> rows = people.stream().map(person -> {
 			List<Boolean> attended = weekNumbers.stream()
@@ -202,20 +238,6 @@ public class ProgramAttendanceService {
 					(int) attended.stream().filter(Boolean::booleanValue).count());
 		}).toList();
 		return new ProgramAttendanceReportResponse(program.getId(), first, last, weeks, rows);
-	}
-
-	/**
-	 * The last week that has begun by {@code today}, from the dates alone: an archived (COMPLETED) program keeps
-	 * its weeks in the report. 0 before the start or without a start date.
-	 */
-	static int lastBegunWeek(LocalDate start, LocalDate end, LocalDate today) {
-		if (start == null || today.isBefore(start)) {
-			return 0;
-		}
-		if (end != null && today.isAfter(end)) {
-			return ProgramCalendar.weeksBetween(start, end);
-		}
-		return ProgramCalendar.weekOn(start, end, today);
 	}
 
 	/** A participant row; {@code current} is false for someone who checked in here earlier but has since left. */

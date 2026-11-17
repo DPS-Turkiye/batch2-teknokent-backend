@@ -3,17 +3,33 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
 import com.dps.teknokent.domain.AttendanceState;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramWeek;
 
 class ProgramAttendanceWindowTest {
 
 	private static final LocalDate START = LocalDate.of(2026, 11, 2);
 	private static final LocalDate END = LocalDate.of(2026, 11, 26);
+
+	@Test
+	void storedDateWeekKeepsItsAttendanceNumberOutsideTheProgramCalendar() {
+		ProgramWeek week = new ProgramWeek();
+		week.setWeekNumber(3);
+		week.setStartDate(START.minusDays(7));
+		week.setEndDate(START.minusDays(1));
+		var window = ProgramAttendanceService.window(program(ProgramStatus.ACTIVE, START, END), START.minusDays(3),
+				List.of(week));
+		assertThat(window.state()).isEqualTo(AttendanceState.OPEN);
+		assertThat(window.week()).isEqualTo(3);
+		assertThat(window.weekStart()).isEqualTo(week.getStartDate());
+		assertThat(window.weekEnd()).isEqualTo(week.getEndDate());
+	}
 
 	@Test
 	void opensTheRunningWeekWithItsDays() {
@@ -78,14 +94,5 @@ class ProgramAttendanceWindowTest {
 		program.setStartDate(start);
 		program.setEndDate(end);
 		return program;
-	}
-
-	@Test
-	void theReportCountsWeeksFromTheDatesWhateverTheStatus() {
-		assertThat(ProgramAttendanceService.lastBegunWeek(START, END, START.minusDays(1))).isZero();
-		assertThat(ProgramAttendanceService.lastBegunWeek(START, END, START)).isEqualTo(1);
-		assertThat(ProgramAttendanceService.lastBegunWeek(START, END, LocalDate.of(2026, 11, 12))).isEqualTo(2);
-		assertThat(ProgramAttendanceService.lastBegunWeek(START, END, END.plusDays(30))).isEqualTo(4);
-		assertThat(ProgramAttendanceService.lastBegunWeek(null, END, START)).isZero();
 	}
 }

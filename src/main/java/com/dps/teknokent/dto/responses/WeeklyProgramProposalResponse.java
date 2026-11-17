@@ -20,7 +20,14 @@ public record WeeklyProgramProposalResponse(
 		List<String> notes,
 		List<String> readingWarnings,
 		int pageCount,
-		@Nullable Existing existing) {
+		@Nullable Existing existing,
+		List<ProgramWeekPlanResponse.SpecialDay> specialDays) {
+
+	public WeeklyProgramProposalResponse(int totalWeeks, List<ProgramWeekPlanResponse.Week> weeks, List<Phase> phases,
+			List<Warning> warnings, List<String> notes, List<String> readingWarnings, int pageCount,
+			@Nullable Existing existing) {
+		this(totalWeeks, weeks, phases, warnings, notes, readingWarnings, pageCount, existing, List.of());
+	}
 
 	public record Phase(
 			String name,

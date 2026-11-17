@@ -32,14 +32,17 @@ import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
+import com.dps.teknokent.entity.ProgramAttendance;
 import com.dps.teknokent.entity.ProgramCoordinator;
 import com.dps.teknokent.entity.ProgramStartup;
+import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramAttendanceRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
@@ -66,6 +69,8 @@ class ProgramAttendanceIntegrationTest {
 	private ProgramStartupRepository programStartupRepository;
 	@Autowired
 	private ProgramAttendanceRepository attendanceRepository;
+	@Autowired
+	private ProgramWeekRepository weekRepository;
 
 	private final LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
 	private AppUser admin;
@@ -91,6 +96,31 @@ class ProgramAttendanceIntegrationTest {
 		founder = user("Gülse Buran", UserRole.MENTEE, team);
 		teammate = user("Mert Kaya", UserRole.MENTEE, team);
 		otherProgramsMentee = user("Zeynep Demir", UserRole.MENTEE, team("Lumen Katılım", otherProgram));
+	}
+
+	@Test
+	void anUnfilteredMixedDateReportKeepsComputedWeekOneAndItsExistingCheckIn() throws Exception {
+		ProgramWeek dated = new ProgramWeek();
+		dated.setId(UUID.randomUUID());
+		dated.setProgramId(program.getId());
+		dated.setWeekNumber(2);
+		dated.setTitle("Dated second week");
+		dated.setStartDate(today.minusDays(3));
+		dated.setEndDate(today.plusDays(3));
+		dated.setUpdatedAt(Instant.now());
+		weekRepository.saveAndFlush(dated);
+		ProgramAttendance attendance = new ProgramAttendance();
+		attendance.setId(UUID.randomUUID());
+		attendance.setProgramId(program.getId());
+		attendance.setUserId(founder.getId());
+		attendance.setWeekNumber(1);
+		attendance.setCheckedInAt(Instant.now());
+		attendanceRepository.saveAndFlush(attendance);
+		asProxy(get(REPORT, program.getId()), coordinator)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.weeks[0].number").value(1))
+				.andExpect(jsonPath("$.weeks[0].checkedIn").value(1))
+				.andExpect(jsonPath("$.weeks[1].number").value(2));
 	}
 
 	@Test

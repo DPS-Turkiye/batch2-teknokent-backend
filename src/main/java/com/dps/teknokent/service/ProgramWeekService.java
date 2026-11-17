@@ -23,9 +23,11 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramSpecialDayRepository;
 import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
+import com.dps.teknokent.util.ProgramSchedule;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
@@ -44,6 +46,7 @@ public class ProgramWeekService {
 	private final ProgramPhaseRepository programPhaseRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final ProgramWeekRepository programWeekRepository;
+	private final ProgramSpecialDayRepository specialDays;
 
 	/** {@code programId} picks one of a mentor's programs; a mentee's own program is used when it is left out. */
 	@Transactional(readOnly = true)
@@ -66,19 +69,30 @@ public class ProgramWeekService {
 		}
 		Program program = programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
-		return build(program, programPhaseRepository.findByProgramIdOrderByPositionAsc(programId),
+		ProgramWeekResponse response = build(program,
+				programPhaseRepository.findByProgramIdOrderByPositionAsc(programId),
 				programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId), today);
+		List<ProgramWeekPlanResponse.SpecialDay> todayEvents = specialDays.findByProgramIdOrderByDateAsc(programId)
+				.stream()
+				.filter(day -> day.getDate().equals(today)).map(ProgramWeekPlanService::specialDayOf).toList();
+		return new ProgramWeekResponse(response.programId(), response.programName(), response.programStart(),
+				response.programEnd(),
+				response.week(), response.totalWeeks(), response.weekStart(), response.weekEnd(),
+				todayEvents.isEmpty() && response.notStarted(), todayEvents.isEmpty() && response.ended(),
+				response.hasSyllabus() || !todayEvents.isEmpty(), response.plan(), response.phases(), todayEvents);
 	}
 
 	static ProgramWeekResponse build(Program program, List<ProgramPhase> phases, List<ProgramWeek> plan,
 			LocalDate today) {
 		LocalDate start = program.getStartDate();
 		LocalDate end = program.getEndDate();
-		boolean notStarted = start != null && today.isBefore(start);
-		boolean ended = end != null && today.isAfter(end);
-		Integer week = notStarted || ended ? null : ProgramCalendar.currentWeek(start, end, today);
-		LocalDate from = week == null ? today : ProgramCalendar.weekStart(start, week);
-		LocalDate to = week == null ? today : ProgramCalendar.weekEnd(start, end, week);
+		ProgramSchedule schedule = ProgramSchedule.of(start, end, plan);
+		Integer week = schedule.weekOn(today);
+		boolean notStarted = week == null && start != null && today.isBefore(start);
+		boolean ended = week == null && end != null && today.isAfter(end);
+		ProgramSchedule.Dates dates = week == null ? null : schedule.datesOf(week);
+		LocalDate from = dates == null ? today : dates.start();
+		LocalDate to = dates == null ? today : dates.end();
 		List<ProgramWeekResponse.Phase> inWeek = notStarted || ended
 				? List.of()
 				: ProgramCalendar.phasesBetween(phases, from, to).stream()

@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,4 +40,11 @@ public class ProgramWeekPlanController {
 			@Valid @RequestBody ReplaceProgramWeeksRequest request) {
 		return programWeekPlanService.replace(CurrentActor.resolve(request.actorId()), programId, request);
 	}
+
+	@PostMapping("/align-dates")
+	public ProgramWeekPlanResponse alignDates(@PathVariable UUID programId,
+			@RequestParam(required = false) UUID actorId) {
+		return programWeekPlanService.alignDates(CurrentActor.resolve(actorId), programId);
+	}
+
 }
