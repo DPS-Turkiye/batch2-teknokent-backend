@@ -31,7 +31,9 @@ import java.util.stream.Stream;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
@@ -90,6 +92,7 @@ public class WeeklyProgramService {
 	private final LocalPiiRedactionService piiRedactionService;
 	private final AiProviderClient aiProviderClient;
 	private final AiFeatures aiFeatures;
+	private final PlatformTransactionManager transactionManager;
 
 	public WeeklyProgramProposalResponse read(UUID actorId, UUID programId, ReadWeeklyProgramRequest request) {
 		Program program = coordinatorProgramService.requireSettingsEditor(actorId, programId);
@@ -313,14 +316,26 @@ public class WeeklyProgramService {
 
 	private WeeklyProgramProposalResponse withExisting(WeeklyProgramProposalResponse proposal, Program program,
 			LocalDate today) {
-		UUID programId = program.getId();
-		List<ProgramWeek> saved = programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId);
 		return new WeeklyProgramProposalResponse(proposal.totalWeeks(), proposal.weeks(), proposal.phases(),
 				proposal.warnings(), proposal.notes(), proposal.readingWarnings(), proposal.pageCount(),
-				new WeeklyProgramProposalResponse.Existing(
-						programPhaseRepository.findByProgramIdOrderByPositionAsc(programId).size(),
-						saved.size(), firstReplacedWeek(program, saved, today)),
-				proposal.specialDays());
+				existing(program, today), proposal.specialDays());
+	}
+
+	/**
+	 * The saved plan the read reports. The read itself runs outside a transaction so none is held across the AI
+	 * call, and the saved weeks' sessions load lazily, so this part opens a short read-only one of its own.
+	 */
+	private WeeklyProgramProposalResponse.Existing existing(Program program, LocalDate today) {
+		TransactionTemplate readOnly = new TransactionTemplate(transactionManager);
+		readOnly.setReadOnly(true);
+		WeeklyProgramProposalResponse.Existing existing = readOnly.execute(status -> {
+			UUID programId = program.getId();
+			List<ProgramWeek> saved = programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId);
+			return new WeeklyProgramProposalResponse.Existing(
+					programPhaseRepository.findByProgramIdOrderByPositionAsc(programId).size(), saved.size(),
+					firstReplacedWeek(program, saved, today));
+		});
+		return Objects.requireNonNull(existing);
 	}
 
 	/**

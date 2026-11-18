@@ -25,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
@@ -89,6 +90,8 @@ class WeeklyProgramServiceTest {
 	private LocalPiiRedactionService piiRedactionService;
 	@Mock
 	private AiProviderClient aiProviderClient;
+	@Mock
+	private PlatformTransactionManager transactionManager;
 
 	private WeeklyProgramService service;
 	private Program program;
@@ -97,7 +100,7 @@ class WeeklyProgramServiceTest {
 	void setUp() {
 		service = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService, programPhaseRepository,
 				programWeekRepository, storedDocumentRepository, objectStorage, textExtractor, piiRedactionService,
-				aiProviderClient, TestAiFeatures.allOn());
+				aiProviderClient, TestAiFeatures.allOn(), transactionManager);
 		program = new Program();
 		program.setId(PROGRAM_ID);
 		program.setStartDate(START);
@@ -379,7 +382,8 @@ class WeeklyProgramServiceTest {
 		editing();
 		WeeklyProgramService switchedOff = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService,
 				programPhaseRepository, programWeekRepository, storedDocumentRepository, objectStorage, textExtractor,
-				piiRedactionService, aiProviderClient, TestAiFeatures.allOnExcept(AiFeature.SYLLABUS));
+				piiRedactionService, aiProviderClient, TestAiFeatures.allOnExcept(AiFeature.SYLLABUS),
+				transactionManager);
 
 		assertThatThrownBy(() -> switchedOff.read(COORDINATOR_ID, PROGRAM_ID, readRequest()))
 				.isInstanceOf(AiFeatureDisabledException.class);
