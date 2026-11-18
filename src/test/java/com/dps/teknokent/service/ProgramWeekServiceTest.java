@@ -326,6 +326,36 @@ class ProgramWeekServiceTest {
 	}
 
 	@Test
+	void aSessionDatedTodayDoesNotOpenAWeekThatHasNotBegun() {
+		ProgramWeek second = printedWeek(2, "2026-10-26", "2026-11-01");
+		ProgramWeek third = printedWeek(3, "2026-11-10", "2026-11-16");
+		third.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 11, 5), null, null, null, "Ön hazırlık"));
+		third.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 11, 12), null, null, null, "Workshop"));
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program, List.of(second, third), List.of(),
+				LocalDate.of(2026, 11, 5));
+
+		assertThat(response.currentWeek()).isNull();
+		assertThat(response.weeks()).extracting(week -> week.plan().week()).containsExactly(2);
+	}
+
+	@Test
+	void aWeekWithoutItsOwnDatesInAPrintedPlanWaitsForALaterPrintedWeek() {
+		List<ProgramWeek> plan = List.of(printedWeek(1, "2026-10-12", "2026-10-18"),
+				printedWeek(2, "2026-10-19", "2026-10-25"), week(3, "Tarihsiz hafta"),
+				printedWeek(4, "2026-11-02", "2026-11-08"));
+
+		// The program calendar would start week 3 on 19 October; the syllabus has not reached it yet.
+		assertThat(ProgramWeekService.reached(program, plan, List.of(), LocalDate.of(2026, 10, 27)).weeks())
+				.extracting(week -> week.plan().week()).containsExactly(1, 2);
+		assertThat(ProgramWeekService.reached(program, plan, List.of(), LocalDate.of(2026, 11, 2)).weeks())
+				.extracting(week -> week.plan().week()).containsExactly(1, 2, 3, 4);
+		assertThat(ProgramWeekService.reached(program, List.of(printedWeek(1, "2026-10-12", "2026-10-18"),
+				week(2, "Tarihsiz hafta")), List.of(), END.plusDays(1)).weeks())
+				.extracting(week -> week.plan().week()).containsExactly(1, 2);
+	}
+
+	@Test
 	void onADayBetweenTwoPrintedWeeksOnlyTheWeeksAlreadyBegunAreSent() {
 		List<ProgramWeek> plan = List.of(printedWeek(1, "2026-10-05", "2026-10-11"),
 				printedWeek(2, "2026-10-19", "2026-10-25"));

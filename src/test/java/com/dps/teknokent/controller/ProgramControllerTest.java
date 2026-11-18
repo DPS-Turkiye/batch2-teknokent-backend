@@ -18,9 +18,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.ProgramEventKind;
@@ -106,6 +108,18 @@ class ProgramControllerTest {
 				.andExpect(jsonPath("$.weeks[0].current").value(true))
 				.andExpect(jsonPath("$.weeks[0].plan.title").value("Tanışma"))
 				.andExpect(jsonPath("$.weeks[0].plan.activities[0]").value("Workshop: Keşif"));
+	}
+
+	@Test
+	void theWeeksSoFarAreRefusedToSomeoneOutsideTheProgram() throws Exception {
+		when(programWeekService.weeksSoFar(ACTOR_ID, PROGRAM_ID))
+				.thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Yalnızca programın katılımcıları"));
+
+		mockMvc.perform(get("/api/programs/mine/weeks")
+				.param("programId", PROGRAM_ID.toString())
+				.param("actorId", ACTOR_ID.toString())
+				.with(user("test-user")))
+				.andExpect(status().isForbidden());
 	}
 
 	@Test

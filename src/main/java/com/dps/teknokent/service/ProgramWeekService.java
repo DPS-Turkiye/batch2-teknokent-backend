@@ -92,23 +92,33 @@ public class ProgramWeekService {
 
 	/**
 	 * The saved weeks that have begun by {@code today}, each with its sessions and special days. A week is in once its
-	 * first day has come (or it is the running week, which a session dated today can open early). Nothing dated after
-	 * the running week's last day goes out, because a session or special day of an earlier week can still lie ahead.
+	 * own first day has come; a session dated today does not open a later week early, as it may for "Bu hafta". In a
+	 * plan that prints dates, a week without its own has no first day to go by (the program calendar's is not the
+	 * syllabus's), so it is in once a later printed week has begun or the program has ended. Nothing dated after the
+	 * running week's last day goes out, because a session or special day of an earlier week can still lie ahead.
 	 */
 	static ProgramWeeksSoFarResponse reached(Program program, List<ProgramWeek> plan, List<ProgramSpecialDay> days,
 			LocalDate today) {
 		LocalDate start = program.getStartDate();
 		LocalDate end = program.getEndDate();
 		ProgramSchedule schedule = ProgramSchedule.of(start, end, plan);
+		boolean printsDates = plan.stream().anyMatch(item -> schedule.printed(item.getWeekNumber()));
+		boolean over = end != null && today.isAfter(end);
 		Integer running = schedule.weekOn(today);
 		ProgramSchedule.Dates runningDates = running == null ? null : schedule.datesOf(running);
-		LocalDate horizon = runningDates == null || runningDates.end().isBefore(today) ? today : runningDates.end();
+		Integer current = runningDates != null && startedBy(runningDates, today) ? running : null;
+		LocalDate horizon = current != null && runningDates != null && runningDates.end().isAfter(today)
+				? runningDates.end()
+				: today;
 		List<ProgramWeeksSoFarResponse.Week> weeks = new ArrayList<>();
 		for (ProgramWeek item : plan) {
 			int number = item.getWeekNumber();
-			boolean current = running != null && running == number;
 			ProgramSchedule.Dates dates = schedule.datesOf(number);
-			if (!current && (dates == null || dates.start().isAfter(today))) {
+			boolean undated = printsDates && !schedule.printed(number);
+			boolean begun = undated
+					? over || laterPrintedWeekBegun(schedule, plan, number, today)
+					: startedBy(dates, today);
+			if (!begun) {
 				continue;
 			}
 			ProgramWeekPlanResponse.Week week = ProgramWeekPlanService.weekOf(item, start, end);
@@ -119,9 +129,21 @@ public class ProgramWeekService {
 					: specialDaysIn(days, dates, horizon);
 			weeks.add(new ProgramWeeksSoFarResponse.Week(new ProgramWeekPlanResponse.Week(week.week(),
 					week.startDate(), week.endDate(), week.datesFromSource(), week.title(), week.topics(),
-					week.activities(), week.deliverables(), week.inferred(), sessions), current, inWeek));
+					week.activities(), week.deliverables(), week.inferred(), sessions),
+					current != null && current == number, inWeek));
 		}
-		return new ProgramWeeksSoFarResponse(program.getId(), program.getName(), running, weeks);
+		return new ProgramWeeksSoFarResponse(program.getId(), program.getName(), current, weeks);
+	}
+
+	private static boolean laterPrintedWeekBegun(ProgramSchedule schedule, List<ProgramWeek> plan, int week,
+			LocalDate today) {
+		return plan.stream().map(ProgramWeek::getWeekNumber)
+				.anyMatch(
+						later -> later > week && schedule.printed(later) && startedBy(schedule.datesOf(later), today));
+	}
+
+	private static boolean startedBy(ProgramSchedule.@Nullable Dates week, LocalDate today) {
+		return week != null && !week.start().isAfter(today);
 	}
 
 	private static List<ProgramWeekPlanResponse.SpecialDay> specialDaysIn(List<ProgramSpecialDay> days,
