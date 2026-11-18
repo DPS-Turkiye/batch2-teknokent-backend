@@ -190,6 +190,43 @@ class WeeklyProgramServiceTest {
 	}
 
 	@Test
+	void aWeekStartReadWithTheWrongYearIsPlacedAndGetsItsWorkshopInTheProgramsYear() {
+		var proposal = WeeklyProgramService.proposalOf(weeksEightToTen("2021-12-22"), START, END, 11, List.of(), 1);
+
+		assertThat(proposal.weeks()).extracting(ProgramWeekPlanResponse.Week::week,
+				ProgramWeekPlanResponse.Week::startDate)
+				.containsExactly(tuple(8, LocalDate.of(2026, 12, 15)), tuple(9, LocalDate.of(2026, 12, 22)),
+						tuple(10, LocalDate.of(2026, 12, 29)));
+		assertThat(proposal.weeks().get(1).sessions()).extracting(ProgramWeekPlanResponse.Session::date)
+				.containsExactly(LocalDate.of(2026, 12, 24));
+		assertThat(proposal.warnings()).extracting(WeeklyProgramProposalResponse.Warning::code)
+				.doesNotContain(WeeklyProgramWarning.DATES_DIFFER);
+	}
+
+	@Test
+	void aPrintedDateNoYearFitsBetweenItsNeighboursIsStillFlagged() {
+		var proposal = WeeklyProgramService.proposalOf(weeksEightToTen("2021-11-03"), START, END, 11, List.of(), 1);
+
+		assertThat(proposal.weeks().get(1).startDate()).isEqualTo(LocalDate.of(2021, 11, 3));
+		assertThat(proposal.weeks().get(1).sessions()).isEmpty();
+		assertThat(proposal.warnings()).contains(
+				new WeeklyProgramProposalResponse.Warning(WeeklyProgramWarning.DATES_DIFFER, List.of(9)));
+	}
+
+	private static JsonNode weeksEightToTen(String weekNineStart) {
+		return JsonMapper.builder().build().readTree("""
+				{"weeks":[
+				{"week":8,"source_date":"2026-12-15","title":"Gezi 2","topics":[],"deliverables":[],"activities":[],
+				 "sessions":[]},
+				{"week":9,"source_date":"%s","title":"Doğrula","topics":[],"deliverables":[],
+				 "activities":["Workshop: İbrahim Çoban"],"sessions":[]},
+				{"week":10,"source_date":"2026-12-29","title":"Geleceğe Bak","topics":[],"deliverables":[],
+				 "activities":[],"sessions":[]}],
+				"special_days":[],"phases":[],"notes":[],"warnings":[]}
+				""".formatted(weekNineStart));
+	}
+
+	@Test
 	void aWeekReadAsTwoNumberedRowsGetsOneWorkshopFromItsFirstPrintedStart() {
 		JsonNode raw = JsonMapper.builder().build().readTree(
 				"""
