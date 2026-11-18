@@ -25,9 +25,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.config.SecurityConfig;
-import com.dps.teknokent.domain.ProgramEventKind;
+import com.dps.teknokent.domain.ProgramCalendarEntryKind;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.dto.responses.MemberProgramEventResponse;
+import com.dps.teknokent.dto.responses.ProgramCalendarPlanItem;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
@@ -190,7 +191,10 @@ class ProgramControllerTest {
 		Instant to = Instant.parse("2026-09-28T00:00:00Z");
 		when(programCalendarService.eventsFor(ACTOR_ID, from, to)).thenReturn(List.of(
 				new MemberProgramEventResponse(UUID.randomUUID(), PROGRAM_ID, "Seed 2026", "Ara rapor teslimi",
-						ProgramEventKind.DEADLINE, Instant.parse("2026-09-25T20:59:00Z"), null, null)));
+						ProgramCalendarEntryKind.DEADLINE, Instant.parse("2026-09-25T20:59:00Z"), null, null, null),
+				new MemberProgramEventResponse(UUID.randomUUID(), PROGRAM_ID, "Seed 2026", "Değer Önerisi",
+						ProgramCalendarEntryKind.SESSION, Instant.parse("2026-09-25T21:00:00Z"), null, null,
+						new ProgramCalendarPlanItem(4, "Sorunu Doğrula", null, "Sarper", List.of(), true))));
 
 		mockMvc.perform(get("/api/programs/events")
 				.param("from", from.toString())
@@ -199,7 +203,13 @@ class ProgramControllerTest {
 				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].programName").value("Seed 2026"))
-				.andExpect(jsonPath("$[0].kind").value("DEADLINE"));
+				.andExpect(jsonPath("$[0].kind").value("DEADLINE"))
+				.andExpect(jsonPath("$[0].plan").doesNotExist())
+				.andExpect(jsonPath("$[1].kind").value("SESSION"))
+				.andExpect(jsonPath("$[1].plan.week").value(4))
+				.andExpect(jsonPath("$[1].plan.weekTitle").value("Sorunu Doğrula"))
+				.andExpect(jsonPath("$[1].plan.speaker").value("Sarper"))
+				.andExpect(jsonPath("$[1].plan.allDay").value(true));
 	}
 
 	@Test

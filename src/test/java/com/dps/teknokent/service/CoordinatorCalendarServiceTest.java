@@ -27,9 +27,11 @@ import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.ProgramCalendarEntryKind;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
+import com.dps.teknokent.dto.responses.ProgramCalendarPlanItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Organization;
@@ -52,6 +54,8 @@ class CoordinatorCalendarServiceTest {
 	private ProgramEventRepository programEventRepository;
 	@Mock
 	private TranscriptBotCapacityService transcriptBotCapacity;
+	@Mock
+	private ProgramPlanCalendarService planCalendar;
 	@InjectMocks
 	private CoordinatorCalendarService service;
 
@@ -99,6 +103,30 @@ class CoordinatorCalendarServiceTest {
 		assertThat(calendar.recordingCapacity()).isEqualTo(2);
 		assertThat(calendar.items()).singleElement()
 				.satisfies(item -> assertThat(item.recordingLoad()).isEqualTo(2));
+	}
+
+	@Test
+	void theProgramsWeeklyPlanSessionsAndSpecialDaysAreListedForTheWholeRangeAndCounted() {
+		stubScope(List.of());
+		ProgramCalendarPlanItem lesson = new ProgramCalendarPlanItem(4, "Sorunu Doğrula", null, "Sarper", List.of(),
+				true);
+		ProgramCalendarPlanItem demo = new ProgramCalendarPlanItem(null, null, "KKM", null, List.of(), false);
+		Instant rangeStart = at(MONDAY, 0, 0);
+		Instant rangeEnd = at(MONDAY.plusDays(7), 0, 0).minusMillis(1);
+		when(planCalendar.forCoordinator(List.of(program), rangeStart, rangeEnd, List.of())).thenReturn(List.of(
+				new ProgramPlanCalendarService.Entry(UUID.randomUUID(), PROGRAM_ID, ProgramCalendarEntryKind.SESSION,
+						"Değer Önerisi", rangeStart, null, lesson),
+				new ProgramPlanCalendarService.Entry(UUID.randomUUID(), PROGRAM_ID,
+						ProgramCalendarEntryKind.SPECIAL_DAY, "Demo Day", at(MONDAY.plusDays(5), 13, 0), null, demo)));
+
+		var calendar = service.calendar(COORDINATOR_ID, null, MONDAY, MONDAY.plusDays(6));
+
+		assertThat(calendar.items()).extracting(item -> item.kind())
+				.containsExactly(CoordinatorAgendaKind.SESSION, CoordinatorAgendaKind.SPECIAL_DAY);
+		assertThat(calendar.items().getFirst().plan()).isEqualTo(lesson);
+		assertThat(calendar.items().getFirst().programName()).isEqualTo(program.getName());
+		assertThat(calendar.summary().planEntries()).isEqualTo(2);
+		assertThat(calendar.summary().events()).isZero();
 	}
 
 	@Test

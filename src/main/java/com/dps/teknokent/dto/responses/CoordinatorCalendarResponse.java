@@ -21,13 +21,15 @@ public record CoordinatorCalendarResponse(
 	/**
 	 * {@code id} is the meeting's id for MEETING and the program event's id otherwise.
 	 * {@code recordingLoad}: most meeting rooms the transcript bot records at once during a MEETING, platform-wide.
+	 * {@code plan} is set for a SESSION or SPECIAL_DAY of the program's weekly plan; a session's id is derived from the
+	 * plan.
 	 */
 	public record Item(
 			UUID id,
 			CoordinatorAgendaKind kind,
 			String title,
 			Instant startsAt,
-			Instant endsAt,
+			@Nullable Instant endsAt,
 			UUID programId,
 			@Nullable String programName,
 			@Nullable UUID mentorshipId,
@@ -40,14 +42,18 @@ public record CoordinatorCalendarResponse(
 			@Nullable String meetLink,
 			@Nullable String description,
 			boolean conflict,
-			@Nullable Integer recordingLoad) {
+			@Nullable Integer recordingLoad,
+			@Nullable ProgramCalendarPlanItem plan) {
 	}
 
 	/** Meetings of one mentor that overlap in time. */
 	public record Conflict(UUID mentorId, String mentorName, List<UUID> meetingIds) {
 	}
 
-	/** {@code unscheduledRisky}: risky mentorships with no meeting booked at all, whatever the range. */
-	public record Summary(int meetings, int events, int deadlines, int unscheduledRisky) {
+	/**
+	 * {@code unscheduledRisky}: risky mentorships with no meeting booked at all, whatever the range.
+	 * {@code planEntries} counts the weekly plans' sessions and special days in the range.
+	 */
+	public record Summary(int meetings, int events, int deadlines, int unscheduledRisky, int planEntries) {
 	}
 }
