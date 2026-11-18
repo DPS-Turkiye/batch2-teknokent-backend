@@ -315,10 +315,12 @@ public class WeeklyProgramService {
 	 * one week. Weeks past the program or without a title are dropped and flagged; a titled row the calendar cannot
 	 * place at all (no number, no date in the program) becomes a note instead of disappearing. A workshop cell
 	 * without a date of its own becomes a session a fixed number of days after its week's printed start
-	 * ({@link WeeklyProgramWorkshops}).
+	 * ({@link WeeklyProgramWorkshops}). A printed date whose year was misread is first given the year that fits the
+	 * program and its neighbours ({@link WeeklyProgramYears}).
 	 */
-	static WeeklyProgramProposalResponse proposalOf(JsonNode result, LocalDate start, LocalDate end, int totalWeeks,
+	static WeeklyProgramProposalResponse proposalOf(JsonNode answer, LocalDate start, LocalDate end, int totalWeeks,
 			List<WeeklyProgramProposalResponse.Warning> warnings, int pageCount) {
+		JsonNode result = WeeklyProgramYears.corrected(answer, start, end);
 		TreeMap<Integer, ProgramWeekPlanResponse.Week> weeks = new TreeMap<>();
 		SortedMap<Integer, @Nullable String> weekPhases = new TreeMap<>();
 		Set<Integer> dropped = new LinkedHashSet<>();
