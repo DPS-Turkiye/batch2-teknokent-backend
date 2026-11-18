@@ -5,6 +5,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,12 +20,13 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 import org.jspecify.annotations.Nullable;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dps.teknokent.domain.AttendanceMethod;
+import com.dps.teknokent.domain.AttendanceSessionKind;
 import com.dps.teknokent.domain.AttendanceState;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -32,10 +36,8 @@ import com.dps.teknokent.dto.responses.ProgramAttendanceReportResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
-import com.dps.teknokent.entity.ProgramAttendance;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.ProgramWeek;
-import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
@@ -43,16 +45,18 @@ import com.dps.teknokent.repository.ProgramAttendanceRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.repository.ProgramWeekRepository;
+import com.dps.teknokent.util.AttendanceSessions;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
 import com.dps.teknokent.util.ProgramSchedule;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * Weekly attendance: a participant checks in for the program week running today, and the program's coordinators
- * read who did. Weeks are counted from the program's start date ({@link ProgramCalendar}); a participant can check in
- * on any day of the running week, never for a week that has not begun or has already ended.
+ * Attendance as participants and coordinators read it: a participant's sessions in the running week, and the
+ * coordinator's report per session. Check-ins are written by {@link ProgramSessionAttendanceService}. Weeks are the
+ * plan's own where it prints dates, else counted from the program's start date ({@link ProgramCalendar}).
  */
 @Service
 @RequiredArgsConstructor
@@ -120,49 +124,42 @@ public class ProgramAttendanceService {
 	@Transactional(readOnly = true)
 	public AttendanceStatusResponse status(UUID actorId) {
 		AppUser actor = requireApproved(actorId);
-		Optional<Program> program = programOf(actor);
-		if (program.isEmpty()) {
-			return new AttendanceStatusResponse(null, null, AttendanceState.NO_PROGRAM, null, null, null, null, null);
+		Optional<Program> found = programOf(actor);
+		if (found.isEmpty()) {
+			return new AttendanceStatusResponse(null, null, AttendanceState.NO_PROGRAM, null, null, null, null,
+					List.of());
 		}
-		return statusOf(actor, program.get(), window(program.get(), today(),
-				programWeeks.findByProgramIdOrderByWeekNumberAsc(program.get().getId())));
-	}
-
-	@Transactional
-	public AttendanceStatusResponse checkIn(UUID actorId, int week) {
-		AppUser actor = requireApproved(actorId);
-		Program program = programOf(actor)
-				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
-						"Only a program's participants check in to it."));
-		Window window = window(program, today(), programWeeks.findByProgramIdOrderByWeekNumberAsc(program.getId()));
-		Integer running = window.week();
-		if (window.state() != AttendanceState.OPEN || running == null) {
-			throw new ConflictException("No program week is open for check-in.");
+		Program program = found.get();
+		if (!program.isAttendanceEnabled()) {
+			return new AttendanceStatusResponse(program.getId(), program.getName(), AttendanceState.DISABLED, null,
+					null, null, null, List.of());
 		}
-		if (week != running) {
-			throw new InvalidRequestException("Only the running week (" + running + ") can be checked in.");
+		List<ProgramWeek> plan = programWeeks.findByProgramIdOrderByWeekNumberAsc(program.getId());
+		Window window = window(program, today(), plan);
+		Integer week = window.week();
+		if (window.state() != AttendanceState.OPEN || week == null) {
+			return new AttendanceStatusResponse(program.getId(), program.getName(), window.state(), null,
+					window.totalWeeks(), null, null, List.of());
 		}
-		if (attendanceRepository.findByProgramIdAndUserIdAndWeekNumber(program.getId(), actor.getId(), week)
-				.isPresent()) {
-			throw new ConflictException("Already checked in for this week.");
-		}
-		ProgramAttendance attendance = new ProgramAttendance();
-		attendance.setId(UUID.randomUUID());
-		attendance.setProgramId(program.getId());
-		attendance.setUserId(actor.getId());
-		attendance.setWeekNumber(week);
-		attendance.setCheckedInAt(Instant.now());
-		try {
-			attendanceRepository.saveAndFlush(attendance);
-		} catch (DataIntegrityViolationException raced) {
-			throw new ConflictException("Already checked in for this week.");
-		}
-		return statusOf(actor, program, window);
+		Map<AttendanceSessionKind, Instant> checkedIn = new EnumMap<>(AttendanceSessionKind.class);
+		attendanceRepository.findByProgramIdAndUserIdAndWeekNumber(program.getId(), actor.getId(), week)
+				.forEach(row -> checkedIn.put(row.getSessionKind(), row.getCheckedInAt()));
+		List<AttendanceStatusResponse.Session> sessions = AttendanceSessions
+				.of(ProgramSchedule.of(program.getStartDate(), program.getEndDate(), plan), plannedWeek(plan, week),
+						week)
+				.stream()
+				.map(session -> new AttendanceStatusResponse.Session(session.kind(), session.date(),
+						session.startTime(), session.endTime(), session.title(), checkedIn.get(session.kind())))
+				.toList();
+		return new AttendanceStatusResponse(program.getId(), program.getName(), AttendanceState.OPEN, week,
+				window.totalWeeks(), window.weekStart(), window.weekEnd(), sessions);
 	}
 
 	/**
-	 * Who checked in, per week, for the weeks that overlap {@code from}–{@code to} and have begun: the program's
-	 * start to today when left out. Only the program's coordinators and admins read it; anyone else gets 403.
+	 * Who attended, per session, for the weeks that overlap {@code from}–{@code to} and have begun: the program's
+	 * start to today when left out. A week's lesson and workshop are listed once their day has come, and any session
+	 * someone attended is listed even when the current plan no longer has it. Only the program's coordinators and
+	 * admins read it; anyone else gets 403.
 	 */
 	@Transactional(readOnly = true)
 	public ProgramAttendanceReportResponse report(UUID actorId, UUID programId, LocalDate from, LocalDate to) {
@@ -175,12 +172,10 @@ public class ProgramAttendanceService {
 		LocalDate end = program.getEndDate();
 		List<ProgramWeek> savedWeeks = programWeeks.findByProgramIdOrderByWeekNumberAsc(programId);
 		ProgramSchedule schedule = ProgramSchedule.of(start, end, savedWeeks);
-		int total = Math.max(
-				ProgramCalendar.totalWeeks(start, end) == null ? 0 : ProgramCalendar.weeksBetween(start, end),
-				savedWeeks.stream().mapToInt(ProgramWeek::getWeekNumber).max().orElse(0));
-		int lastBegun = schedule.lastBegunWeek(total, today);
+		int lastBegun = schedule.lastBegunWeek(totalWeeks(program, savedWeeks), today);
 		if (lastBegun == 0) {
-			return new ProgramAttendanceReportResponse(program.getId(), from, to, List.of(), List.of());
+			return new ProgramAttendanceReportResponse(program.getId(), from, to, program.isAttendanceEnabled(),
+					List.of(), List.of());
 		}
 		LocalDate printedFirst = IntStream.rangeClosed(1, lastBegun).mapToObj(schedule::datesOf)
 				.filter(Objects::nonNull).map(ProgramSchedule.Dates::start).min(LocalDate::compareTo)
@@ -200,44 +195,113 @@ public class ProgramAttendanceService {
 			}
 		}
 
-		Set<String> checkedIn = new HashSet<>();
+		Map<String, AttendanceMethod> attended = new HashMap<>();
+		Map<Integer, Set<AttendanceSessionKind>> kindsAttended = new HashMap<>();
 		if (!weekNumbers.isEmpty()) {
 			attendanceRepository.findByProgramIdAndWeekNumberBetween(
 					program.getId(), weekNumbers.getFirst(), weekNumbers.getLast())
-					.forEach(row -> checkedIn.add(row.getUserId() + ":" + row.getWeekNumber()));
+					.forEach(row -> {
+						attended.put(key(row.getUserId(), row.getWeekNumber(), row.getSessionKind()), row.getMethod());
+						kindsAttended.computeIfAbsent(row.getWeekNumber(),
+								week -> EnumSet.noneOf(AttendanceSessionKind.class)).add(row.getSessionKind());
+					});
+		}
+		List<SessionColumn> columns = new ArrayList<>();
+		for (int week : weekNumbers) {
+			columns.addAll(columnsOf(week, AttendanceSessions.of(schedule, plannedWeek(savedWeeks, week), week),
+					kindsAttended.getOrDefault(week, Set.of()), today));
 		}
 		List<Person> people = participantsOf(program);
 
-		List<ProgramAttendanceReportResponse.Week> weeks = weekNumbers.stream().map(week -> {
+		List<ProgramAttendanceReportResponse.Session> sessions = columns.stream().map(column -> {
 			int count = 0;
 			int expected = 0;
 			for (Person person : people) {
-				boolean attended = checkedIn.contains(person.user().getId() + ":" + week);
-				// Someone who has left the program counts only in the weeks they checked in.
-				if (person.current() || attended) {
+				boolean present = attended.containsKey(key(person.user().getId(), column.week(), column.kind()));
+				// Someone who has left the program counts only in the sessions they attended.
+				if (person.current() || present) {
 					expected++;
 				}
-				if (attended) {
+				if (present) {
 					count++;
 				}
 			}
 			Integer rate = expected == 0 ? null : Math.round(count * 100f / expected);
-			return new ProgramAttendanceReportResponse.Week(
-					week, Objects.requireNonNull(schedule.datesOf(week)).start(),
-					Objects.requireNonNull(schedule.datesOf(week)).end(), count, expected, rate);
+			AttendanceSessions.Session session = column.session();
+			return new ProgramAttendanceReportResponse.Session(column.week(), column.kind(),
+					session == null ? null : session.date(), session == null ? null : session.startTime(),
+					session == null ? null : session.endTime(), session == null ? null : session.title(), count,
+					expected, rate);
 		}).toList();
 		List<ProgramAttendanceReportResponse.Participant> rows = people.stream().map(person -> {
-			List<Boolean> attended = weekNumbers.stream()
-					.map(week -> checkedIn.contains(person.user().getId() + ":" + week))
+			List<ProgramAttendanceReportResponse.Mark> marks = columns.stream()
+					.map(column -> attended.get(key(person.user().getId(), column.week(), column.kind())))
+					.map(method -> new ProgramAttendanceReportResponse.Mark(method != null, method))
 					.toList();
 			return new ProgramAttendanceReportResponse.Participant(
+					person.user().getId(),
 					person.user().getFullName(),
 					person.user().getEmail(),
 					person.current() ? teamNameOrNull(person.user()) : null,
-					attended,
-					(int) attended.stream().filter(Boolean::booleanValue).count());
+					person.current(),
+					marks,
+					(int) marks.stream().filter(ProgramAttendanceReportResponse.Mark::attended).count());
 		}).toList();
-		return new ProgramAttendanceReportResponse(program.getId(), first, last, weeks, rows);
+		return new ProgramAttendanceReportResponse(program.getId(), first, last, program.isAttendanceEnabled(),
+				sessions, rows);
+	}
+
+	/** A report column: a session of a week, with its day and time from the plan (null when the plan lacks it). */
+	private record SessionColumn(int week, AttendanceSessionKind kind, AttendanceSessions.@Nullable Session session) {
+	}
+
+	/**
+	 * Week {@code week}'s columns: its lesson and workshop once their day has come, a session someone attended that
+	 * the plan no longer has, and the weekly self-check-ins from before per-session attendance.
+	 */
+	private static List<SessionColumn> columnsOf(int week, List<AttendanceSessions.Session> planned,
+			Set<AttendanceSessionKind> withRows, LocalDate today) {
+		List<SessionColumn> columns = new ArrayList<>();
+		for (AttendanceSessionKind kind : List.of(AttendanceSessionKind.LESSON, AttendanceSessionKind.WORKSHOP)) {
+			AttendanceSessions.Session session = planned.stream()
+					.filter(item -> item.kind() == kind)
+					.findFirst()
+					.orElse(null);
+			boolean held = session != null && !session.date().isAfter(today);
+			if (held || withRows.contains(kind)) {
+				columns.add(new SessionColumn(week, kind, session));
+			}
+		}
+		if (withRows.contains(AttendanceSessionKind.WEEK)) {
+			columns.add(new SessionColumn(week, AttendanceSessionKind.WEEK, null));
+		}
+		return columns;
+	}
+
+	private static String key(UUID userId, int week, AttendanceSessionKind kind) {
+		return userId + ":" + week + ":" + kind.name();
+	}
+
+	/** The number of weeks a program runs: its calendar's, or more when its plan has more. */
+	static int totalWeeks(Program program, List<ProgramWeek> plan) {
+		LocalDate start = program.getStartDate();
+		LocalDate end = program.getEndDate();
+		int calendar = start == null || end == null || ProgramCalendar.totalWeeks(start, end) == null ? 0
+				: ProgramCalendar.weeksBetween(start, end);
+		return Math.max(calendar, plan.stream().mapToInt(ProgramWeek::getWeekNumber).max().orElse(0));
+	}
+
+	static @Nullable ProgramWeek plannedWeek(List<ProgramWeek> plan, int week) {
+		return plan.stream().filter(item -> item.getWeekNumber() == week).findFirst().orElse(null);
+	}
+
+	/** The program's current participants, the people who check in to it and whom a coordinator may mark. */
+	Set<UUID> currentParticipantIds(Program program) {
+		Set<UUID> ids = new HashSet<>();
+		participantsOf(program).stream()
+				.filter(Person::current)
+				.forEach(person -> ids.add(person.user().getId()));
+		return ids;
 	}
 
 	/** A participant row; {@code current} is false for someone who checked in here earlier but has since left. */
@@ -293,19 +357,6 @@ public class ProgramAttendanceService {
 		return person.has(UserRole.MENTEE) && person.getStatus() == UserAccountStatus.APPROVED;
 	}
 
-	private AttendanceStatusResponse statusOf(AppUser actor, Program program, Window window) {
-		Integer running = window.week();
-		Instant checkedInAt = window.state() == AttendanceState.OPEN && running != null
-				? attendanceRepository
-						.findByProgramIdAndUserIdAndWeekNumber(program.getId(), actor.getId(), running)
-						.map(ProgramAttendance::getCheckedInAt)
-						.orElse(null)
-				: null;
-		AttendanceState state = checkedInAt != null ? AttendanceState.CHECKED_IN : window.state();
-		return new AttendanceStatusResponse(program.getId(), program.getName(), state, window.week(),
-				window.totalWeeks(), window.weekStart(), window.weekEnd(), checkedInAt);
-	}
-
 	/** A participant is an approved mentee; their program is the one {@link MenteeProgramService} picks. */
 	private AppUser requireApproved(UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
@@ -327,7 +378,7 @@ public class ProgramAttendanceService {
 			return coordinatorProgramService.requireManagedProgram(actorId, programId);
 		} catch (InvalidRequestException refused) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-					"Only the program's coordinators and admins can read its attendance.");
+					Texts.forRequest("error.attendanceReportersOnly"));
 		}
 	}
 

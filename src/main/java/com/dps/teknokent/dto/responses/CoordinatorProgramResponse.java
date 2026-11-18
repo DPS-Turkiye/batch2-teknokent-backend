@@ -76,7 +76,8 @@ public record CoordinatorProgramResponse(
 			int bottleneckFlagDays,
 			String eligibleEmailDomain,
 			boolean rosterOnly,
-			boolean individualMentees) {
+			boolean individualMentees,
+			boolean attendanceEnabled) {
 	}
 
 	/** Active mentorships by how recently the team met its mentor; see CoordinatorProgramService#classify. */

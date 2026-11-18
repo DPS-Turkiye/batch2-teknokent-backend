@@ -6,11 +6,15 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import com.dps.teknokent.domain.AttendanceSessionKind;
 import com.dps.teknokent.entity.ProgramAttendance;
 
 public interface ProgramAttendanceRepository extends JpaRepository<ProgramAttendance, UUID> {
 
-	Optional<ProgramAttendance> findByProgramIdAndUserIdAndWeekNumber(UUID programId, UUID userId, int weekNumber);
+	Optional<ProgramAttendance> findByProgramIdAndUserIdAndWeekNumberAndSessionKind(UUID programId, UUID userId,
+			int weekNumber, AttendanceSessionKind sessionKind);
+
+	List<ProgramAttendance> findByProgramIdAndUserIdAndWeekNumber(UUID programId, UUID userId, int weekNumber);
 
 	List<ProgramAttendance> findByProgramIdAndWeekNumberBetween(UUID programId, int fromWeek, int toWeek);
 

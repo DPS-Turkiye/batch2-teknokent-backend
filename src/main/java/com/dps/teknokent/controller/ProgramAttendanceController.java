@@ -4,17 +4,12 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.dps.teknokent.dto.requests.CheckInRequest;
 import com.dps.teknokent.dto.responses.AttendanceStatusResponse;
 import com.dps.teknokent.dto.responses.ProgramAttendanceReportResponse;
 import com.dps.teknokent.security.CurrentActor;
@@ -24,7 +19,6 @@ import com.dps.teknokent.util.Downloads;
 import com.dps.teknokent.util.SessionsExport;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -34,16 +28,10 @@ public class ProgramAttendanceController {
 
 	private final ProgramAttendanceService attendanceService;
 
-	/** The caller's own check-in for the program week running today. */
+	/** The caller's attendance in the program week running today; check-ins are by session QR code. */
 	@GetMapping("/api/programs/mine/attendance")
 	public AttendanceStatusResponse mine(@RequestParam(required = false) UUID actorId) {
 		return attendanceService.status(CurrentActor.resolve(actorId));
-	}
-
-	@PostMapping("/api/programs/mine/attendance")
-	@ResponseStatus(HttpStatus.CREATED)
-	public AttendanceStatusResponse checkIn(@Valid @RequestBody CheckInRequest request) {
-		return attendanceService.checkIn(CurrentActor.resolve(request.actorId()), request.week());
 	}
 
 	/** {@code from} and {@code to} are inclusive days; the program's start to today without them. */
