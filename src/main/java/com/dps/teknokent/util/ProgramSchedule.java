@@ -20,7 +20,7 @@ public final class ProgramSchedule {
 	/** A week's first and last day. */
 	public record Dates(LocalDate start, LocalDate end) {
 
-		boolean contains(LocalDate day) {
+		public boolean contains(LocalDate day) {
 			return !day.isBefore(start) && !day.isAfter(end);
 		}
 	}

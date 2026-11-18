@@ -26,6 +26,7 @@ import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.repository.ProgramSpecialDayRepository;
 import com.dps.teknokent.repository.ProgramWeekRepository;
+import com.dps.teknokent.util.ProgramSchedule;
 
 class ProgramWeekPlanServiceTest {
 
@@ -257,9 +258,46 @@ class ProgramWeekPlanServiceTest {
 				"Changed", List.of());
 		var future = new ReplaceProgramWeeksRequest.SpecialDayInput(today.plusDays(1), null, null, null, "Future",
 				List.of());
-		assertThat(service.keepPastSpecialDays(PROGRAM_ID, List.of(replacement, future), today))
+		assertThat(service.keepPastSpecialDays(PROGRAM_ID, List.of(replacement, future), List.of(), today))
 				.extracting(ReplaceProgramWeeksRequest.SpecialDayInput::title)
 				.containsExactly("Saved Bootcamp", "Future");
+	}
+
+	@Test
+	void withNothingSavedThePastSpecialDaysOfTheFileAreKept() {
+		LocalDate today = LocalDate.of(2026, 11, 18);
+		when(events.findByProgramIdOrderByDateAsc(PROGRAM_ID)).thenReturn(List.of());
+		var past = new ReplaceProgramWeeksRequest.SpecialDayInput(today.minusDays(20), null, null, null, "Açılış",
+				List.of());
+		var future = new ReplaceProgramWeeksRequest.SpecialDayInput(today.plusDays(1), null, null, null, "Demo Day",
+				List.of());
+		assertThat(service.keepPastSpecialDays(PROGRAM_ID, List.of(past, future), List.of(), today))
+				.containsExactly(past, future);
+	}
+
+	@Test
+	void aPastSpecialDayOfTheFileFillsOnlyDaysTheKeptWeeksDoNotCover() {
+		LocalDate today = LocalDate.of(2026, 11, 18);
+		ProgramSpecialDay saved = new ProgramSpecialDay();
+		saved.setDate(LocalDate.of(2026, 11, 4));
+		saved.setTitle("Saved visit");
+		ProgramSpecialDay savedOutsideTheWeeks = new ProgramSpecialDay();
+		savedOutsideTheWeeks.setDate(LocalDate.of(2026, 10, 20));
+		savedOutsideTheWeeks.setTitle("Saved info day");
+		when(events.findByProgramIdOrderByDateAsc(PROGRAM_ID)).thenReturn(List.of(savedOutsideTheWeeks, saved));
+		var sameDateAsASavedDay = new ReplaceProgramWeeksRequest.SpecialDayInput(LocalDate.of(2026, 10, 20), null,
+				null, null, "Renamed info day", List.of());
+		var movedInsideAKeptWeek = new ReplaceProgramWeeksRequest.SpecialDayInput(LocalDate.of(2026, 11, 5), null,
+				null, null, "Moved visit", List.of());
+		var beforeTheKeptWeeks = new ReplaceProgramWeeksRequest.SpecialDayInput(LocalDate.of(2026, 10, 28), null,
+				null, null, "Opening", List.of());
+		List<ProgramSchedule.Dates> keptWeeks = List.of(
+				new ProgramSchedule.Dates(LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 9)));
+
+		assertThat(service.keepPastSpecialDays(PROGRAM_ID,
+				List.of(sameDateAsASavedDay, beforeTheKeptWeeks, movedInsideAKeptWeek), keptWeeks, today))
+				.extracting(ReplaceProgramWeeksRequest.SpecialDayInput::title)
+				.containsExactly("Saved info day", "Saved visit", "Opening");
 	}
 
 	private static ReplaceProgramWeeksRequest.WeekInput input(int week, String title) {
