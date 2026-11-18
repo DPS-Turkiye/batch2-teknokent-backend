@@ -5,18 +5,23 @@ import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
 
-import com.dps.teknokent.domain.ProgramEventKind;
+import com.dps.teknokent.domain.ProgramCalendarEntryKind;
 import com.dps.teknokent.entity.ProgramEvent;
 
+/**
+ * A program entry in a participant's calendar. {@code plan} is set for a {@code SESSION} or {@code SPECIAL_DAY}; a
+ * session's {@code id} is derived from the plan and stays the same between reads.
+ */
 public record MemberProgramEventResponse(
 		UUID id,
 		UUID programId,
 		@Nullable String programName,
 		String title,
-		ProgramEventKind kind,
+		ProgramCalendarEntryKind kind,
 		Instant startsAt,
-		Instant endsAt,
-		String description) {
+		@Nullable Instant endsAt,
+		@Nullable String description,
+		@Nullable ProgramCalendarPlanItem plan) {
 
 	public static MemberProgramEventResponse of(ProgramEvent event, @Nullable String programName) {
 		return new MemberProgramEventResponse(
@@ -24,9 +29,10 @@ public record MemberProgramEventResponse(
 				event.getProgramId(),
 				programName,
 				event.getTitle(),
-				event.getKind(),
+				ProgramCalendarEntryKind.of(event.getKind()),
 				event.getStartsAt(),
 				event.getEndsAt(),
-				event.getDescription());
+				event.getDescription(),
+				null);
 	}
 }

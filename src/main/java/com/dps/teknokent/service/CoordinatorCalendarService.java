@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.ProgramCalendarEntryKind;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.dto.responses.CoordinatorCalendarResponse;
 import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
@@ -36,7 +37,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * The coordinator's Takvim: every meeting of the teams in their programs plus the programs' own events and
- * deadlines, with a mentor's overlapping meetings flagged as conflicts.
+ * deadlines and every session and special day of their weekly plans, with a mentor's overlapping meetings flagged as
+ * conflicts.
  */
 @Service
 @RequiredArgsConstructor
@@ -49,6 +51,7 @@ public class CoordinatorCalendarService {
 	private final CoordinatorMentorshipService mentorshipService;
 	private final ProgramEventRepository programEventRepository;
 	private final TranscriptBotCapacityService transcriptBotCapacity;
+	private final ProgramPlanCalendarService planCalendar;
 
 	@Transactional(readOnly = true)
 	public CoordinatorCalendarResponse calendar(UUID actorId, UUID programId, LocalDate from, LocalDate to) {
@@ -123,7 +126,8 @@ public class CoordinatorCalendarService {
 					meeting.getMeetLink(),
 					null,
 					conflicting.contains(meeting.getId()),
-					TranscriptBotCapacityService.peak(recorded, meeting.getScheduledAt(), endOf(meeting), null)));
+					TranscriptBotCapacityService.peak(recorded, meeting.getScheduledAt(), endOf(meeting), null),
+					null));
 		}
 		Map<UUID, String> programNames = scope.stream().collect(Collectors.toMap(Program::getId, Program::getName));
 		List<ProgramEvent> events = scope.isEmpty()
@@ -150,7 +154,33 @@ public class CoordinatorCalendarService {
 					null,
 					event.getDescription(),
 					false,
+					null,
 					null));
+		}
+		List<ProgramPlanCalendarService.Entry> planned = planCalendar.forCoordinator(scope, rangeStart,
+				rangeEnd.minusMillis(1), events);
+		for (ProgramPlanCalendarService.Entry entry : planned) {
+			items.add(new CoordinatorCalendarResponse.Item(
+					entry.id(),
+					entry.kind() == ProgramCalendarEntryKind.SPECIAL_DAY ? CoordinatorAgendaKind.SPECIAL_DAY
+							: CoordinatorAgendaKind.SESSION,
+					entry.title(),
+					entry.startsAt(),
+					entry.endsAt(),
+					entry.programId(),
+					programNames.get(entry.programId()),
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+					false,
+					null,
+					entry.plan()));
 		}
 		items.sort(Comparator.comparing(CoordinatorCalendarResponse.Item::startsAt));
 
@@ -164,7 +194,7 @@ public class CoordinatorCalendarService {
 				items,
 				conflicts,
 				new CoordinatorCalendarResponse.Summary(placed.size(), events.size() - deadlines, deadlines,
-						unscheduledRisky),
+						unscheduledRisky, planned.size()),
 				transcriptBotCapacity.capacity());
 	}
 
