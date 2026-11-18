@@ -28,6 +28,7 @@ import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
@@ -51,6 +52,7 @@ import com.dps.teknokent.entity.Bottleneck;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MentorProfile;
 import com.dps.teknokent.entity.Mentorship;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramEvent;
@@ -409,6 +411,7 @@ public class CoordinatorProgramService {
 	private CoordinatorOverviewResponse.Metrics overviewMetrics(
 			List<Program> scope, Map<UUID, Program> programOf, Snapshot snapshot) {
 		Set<UUID> matchedMentorships = new HashSet<>();
+		Set<String> requestPairs = new HashSet<>();
 		Set<UUID> mentoredTeams = new HashSet<>();
 		Set<UUID> activeMentors = new HashSet<>();
 		int stale = 0;
@@ -426,6 +429,19 @@ public class CoordinatorProgramService {
 				activeMentors.add(mentorship.getMentor().getId());
 				if (mentorship.getStatus() == MentorshipStatus.ACTIVE
 						&& daysSinceContact(mentorship, snapshot) >= program.getStaleAfterDays()) {
+					stale++;
+				}
+			}
+			for (MentorshipRequest request : acceptedRequestPairs(snapshot, program)) {
+				// Like a mentorship, a request with no program comes up under each of its team's programs.
+				String pair = pairKey(request.getMentor().getId(), request.getOrganization().getId()) + ":"
+						+ (request.getProgram() == null ? "" : request.getProgram().getId());
+				if (!requestPairs.add(pair)) {
+					continue;
+				}
+				mentoredTeams.add(request.getOrganization().getId());
+				activeMentors.add(request.getMentor().getId());
+				if (daysSinceContact(request, snapshot) >= program.getStaleAfterDays()) {
 					stale++;
 				}
 			}
@@ -448,7 +464,7 @@ public class CoordinatorProgramService {
 						.distinct()
 						.count();
 		return new CoordinatorOverviewResponse.Metrics(
-				matchedMentorships.size(),
+				matchedMentorships.size() + requestPairs.size(),
 				mentoredTeams.size(),
 				activeMentors.size(),
 				stale,
@@ -748,7 +764,8 @@ public class CoordinatorProgramService {
 		List<ProgramStartup> awaiting = awaitingMatch(program, startups, snapshot);
 		int activeMentorships = (int) programMentorships(snapshot, program).stream()
 				.filter(mentorship -> MATCHED.contains(mentorship.getStatus()))
-				.count();
+				.count()
+				+ acceptedRequestPairs(snapshot, program).size();
 		Integer oldestWaiting = awaiting.stream()
 				.map(startup -> waitingDays(startup, snapshot.today()))
 				.max(Integer::compare)
@@ -785,17 +802,25 @@ public class CoordinatorProgramService {
 		int followUp = 0;
 		int risky = 0;
 		Map<String, Set<UUID>> topicTeams = new LinkedHashMap<>();
+		record Running(UUID organizationId, long daysSinceContact) {
+		}
+		List<Running> running = new ArrayList<>();
 		// Every mentorship the card counts as active, a team that left the program included.
 		for (Mentorship mentorship : programMentorships(snapshot, program)) {
-			if (mentorship.getStatus() != MentorshipStatus.ACTIVE) {
-				continue;
+			if (mentorship.getStatus() == MentorshipStatus.ACTIVE) {
+				running.add(new Running(mentorship.getOrganization().getId(), daysSinceContact(mentorship, snapshot)));
 			}
-			UUID organizationId = mentorship.getOrganization().getId();
+		}
+		for (MentorshipRequest request : acceptedRequestPairs(snapshot, program)) {
+			running.add(new Running(request.getOrganization().getId(), daysSinceContact(request, snapshot)));
+		}
+		for (Running pair : running) {
+			UUID organizationId = pair.organizationId();
 			List<Bottleneck> openIssues = snapshot.openBottlenecks().getOrDefault(organizationId, List.of());
 			boolean hasOpenIssue = !openIssues.isEmpty()
 					|| snapshot.overdueActionOrganizations().contains(organizationId);
 			HealthBucket bucket = classify(
-					daysSinceContact(mentorship, snapshot),
+					pair.daysSinceContact(),
 					hasOpenIssue,
 					program.getMeetingFrequencyDays(),
 					program.getStaleAfterDays());
@@ -857,7 +882,11 @@ public class CoordinatorProgramService {
 	}
 
 	private List<ProgramStartup> awaitingMatch(Program program, List<ProgramStartup> startups, Snapshot snapshot) {
+		Set<UUID> workingWithAskedMentor = acceptedRequestPairs(snapshot, program).stream()
+				.map(request -> request.getOrganization().getId())
+				.collect(Collectors.toSet());
 		return startups.stream()
+				.filter(startup -> !workingWithAskedMentor.contains(startup.getOrganizationId()))
 				.filter(startup -> mentorshipsOf(snapshot, Set.of(program.getId()), startup.getOrganizationId())
 						.stream()
 						.noneMatch(mentorship -> MATCHED.contains(mentorship.getStatus())))
@@ -865,13 +894,101 @@ public class CoordinatorProgramService {
 	}
 
 	static long daysSinceContact(Mentorship mentorship, Snapshot snapshot) {
-		Instant lastMeeting = snapshot.lastMeetingByPair().get(
-				pairKey(mentorship.getMentor().getId(), mentorship.getOrganization().getId()));
+		return daysSinceContact(snapshot, mentorship.getMentor().getId(), mentorship.getOrganization().getId(),
+				mentorship.getStartDate());
+	}
+
+	/** For a pair working through an accepted request: since its last held meeting, or since the acceptance. */
+	static long daysSinceContact(MentorshipRequest request, Snapshot snapshot) {
+		Instant accepted = acceptedOn(request);
+		return daysSinceContact(snapshot, request.getMentor().getId(), request.getOrganization().getId(),
+				accepted == null ? null : accepted.atZone(MeetingSlotTimes.APP_ZONE).toLocalDate());
+	}
+
+	private static long daysSinceContact(Snapshot snapshot, UUID mentorId, UUID organizationId,
+			@Nullable LocalDate start) {
+		Instant lastMeeting = snapshot.lastMeetingByPair().get(pairKey(mentorId, organizationId));
 		if (lastMeeting != null) {
 			return Math.max(0, ChronoUnit.DAYS.between(lastMeeting, snapshot.now()));
 		}
-		LocalDate start = mentorship.getStartDate();
 		return start == null ? 0 : Math.max(0, ChronoUnit.DAYS.between(start, snapshot.today()));
+	}
+
+	/**
+	 * The accepted requests the program counts as running mentorships, the latest one per team and mentor.
+	 * Accepting a request makes a meeting, not a mentorship row, and that is how teams find a mentor now.
+	 *
+	 * <p>
+	 * The request has no ended state of its own, so the latest acceptance between the two counts while the team is
+	 * still in the program (a team that left takes its requests along with it) and the program has not completed,
+	 * until its last planned session or its single meeting has been held. One with no program counts only if it was
+	 * accepted after the team joined, so an earlier cohort's request does not carry over. A mentorship row for the
+	 * same team and mentor in the program decides instead: an active or planned one is the same mentorship and
+	 * counts once, through the row; one paused, completed or cancelled after the acceptance ended it.
+	 */
+	static List<MentorshipRequest> acceptedRequestPairs(Snapshot snapshot, Program program) {
+		if (program.getStatus() == ProgramStatus.COMPLETED) {
+			return List.of();
+		}
+		List<MentorshipRequest> pairs = new ArrayList<>();
+		for (ProgramStartup startup : snapshot.startups().getOrDefault(program.getId(), List.of())) {
+			UUID organizationId = startup.getOrganizationId();
+			Map<UUID, MentorshipRequest> latestByMentor = new LinkedHashMap<>();
+			snapshot.acceptedRequests().getOrDefault(organizationId, List.of()).stream()
+					.filter(request -> request.getProgram() == null
+							? acceptedSince(request, startup.getCreatedAt())
+							: request.getProgram().getId().equals(program.getId()))
+					.sorted(Comparator.comparing(
+							CoordinatorProgramService::acceptedOn, Comparator.nullsLast(Comparator.reverseOrder())))
+					.forEach(request -> latestByMentor.putIfAbsent(request.getMentor().getId(), request));
+			List<Mentorship> rows = mentorshipsOf(snapshot, Set.of(program.getId()), organizationId);
+			latestByMentor.values().stream()
+					.filter(request -> !hasRunItsCourse(request, snapshot) && !settledByMentorship(request, rows))
+					.forEach(pairs::add);
+		}
+		return pairs;
+	}
+
+	private static boolean acceptedSince(MentorshipRequest request, @Nullable Instant joined) {
+		Instant accepted = acceptedOn(request);
+		return accepted != null && (joined == null || !accepted.isBefore(joined));
+	}
+
+	/** Whether the meetings the request asked for have all been held: one for a single meeting, else as planned. */
+	private static boolean hasRunItsCourse(MentorshipRequest request, Snapshot snapshot) {
+		Integer planned = request.getPlannedSessionCount() != null
+				? request.getPlannedSessionCount()
+				: request.getMentorshipFormat() == MentorshipRequestFormat.SINGLE_MEETING ? Integer.valueOf(1) : null;
+		if (planned == null) {
+			return false;
+		}
+		long held = snapshot.meetingsByOrganization()
+				.getOrDefault(request.getOrganization().getId(), List.of())
+				.stream()
+				.filter(meeting -> meeting.getMentorshipRequest() != null
+						&& meeting.getMentorshipRequest().getId().equals(request.getId()))
+				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+						&& meeting.getScheduledAt() != null
+						&& meeting.getScheduledAt().isBefore(snapshot.now()))
+				.count();
+		return held >= planned;
+	}
+
+	private static boolean settledByMentorship(MentorshipRequest request, List<Mentorship> rows) {
+		Instant accepted = acceptedOn(request);
+		return rows.stream()
+				.filter(row -> row.getMentor().getId().equals(request.getMentor().getId()))
+				.anyMatch(row -> MATCHED.contains(row.getStatus())
+						|| accepted == null
+						|| row.getUpdatedAt() == null
+						|| !row.getUpdatedAt().isBefore(accepted));
+	}
+
+	/**
+	 * {@code accepted_at} is stamped on save; a request accepted before that column existed falls back to its sending.
+	 */
+	private static @Nullable Instant acceptedOn(MentorshipRequest request) {
+		return request.getAcceptedAt() != null ? request.getAcceptedAt() : request.getCreatedAt();
 	}
 
 	private static int waitingDays(ProgramStartup startup, LocalDate today) {
@@ -920,6 +1037,10 @@ public class CoordinatorProgramService {
 						.toList()));
 		Map<UUID, List<Mentorship>> mentorships = mentorshipRepository.findByOrganizationIdIn(organizationIds).stream()
 				.collect(Collectors.groupingBy(mentorship -> mentorship.getOrganization().getId()));
+		Map<UUID, List<MentorshipRequest>> acceptedRequests = mentorshipRequestRepository
+				.findByOrganizationIdInAndStatus(organizationIds, MentorshipRequestStatus.ACCEPTED)
+				.stream()
+				.collect(Collectors.groupingBy(request -> request.getOrganization().getId()));
 		Map<String, Instant> lastMeeting = new HashMap<>();
 		List<Meeting> meetings = meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds);
 		for (Meeting meeting : meetings) {
@@ -943,7 +1064,7 @@ public class CoordinatorProgramService {
 		return new Snapshot(today, now, coordinators, phases, teams, mentors, organizations, mentorships,
 				lastMeeting,
 				meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
-				openBottlenecks, overdue, formerTeams);
+				openBottlenecks, overdue, formerTeams, acceptedRequests);
 	}
 
 	/**
@@ -1125,7 +1246,8 @@ public class CoordinatorProgramService {
 	/**
 	 * Everything the summaries need, fetched once per call for a set of programs. {@code coordinators}: the
 	 * coordinator each program names, by program id. {@code formerTeams}: per program, the teams that made a
-	 * mentorship in it and have since left it (see {@link #programMentorships}).
+	 * mentorship in it and have since left it (see {@link #programMentorships}). {@code acceptedRequests}: each
+	 * team's accepted mentorship requests, by organization id (see {@link #acceptedRequestPairs}).
 	 */
 	public record Snapshot(
 			LocalDate today,
@@ -1140,7 +1262,27 @@ public class CoordinatorProgramService {
 			Map<UUID, List<Meeting>> meetingsByOrganization,
 			Map<UUID, List<Bottleneck>> openBottlenecks,
 			Set<UUID> overdueActionOrganizations,
-			Map<UUID, List<UUID>> formerTeams) {
+			Map<UUID, List<UUID>> formerTeams,
+			Map<UUID, List<MentorshipRequest>> acceptedRequests) {
+
+		/** A snapshot without accepted requests. */
+		public Snapshot(
+				LocalDate today,
+				Instant now,
+				Map<UUID, AppUser> coordinators,
+				Map<UUID, List<ProgramPhase>> phases,
+				Map<UUID, List<ProgramStartup>> startups,
+				Map<UUID, List<ProgramMentor>> mentors,
+				Map<UUID, Organization> organizations,
+				Map<UUID, List<Mentorship>> mentorships,
+				Map<String, Instant> lastMeetingByPair,
+				Map<UUID, List<Meeting>> meetingsByOrganization,
+				Map<UUID, List<Bottleneck>> openBottlenecks,
+				Set<UUID> overdueActionOrganizations,
+				Map<UUID, List<UUID>> formerTeams) {
+			this(today, now, coordinators, phases, startups, mentors, organizations, mentorships, lastMeetingByPair,
+					meetingsByOrganization, openBottlenecks, overdueActionOrganizations, formerTeams, Map.of());
+		}
 
 		/** A snapshot of programs that no team has left. */
 		public Snapshot(

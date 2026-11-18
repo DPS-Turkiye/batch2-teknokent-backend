@@ -38,6 +38,7 @@ import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipRequestFormat;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramEventKind;
@@ -665,6 +666,9 @@ class CoordinatorProgramServiceTest {
 		slow.setMentor(user(MENTOR_ID, UserRole.MENTOR));
 		slow.setCreatedAt(Instant.now().minus(5, ChronoUnit.DAYS));
 		when(mentorshipRequestRepository.findByOrganizationIdInAndStatus(anyCollection(),
+				eq(MentorshipRequestStatus.ACCEPTED)))
+				.thenReturn(List.of());
+		when(mentorshipRequestRepository.findByOrganizationIdInAndStatus(anyCollection(),
 				eq(MentorshipRequestStatus.PENDING)))
 				.thenReturn(List.of(slow));
 		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(anyCollection(), any(),
@@ -1066,6 +1070,9 @@ class CoordinatorProgramServiceTest {
 						mentorship(KAVUN_ID, MentorshipStatus.ACTIVE, today.minusDays(40))),
 				List.of(), List.of(), List.of());
 		when(mentorshipRequestRepository.findByOrganizationIdInAndStatus(anyCollection(),
+				eq(MentorshipRequestStatus.ACCEPTED)))
+				.thenReturn(List.of());
+		when(mentorshipRequestRepository.findByOrganizationIdInAndStatus(anyCollection(),
 				eq(MentorshipRequestStatus.PENDING)))
 				.thenReturn(List.of(
 						pendingRequest(MENTOR_ID, Instant.now().minus(1, ChronoUnit.DAYS)),
@@ -1117,6 +1124,248 @@ class CoordinatorProgramServiceTest {
 				.containsExactly("METU Stars 2026", "BİGG 2026");
 		assertThat(home.metrics().activeMentorships()).isEqualTo(1);
 		assertThat(home.metrics().mentoredTeams()).isEqualTo(1);
+	}
+
+	@Test
+	void anAcceptedRequestIsAnActiveMentorshipAndItsTeamNoLongerAwaitsAMatch() {
+		stubCoordinatorHome(program(COORDINATOR_ID));
+		stubProgramRows(List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 2), startup(KAVUN_ID, 3)), List.of(),
+				List.of());
+		stubTeamData(
+				List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"),
+						organization(KAVUN_ID, "Kavun")),
+				List.of(), List.of(), List.of(), List.of());
+		stubRequests(
+				acceptedRequest(TERRA_ID, MENTOR_ID, 3),
+				request(LUMEN_ID, MentorshipRequestStatus.DECLINED),
+				request(LUMEN_ID, MentorshipRequestStatus.PENDING),
+				request(LUMEN_ID, MentorshipRequestStatus.WITHDRAWN));
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		assertThat(home.metrics().activeMentorships()).isEqualTo(1);
+		assertThat(home.metrics().mentoredTeams()).isEqualTo(1);
+		assertThat(home.metrics().activeMentors()).isEqualTo(1);
+		assertThat(home.metrics().staleMentorships()).isZero();
+		assertThat(home.actions().awaitingTeams())
+				.extracting(CoordinatorOverviewResponse.AwaitingTeam::name)
+				.containsExactly("Kavun", "Lumen");
+	}
+
+	@Test
+	void aTeamAndItsMentorCountOnceWhateverMixOfMatchesAndAcceptedRequestsTheyHave() {
+		stubCoordinatorHome(program(COORDINATOR_ID));
+		stubProgramRows(List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 2)), List.of(), List.of());
+		stubTeamData(List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen")),
+				List.of(mentorship(TERRA_ID, MentorshipStatus.ACTIVE, today.minusDays(5))),
+				List.of(), List.of(), List.of());
+		stubRequests(
+				acceptedRequest(TERRA_ID, MENTOR_ID, 5),
+				acceptedRequest(LUMEN_ID, MENTOR_ID, 9),
+				acceptedRequest(LUMEN_ID, MENTOR_ID, 2),
+				acceptedRequest(LUMEN_ID, PENDING_MENTOR_ID, 2));
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		// Terra × mentor (a match and a request), Lumen × mentor (two requests), Lumen × the second mentor.
+		assertThat(home.metrics().activeMentorships()).isEqualTo(3);
+		assertThat(home.metrics().mentoredTeams()).isEqualTo(2);
+		assertThat(home.metrics().activeMentors()).isEqualTo(2);
+	}
+
+	@Test
+	void anArchivedTeamATeamThatLeftAndAnotherProgramsRequestDoNotCount() {
+		stubCoordinatorHome(program(COORDINATOR_ID));
+		stubProgramRows(List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 2)), List.of(), List.of());
+		Organization archived = organization(TERRA_ID, "Terra");
+		archived.setArchivedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+		Mentorship formerMatch = mentorship(KAVUN_ID, MentorshipStatus.COMPLETED, today.minusDays(60));
+		formerMatch.setProgram(programRef(PROGRAM_ID));
+		formerMatch.setUpdatedAt(Instant.now().minus(30, ChronoUnit.DAYS));
+		when(mentorshipRepository.findTeamsWithMentorshipIn(anyList()))
+				.thenReturn(List.of(programTeam(PROGRAM_ID, KAVUN_ID)));
+		stubTeamData(
+				List.of(archived, organization(LUMEN_ID, "Lumen"), organization(KAVUN_ID, "Kavun")),
+				List.of(formerMatch), List.of(), List.of(), List.of());
+		MentorshipRequest elsewhere = acceptedRequest(LUMEN_ID, MENTOR_ID, 2);
+		elsewhere.setProgram(programRef(UUID.randomUUID()));
+		stubRequests(acceptedRequest(TERRA_ID, MENTOR_ID, 2), elsewhere, acceptedRequest(KAVUN_ID, MENTOR_ID, 2));
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		assertThat(home.metrics().activeMentorships()).isZero();
+		assertThat(home.metrics().mentoredTeams()).isZero();
+		assertThat(home.metrics().activeMentors()).isZero();
+	}
+
+	@Test
+	void aRequestEndsWithItsHeldSingleMeetingItsLastPlannedSessionOrAMatchEndedAfterIt() {
+		UUID novaId = UUID.randomUUID();
+		stubCoordinatorHome(program(COORDINATOR_ID));
+		stubProgramRows(
+				List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 2), startup(KAVUN_ID, 3), startup(novaId, 4)),
+				List.of(), List.of());
+		MentorshipRequest single = acceptedRequest(TERRA_ID, MENTOR_ID, 10);
+		single.setMentorshipFormat(MentorshipRequestFormat.SINGLE_MEETING);
+		MentorshipRequest plannedTwo = acceptedRequest(LUMEN_ID, MENTOR_ID, 10);
+		plannedTwo.planSessions(2);
+		MentorshipRequest beforeKavunsMatchEnded = acceptedRequest(KAVUN_ID, MENTOR_ID, 10);
+		Mentorship kavunEnded = mentorship(KAVUN_ID, MentorshipStatus.COMPLETED, today.minusDays(10));
+		kavunEnded.setUpdatedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+		MentorshipRequest afterAnOldEnd = acceptedRequest(novaId, MENTOR_ID, 5);
+		Mentorship novaEndedBefore = mentorship(novaId, MentorshipStatus.COMPLETED, today.minusDays(200));
+		novaEndedBefore.setUpdatedAt(Instant.now().minus(100, ChronoUnit.DAYS));
+		Meeting cancelled = heldFor(plannedTwo, 3);
+		cancelled.setStatus(MeetingStatus.CANCELLED);
+		stubTeamData(
+				List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"),
+						organization(KAVUN_ID, "Kavun"), organization(novaId, "Nova")),
+				List.of(kavunEnded, novaEndedBefore),
+				List.of(heldFor(single, 2), heldFor(plannedTwo, 4), cancelled),
+				List.of(), List.of());
+		stubRequests(single, plannedTwo, beforeKavunsMatchEnded, afterAnOldEnd);
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		// Lumen has held one of its two planned sessions; Nova asked again after its old mentorship ended.
+		assertThat(home.metrics().activeMentorships()).isEqualTo(2);
+		assertThat(home.metrics().mentoredTeams()).isEqualTo(2);
+		assertThat(home.actions().awaitingTeams())
+				.extracting(CoordinatorOverviewResponse.AwaitingTeam::name)
+				.containsExactly("Kavun", "Terra");
+	}
+
+	@Test
+	void theLatestAcceptanceDecidesForAPairAndAPausedOrPlannedMatchDecidesInstead() {
+		UUID novaId = UUID.randomUUID();
+		stubCoordinatorHome(program(COORDINATOR_ID));
+		stubProgramRows(
+				List.of(startup(TERRA_ID, 30), startup(LUMEN_ID, 30), startup(KAVUN_ID, 30), startup(novaId, 30)),
+				List.of(), List.of());
+		MentorshipRequest openEnded = acceptedRequest(TERRA_ID, MENTOR_ID, 10);
+		MentorshipRequest laterSingle = acceptedRequest(TERRA_ID, MENTOR_ID, 5);
+		laterSingle.setMentorshipFormat(MentorshipRequestFormat.SINGLE_MEETING);
+		Mentorship lumenPaused = mentorship(LUMEN_ID, MentorshipStatus.PAUSED, today.minusDays(5));
+		lumenPaused.setUpdatedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+		MentorshipRequest undated = acceptedRequest(novaId, MENTOR_ID, 3);
+		undated.setAcceptedAt(null);
+		undated.planSessions(1);
+		Meeting upcoming = heldFor(undated, 0);
+		upcoming.setStatus(MeetingStatus.SCHEDULED);
+		upcoming.setScheduledAt(Instant.now().plus(2, ChronoUnit.DAYS));
+		stubTeamData(
+				List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"),
+						organization(KAVUN_ID, "Kavun"), organization(novaId, "Nova")),
+				List.of(lumenPaused, mentorship(KAVUN_ID, MentorshipStatus.PLANNED, today.minusDays(5))),
+				List.of(upcoming, heldFor(laterSingle, 1)),
+				List.of(), List.of());
+		stubRequests(openEnded, laterSingle, acceptedRequest(LUMEN_ID, MENTOR_ID, 5),
+				acceptedRequest(KAVUN_ID, MENTOR_ID, 5), undated);
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		// Terra's latest request was a single meeting, now held; Lumen's match was paused after its acceptance.
+		// Kavun counts once, through its planned match; Nova's only session is still to come.
+		assertThat(home.metrics().activeMentorships()).isEqualTo(2);
+		assertThat(home.metrics().mentoredTeams()).isEqualTo(2);
+		assertThat(home.metrics().staleMentorships()).isZero();
+	}
+
+	@Test
+	void aRequestWithNoProgramCountsOnceIfItWasAcceptedAfterItsTeamJoined() {
+		Program first = program(COORDINATOR_ID);
+		Program second = program(COORDINATOR_ID);
+		second.setId(UUID.randomUUID());
+		second.setName("BİGG 2026");
+		stubCoordinatorHome(first, second);
+		ProgramStartup terraInSecond = startup(TERRA_ID, 10);
+		terraInSecond.setProgramId(second.getId());
+		stubProgramRows(List.of(startup(TERRA_ID, 10), terraInSecond, startup(LUMEN_ID, 2)), List.of(), List.of());
+		stubTeamData(List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen")),
+				List.of(), List.of(), List.of(), List.of());
+		MentorshipRequest terraRequest = acceptedRequest(TERRA_ID, MENTOR_ID, 3);
+		terraRequest.setProgram(null);
+		MentorshipRequest earlierCohort = acceptedRequest(LUMEN_ID, MENTOR_ID, 30);
+		earlierCohort.setProgram(null);
+		stubRequests(terraRequest, earlierCohort);
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		assertThat(home.metrics().activeMentorships()).isEqualTo(1);
+		assertThat(home.metrics().mentoredTeams()).isEqualTo(1);
+		assertThat(home.actions().awaitingTeams())
+				.extracting(CoordinatorOverviewResponse.AwaitingTeam::name)
+				.containsExactly("Lumen");
+	}
+
+	@Test
+	void aRequestBasedPairGoesStaleOnceItHasNotMetForTheProgramsThreshold() {
+		UUID novaId = UUID.randomUUID();
+		Program program = program(COORDINATOR_ID);
+		program.setStaleAfterDays(21);
+		stubCoordinatorHome(program);
+		stubProgramRows(
+				List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 2), startup(KAVUN_ID, 3), startup(novaId, 4)),
+				List.of(), List.of());
+		stubTeamData(
+				List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"),
+						organization(KAVUN_ID, "Kavun"), organization(novaId, "Nova")),
+				List.of(),
+				List.of(meeting(LUMEN_ID, 3), meeting(KAVUN_ID, 30)),
+				List.of(), List.of());
+		stubRequests(
+				// Never met since the acceptance 21 days ago: stale.
+				acceptedRequest(TERRA_ID, MENTOR_ID, 21),
+				// Met three days ago: fine, however old the acceptance.
+				acceptedRequest(LUMEN_ID, MENTOR_ID, 40),
+				// Last met 30 days ago: stale.
+				acceptedRequest(KAVUN_ID, MENTOR_ID, 40),
+				// Accepted 20 days ago, no meeting yet: not yet.
+				acceptedRequest(novaId, MENTOR_ID, 20));
+
+		var home = service.overview(COORDINATOR_ID, null);
+
+		assertThat(home.metrics().activeMentorships()).isEqualTo(4);
+		assertThat(home.metrics().staleMentorships()).isEqualTo(2);
+	}
+
+	@Test
+	void theProgramCardCountsAcceptedRequestsAndRatesTheirHealth() {
+		Program program = program(COORDINATOR_ID);
+		program.setStaleAfterDays(21);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 2)), List.of(), List.of());
+		stubTeamData(List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen")),
+				List.of(), List.of(meeting(LUMEN_ID, 2)), List.of(), List.of());
+		stubRequests(acceptedRequest(TERRA_ID, MENTOR_ID, 40), acceptedRequest(LUMEN_ID, MENTOR_ID, 40));
+
+		var detail = service.detail(COORDINATOR_ID, PROGRAM_ID);
+
+		assertThat(detail.program().activeMentorshipCount()).isEqualTo(2);
+		assertThat(detail.program().riskyMentorshipCount()).isEqualTo(1);
+		assertThat(detail.program().awaitingMatchCount()).isZero();
+		assertThat(detail.health().risky()).isEqualTo(1);
+		assertThat(detail.health().healthy()).isEqualTo(1);
+		assertThat(detail.teams().mentored()).isEqualTo(2);
+		assertThat(detail.awaitingTeams()).isEmpty();
+	}
+
+	@Test
+	void aCompletedProgramsAcceptedRequestsNoLongerCount() {
+		Program program = program(COORDINATOR_ID);
+		program.setStatus(ProgramStatus.COMPLETED);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(startup(TERRA_ID, 1), startup(LUMEN_ID, 2)), List.of(), List.of());
+		stubTeamData(List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen")),
+				List.of(mentorship(LUMEN_ID, MentorshipStatus.ACTIVE, today.minusDays(5))),
+				List.of(), List.of(), List.of());
+		stubRequests(acceptedRequest(TERRA_ID, MENTOR_ID, 5));
+
+		var detail = service.detail(COORDINATOR_ID, PROGRAM_ID);
+
+		assertThat(detail.program().activeMentorshipCount()).isEqualTo(1);
+		assertThat(detail.awaitingTeams()).extracting(CoordinatorProgramResponse.AwaitingTeam::name)
+				.containsExactly("Terra");
 	}
 
 	@Test
@@ -1544,6 +1793,48 @@ class CoordinatorProgramServiceTest {
 		request.setMentor(user(mentorId, UserRole.MENTOR));
 		request.setCreatedAt(createdAt);
 		return request;
+	}
+
+	/** The repository's answer by status, as the database would give it. */
+	private void stubRequests(MentorshipRequest... requests) {
+		List<MentorshipRequest> all = List.of(requests);
+		when(mentorshipRequestRepository.findByOrganizationIdInAndStatus(anyCollection(), any()))
+				.thenAnswer(invocation -> all.stream()
+						.filter(request -> request.getStatus() == invocation.getArgument(1))
+						.toList());
+	}
+
+	private static MentorshipRequest acceptedRequest(UUID organizationId, UUID mentorId, int daysAgo) {
+		MentorshipRequest request = request(organizationId, MentorshipRequestStatus.ACCEPTED);
+		request.setMentor(user(mentorId, UserRole.MENTOR));
+		Instant acceptedAt = Instant.now().minus(daysAgo, ChronoUnit.DAYS);
+		request.setCreatedAt(acceptedAt.minus(1, ChronoUnit.DAYS));
+		request.setAcceptedAt(acceptedAt);
+		return request;
+	}
+
+	private static MentorshipRequest request(UUID organizationId, MentorshipRequestStatus status) {
+		MentorshipRequest request = new MentorshipRequest();
+		request.setId(UUID.randomUUID());
+		request.setOrganization(organization(organizationId, "Takım"));
+		request.setMentor(user(MENTOR_ID, UserRole.MENTOR));
+		request.setProgram(programRef(PROGRAM_ID));
+		request.setStatus(status);
+		request.setMentorshipFormat(MentorshipRequestFormat.REGULAR);
+		request.setCreatedAt(Instant.now());
+		return request;
+	}
+
+	private static Meeting heldFor(MentorshipRequest request, int daysAgo) {
+		Meeting meeting = held(request.getOrganization().getId(), daysAgo);
+		meeting.setMentorshipRequest(request);
+		return meeting;
+	}
+
+	private static Program programRef(UUID id) {
+		Program program = new Program();
+		program.setId(id);
+		return program;
 	}
 
 	private static ProgramCoordinator coordinatorRow(UUID userId) {
