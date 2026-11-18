@@ -12,6 +12,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -58,6 +60,12 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
+	/**
+	 * Where the caller is kept for the rest of the request, as BasicAuthenticationFilter keeps its own. This filter
+	 * skips the error dispatch, so without it an unhandled exception's error page would run anonymous and answer
+	 * 401, which the frontend reads as "signed out".
+	 */
+	private final SecurityContextRepository contextRepository = new RequestAttributeSecurityContextRepository();
 
 	@Override
 	protected void doFilterInternal(
@@ -89,7 +97,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		}
 
 		if (isPreAccountPath(request.getRequestURI())) {
-			authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+			authenticate(request, response, identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
 			filterChain.doFilter(request, response);
 			return;
 		}
@@ -108,7 +116,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 					write(response, HttpServletResponse.SC_FORBIDDEN, "Verify your e-mail address first");
 					return;
 				}
-				authenticate(identity.get(), List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
+				authenticate(request, response, identity.get(),
+						List.of(new SimpleGrantedAuthority("ROLE_REGISTERING")));
 				filterChain.doFilter(request, response);
 				return;
 			}
@@ -140,7 +149,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 		Set<UserRole> permissions = user.activePermissions();
 		AppUserPrincipal principal = new AppUserPrincipal(
 				user.getId(), user.getEmail(), user.getRole(), permissions, user.getStatus(), user.getFirebaseUid());
-		authenticate(principal, permissions.stream()
+		authenticate(request, response, principal, permissions.stream()
 				.<GrantedAuthority>map(permission -> new SimpleGrantedAuthority("ROLE_" + permission.name()))
 				.toList());
 		filterChain.doFilter(request, response);
@@ -248,9 +257,11 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 						|| uri.startsWith(PROFILE_PARSE_PREVIEW_PATH + "/documents/"));
 	}
 
-	private static void authenticate(Object principal, List<GrantedAuthority> authorities) {
+	private void authenticate(HttpServletRequest request, HttpServletResponse response, Object principal,
+			List<GrantedAuthority> authorities) {
 		SecurityContextHolder.getContext().setAuthentication(
 				UsernamePasswordAuthenticationToken.authenticated(principal, "firebase", authorities));
+		contextRepository.saveContext(SecurityContextHolder.getContext(), request, response);
 	}
 
 	private static void write(HttpServletResponse response, int status, String message) throws IOException {
