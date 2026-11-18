@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
@@ -94,14 +95,24 @@ public class ProgramWeekPlanService {
 				specialDays.findByProgramIdOrderByDateAsc(program.getId()));
 	}
 
+	/**
+	 * Saved past special days stay. A past one from the file is used only where the saved plan keeps nothing: not on
+	 * a saved past day's date and not inside a kept week ({@code keptWeeks}), so a first save keeps the file's past.
+	 */
 	List<ReplaceProgramWeeksRequest.SpecialDayInput> keepPastSpecialDays(UUID programId,
-			List<ReplaceProgramWeeksRequest.SpecialDayInput> proposed, LocalDate today) {
+			List<ReplaceProgramWeeksRequest.SpecialDayInput> proposed, List<ProgramSchedule.Dates> keptWeeks,
+			LocalDate today) {
 		List<ReplaceProgramWeeksRequest.SpecialDayInput> kept = new ArrayList<>();
 		specialDays.findByProgramIdOrderByDateAsc(programId).stream().filter(day -> day.getDate().isBefore(today))
 				.map(day -> new ReplaceProgramWeeksRequest.SpecialDayInput(day.getDate(), day.getStartTime(),
 						day.getEndTime(), day.getPlace(), day.getTitle(), ProgramWeek.lines(day.getDetails())))
 				.forEach(kept::add);
-		proposed.stream().filter(day -> !day.date().isBefore(today)).forEach(kept::add);
+		Set<LocalDate> keptDates = kept.stream().map(ReplaceProgramWeeksRequest.SpecialDayInput::date)
+				.collect(Collectors.toSet());
+		proposed.stream()
+				.filter(day -> !day.date().isBefore(today) || (!keptDates.contains(day.date())
+						&& keptWeeks.stream().noneMatch(week -> week.contains(day.date()))))
+				.forEach(kept::add);
 		return kept;
 	}
 

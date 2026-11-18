@@ -15,6 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -139,9 +140,11 @@ public class WeeklyProgramService {
 						savedIds.get(nameKey(phase.name()))))
 				.toList();
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = request.weeks();
+		List<ProgramSchedule.Dates> keptWeekDays = List.of();
 		if (request.keepPast()) {
 			phases = keepCompletedPhases(savedPhases, phases, today);
 			weeks = keepPastWeeks(program, savedWeeks, weeks, today);
+			keptWeekDays = pastWeekDays(program, savedWeeks, today);
 		}
 		if (phases.size() > WeeklyProgramPhases.MAX_PHASES) {
 			throw new InvalidRequestException("A program has at most " + WeeklyProgramPhases.MAX_PHASES + " phases.");
@@ -151,7 +154,7 @@ public class WeeklyProgramService {
 		ProgramWeekPlanResponse plan = programWeekPlanService.writeWeeks(program, actorId, weeks);
 		if (request.specialDays() != null) {
 			List<ReplaceProgramWeeksRequest.SpecialDayInput> events = request.keepPast()
-					? programWeekPlanService.keepPastSpecialDays(programId, request.specialDays(), today)
+					? programWeekPlanService.keepPastSpecialDays(programId, request.specialDays(), keptWeekDays, today)
 					: request.specialDays();
 			programWeekPlanService.writeSpecialDays(program, actorId, events);
 			plan = programWeekPlanService.plan(actorId, programId);
@@ -206,22 +209,27 @@ public class WeeklyProgramService {
 	}
 
 	/**
-	 * Completed phases (ended before today) stay as saved. New phases that ended before today are dropped, and one
-	 * that runs into today starts after the last kept phase.
+	 * Completed phases (ended before today) stay as saved. A finished phase from the file fills only a stretch no
+	 * completed phase covers (a first save, or a saved plan that starts later), and one that runs into today starts
+	 * after the last kept phase.
 	 */
 	static List<ReplaceProgramPhasesRequest.PhaseInput> keepCompletedPhases(List<ProgramPhase> saved,
 			List<ReplaceProgramPhasesRequest.PhaseInput> proposed, LocalDate today) {
-		List<ReplaceProgramPhasesRequest.PhaseInput> phases = new ArrayList<>();
+		List<ReplaceProgramPhasesRequest.PhaseInput> completed = new ArrayList<>();
 		LocalDate keptUntil = null;
 		for (ProgramPhase phase : saved) {
 			if (phase.getEndDate() != null && phase.getEndDate().isBefore(today)) {
-				phases.add(new ReplaceProgramPhasesRequest.PhaseInput(phase.getName(), phase.getStartDate(),
+				completed.add(new ReplaceProgramPhasesRequest.PhaseInput(phase.getName(), phase.getStartDate(),
 						phase.getEndDate(), phase.getExpectedOutput(), phase.getId()));
 				keptUntil = keptUntil == null || phase.getEndDate().isAfter(keptUntil) ? phase.getEndDate() : keptUntil;
 			}
 		}
+		List<ReplaceProgramPhasesRequest.PhaseInput> phases = new ArrayList<>(completed);
 		for (ReplaceProgramPhasesRequest.PhaseInput phase : proposed) {
 			if (phase.endDate().isBefore(today)) {
+				if (completed.stream().noneMatch(kept -> sameOrOverlapping(kept, phase))) {
+					phases.add(phase);
+				}
 				continue;
 			}
 			LocalDate start = keptUntil != null && !phase.startDate().isAfter(keptUntil)
@@ -233,37 +241,55 @@ public class WeeklyProgramService {
 			phases.add(new ReplaceProgramPhasesRequest.PhaseInput(phase.name(), start, phase.endDate(),
 					phase.expectedOutput(), phase.id()));
 		}
+		// The phases are written in this order, and a filled gap can sit before a kept phase.
+		phases.sort(Comparator.comparing(ReplaceProgramPhasesRequest.PhaseInput::startDate,
+				Comparator.nullsFirst(Comparator.naturalOrder())));
 		return phases;
 	}
 
-	/** Saved weeks before the current one stay; the new plan fills the current week and those after it. */
+	/** The file's phase is a kept one (the same saved phase by name), or shares days with it. */
+	private static boolean sameOrOverlapping(ReplaceProgramPhasesRequest.PhaseInput kept,
+			ReplaceProgramPhasesRequest.PhaseInput phase) {
+		if (phase.id() != null && phase.id().equals(kept.id())) {
+			return true;
+		}
+		return !phase.startDate().isAfter(kept.endDate())
+				&& (kept.startDate() == null || !phase.endDate().isBefore(kept.startDate()));
+	}
+
+	/**
+	 * Saved weeks that are over stay as they are. Every other week comes from the file, a past one too when the saved
+	 * plan has no week of that number: "keep the past" keeps what was saved, it does not drop what never was.
+	 */
 	static List<ReplaceProgramWeeksRequest.WeekInput> keepPastWeeks(Program program, List<ProgramWeek> saved,
 			List<ReplaceProgramWeeksRequest.WeekInput> proposed, LocalDate today) {
-		ProgramSchedule schedule = ProgramSchedule.of(program.getStartDate(), program.getEndDate(), saved);
 		List<ReplaceProgramWeeksRequest.WeekInput> weeks = new ArrayList<>();
-		Set<Integer> kept = new LinkedHashSet<>();
-		for (ProgramWeek week : saved) {
-			if (schedule.isPast(week.getWeekNumber(), today)) {
-				kept.add(week.getWeekNumber());
-				weeks.add(new ReplaceProgramWeeksRequest.WeekInput(week.getWeekNumber(), week.getTitle(),
-						ProgramWeek.lines(week.getTopics()), ProgramWeek.lines(week.getActivities()),
-						ProgramWeek.lines(week.getDeliverables()), week.isInferred(), week.getStartDate(),
-						week.getEndDate(),
-						week.getSessions().stream().map(session -> new ReplaceProgramWeeksRequest.SessionInput(
-								session.getDate(), session.getStartTime(), session.getEndTime(), session.getPlace(),
-								session.getTitle())).toList()));
-			}
+		Set<Integer> kept = new HashSet<>();
+		ProgramSchedule schedule = ProgramSchedule.of(program.getStartDate(), program.getEndDate(), saved);
+		for (ProgramWeek week : pastWeeks(schedule, saved, today)) {
+			kept.add(week.getWeekNumber());
+			weeks.add(new ReplaceProgramWeeksRequest.WeekInput(week.getWeekNumber(), week.getTitle(),
+					ProgramWeek.lines(week.getTopics()), ProgramWeek.lines(week.getActivities()),
+					ProgramWeek.lines(week.getDeliverables()), week.isInferred(), week.getStartDate(),
+					week.getEndDate(),
+					week.getSessions().stream().map(session -> new ReplaceProgramWeeksRequest.SessionInput(
+							session.getDate(), session.getStartTime(), session.getEndTime(), session.getPlace(),
+							session.getTitle())).toList()));
 		}
-		for (ReplaceProgramWeeksRequest.WeekInput week : proposed) {
-			LocalDate end = week.endDate() != null ? week.endDate()
-					: ProgramCalendar.weekEnd(program.getStartDate(), program.getEndDate(), week.week());
-			boolean futureSession = week.sessions() != null
-					&& week.sessions().stream().anyMatch(session -> !session.date().isBefore(today));
-			if (!kept.contains(week.week()) && (!end.isBefore(today) || futureSession)) {
-				weeks.add(week);
-			}
-		}
+		proposed.stream().filter(week -> !kept.contains(week.week())).forEach(weeks::add);
+		weeks.sort(Comparator.comparingInt(ReplaceProgramWeeksRequest.WeekInput::week));
 		return weeks;
+	}
+
+	/** The days of the saved weeks a keep-past save keeps; the file's past special days inside them are not used. */
+	static List<ProgramSchedule.Dates> pastWeekDays(Program program, List<ProgramWeek> saved, LocalDate today) {
+		ProgramSchedule schedule = ProgramSchedule.of(program.getStartDate(), program.getEndDate(), saved);
+		return pastWeeks(schedule, saved, today).stream()
+				.flatMap(week -> Stream.ofNullable(schedule.datesOf(week.getWeekNumber()))).toList();
+	}
+
+	private static List<ProgramWeek> pastWeeks(ProgramSchedule schedule, List<ProgramWeek> saved, LocalDate today) {
+		return saved.stream().filter(week -> schedule.isPast(week.getWeekNumber(), today)).toList();
 	}
 
 	static @Nullable Integer firstReplacedWeek(Program program, List<ProgramWeek> saved, LocalDate today) {
