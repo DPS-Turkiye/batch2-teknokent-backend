@@ -1,10 +1,12 @@
 package com.dps.teknokent.service;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,9 +17,11 @@ import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekResponse;
+import com.dps.teknokent.dto.responses.ProgramWeeksSoFarResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramPhase;
+import com.dps.teknokent.entity.ProgramSpecialDay;
 import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ProgramMentorRepository;
@@ -33,8 +37,9 @@ import com.dps.teknokent.util.Texts;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The current week of a participant's program and the syllabus phases in it. Open to the program's approved mentees
- * (a startup's members or an individual student) and its accepted mentors; nobody else.
+ * The current week of a participant's program and the syllabus phases in it, and the weeks of its plan reached so far.
+ * Open to the program's approved mentees (a startup's members or an individual student) and its accepted mentors;
+ * nobody else. A week that has not begun is never sent to them.
  */
 @Service
 @RequiredArgsConstructor
@@ -54,7 +59,107 @@ public class ProgramWeekService {
 		return weekOf(actorId, programId, LocalDate.now(MeetingSlotTimes.APP_ZONE));
 	}
 
-	ProgramWeekResponse weekOf(UUID actorId, UUID requestedProgramId, LocalDate today) {
+	ProgramWeekResponse weekOf(UUID actorId, @Nullable UUID requestedProgramId, LocalDate today) {
+		Program program = requireParticipantProgram(actorId, requestedProgramId);
+		UUID programId = program.getId();
+		ProgramWeekResponse response = build(program,
+				programPhaseRepository.findByProgramIdOrderByPositionAsc(programId),
+				programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId), today);
+		List<ProgramWeekPlanResponse.SpecialDay> todayEvents = specialDays.findByProgramIdOrderByDateAsc(programId)
+				.stream()
+				.filter(day -> day.getDate().equals(today)).map(ProgramWeekPlanService::specialDayOf).toList();
+		return new ProgramWeekResponse(response.programId(), response.programName(), response.programStart(),
+				response.programEnd(),
+				response.week(), response.totalWeeks(), response.weekStart(), response.weekEnd(),
+				todayEvents.isEmpty() && response.notStarted(), todayEvents.isEmpty() && response.ended(),
+				response.hasSyllabus() || !todayEvents.isEmpty(), response.plan(), response.phases(), todayEvents);
+	}
+
+	/**
+	 * "Geçmiş haftalar" on Süreç: the saved weeks the caller's program has reached, up to the running one. Open to the
+	 * same people as {@link #thisWeek}.
+	 */
+	@Transactional(readOnly = true)
+	public ProgramWeeksSoFarResponse weeksSoFar(UUID actorId, @Nullable UUID programId) {
+		return weeksSoFar(actorId, programId, LocalDate.now(MeetingSlotTimes.APP_ZONE));
+	}
+
+	ProgramWeeksSoFarResponse weeksSoFar(UUID actorId, @Nullable UUID requestedProgramId, LocalDate today) {
+		Program program = requireParticipantProgram(actorId, requestedProgramId);
+		return reached(program, programWeekRepository.findByProgramIdOrderByWeekNumberAsc(program.getId()),
+				specialDays.findByProgramIdOrderByDateAsc(program.getId()), today);
+	}
+
+	/**
+	 * The saved weeks that have begun by {@code today}, each with its sessions and special days. A week is in once its
+	 * own first day has come; a session dated today does not open a later week early, as it may for "Bu hafta". In a
+	 * plan that prints dates, a week without its own has no first day to go by (the program calendar's is not the
+	 * syllabus's), so it is in once a later printed week has begun or the program has ended. Nothing dated after the
+	 * running week's last day goes out, because a session or special day of an earlier week can still lie ahead.
+	 */
+	static ProgramWeeksSoFarResponse reached(Program program, List<ProgramWeek> plan, List<ProgramSpecialDay> days,
+			LocalDate today) {
+		LocalDate start = program.getStartDate();
+		LocalDate end = program.getEndDate();
+		ProgramSchedule schedule = ProgramSchedule.of(start, end, plan);
+		boolean printsDates = plan.stream().anyMatch(item -> schedule.printed(item.getWeekNumber()));
+		boolean over = end != null && today.isAfter(end);
+		Integer running = schedule.weekOn(today);
+		ProgramSchedule.Dates runningDates = running == null ? null : schedule.datesOf(running);
+		Integer current = runningDates != null && startedBy(runningDates, today) ? running : null;
+		LocalDate horizon = current != null && runningDates != null && runningDates.end().isAfter(today)
+				? runningDates.end()
+				: today;
+		List<ProgramWeeksSoFarResponse.Week> weeks = new ArrayList<>();
+		for (ProgramWeek item : plan) {
+			int number = item.getWeekNumber();
+			ProgramSchedule.Dates dates = schedule.datesOf(number);
+			boolean undated = printsDates && !schedule.printed(number);
+			boolean begun = undated
+					? over || laterPrintedWeekBegun(schedule, plan, number, today)
+					: startedBy(dates, today);
+			if (!begun) {
+				continue;
+			}
+			ProgramWeekPlanResponse.Week week = ProgramWeekPlanService.weekOf(item, start, end);
+			List<ProgramWeekPlanResponse.Session> sessions = week.sessions().stream()
+					.filter(session -> !session.date().isAfter(horizon))
+					.toList();
+			List<ProgramWeekPlanResponse.SpecialDay> inWeek = dates == null ? List.of()
+					: specialDaysIn(days, dates, horizon);
+			weeks.add(new ProgramWeeksSoFarResponse.Week(new ProgramWeekPlanResponse.Week(week.week(),
+					week.startDate(), week.endDate(), week.datesFromSource(), week.title(), week.topics(),
+					week.activities(), week.deliverables(), week.inferred(), sessions),
+					current != null && current == number, inWeek));
+		}
+		return new ProgramWeeksSoFarResponse(program.getId(), program.getName(), current, weeks);
+	}
+
+	private static boolean laterPrintedWeekBegun(ProgramSchedule schedule, List<ProgramWeek> plan, int week,
+			LocalDate today) {
+		return plan.stream().map(ProgramWeek::getWeekNumber)
+				.anyMatch(
+						later -> later > week && schedule.printed(later) && startedBy(schedule.datesOf(later), today));
+	}
+
+	private static boolean startedBy(ProgramSchedule.@Nullable Dates week, LocalDate today) {
+		return week != null && !week.start().isAfter(today);
+	}
+
+	private static List<ProgramWeekPlanResponse.SpecialDay> specialDaysIn(List<ProgramSpecialDay> days,
+			ProgramSchedule.Dates week, LocalDate horizon) {
+		return days.stream()
+				.filter(day -> !day.getDate().isBefore(week.start()) && !day.getDate().isAfter(week.end())
+						&& !day.getDate().isAfter(horizon))
+				.map(ProgramWeekPlanService::specialDayOf)
+				.toList();
+	}
+
+	/**
+	 * The program {@code requestedProgramId} names (a mentee's own when left out), once the caller is an approved
+	 * participant of it: one of its mentees, or a mentor it accepted. Anyone else gets 403; a mentee in no program 404.
+	 */
+	private Program requireParticipantProgram(UUID actorId, @Nullable UUID requestedProgramId) {
 		AppUser caller = domainLookupService.requireUser(actorId);
 		Optional<UUID> ownProgram = caller.has(UserRole.MENTEE)
 				? menteeProgramService.programOf(caller)
@@ -67,19 +172,8 @@ public class ProgramWeekService {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN,
 					Texts.forRequest("error.programWeekParticipantsOnly"));
 		}
-		Program program = programRepository.findById(programId)
+		return programRepository.findById(programId)
 				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
-		ProgramWeekResponse response = build(program,
-				programPhaseRepository.findByProgramIdOrderByPositionAsc(programId),
-				programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId), today);
-		List<ProgramWeekPlanResponse.SpecialDay> todayEvents = specialDays.findByProgramIdOrderByDateAsc(programId)
-				.stream()
-				.filter(day -> day.getDate().equals(today)).map(ProgramWeekPlanService::specialDayOf).toList();
-		return new ProgramWeekResponse(response.programId(), response.programName(), response.programStart(),
-				response.programEnd(),
-				response.week(), response.totalWeeks(), response.weekStart(), response.weekEnd(),
-				todayEvents.isEmpty() && response.notStarted(), todayEvents.isEmpty() && response.ended(),
-				response.hasSyllabus() || !todayEvents.isEmpty(), response.plan(), response.phases(), todayEvents);
 	}
 
 	static ProgramWeekResponse build(Program program, List<ProgramPhase> phases, List<ProgramWeek> plan,

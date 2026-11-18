@@ -18,9 +18,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.ProgramEventKind;
@@ -28,7 +30,9 @@ import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.dto.responses.MemberProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
+import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekResponse;
+import com.dps.teknokent.dto.responses.ProgramWeeksSoFarResponse;
 import com.dps.teknokent.service.ProgramCalendarService;
 import com.dps.teknokent.service.ProgramService;
 import com.dps.teknokent.service.ProgramWeekService;
@@ -86,6 +90,44 @@ class ProgramControllerTest {
 	void theWeekNeedsSomeoneToAskFor() throws Exception {
 		mockMvc.perform(get("/api/programs/mine/this-week").with(user("test-user")))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void givesTheCallerTheWeeksTheirProgramHasReached() throws Exception {
+		ProgramWeekPlanResponse.Week first = new ProgramWeekPlanResponse.Week(1, null, null, "Tanışma", List.of("Ekip"),
+				List.of("Workshop: Keşif"), List.of(), false);
+		when(programWeekService.weeksSoFar(ACTOR_ID, PROGRAM_ID)).thenReturn(new ProgramWeeksSoFarResponse(PROGRAM_ID,
+				"Seed 2026", 1, List.of(new ProgramWeeksSoFarResponse.Week(first, true, List.of()))));
+
+		mockMvc.perform(get("/api/programs/mine/weeks")
+				.param("programId", PROGRAM_ID.toString())
+				.param("actorId", ACTOR_ID.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.currentWeek").value(1))
+				.andExpect(jsonPath("$.weeks[0].current").value(true))
+				.andExpect(jsonPath("$.weeks[0].plan.title").value("Tanışma"))
+				.andExpect(jsonPath("$.weeks[0].plan.activities[0]").value("Workshop: Keşif"));
+	}
+
+	@Test
+	void theWeeksSoFarAreRefusedToSomeoneOutsideTheProgram() throws Exception {
+		when(programWeekService.weeksSoFar(ACTOR_ID, PROGRAM_ID))
+				.thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Yalnızca programın katılımcıları"));
+
+		mockMvc.perform(get("/api/programs/mine/weeks")
+				.param("programId", PROGRAM_ID.toString())
+				.param("actorId", ACTOR_ID.toString())
+				.with(user("test-user")))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void theWeeksSoFarNeedSomeoneToAskForAndASignedInCaller() throws Exception {
+		mockMvc.perform(get("/api/programs/mine/weeks").with(user("test-user")))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(get("/api/programs/mine/weeks").param("actorId", ACTOR_ID.toString()))
+				.andExpect(status().isUnauthorized());
 	}
 
 	@Test

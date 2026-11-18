@@ -19,11 +19,14 @@ import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekResponse;
+import com.dps.teknokent.dto.responses.ProgramWeeksSoFarResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
 import com.dps.teknokent.entity.ProgramPhase;
+import com.dps.teknokent.entity.ProgramSpecialDay;
 import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.entity.ProgramWeekSession;
 import com.dps.teknokent.exception.ResourceNotFoundException;
@@ -46,6 +49,7 @@ class ProgramWeekServiceTest {
 	private final ProgramPhaseRepository phases = mock(ProgramPhaseRepository.class);
 	private final ProgramMentorRepository programMentors = mock(ProgramMentorRepository.class);
 	private final ProgramWeekRepository weeks = mock(ProgramWeekRepository.class);
+	private final ProgramSpecialDayRepository specialDays = mock(ProgramSpecialDayRepository.class);
 	private ProgramWeekService service;
 
 	private Program program;
@@ -57,8 +61,7 @@ class ProgramWeekServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new ProgramWeekService(lookup, menteePrograms, programs, phases, programMentors, weeks,
-				mock(ProgramSpecialDayRepository.class));
+		service = new ProgramWeekService(lookup, menteePrograms, programs, phases, programMentors, weeks, specialDays);
 		program = new Program();
 		program.setId(PROGRAM_ID);
 		program.setName("İŞKUR Gençlik Programı");
@@ -255,6 +258,210 @@ class ProgramWeekServiceTest {
 				.isInstanceOf(ResourceNotFoundException.class);
 	}
 
+	@Test
+	void pastWeeksStopAtTheRunningWeekAndTheNextOneAppearsOnItsFirstDay() {
+		List<ProgramWeek> plan = List.of(week(1, "Tanışma"), week(2, "Görüşmeler"), week(3, "Prototip"));
+
+		ProgramWeeksSoFarResponse dayBefore = ProgramWeekService.reached(program, plan, List.of(),
+				LocalDate.of(2026, 10, 11));
+		assertThat(dayBefore.currentWeek()).isEqualTo(1);
+		assertThat(dayBefore.weeks()).extracting(week -> week.plan().week()).containsExactly(1);
+
+		ProgramWeeksSoFarResponse firstDay = ProgramWeekService.reached(program, plan, List.of(),
+				LocalDate.of(2026, 10, 12));
+		assertThat(firstDay.currentWeek()).isEqualTo(2);
+		assertThat(firstDay.weeks()).extracting(week -> week.plan().week()).containsExactly(1, 2);
+		assertThat(firstDay.weeks()).extracting(ProgramWeeksSoFarResponse.Week::current).containsExactly(false, true);
+		assertThat(firstDay.weeks().get(0).plan().title()).isEqualTo("Tanışma");
+		assertThat(firstDay.weeks().get(0).plan().topics()).containsExactly("Problem tanımı", "Hedef kitle");
+		assertThat(firstDay.weeks().get(0).plan().activities()).containsExactly("Görüşme planı yap");
+		assertThat(firstDay.weeks().get(0).plan().deliverables()).containsExactly("5 görüşme notu");
+		assertThat(firstDay.weeks().get(0).plan().startDate()).isEqualTo(START);
+		assertThat(firstDay.weeks().get(0).plan().endDate()).isEqualTo(LocalDate.of(2026, 10, 11));
+	}
+
+	@Test
+	void aWeeksWorkshopIsSentOnlyFromTheDayItsWeekStarts() {
+		ProgramWeek second = printedWeek(2, "2026-11-03", "2026-11-09");
+		ProgramWeek third = printedWeek(3, "2026-11-10", "2026-11-16");
+		third.setActivities("Workshop: Müşteri keşfi");
+		third.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 11, 12), null, null, null,
+				"Workshop: Müşteri keşfi"));
+		List<ProgramWeek> plan = List.of(second, third);
+
+		ProgramWeeksSoFarResponse lastDayOfWeekTwo = ProgramWeekService.reached(program, plan, List.of(),
+				LocalDate.of(2026, 11, 9));
+		assertThat(lastDayOfWeekTwo.weeks()).extracting(week -> week.plan().week()).containsExactly(2);
+		assertThat(lastDayOfWeekTwo.weeks()).flatExtracting(week -> week.plan().sessions()).isEmpty();
+		assertThat(lastDayOfWeekTwo.weeks()).flatExtracting(week -> week.plan().activities())
+				.doesNotContain("Workshop: Müşteri keşfi");
+
+		ProgramWeeksSoFarResponse weekThreeStarts = ProgramWeekService.reached(program, plan, List.of(),
+				LocalDate.of(2026, 11, 10));
+		assertThat(weekThreeStarts.currentWeek()).isEqualTo(3);
+		assertThat(weekThreeStarts.weeks().getLast().plan().sessions())
+				.extracting(ProgramWeekPlanResponse.Session::date).containsExactly(LocalDate.of(2026, 11, 12));
+		assertThat(weekThreeStarts.weeks().getLast().plan().activities()).containsExactly("Workshop: Müşteri keşfi");
+	}
+
+	@Test
+	void nothingDatedAfterTheRunningWeekLeavesEvenFromAnEarlierWeek() {
+		ProgramWeek first = printedWeek(1, "2026-10-05", "2026-10-11");
+		first.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 10, 6), null, null, null, "Açılış"));
+		first.getSessions()
+				.add(new ProgramWeekSession(LocalDate.of(2026, 11, 20), null, null, null, "Sonraki ziyaret"));
+		ProgramWeek second = printedWeek(2, "2026-10-12", "2026-10-18");
+		List<ProgramSpecialDay> days = List.of(specialDay("2026-10-08", "Bootcamp"), specialDay("2026-10-17", "Prova"),
+				specialDay("2026-10-20", "Demo Günü"));
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program, List.of(first, second), days,
+				LocalDate.of(2026, 10, 13));
+
+		assertThat(response.weeks().get(0).plan().sessions()).extracting(ProgramWeekPlanResponse.Session::title)
+				.containsExactly("Açılış");
+		assertThat(response.weeks().get(0).specialDays()).extracting(ProgramWeekPlanResponse.SpecialDay::title)
+				.containsExactly("Bootcamp");
+		assertThat(response.weeks().get(1).specialDays()).extracting(ProgramWeekPlanResponse.SpecialDay::title)
+				.containsExactly("Prova");
+	}
+
+	@Test
+	void aSessionDatedTodayDoesNotOpenAWeekThatHasNotBegun() {
+		ProgramWeek second = printedWeek(2, "2026-10-26", "2026-11-01");
+		ProgramWeek third = printedWeek(3, "2026-11-10", "2026-11-16");
+		third.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 11, 5), null, null, null, "Ön hazırlık"));
+		third.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 11, 12), null, null, null, "Workshop"));
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program, List.of(second, third), List.of(),
+				LocalDate.of(2026, 11, 5));
+
+		assertThat(response.currentWeek()).isNull();
+		assertThat(response.weeks()).extracting(week -> week.plan().week()).containsExactly(2);
+	}
+
+	@Test
+	void aWeekWithoutItsOwnDatesInAPrintedPlanWaitsForALaterPrintedWeek() {
+		List<ProgramWeek> plan = List.of(printedWeek(1, "2026-10-12", "2026-10-18"),
+				printedWeek(2, "2026-10-19", "2026-10-25"), week(3, "Tarihsiz hafta"),
+				printedWeek(4, "2026-11-02", "2026-11-08"));
+
+		// The program calendar would start week 3 on 19 October; the syllabus has not reached it yet.
+		assertThat(ProgramWeekService.reached(program, plan, List.of(), LocalDate.of(2026, 10, 27)).weeks())
+				.extracting(week -> week.plan().week()).containsExactly(1, 2);
+		assertThat(ProgramWeekService.reached(program, plan, List.of(), LocalDate.of(2026, 11, 2)).weeks())
+				.extracting(week -> week.plan().week()).containsExactly(1, 2, 3, 4);
+		assertThat(ProgramWeekService.reached(program, List.of(printedWeek(1, "2026-10-12", "2026-10-18"),
+				week(2, "Tarihsiz hafta")), List.of(), END.plusDays(1)).weeks())
+				.extracting(week -> week.plan().week()).containsExactly(1, 2);
+	}
+
+	@Test
+	void onADayBetweenTwoPrintedWeeksOnlyTheWeeksAlreadyBegunAreSent() {
+		List<ProgramWeek> plan = List.of(printedWeek(1, "2026-10-05", "2026-10-11"),
+				printedWeek(2, "2026-10-19", "2026-10-25"));
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program, plan, List.of(),
+				LocalDate.of(2026, 10, 14));
+
+		assertThat(response.currentWeek()).isNull();
+		assertThat(response.weeks()).extracting(week -> week.plan().week()).containsExactly(1);
+		assertThat(response.weeks().get(0).current()).isFalse();
+	}
+
+	@Test
+	void beforeTheProgramStartsNoWeekIsSent() {
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program,
+				List.of(week(1, "Tanışma"), week(2, "Görüşmeler")), List.of(), START.minusDays(1));
+
+		assertThat(response.currentWeek()).isNull();
+		assertThat(response.weeks()).isEmpty();
+	}
+
+	@Test
+	void afterTheProgramEndsEveryWeekIsSentWithItsSessions() {
+		ProgramWeek last = week(12, "Demo");
+		last.getSessions().add(new ProgramWeekSession(END, null, null, null, "Demo Günü"));
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program,
+				List.of(week(1, "Tanışma"), week(6, "Ara"), last), List.of(), END.plusDays(1));
+
+		assertThat(response.currentWeek()).isNull();
+		assertThat(response.weeks()).extracting(week -> week.plan().week()).containsExactly(1, 6, 12);
+		assertThat(response.weeks().getLast().plan().sessions()).hasSize(1);
+	}
+
+	@Test
+	void withoutAnyDatesNoWeekCanBePlacedSoNoneIsSent() {
+		program.setStartDate(null);
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program, List.of(week(1, "Tanışma")),
+				List.of(), LocalDate.of(2026, 10, 14));
+
+		assertThat(response.weeks()).isEmpty();
+	}
+
+	@Test
+	void aMenteeReadsTheirOwnProgramsWeeksSoFar() {
+		AppUser mentee = user(UserAccountStatus.APPROVED, UserRole.MENTEE);
+		when(menteePrograms.programOf(mentee)).thenReturn(Optional.of(PROGRAM_ID));
+		when(weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID))
+				.thenReturn(List.of(week(1, "Tanışma"), week(2, "Görüşmeler"), week(3, "Prototip")));
+		when(specialDays.findByProgramIdOrderByDateAsc(PROGRAM_ID))
+				.thenReturn(List.of(specialDay("2026-10-08", "Bootcamp")));
+
+		ProgramWeeksSoFarResponse response = service.weeksSoFar(mentee.getId(), null, LocalDate.of(2026, 10, 14));
+
+		assertThat(response.programId()).isEqualTo(PROGRAM_ID);
+		assertThat(response.programName()).isEqualTo("İŞKUR Gençlik Programı");
+		assertThat(response.weeks()).extracting(week -> week.plan().week()).containsExactly(1, 2);
+		assertThat(response.weeks().get(0).specialDays()).hasSize(1);
+	}
+
+	@Test
+	void theWeeksSoFarAreRefusedToAnyoneOutsideTheProgram() {
+		AppUser otherMentee = user(UserAccountStatus.APPROVED, UserRole.MENTEE);
+		when(menteePrograms.programOf(otherMentee)).thenReturn(Optional.of(UUID.randomUUID()));
+		AppUser strangerMentor = user(UserAccountStatus.APPROVED, UserRole.MENTOR);
+		when(programMentors.findByProgramIdAndMentorId(PROGRAM_ID, strangerMentor.getId()))
+				.thenReturn(Optional.empty());
+		AppUser pending = user(UserAccountStatus.PENDING, UserRole.MENTEE);
+		when(menteePrograms.programOf(pending)).thenReturn(Optional.of(PROGRAM_ID));
+		AppUser coordinator = user(UserAccountStatus.APPROVED, UserRole.COORDINATOR);
+
+		assertThatThrownBy(() -> service.weeksSoFar(otherMentee.getId(), PROGRAM_ID, START))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> service.weeksSoFar(strangerMentor.getId(), PROGRAM_ID, START))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> service.weeksSoFar(pending.getId(), null, START))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> service.weeksSoFar(coordinator.getId(), PROGRAM_ID, START))
+				.isInstanceOf(ResponseStatusException.class);
+	}
+
+	@Test
+	void anAcceptedMentorReadsTheProgramsWeeksSoFarAPendingOneMayNot() {
+		AppUser mentor = user(UserAccountStatus.APPROVED, UserRole.MENTOR);
+		ProgramMentor membership = new ProgramMentor();
+		membership.setStatus(ProgramMentorStatus.ACCEPTED);
+		when(programMentors.findByProgramIdAndMentorId(PROGRAM_ID, mentor.getId())).thenReturn(Optional.of(membership));
+		when(weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of(week(1, "Tanışma")));
+
+		assertThat(service.weeksSoFar(mentor.getId(), PROGRAM_ID, START).weeks()).hasSize(1);
+
+		membership.setStatus(ProgramMentorStatus.PENDING);
+		assertThatThrownBy(() -> service.weeksSoFar(mentor.getId(), PROGRAM_ID, START))
+				.isInstanceOf(ResponseStatusException.class);
+	}
+
+	@Test
+	void aMenteeInNoProgramHasNoWeeksToRead() {
+		AppUser mentee = user(UserAccountStatus.APPROVED, UserRole.MENTEE);
+		when(menteePrograms.programOf(mentee)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.weeksSoFar(mentee.getId(), null, START))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
 	private ProgramWeekResponse build(LocalDate today) {
 		return ProgramWeekService.build(program, phaseRows, weekRows, today);
 	}
@@ -281,6 +488,23 @@ class ProgramWeekServiceTest {
 		week.setActivities("Görüşme planı yap");
 		week.setDeliverables("5 görüşme notu");
 		return week;
+	}
+
+	private static ProgramWeek printedWeek(int number, String start, String end) {
+		ProgramWeek week = week(number, "Hafta " + number);
+		week.setStartDate(LocalDate.parse(start));
+		week.setEndDate(LocalDate.parse(end));
+		return week;
+	}
+
+	private static ProgramSpecialDay specialDay(String date, String title) {
+		ProgramSpecialDay day = new ProgramSpecialDay();
+		day.setId(UUID.randomUUID());
+		day.setProgramId(PROGRAM_ID);
+		day.setDate(LocalDate.parse(date));
+		day.setTitle(title);
+		day.setDetails("");
+		return day;
 	}
 
 	private static ProgramPhase phase(int position, String name, String start, String end, String output) {
