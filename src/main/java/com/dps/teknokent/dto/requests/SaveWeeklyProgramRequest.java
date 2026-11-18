@@ -19,7 +19,7 @@ import jakarta.validation.constraints.Size;
  * {@code seenWeekCount} are the
  * plan the coordinator was shown when the file was read; a plan that changed since is not overwritten. With
  * {@code keepPast}, a running program keeps its saved weeks before the current one, its past special days and its
- * completed phases.
+ * completed phases; a past week, phase or special day the saved plan does not have still comes from the file.
  */
 public record SaveWeeklyProgramRequest(
 		UUID actorId,

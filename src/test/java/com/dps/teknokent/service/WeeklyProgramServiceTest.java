@@ -25,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import com.dps.teknokent.domain.AiFeature;
 import com.dps.teknokent.domain.DocumentKind;
@@ -52,6 +53,7 @@ import com.dps.teknokent.service.PdfDocumentTextExtractor.ExtractionResult;
 import com.dps.teknokent.util.JsonUtils;
 import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramCalendar;
+import com.dps.teknokent.util.ProgramSchedule;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -88,6 +90,8 @@ class WeeklyProgramServiceTest {
 	private LocalPiiRedactionService piiRedactionService;
 	@Mock
 	private AiProviderClient aiProviderClient;
+	@Mock
+	private PlatformTransactionManager transactionManager;
 
 	private WeeklyProgramService service;
 	private Program program;
@@ -96,7 +100,7 @@ class WeeklyProgramServiceTest {
 	void setUp() {
 		service = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService, programPhaseRepository,
 				programWeekRepository, storedDocumentRepository, objectStorage, textExtractor, piiRedactionService,
-				aiProviderClient, TestAiFeatures.allOn());
+				aiProviderClient, TestAiFeatures.allOn(), transactionManager);
 		program = new Program();
 		program.setId(PROGRAM_ID);
 		program.setStartDate(START);
@@ -378,7 +382,8 @@ class WeeklyProgramServiceTest {
 		editing();
 		WeeklyProgramService switchedOff = new WeeklyProgramService(coordinatorProgramService, programWeekPlanService,
 				programPhaseRepository, programWeekRepository, storedDocumentRepository, objectStorage, textExtractor,
-				piiRedactionService, aiProviderClient, TestAiFeatures.allOnExcept(AiFeature.SYLLABUS));
+				piiRedactionService, aiProviderClient, TestAiFeatures.allOnExcept(AiFeature.SYLLABUS),
+				transactionManager);
 
 		assertThatThrownBy(() -> switchedOff.read(COORDINATOR_ID, PROGRAM_ID, readRequest()))
 				.isInstanceOf(AiFeatureDisabledException.class);
@@ -742,6 +747,109 @@ class WeeklyProgramServiceTest {
 						LocalDate.of(2026, 11, 23), null, null),
 				new ReplaceProgramPhasesRequest.PhaseInput("Yeni sonraki", LocalDate.of(2026, 11, 24),
 						LocalDate.of(2026, 12, 7), null, null));
+	}
+
+	@Test
+	void aFirstSaveMidProgramKeepsEveryWeekAndPhaseOfTheFileEvenWithKeepPast() {
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		program.setStartDate(today.minusDays(21));
+		program.setEndDate(today.plusDays(48));
+		editing();
+		when(storedDocumentRepository.findById(DOCUMENT_ID)).thenReturn(Optional.of(weeklyProgram(COORDINATOR_ID)));
+		when(programPhaseRepository.findByProgramIdOrderByPositionAsc(PROGRAM_ID)).thenReturn(List.of());
+		when(programWeekRepository.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of());
+		List<ReplaceProgramWeeksRequest.WeekInput> file = List.of(weekInput(1, "Yeni 1"), weekInput(2, "Yeni 2"),
+				weekInput(3, "Yeni 3"), weekInput(4, "Yeni 4"), weekInput(5, "Yeni 5"));
+		List<ReplaceProgramWeeksRequest.SpecialDayInput> days = List.of(new ReplaceProgramWeeksRequest.SpecialDayInput(
+				today.minusDays(18), null, null, null, "Açılış", List.of()));
+		when(programWeekPlanService.keepPastSpecialDays(PROGRAM_ID, days, List.of(), today)).thenReturn(days);
+
+		service.save(COORDINATOR_ID, PROGRAM_ID, new SaveWeeklyProgramRequest(null, DOCUMENT_ID, file, List.of(
+				new SaveWeeklyProgramRequest.PhaseInput("Keşif", null, 1, 2),
+				new SaveWeeklyProgramRequest.PhaseInput("Geliştirme", null, 3, 5)), days, 0, 0, true));
+
+		verify(programWeekPlanService).writeWeeks(program, COORDINATOR_ID, file);
+		verify(coordinatorProgramService).writePhases(PROGRAM_ID, List.of(
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", today.minusDays(21), today.minusDays(8), null,
+						null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Geliştirme", today.minusDays(7), today.plusDays(13), null,
+						null)));
+		verify(programWeekPlanService).writeSpecialDays(program, COORDINATOR_ID, days);
+	}
+
+	@Test
+	void aSavedPlanThatCoversPartOfThePastKeepsItsWeeksAndTakesTheMissingOnesFromTheFile() {
+		LocalDate today = LocalDate.of(2026, 11, 18);
+		program.setStartDate(LocalDate.of(2026, 10, 27));
+		List<ProgramWeek> saved = List.of(savedWeek(1, "Eski 1"), savedWeek(3, "Eski 3"), savedWeek(4, "Eski 4"));
+
+		assertThat(WeeklyProgramService.keepPastWeeks(program, saved, List.of(weekInput(1, "Yeni 1"),
+				weekInput(2, "Yeni 2"), weekInput(3, "Yeni 3"), weekInput(4, "Yeni 4"), weekInput(5, "Yeni 5")), today))
+				.extracting(ReplaceProgramWeeksRequest.WeekInput::title)
+				.containsExactly("Eski 1", "Yeni 2", "Eski 3", "Yeni 4", "Yeni 5");
+		assertThat(WeeklyProgramService.pastWeekDays(program, saved, today)).containsExactly(
+				new ProgramSchedule.Dates(LocalDate.of(2026, 10, 27), LocalDate.of(2026, 11, 2)),
+				new ProgramSchedule.Dates(LocalDate.of(2026, 11, 10), LocalDate.of(2026, 11, 16)));
+	}
+
+	@Test
+	void withNoSavedWeeksEveryWeekOfTheFileIsKeptAndNoWeekDaysAreReserved() {
+		LocalDate today = LocalDate.of(2026, 11, 18);
+		program.setStartDate(LocalDate.of(2026, 10, 27));
+
+		assertThat(WeeklyProgramService.keepPastWeeks(program, List.of(),
+				List.of(weekInput(1, "Yeni 1"), weekInput(2, "Yeni 2"), weekInput(4, "Yeni 4")), today))
+				.extracting(ReplaceProgramWeeksRequest.WeekInput::title)
+				.containsExactly("Yeni 1", "Yeni 2", "Yeni 4");
+		assertThat(WeeklyProgramService.pastWeekDays(program, List.of(), today)).isEmpty();
+	}
+
+	@Test
+	void finishedPhasesFromTheFileFillOnlyWhatNoCompletedPhaseCovers() {
+		LocalDate today = LocalDate.of(2026, 11, 20);
+		ProgramPhase completed = phase("Keşif", LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 9));
+		completed.setId(UUID.fromString("00000000-0000-0000-0000-0000000000f1"));
+		List<ReplaceProgramPhasesRequest.PhaseInput> kept = WeeklyProgramService.keepCompletedPhases(
+				List.of(completed),
+				List.of(
+						new ReplaceProgramPhasesRequest.PhaseInput("Hazırlık", START, LocalDate.of(2026, 11, 2),
+								null, null),
+						new ReplaceProgramPhasesRequest.PhaseInput("Yeni keşif", LocalDate.of(2026, 11, 4),
+								LocalDate.of(2026, 11, 8), null, null),
+						new ReplaceProgramPhasesRequest.PhaseInput("Şimdiki", LocalDate.of(2026, 11, 10),
+								LocalDate.of(2026, 11, 30), null, null)),
+				today);
+
+		assertThat(kept).containsExactly(
+				new ReplaceProgramPhasesRequest.PhaseInput("Hazırlık", START, LocalDate.of(2026, 11, 2), null, null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", LocalDate.of(2026, 11, 3),
+						LocalDate.of(2026, 11, 9), null, completed.getId()),
+				new ReplaceProgramPhasesRequest.PhaseInput("Şimdiki", LocalDate.of(2026, 11, 10),
+						LocalDate.of(2026, 11, 30), null, null));
+	}
+
+	@Test
+	void aFinishedPhaseOfTheFileThatIsAKeptPhaseByNameIsNotAddedTwice() {
+		LocalDate today = LocalDate.of(2026, 11, 20);
+		ProgramPhase completed = phase("Keşif", LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 9));
+		completed.setId(UUID.fromString("00000000-0000-0000-0000-0000000000f1"));
+
+		assertThat(WeeklyProgramService.keepCompletedPhases(List.of(completed), List.of(
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", START, LocalDate.of(2026, 11, 2), null,
+						completed.getId())),
+				today)).extracting(ReplaceProgramPhasesRequest.PhaseInput::startDate)
+				.containsExactly(LocalDate.of(2026, 11, 3));
+	}
+
+	@Test
+	void withNoSavedPhasesEveryPhaseOfTheFileIsKeptAsItIs() {
+		LocalDate today = LocalDate.of(2026, 11, 20);
+		List<ReplaceProgramPhasesRequest.PhaseInput> file = List.of(
+				new ReplaceProgramPhasesRequest.PhaseInput("Keşif", START, LocalDate.of(2026, 11, 9), null, null),
+				new ReplaceProgramPhasesRequest.PhaseInput("Şimdiki", LocalDate.of(2026, 11, 10),
+						LocalDate.of(2026, 11, 30), null, null));
+
+		assertThat(WeeklyProgramService.keepCompletedPhases(List.of(), file, today)).isEqualTo(file);
 	}
 
 	@Test
