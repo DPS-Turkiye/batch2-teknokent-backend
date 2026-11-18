@@ -63,7 +63,10 @@ public class ProgramSessionAttendanceService {
 	/** 32 random bytes: 43 base64url characters, far beyond guessing. */
 	static final int TOKEN_BYTES = 32;
 
-	/** The client branches on these codes; the message says the same in the reader's language. */
+	/**
+	 * The client branches on these codes; the message says the same in the reader's language. ATTENDANCE_OFF is
+	 * for the program's coordinators only; a participant scanning a code of such a program gets QR_NOT_VALID.
+	 */
 	static final String CODE_QR_NOT_VALID = "ATTENDANCE_QR_NOT_VALID";
 	static final String CODE_ATTENDANCE_OFF = "ATTENDANCE_OFF";
 	static final String CODE_ALREADY_RECORDED = "ATTENDANCE_ALREADY_RECORDED";
@@ -109,8 +112,8 @@ public class ProgramSessionAttendanceService {
 
 	/**
 	 * Records the caller at the session whose QR code carries {@code token}. A token that is unknown or was
-	 * regenerated, a program that is not running, and a session the plan no longer has all answer the same 409
-	 * ("this QR is not valid now"), so a stale or guessed link learns nothing about the program.
+	 * regenerated, a program that is not running or takes no attendance, and a session the plan no longer has all
+	 * answer the same 409 ("this QR is not valid now"), so a stale or guessed link learns nothing about the program.
 	 */
 	@Transactional
 	public SessionCheckInResponse checkIn(UUID actorId, String token) {
@@ -126,8 +129,9 @@ public class ProgramSessionAttendanceService {
 		}
 		Program program = programRepository.findById(qr.getProgramId())
 				.orElseThrow(ProgramSessionAttendanceService::notValid);
+		// A program that takes no attendance says nothing about it to its participants: the code is just not valid.
 		if (!program.isAttendanceEnabled()) {
-			throw attendanceOff();
+			throw notValid();
 		}
 		AttendanceSessions.Session session = program.getStatus() == ProgramStatus.ACTIVE
 				? sessionOf(program, qr.getWeekNumber(), qr.getSessionKind())

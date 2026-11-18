@@ -309,14 +309,18 @@ class ProgramAttendanceIntegrationTest {
 		settings(coordinator, false).andExpect(status().isOk())
 				.andExpect(jsonPath("$.rules.attendanceEnabled").value(false));
 
+		// The participant learns nothing about attendance: the old code reads like any dead link.
 		checkIn(founder, token).andExpect(status().isConflict())
-				.andExpect(jsonPath("$.code").value("ATTENDANCE_OFF"))
-				.andExpect(jsonPath("$.message").value("Bu programda yoklama alınmıyor."));
+				.andExpect(jsonPath("$.code").value("ATTENDANCE_QR_NOT_VALID"))
+				.andExpect(jsonPath("$.message").value("Bu QR şu an geçerli değil."));
+		// The coordinators may be told it is off.
 		asProxy(post(SESSION + "/qr", program.getId(), 2, "LESSON"), coordinator)
-				.andExpect(status().isConflict());
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("ATTENDANCE_OFF"));
 		asProxy(put(MARK, program.getId(), 2, "LESSON", teammate.getId()), coordinator)
 				.andExpect(status().isConflict());
 		asProxy(get(MINE), founder).andExpect(jsonPath("$.state").value("DISABLED"))
+				.andExpect(jsonPath("$.week").doesNotExist())
 				.andExpect(jsonPath("$.sessions.length()").value(0));
 		asProxy(get(REPORT, program.getId()), coordinator).andExpect(status().isOk())
 				.andExpect(jsonPath("$.attendanceEnabled").value(false))

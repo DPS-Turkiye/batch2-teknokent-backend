@@ -173,6 +173,16 @@ class ProgramSessionAttendanceServiceTest {
 		verify(attendanceRepository, never()).saveAndFlush(any());
 	}
 
+	@Test
+	void aProgramThatTakesNoAttendanceAnswersLikeAnyDeadLink() {
+		program.setAttendanceEnabled(false);
+
+		assertThatThrownBy(() -> serviceAt(18, 30).checkIn(mentee.getId(), TOKEN))
+				.isInstanceOfSatisfying(ConflictException.class, refused -> assertThat(refused.code())
+						.isEqualTo(ProgramSessionAttendanceService.CODE_QR_NOT_VALID));
+		verify(attendanceRepository, never()).saveAndFlush(any());
+	}
+
 	private void noAttendanceYet() {
 		when(attendanceRepository.findByProgramIdAndUserIdAndWeekNumberAndSessionKind(program.getId(),
 				mentee.getId(), 1, AttendanceSessionKind.LESSON)).thenReturn(Optional.empty());
