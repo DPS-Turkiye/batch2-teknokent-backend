@@ -27,5 +27,6 @@ public record UpdateProgramDetailsRequest(
 		@Min(1) @Max(365) Integer bottleneckFlagDays,
 		@Size(max = 255) String eligibleEmailDomain,
 		Boolean rosterOnly,
-		Boolean individualMentees) {
+		Boolean individualMentees,
+		Boolean attendanceEnabled) {
 }

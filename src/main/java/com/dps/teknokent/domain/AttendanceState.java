@@ -1,16 +1,17 @@
 package com.dps.teknokent.domain;
 
-/** Whether a participant can check in this week, and if not, why. */
+/** Where a participant's program stands for attendance this week. */
 public enum AttendanceState {
-	/** The running week is open and the participant has not checked in yet. */
+	/** A program week is running; its sessions are listed with the participant's check-ins. */
 	OPEN,
-	CHECKED_IN,
 	/** The program's first week has not begun. */
 	NOT_STARTED,
 	/** The program's last day has passed. */
 	ENDED,
 	/** The program has no start date or is not running (draft or completed). */
 	UNSCHEDULED,
+	/** The program's coordinators do not take attendance. */
+	DISABLED,
 	/** The person is not taking part in any program. */
 	NO_PROGRAM
 }

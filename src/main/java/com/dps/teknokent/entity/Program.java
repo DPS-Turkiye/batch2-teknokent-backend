@@ -83,4 +83,7 @@ public class Program {
 	private boolean individualMentees;
 	@Column(name = "syllabus_document_id")
 	private UUID syllabusDocumentId;
+	/** Whether the program takes attendance by session QR codes; its coordinators turn it off. */
+	@Column(name = "attendance_enabled", nullable = false)
+	private boolean attendanceEnabled = true;
 }

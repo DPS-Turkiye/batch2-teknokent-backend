@@ -210,6 +210,9 @@ public class CoordinatorProgramService {
 		if (request.rosterOnly() != null) {
 			program.setRosterOnly(request.rosterOnly());
 		}
+		if (request.attendanceEnabled() != null) {
+			program.setAttendanceEnabled(request.attendanceEnabled());
+		}
 		if (program.getProgramType() == ProgramType.PEER_MENTORING) {
 			program.setIndividualMentees(true);
 		} else if (request.individualMentees() != null) {
@@ -688,7 +691,8 @@ public class CoordinatorProgramService {
 						program.getBottleneckFlagDays(),
 						program.getEligibleEmailDomain(),
 						program.isRosterOnly(),
-						program.isIndividualMentees()),
+						program.isIndividualMentees(),
+						program.isAttendanceEnabled()),
 				health(program, snapshot),
 				awaitingTeams,
 				upcoming,
