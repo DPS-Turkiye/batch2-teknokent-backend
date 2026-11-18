@@ -281,7 +281,12 @@ class ProgramWeekPlanServiceTest {
 		ProgramSpecialDay saved = new ProgramSpecialDay();
 		saved.setDate(LocalDate.of(2026, 11, 4));
 		saved.setTitle("Saved visit");
-		when(events.findByProgramIdOrderByDateAsc(PROGRAM_ID)).thenReturn(List.of(saved));
+		ProgramSpecialDay savedOutsideTheWeeks = new ProgramSpecialDay();
+		savedOutsideTheWeeks.setDate(LocalDate.of(2026, 10, 20));
+		savedOutsideTheWeeks.setTitle("Saved info day");
+		when(events.findByProgramIdOrderByDateAsc(PROGRAM_ID)).thenReturn(List.of(savedOutsideTheWeeks, saved));
+		var sameDateAsASavedDay = new ReplaceProgramWeeksRequest.SpecialDayInput(LocalDate.of(2026, 10, 20), null,
+				null, null, "Renamed info day", List.of());
 		var movedInsideAKeptWeek = new ReplaceProgramWeeksRequest.SpecialDayInput(LocalDate.of(2026, 11, 5), null,
 				null, null, "Moved visit", List.of());
 		var beforeTheKeptWeeks = new ReplaceProgramWeeksRequest.SpecialDayInput(LocalDate.of(2026, 10, 28), null,
@@ -289,9 +294,10 @@ class ProgramWeekPlanServiceTest {
 		List<ProgramSchedule.Dates> keptWeeks = List.of(
 				new ProgramSchedule.Dates(LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 9)));
 
-		assertThat(service.keepPastSpecialDays(PROGRAM_ID, List.of(beforeTheKeptWeeks, movedInsideAKeptWeek),
-				keptWeeks, today)).extracting(ReplaceProgramWeeksRequest.SpecialDayInput::title)
-				.containsExactly("Saved visit", "Opening");
+		assertThat(service.keepPastSpecialDays(PROGRAM_ID,
+				List.of(sameDateAsASavedDay, beforeTheKeptWeeks, movedInsideAKeptWeek), keptWeeks, today))
+				.extracting(ReplaceProgramWeeksRequest.SpecialDayInput::title)
+				.containsExactly("Saved info day", "Saved visit", "Opening");
 	}
 
 	private static ReplaceProgramWeeksRequest.WeekInput input(int week, String title) {
