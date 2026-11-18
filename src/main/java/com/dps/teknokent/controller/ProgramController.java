@@ -31,6 +31,7 @@ import com.dps.teknokent.dto.responses.ProgramInvitationResponse;
 import com.dps.teknokent.dto.responses.ProgramNameResponse;
 import com.dps.teknokent.dto.responses.ProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekResponse;
+import com.dps.teknokent.dto.responses.ProgramWeeksSoFarResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.ProgramCalendarService;
@@ -98,6 +99,18 @@ public class ProgramController {
 			throw new InvalidRequestException("actorId is required");
 		}
 		return programWeekService.thisWeek(resolved, programId);
+	}
+
+	/** "Geçmiş haftalar" on Süreç: the weeks of the caller's program plan reached so far; a week not begun never. */
+	@GetMapping("/mine/weeks")
+	public ProgramWeeksSoFarResponse weeksSoFar(
+			@RequestParam(required = false) UUID programId,
+			@RequestParam(required = false) UUID actorId) {
+		UUID resolved = resolveActorId(actorId);
+		if (resolved == null) {
+			throw new InvalidRequestException("actorId is required");
+		}
+		return programWeekService.weeksSoFar(resolved, programId);
 	}
 
 	@PutMapping("/mine/active")
