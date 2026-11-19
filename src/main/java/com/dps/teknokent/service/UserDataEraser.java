@@ -391,6 +391,8 @@ class UserDataEraser {
 		update("delete from MentorAvailabilitySlot s where s.mentor.id = :id", "id", id);
 		update("delete from MentorAvailabilityException e where e.mentor.id = :id", "id", id);
 		update("delete from MentorAvailabilityRule r where r.mentor.id = :id", "id", id);
+		// Labels describe the person as a mentor; the program memberships they hang on may outlive the account.
+		update("delete from ProgramMentorLabelAssignment a where a.mentorId = :id", "id", id);
 		// Through the entity, so its collection tables go with it.
 		MentorProfile mentorProfile = entityManager.find(MentorProfile.class, id);
 		if (mentorProfile != null) {
