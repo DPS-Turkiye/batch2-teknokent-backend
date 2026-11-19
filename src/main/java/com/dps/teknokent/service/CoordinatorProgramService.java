@@ -958,6 +958,26 @@ public class CoordinatorProgramService {
 		return acceptedRequestPairs(snapshot(List.of(program)), program);
 	}
 
+	/** Per program, its running accepted requests, read from one snapshot; a completed program has none. */
+	@Transactional(readOnly = true)
+	public Map<UUID, List<MentorshipRequest>> runningRequests(List<Program> programs) {
+		List<Program> running = programs.stream()
+				.filter(program -> program.getStatus() != ProgramStatus.COMPLETED)
+				.toList();
+		if (running.isEmpty()) {
+			return Map.of();
+		}
+		Snapshot snapshot = snapshot(running);
+		Map<UUID, List<MentorshipRequest>> byProgram = new LinkedHashMap<>();
+		for (Program program : running) {
+			List<MentorshipRequest> pairs = acceptedRequestPairs(snapshot, program);
+			if (!pairs.isEmpty()) {
+				byProgram.put(program.getId(), pairs);
+			}
+		}
+		return byProgram;
+	}
+
 	/**
 	 * Per mentor, the teams they work with only through an accepted request still running in one of the team's
 	 * programs (see {@link #acceptedRequestPairs}), with no active or planned mentorship between them. Added to the
@@ -965,6 +985,15 @@ public class CoordinatorProgramService {
 	 */
 	@Transactional(readOnly = true)
 	public Map<UUID, Long> acceptedRequestLoad(Collection<UUID> mentorIds) {
+		return acceptedRequestLoad(mentorIds, MATCHED);
+	}
+
+	/**
+	 * As {@link #acceptedRequestLoad(Collection)}, for a count of mentorships in {@code counted}: a pair with a
+	 * mentorship in one of those statuses is already in that count, so its request adds nothing.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, Long> acceptedRequestLoad(Collection<UUID> mentorIds, Collection<MentorshipStatus> counted) {
 		if (mentorIds.isEmpty()) {
 			return Map.of();
 		}
@@ -994,7 +1023,7 @@ public class CoordinatorProgramService {
 				UUID mentorId = request.getMentor().getId();
 				UUID organizationId = request.getOrganization().getId();
 				boolean matched = snapshot.mentorships().getOrDefault(organizationId, List.of()).stream()
-						.anyMatch(mentorship -> MATCHED.contains(mentorship.getStatus())
+						.anyMatch(mentorship -> counted.contains(mentorship.getStatus())
 								&& mentorship.getMentor().getId().equals(mentorId));
 				if (mentors.contains(mentorId) && !matched) {
 					teamsByMentor.computeIfAbsent(mentorId, key -> new HashSet<>()).add(organizationId);

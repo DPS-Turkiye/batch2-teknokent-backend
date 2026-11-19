@@ -1166,6 +1166,45 @@ class CoordinatorProgramServiceTest {
 	}
 
 	@Test
+	void aPairWithAPausedMentorshipAddsNoRequestLoadToACountOfOngoingMentorships() {
+		Program program = program(COORDINATOR_ID);
+		// Paused before the acceptance, so the request still runs; the directory already counts the paused row.
+		Mentorship paused = mentorship(LUMEN_ID, MentorshipStatus.PAUSED, today.minusDays(40));
+		paused.setUpdatedAt(Instant.now().minus(20, ChronoUnit.DAYS));
+		MentorshipRequest lumen = acceptedRequest(LUMEN_ID, MENTOR_ID, 3);
+		List<ProgramStartup> startups = List.of(startup(LUMEN_ID, 30));
+		when(mentorshipRequestRepository.findByMentorIdInAndStatus(anyCollection(),
+				eq(MentorshipRequestStatus.ACCEPTED))).thenReturn(List.of(lumen));
+		when(programStartupRepository.findByOrganizationIdIn(anyCollection())).thenReturn(startups);
+		when(programRepository.findAllById(any())).thenReturn(List.of(program));
+		stubProgramRows(startups, List.of(), List.of());
+		stubTeamData(List.of(organization(LUMEN_ID, "Lumen")), List.of(paused), List.of(), List.of(), List.of());
+		stubRequests(lumen);
+
+		assertThat(service.acceptedRequestLoad(List.of(MENTOR_ID))).containsExactly(Map.entry(MENTOR_ID, 1L));
+		assertThat(service.acceptedRequestLoad(List.of(MENTOR_ID),
+				List.of(MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED))).isEmpty();
+	}
+
+	@Test
+	void runningRequestsAcrossProgramsComeFromOneSnapshotAndSkipCompletedPrograms() {
+		Program stars = program(COORDINATOR_ID);
+		Program completed = program(COORDINATOR_ID);
+		completed.setId(UUID.randomUUID());
+		completed.setStatus(ProgramStatus.COMPLETED);
+		MentorshipRequest lumen = acceptedRequest(LUMEN_ID, MENTOR_ID, 2);
+		stubProgramRows(List.of(startup(LUMEN_ID, 30), startup(KAVUN_ID, 30)), List.of(), List.of());
+		stubTeamData(List.of(organization(LUMEN_ID, "Lumen"), organization(KAVUN_ID, "Kavun")), List.of(),
+				List.of(), List.of(), List.of());
+		stubRequests(lumen);
+
+		assertThat(service.runningRequests(List.of(stars, completed)))
+				.containsExactly(Map.entry(PROGRAM_ID, List.of(lumen)));
+		verify(programStartupRepository, times(1)).findByProgramIdIn(List.of(PROGRAM_ID));
+		assertThat(service.runningRequests(List.of(completed))).isEmpty();
+	}
+
+	@Test
 	void aCompletedProgramsAcceptedRequestsAddNoLoad() {
 		Program program = program(COORDINATOR_ID);
 		program.setStatus(ProgramStatus.COMPLETED);

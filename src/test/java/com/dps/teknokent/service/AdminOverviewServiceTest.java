@@ -27,6 +27,7 @@ import com.dps.teknokent.domain.BottleneckSeverity;
 import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramMentorStatus;
@@ -89,6 +90,8 @@ class AdminOverviewServiceTest {
 	private ProgramCoordinatorRepository programCoordinatorRepository;
 	@Mock
 	private LoginProvisioner loginProvisioner;
+	@Mock
+	private CoordinatorProgramService coordinatorProgramService;
 
 	@InjectMocks
 	private AdminOverviewService service;
@@ -219,7 +222,7 @@ class AdminOverviewServiceTest {
 		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(Set.of(inProgram.getId())))
 				.thenReturn(List.of(meeting(mentor, inProgram), meeting(mentor, elsewhere)));
 
-		var report = service.programReport(stars, List.of());
+		var report = service.programReport(stars);
 
 		assertThat(report.programs()).extracting(row -> row.name()).containsExactly("METU Stars 2026");
 		assertThat(report.meetings()).extracting(mark -> mark.organizationId()).containsExactly(inProgram.getId());
@@ -244,7 +247,7 @@ class AdminOverviewServiceTest {
 		when(mentorshipService.findByOrganizations(Set.of(vega.getId()))).thenReturn(List.of(
 				mentorship(kemal, vega, stars), mentorship(deniz, vega, growth), mentorship(selin, vega, null)));
 
-		var report = service.programReport(stars, List.of());
+		var report = service.programReport(stars);
 
 		assertThat(report.mentorships()).extracting(row -> row.mentorName() + ":" + row.programId())
 				.containsExactly("Kemal Arslan:" + stars.getId(), "Selin Ak:null");
@@ -273,11 +276,16 @@ class AdminOverviewServiceTest {
 		accepted.setStatus(MentorshipRequestStatus.ACCEPTED);
 		accepted.setAcceptedAt(Instant.now().minus(Duration.ofDays(10)));
 
-		var report = service.programReport(stars, List.of(accepted));
+		when(coordinatorProgramService.runningRequests(stars)).thenReturn(List.of(accepted));
 
+		var report = service.programReport(stars);
+
+		// Listed apart, so nothing that acts on a mentorship id is handed the request's.
 		assertThat(report.mentorships()).extracting(row -> row.mentorName() + ":" + row.source())
-				.containsExactly("Kemal Arslan:MENTORSHIP", "Nihan Öztürk:ACCEPTED_REQUEST");
-		var fromRequest = report.mentorships().get(1);
+				.containsExactly("Kemal Arslan:MENTORSHIP");
+		var fromRequest = report.acceptedRequests().getFirst();
+		assertThat(report.acceptedRequests()).hasSize(1);
+		assertThat(fromRequest.source()).isEqualTo(MentorshipSource.ACCEPTED_REQUEST);
 		assertThat(fromRequest.id()).isEqualTo(accepted.getId());
 		assertThat(fromRequest.status()).isEqualTo(MentorshipStatus.ACTIVE);
 		assertThat(fromRequest.programId()).isEqualTo(stars.getId());
@@ -316,8 +324,8 @@ class AdminOverviewServiceTest {
 		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(Set.of(vega.getId())))
 				.thenReturn(List.of(meeting(kemal, vega), meeting(deniz, vega)));
 
-		var oldReport = service.programReport(stars, List.of());
-		var newReport = service.programReport(growth, List.of());
+		var oldReport = service.programReport(stars);
+		var newReport = service.programReport(growth);
 
 		assertThat(oldReport.mentorships()).extracting(row -> row.mentorName()).containsExactly("Kemal Arslan");
 		assertThat(oldReport.meetings()).extracting(mark -> mark.mentorId()).containsExactly(kemal.getId());
@@ -344,6 +352,43 @@ class AdminOverviewServiceTest {
 
 		assertThat(mentorships).extracting(row -> row.mentorName() + ":" + row.programId())
 				.containsExactly("Kemal Arslan:" + stars.getId(), "Deniz Kaya:" + growth.getId());
+	}
+
+	@Test
+	void overviewListsEachProgramsRunningAcceptedRequestsApartFromTheMentorships() {
+		AppUser admin = person("Platform Yöneticisi", UserRole.ADMIN);
+		AppUser kemal = person("Kemal Arslan", UserRole.MENTOR);
+		AppUser nihan = person("Nihan Öztürk", UserRole.MENTOR);
+		Program stars = program("METU Stars 2026", admin.getId());
+		Program growth = program("Growth Circuit 2026", admin.getId());
+		Organization vega = organization("Vega");
+		Organization lumen = organization("Lumen");
+		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
+		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, kemal, nihan));
+		when(programRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(stars, growth));
+		when(mentorshipService.findAll()).thenReturn(List.of(mentorship(kemal, vega, stars)));
+		when(meetingRepository.findAllByOrderByScheduledAtDesc())
+				.thenReturn(List.of(meeting(nihan, lumen, Duration.ofDays(2), MeetingStatus.COMPLETED)));
+		MentorshipRequest accepted = new MentorshipRequest();
+		accepted.setId(UUID.randomUUID());
+		accepted.setMentor(nihan);
+		accepted.setOrganization(lumen);
+		accepted.setStatus(MentorshipRequestStatus.ACCEPTED);
+		accepted.setAcceptedAt(Instant.now().minus(Duration.ofDays(6)));
+		when(coordinatorProgramService.runningRequests(List.of(stars, growth)))
+				.thenReturn(Map.of(growth.getId(), List.of(accepted)));
+
+		var overview = service.overview(admin.getId());
+
+		assertThat(overview.mentorships()).extracting(row -> row.mentorName()).containsExactly("Kemal Arslan");
+		assertThat(overview.acceptedRequests()).singleElement().satisfies(row -> {
+			assertThat(row.id()).isEqualTo(accepted.getId());
+			assertThat(row.programId()).isEqualTo(growth.getId());
+			assertThat(row.organizationName()).isEqualTo("Lumen");
+			assertThat(row.status()).isEqualTo(MentorshipStatus.ACTIVE);
+			assertThat(row.source()).isEqualTo(MentorshipSource.ACCEPTED_REQUEST);
+			assertThat(row.daysSinceMeeting()).isEqualTo(2);
+		});
 	}
 
 	@Test
@@ -555,7 +600,7 @@ class AdminOverviewServiceTest {
 						bottleneck(elsewhere, "Hukuk", BottleneckStatus.OPEN, BottleneckSeverity.HIGH),
 						bottleneck(vega, "Satış", BottleneckStatus.OPEN, BottleneckSeverity.LOW)));
 
-		assertThat(service.programReport(stars, List.of()).bottlenecks())
+		assertThat(service.programReport(stars).bottlenecks())
 				.extracting(AdminOverviewResponse.BottleneckRow::title)
 				.containsExactly("Satış");
 	}
@@ -565,7 +610,7 @@ class AdminOverviewServiceTest {
 		AppUser elif = person("Elif Demir", UserRole.COORDINATOR);
 		Program stars = program("METU Stars 2026", elif.getId());
 
-		var report = service.programReport(stars, List.of());
+		var report = service.programReport(stars);
 
 		assertThat(report.programs()).singleElement()
 				.satisfies(row -> assertThat(row.startupCount()).isZero());
@@ -605,7 +650,7 @@ class AdminOverviewServiceTest {
 				List.of(BottleneckStatus.OPEN, BottleneckStatus.IN_PROGRESS)))
 				.thenReturn(List.of(bottleneck(vega, "Satış", BottleneckStatus.OPEN, BottleneckSeverity.LOW)));
 
-		var report = service.programReport(stars, List.of());
+		var report = service.programReport(stars);
 
 		var row = report.programs().getFirst();
 		assertThat(row.coordinatorName()).isEqualTo("Elif Demir");
