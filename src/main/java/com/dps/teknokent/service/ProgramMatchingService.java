@@ -1,9 +1,13 @@
 package com.dps.teknokent.service;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,6 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.MatchNeedSource;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -94,8 +99,11 @@ public class ProgramMatchingService {
 			return new ProgramMatchingResponse.Suggestions(null, List.of(), List.of());
 		}
 		var ranked = recommendationService.recommendAmong(input.request(), input.pool());
-		Map<UUID, Long> load = mentorshipRepository.countOrganizationsByMentor(input.pool(), MATCHED).stream()
-				.collect(Collectors.toMap(MentorCount::getMentorId, MentorCount::getTotal));
+		Map<UUID, Long> load = new HashMap<>(mentorshipRepository.countOrganizationsByMentor(input.pool(), MATCHED)
+				.stream()
+				.collect(Collectors.toMap(MentorCount::getMentorId, MentorCount::getTotal)));
+		coordinatorProgramService.acceptedRequestLoad(input.pool())
+				.forEach((mentorId, teams) -> load.merge(mentorId, teams, Long::sum));
 		Map<UUID, Integer> capacity = mentorProfileRepository.findAllById(input.pool()).stream()
 				.filter(profile -> profile.getMenteeCapacity() != null)
 				.collect(Collectors.toMap(profile -> profile.getId(), profile -> profile.getMenteeCapacity()));
@@ -204,10 +212,13 @@ public class ProgramMatchingService {
 				: mentorshipRepository.findByOrganizationIdIn(teamIds).stream()
 						.filter(mentorship -> CoordinatorProgramService.countsIn(mentorship, Set.of(program.getId())))
 						.toList();
-		Set<UUID> matchedTeams = mentorships.stream()
+		// A team whose request a mentor accepted is working with that mentor, though no mentorship row was made.
+		List<MentorshipRequest> running = coordinatorProgramService.runningRequests(program);
+		Set<UUID> matchedTeams = new HashSet<>();
+		mentorships.stream()
 				.filter(mentorship -> MATCHED.contains(mentorship.getStatus()))
-				.map(mentorship -> mentorship.getOrganization().getId())
-				.collect(Collectors.toSet());
+				.forEach(mentorship -> matchedTeams.add(mentorship.getOrganization().getId()));
+		running.forEach(request -> matchedTeams.add(request.getOrganization().getId()));
 		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
 		List<ProgramMatchingResponse.WaitingTeam> waiting = startups.stream()
 				.filter(startup -> !matchedTeams.contains(startup.getOrganizationId()))
@@ -216,10 +227,31 @@ public class ProgramMatchingService {
 				.flatMap(Optional::stream)
 				.sorted(Comparator.comparingInt(ProgramMatchingResponse.WaitingTeam::waitingDays).reversed())
 				.toList();
-		return new ProgramMatchingResponse.Overview(
-				waiting,
-				matches(mentorships, MATCHED),
-				matches(mentorships, ENDED));
+		List<ProgramMatchingResponse.Match> active = new ArrayList<>(matches(mentorships, MATCHED));
+		Set<String> listed = new HashSet<>();
+		running.stream()
+				.filter(request -> listed.add(CoordinatorProgramService.requestPairKey(request)))
+				.map(ProgramMatchingService::match)
+				.forEach(active::add);
+		active.sort(Comparator.comparing(ProgramMatchingResponse.Match::startDate).reversed());
+		return new ProgramMatchingResponse.Overview(waiting, active, matches(mentorships, ENDED));
+	}
+
+	private static ProgramMatchingResponse.Match match(MentorshipRequest request) {
+		Instant accepted = CoordinatorProgramService.acceptedOn(request);
+		return new ProgramMatchingResponse.Match(
+				null,
+				request.getOrganization().getId(),
+				request.getOrganization().getName(),
+				request.getMentor().getId(),
+				request.getMentor().getFullName(),
+				MentorshipStatus.ACTIVE,
+				accepted == null
+						? LocalDate.now(MeetingSlotTimes.APP_ZONE)
+						: accepted.atZone(MeetingSlotTimes.APP_ZONE).toLocalDate(),
+				null,
+				MentorshipSource.ACCEPTED_REQUEST,
+				request.getId());
 	}
 
 	private ProgramMatchingResponse.WaitingTeam waitingTeam(Organization team, ProgramStartup startup,
@@ -251,7 +283,9 @@ public class ProgramMatchingService {
 						mentorship.getMentor().getFullName(),
 						mentorship.getStatus(),
 						mentorship.getStartDate(),
-						mentorship.getEndDate()))
+						mentorship.getEndDate(),
+						MentorshipSource.MENTORSHIP,
+						null))
 				.toList();
 	}
 

@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -21,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipSource;
+import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -55,6 +58,7 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramStartupRepository;
 import com.dps.teknokent.security.AdminAccess;
 import com.dps.teknokent.security.LoginProvisioner;
+import com.dps.teknokent.util.MeetingSlotTimes;
 import com.dps.teknokent.util.ProgramActivity;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.Texts;
@@ -109,16 +113,18 @@ public class AdminOverviewService {
 				mentorshipService.findAll(),
 				bottleneckRepository.findAll());
 		return build(programRepository.findAllByOrderByCreatedAtDesc(), null, null, Set.of(), sources, users,
-				requests);
+				requests, List.of());
 	}
 
 	/**
 	 * The Raporlama numbers for one program, for its coordinators' Program raporu; the caller checks access.
 	 * Only that program's teams count, and of their mentorships only the ones made in this program (plus older ones
-	 * made before V82, which have none). The user list and open requests are left out.
+	 * made before V82, which have none). The user list and open requests are left out. {@code acceptedRequests} are
+	 * the program's accepted requests that count as running mentorships; they have no mentorship row, so each comes
+	 * in as an active one.
 	 */
 	@Transactional(readOnly = true)
-	public AdminOverviewResponse programReport(Program program) {
+	public AdminOverviewResponse programReport(Program program, List<MentorshipRequest> acceptedRequests) {
 		Set<UUID> teams = programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId()).stream()
 				.map(ProgramStartup::getOrganizationId)
 				.collect(Collectors.toSet());
@@ -138,7 +144,8 @@ public class AdminOverviewService {
 				reached.isEmpty() ? List.of() : mentorshipService.findByOrganizations(reached),
 				teams.isEmpty() ? List.of()
 						: bottleneckRepository.findByOrganizationIdInAndStatusIn(teams, OPEN_BOTTLENECKS));
-		return build(List.of(program), program.getId(), teams, formerTeams, sources, List.of(), List.of());
+		return build(List.of(program), program.getId(), teams, formerTeams, sources, List.of(), List.of(),
+				acceptedRequests);
 	}
 
 	/** The rows a report is built from: every one for the overview, only a program's own for its report. */
@@ -173,7 +180,8 @@ public class AdminOverviewService {
 			Set<UUID> formerTeams,
 			Sources sources,
 			List<UserRow> users,
-			List<RequestRow> requests) {
+			List<RequestRow> requests,
+			List<MentorshipRequest> acceptedRequests) {
 		Instant now = Instant.now();
 		Predicate<UUID> inScope = organizationId -> teams == null || teams.contains(organizationId);
 		Map<UUID, AppUser> usersById = sources.usersById();
@@ -194,7 +202,10 @@ public class AdminOverviewService {
 						? inScope.test(mentorship.organizationId())
 						: programId.equals(mentorship.programId())))
 				.map(mentorship -> toMentorship(mentorship, lastMeeting, now))
-				.toList();
+				.collect(Collectors.toCollection(ArrayList::new));
+		acceptedRequests.stream()
+				.map(request -> toMentorship(request, programId, lastMeeting, now))
+				.forEach(mentorships::add);
 		List<BottleneckRow> bottlenecks = sources.bottlenecks().stream()
 				.filter(item -> OPEN_BOTTLENECKS.contains(item.getStatus()))
 				.filter(item -> inScope.test(item.getOrganization().getId()))
@@ -346,7 +357,34 @@ public class AdminOverviewService {
 				days,
 				(int) mentorship.goalItems().stream().filter(goal -> goal.done()).count(),
 				mentorship.goalItems().size(),
-				mentorship.programId());
+				mentorship.programId(),
+				MentorshipSource.MENTORSHIP);
+	}
+
+	private static MentorshipRow toMentorship(
+			MentorshipRequest request,
+			@Nullable UUID programId,
+			Map<String, Instant> lastMeeting,
+			Instant now) {
+		UUID mentorId = request.getMentor().getId();
+		UUID organizationId = request.getOrganization().getId();
+		Instant last = lastMeeting.get(pairKey(mentorId, organizationId));
+		Instant accepted = CoordinatorProgramService.acceptedOn(request);
+		return new MentorshipRow(
+				request.getId(),
+				mentorId,
+				request.getMentor().getFullName(),
+				organizationId,
+				request.getOrganization().getName(),
+				MentorshipStatus.ACTIVE,
+				(accepted == null ? now : accepted).atZone(MeetingSlotTimes.APP_ZONE).toLocalDate(),
+				null,
+				0,
+				last == null ? null : ChronoUnit.DAYS.between(last, now),
+				0,
+				0,
+				programId,
+				MentorshipSource.ACCEPTED_REQUEST);
 	}
 
 	private static RequestRow toRequest(MentorshipRequest request) {

@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +29,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import com.dps.teknokent.domain.MatchNeedSource;
 import com.dps.teknokent.domain.MentorMatchingMethod;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.StartupMaturity;
@@ -251,6 +253,8 @@ class ProgramMatchingServiceTest {
 				profile(kerem, null, List.of("Satış deneyimi"))));
 		when(mentorshipRepository.countOrganizationsByMentor(eq(offered), any()))
 				.thenReturn(List.of(load(nihan.getId(), 3)));
+		// Kerem works with one team through an accepted request, which made no mentorship row.
+		when(coordinatorProgramService.acceptedRequestLoad(offered)).thenReturn(Map.of(kerem.getId(), 1L));
 		MentorProfile ownLimit = new MentorProfile();
 		ownLimit.setId(nihan.getId());
 		ownLimit.setMenteeCapacity(3);
@@ -273,7 +277,7 @@ class ProgramMatchingServiceTest {
 		assertThat(first.reasons()).containsExactly("Pazarlama deneyimi");
 		var second = suggestions.recommended().get(1);
 		assertThat(second.availability()).isNull();
-		assertThat(second.activeTeams()).isZero();
+		assertThat(second.activeTeams()).isEqualTo(1);
 		assertThat(second.capacity()).isEqualTo(4);
 		assertThat(second.reasons()).isEmpty();
 		// The whole pool is for picking by hand: alphabetical, and without the ranking's reasons.
@@ -524,6 +528,45 @@ class ProgramMatchingServiceTest {
 		assertThat(overview.past().get(1).status()).isEqualTo(MentorshipStatus.COMPLETED);
 		assertThat(overview.past().get(1).endDate()).isEqualTo(today.minusDays(10));
 		assertThat(overview.past().get(1).organizationId()).isEqualTo(terra.getId());
+	}
+
+	@Test
+	void aTeamWhoseRequestAMentorAcceptedNoLongerWaitsAndIsListedWithItsMentor() {
+		Program program = program();
+		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program);
+		Organization terra = team("Terra", List.of());
+		Organization vega = team("Vega", List.of());
+		Organization lumen = team("Lumen", List.of());
+		when(programStartupRepository.findByProgramIdIn(List.of(PROGRAM_ID)))
+				.thenReturn(List.of(startup(terra, 9), startup(vega, 8), startup(lumen, 7)));
+		when(organizationRepository.findAllById(any())).thenReturn(List.of(terra, vega, lumen));
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		Mentorship matched = mentorship(lumen, mentor("Mert Kaya"), MentorshipStatus.ACTIVE);
+		matched.setStartDate(today);
+		when(mentorshipRepository.findByOrganizationIdIn(any())).thenReturn(List.of(matched));
+		MentorshipRequest accepted = request(terra, mentor("Nihan Öztürk"), "Pazarlama",
+				MentorshipRequestStatus.ACCEPTED);
+		accepted.setId(UUID.randomUUID());
+		accepted.setAcceptedAt(Instant.now().minus(3, ChronoUnit.DAYS));
+		when(coordinatorProgramService.runningRequests(program)).thenReturn(List.of(accepted));
+		when(mentorshipRequestRepository.findByOrganizationIdOrderByCreatedAtDesc(vega.getId()))
+				.thenReturn(List.of());
+
+		var overview = service.overview(ELIF, PROGRAM_ID);
+
+		assertThat(overview.waiting()).extracting(team -> team.name()).containsExactly("Vega");
+		assertThat(overview.active()).extracting(match -> match.teamName()).containsExactly("Lumen", "Terra");
+		assertThat(overview.active().getFirst().source()).isEqualTo(MentorshipSource.MENTORSHIP);
+		assertThat(overview.active().getFirst().mentorshipId()).isEqualTo(matched.getId());
+		var fromRequest = overview.active().get(1);
+		assertThat(fromRequest.mentorshipId()).isNull();
+		assertThat(fromRequest.source()).isEqualTo(MentorshipSource.ACCEPTED_REQUEST);
+		assertThat(fromRequest.requestId()).isEqualTo(accepted.getId());
+		assertThat(fromRequest.mentorName()).isEqualTo("Nihan Öztürk");
+		assertThat(fromRequest.status()).isEqualTo(MentorshipStatus.ACTIVE);
+		assertThat(fromRequest.startDate()).isEqualTo(today.minusDays(3));
+		assertThat(fromRequest.endDate()).isNull();
+		assertThat(overview.past()).isEmpty();
 	}
 
 	@Test

@@ -28,11 +28,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.AdminOverviewResponse;
 import com.dps.teknokent.dto.responses.ProgramSessionsResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.Mentorship;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
@@ -80,6 +82,21 @@ class ProgramReportServiceTest {
 		assertThat(summary.questionAverages()).containsExactly(4.5, 4.0, 3.0, 3.5);
 		assertThat(summary.average()).isEqualTo(3.9);
 		assertThat(summary.distribution()).containsExactly(0, 1, 1, 3, 2);
+	}
+
+	@Test
+	void theReportCarriesTheProgramsRunningAcceptedRequests() {
+		UUID actorId = UUID.randomUUID();
+		Program program = new Program();
+		program.setId(UUID.randomUUID());
+		MentorshipRequest accepted = new MentorshipRequest();
+		AdminOverviewResponse report = new AdminOverviewResponse(List.of(), List.of(), List.of(), List.of(), List.of(),
+				0, List.of());
+		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
+		when(programService.runningRequests(program)).thenReturn(List.of(accepted));
+		when(adminOverviewService.programReport(program, List.of(accepted))).thenReturn(report);
+
+		assertThat(service.report(actorId, program.getId())).isSameAs(report);
 	}
 
 	@Test

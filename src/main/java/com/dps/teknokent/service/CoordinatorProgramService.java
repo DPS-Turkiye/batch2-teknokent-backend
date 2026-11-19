@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -436,10 +437,7 @@ public class CoordinatorProgramService {
 				}
 			}
 			for (MentorshipRequest request : acceptedRequestPairs(snapshot, program)) {
-				// Like a mentorship, a request with no program comes up under each of its team's programs.
-				String pair = pairKey(request.getMentor().getId(), request.getOrganization().getId()) + ":"
-						+ (request.getProgram() == null ? "" : request.getProgram().getId());
-				if (!requestPairs.add(pair)) {
+				if (!requestPairs.add(requestPairKey(request))) {
 					continue;
 				}
 				mentoredTeams.add(request.getOrganization().getId());
@@ -859,8 +857,9 @@ public class CoordinatorProgramService {
 			return new CoordinatorProgramResponse.MentorDistribution(0, 0, 0, pending);
 		}
 		// Load and capacity are global: a mentor full from another program is full here too.
-		Map<UUID, Long> load = mentorshipRepository.countOrganizationsByMentor(accepted, MATCHED).stream()
-				.collect(Collectors.toMap(MentorCount::getMentorId, MentorCount::getTotal));
+		Map<UUID, Long> load = new HashMap<>(mentorshipRepository.countOrganizationsByMentor(accepted, MATCHED).stream()
+				.collect(Collectors.toMap(MentorCount::getMentorId, MentorCount::getTotal)));
+		acceptedRequestLoad(accepted).forEach((mentorId, teams) -> load.merge(mentorId, teams, Long::sum));
 		Map<UUID, Integer> capacity = new HashMap<>();
 		for (MentorProfile profile : mentorProfileRepository.findAllById(accepted)) {
 			if (profile.getMenteeCapacity() != null) {
@@ -953,6 +952,62 @@ public class CoordinatorProgramService {
 		return pairs;
 	}
 
+	/** The program's accepted requests that count as running mentorships (see {@link #acceptedRequestPairs}). */
+	@Transactional(readOnly = true)
+	public List<MentorshipRequest> runningRequests(Program program) {
+		return acceptedRequestPairs(snapshot(List.of(program)), program);
+	}
+
+	/**
+	 * Per mentor, the teams they work with only through an accepted request still running in one of the team's
+	 * programs (see {@link #acceptedRequestPairs}), with no active or planned mentorship between them. Added to the
+	 * mentorship count it is the mentor's load, and like that count it spans every program.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, Long> acceptedRequestLoad(Collection<UUID> mentorIds) {
+		if (mentorIds.isEmpty()) {
+			return Map.of();
+		}
+		Set<UUID> mentors = Set.copyOf(mentorIds);
+		Set<UUID> teams = mentorshipRequestRepository
+				.findByMentorIdInAndStatus(mentors, MentorshipRequestStatus.ACCEPTED)
+				.stream()
+				.map(request -> request.getOrganization().getId())
+				.collect(Collectors.toSet());
+		if (teams.isEmpty()) {
+			return Map.of();
+		}
+		Set<UUID> programIds = programStartupRepository.findByOrganizationIdIn(teams).stream()
+				.map(ProgramStartup::getProgramId)
+				.collect(Collectors.toSet());
+		List<Program> programs = programRepository.findAllById(programIds);
+		Snapshot snapshot = snapshot(programs);
+		Map<UUID, Set<UUID>> teamsByMentor = new HashMap<>();
+		for (Program program : programs) {
+			for (MentorshipRequest request : acceptedRequestPairs(snapshot, program)) {
+				UUID mentorId = request.getMentor().getId();
+				UUID organizationId = request.getOrganization().getId();
+				boolean matched = snapshot.mentorships().getOrDefault(organizationId, List.of()).stream()
+						.anyMatch(mentorship -> MATCHED.contains(mentorship.getStatus())
+								&& mentorship.getMentor().getId().equals(mentorId));
+				if (mentors.contains(mentorId) && !matched) {
+					teamsByMentor.computeIfAbsent(mentorId, key -> new HashSet<>()).add(organizationId);
+				}
+			}
+		}
+		return teamsByMentor.entrySet().stream()
+				.collect(Collectors.toMap(Map.Entry::getKey, entry -> (long) entry.getValue().size()));
+	}
+
+	/**
+	 * One accepted request per team, mentor and program, the rule every coordinator count dedupes by. A request with
+	 * no program comes up under each of its team's programs, like a mentorship made before V82, and counts once.
+	 */
+	static String requestPairKey(MentorshipRequest request) {
+		return pairKey(request.getMentor().getId(), request.getOrganization().getId()) + ":"
+				+ (request.getProgram() == null ? "" : request.getProgram().getId());
+	}
+
 	private static boolean acceptedSince(MentorshipRequest request, @Nullable Instant joined) {
 		Instant accepted = acceptedOn(request);
 		return accepted != null && (joined == null || !accepted.isBefore(joined));
@@ -991,7 +1046,7 @@ public class CoordinatorProgramService {
 	/**
 	 * {@code accepted_at} is stamped on save; a request accepted before that column existed falls back to its sending.
 	 */
-	private static @Nullable Instant acceptedOn(MentorshipRequest request) {
+	static @Nullable Instant acceptedOn(MentorshipRequest request) {
 		return request.getAcceptedAt() != null ? request.getAcceptedAt() : request.getCreatedAt();
 	}
 

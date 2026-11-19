@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -1126,6 +1127,54 @@ class CoordinatorProgramServiceTest {
 				.containsExactly("METU Stars 2026", "BİGG 2026");
 		assertThat(home.metrics().activeMentorships()).isEqualTo(1);
 		assertThat(home.metrics().mentoredTeams()).isEqualTo(1);
+	}
+
+	@Test
+	void aMentorsLoadAddsTheTeamsTheyWorkWithOnlyThroughAnAcceptedRequest() {
+		Program program = program(COORDINATOR_ID);
+		// Terra: a match and a request (counted by the match). Lumen: two requests (one team). Kavun: a request
+		// here and a match made in another program (counted by the match). The second mentor was not asked about.
+		MentorshipRequest terra = acceptedRequest(TERRA_ID, MENTOR_ID, 4);
+		MentorshipRequest lumen = acceptedRequest(LUMEN_ID, MENTOR_ID, 6);
+		MentorshipRequest lumenAgain = acceptedRequest(LUMEN_ID, MENTOR_ID, 1);
+		MentorshipRequest kavun = acceptedRequest(KAVUN_ID, MENTOR_ID, 2);
+		MentorshipRequest otherMentor = acceptedRequest(LUMEN_ID, PENDING_MENTOR_ID, 2);
+		Mentorship kavunElsewhere = mentorship(KAVUN_ID, MentorshipStatus.ACTIVE, today.minusDays(20));
+		kavunElsewhere.setProgram(programRef(UUID.randomUUID()));
+		List<ProgramStartup> startups = List.of(startup(TERRA_ID, 30), startup(LUMEN_ID, 30), startup(KAVUN_ID, 30));
+		when(mentorshipRequestRepository.findByMentorIdInAndStatus(anyCollection(),
+				eq(MentorshipRequestStatus.ACCEPTED)))
+				.thenReturn(List.of(terra, lumen, lumenAgain, kavun, otherMentor));
+		when(programStartupRepository.findByOrganizationIdIn(anyCollection())).thenReturn(startups);
+		when(programRepository.findAllById(any())).thenReturn(List.of(program));
+		stubProgramRows(startups, List.of(), List.of());
+		stubTeamData(
+				List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"),
+						organization(KAVUN_ID, "Kavun")),
+				List.of(mentorship(TERRA_ID, MentorshipStatus.ACTIVE, today.minusDays(10)), kavunElsewhere),
+				List.of(), List.of(), List.of());
+		stubRequests(terra, lumen, lumenAgain, kavun, otherMentor);
+
+		assertThat(service.acceptedRequestLoad(List.of(MENTOR_ID))).containsExactly(Map.entry(MENTOR_ID, 1L));
+	}
+
+	@Test
+	void aMentorWithNoAcceptedRequestsAddsNoLoad() {
+		assertThat(service.acceptedRequestLoad(List.of())).isEmpty();
+		assertThat(service.acceptedRequestLoad(List.of(MENTOR_ID))).isEmpty();
+		verify(programRepository, never()).findAllById(any());
+	}
+
+	@Test
+	void theProgramsRunningRequestsAreTheLatestAcceptedOnePerTeamAndMentor() {
+		Program program = program(COORDINATOR_ID);
+		MentorshipRequest older = acceptedRequest(LUMEN_ID, MENTOR_ID, 9);
+		MentorshipRequest latest = acceptedRequest(LUMEN_ID, MENTOR_ID, 2);
+		stubProgramRows(List.of(startup(LUMEN_ID, 30)), List.of(), List.of());
+		stubTeamData(List.of(organization(LUMEN_ID, "Lumen")), List.of(), List.of(), List.of(), List.of());
+		stubRequests(older, latest);
+
+		assertThat(service.runningRequests(program)).containsExactly(latest);
 	}
 
 	@Test

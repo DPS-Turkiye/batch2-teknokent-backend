@@ -56,4 +56,6 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 	List<MentorshipRequest> findByOrganizationIdInAndStatus(
 			Collection<UUID> organizationIds,
 			MentorshipRequestStatus status);
+
+	List<MentorshipRequest> findByMentorIdInAndStatus(Collection<UUID> mentorIds, MentorshipRequestStatus status);
 }

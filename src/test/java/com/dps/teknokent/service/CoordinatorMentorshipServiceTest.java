@@ -32,6 +32,7 @@ import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.UserRole;
@@ -189,6 +190,78 @@ class CoordinatorMentorshipServiceTest {
 		assertThat(service.list(COORDINATOR_ID, OTHER_PROGRAM_ID))
 				.extracting(row -> row.mentorName())
 				.containsExactly("Kerem Sarı");
+	}
+
+	@Test
+	void aTeamWorkingWithAMentorThroughAnAcceptedRequestIsListedWithoutAMentorshipId() {
+		Mentorship lumen = mentorship(ayse, LUMEN_ID, "Lumen", MentorshipStatus.ACTIVE);
+		Organization kavun = organization(KAVUN_ID, "Kavun");
+		MentorshipRequest kavunRequest = accepted(kerem, kavun, program, now.minus(10, ChronoUnit.DAYS));
+		kavunRequest.setSupportArea("Pazarlama");
+		// The same team and mentor as the Lumen mentorship: listed once, through the mentorship.
+		MentorshipRequest lumenRequest = accepted(ayse, lumen.getOrganization(), program,
+				now.minus(30, ChronoUnit.DAYS));
+		Meeting held = meeting(kerem, kavun, now.minus(2, ChronoUnit.DAYS), MeetingStatus.COMPLETED, "Not");
+		Meeting next = meeting(kerem, kavun, now.plus(5, ChronoUnit.DAYS), MeetingStatus.SCHEDULED, null);
+		stubRequestList(List.of(program), Map.of(PROGRAM_ID, List.of(startup(LUMEN_ID), startup(KAVUN_ID))),
+				List.of(lumen), List.of(held, next),
+				Map.of(KAVUN_ID, List.of(kavunRequest), LUMEN_ID, List.of(lumenRequest)));
+
+		var rows = service.list(COORDINATOR_ID, null);
+
+		assertThat(rows).extracting(row -> row.organizationName()).containsExactlyInAnyOrder("Lumen", "Kavun");
+		var fromRequest = rows.stream().filter(row -> row.organizationName().equals("Kavun")).findFirst().orElseThrow();
+		assertThat(fromRequest.id()).isNull();
+		assertThat(fromRequest.source()).isEqualTo(MentorshipSource.ACCEPTED_REQUEST);
+		assertThat(fromRequest.requestId()).isEqualTo(kavunRequest.getId());
+		assertThat(fromRequest.status()).isEqualTo(MentorshipStatus.ACTIVE);
+		assertThat(fromRequest.health()).isEqualTo(CoordinatorMentorshipHealth.HEALTHY);
+		assertThat(fromRequest.topic()).isEqualTo("Pazarlama");
+		assertThat(fromRequest.mentorName()).isEqualTo("Kerem Sarı");
+		assertThat(fromRequest.startDate())
+				.isEqualTo(kavunRequest.getAcceptedAt().atZone(MeetingSlotTimes.APP_ZONE).toLocalDate());
+		assertThat(fromRequest.daysSinceLastMeeting()).isEqualTo(2);
+		assertThat(fromRequest.nextMeetingAt()).isEqualTo(next.getScheduledAt());
+		var fromMentorship = rows.stream().filter(row -> row.organizationName().equals("Lumen")).findFirst()
+				.orElseThrow();
+		assertThat(fromMentorship.id()).isEqualTo(lumen.getId());
+		assertThat(fromMentorship.source()).isEqualTo(MentorshipSource.MENTORSHIP);
+		assertThat(fromMentorship.requestId()).isNull();
+	}
+
+	@Test
+	void anAcceptedRequestWithNoProgramIsListedOnceForATeamInTwoPrograms() {
+		Program kulucka = program();
+		kulucka.setId(OTHER_PROGRAM_ID);
+		kulucka.setName("Kuluçka 2026");
+		Organization kavun = organization(KAVUN_ID, "Kavun");
+		MentorshipRequest request = accepted(kerem, kavun, null, now.minus(40, ChronoUnit.DAYS));
+		ProgramStartup inKulucka = startup(KAVUN_ID);
+		inKulucka.setProgramId(OTHER_PROGRAM_ID);
+		stubRequestList(List.of(program, kulucka),
+				Map.of(PROGRAM_ID, List.of(startup(KAVUN_ID)), OTHER_PROGRAM_ID, List.of(inKulucka)),
+				List.of(), List.of(), Map.of(KAVUN_ID, List.of(request)));
+
+		var rows = service.list(COORDINATOR_ID, null);
+
+		assertThat(rows).singleElement().satisfies(row -> {
+			assertThat(row.requestId()).isEqualTo(request.getId());
+			assertThat(row.programName()).isEqualTo("METU Stars 2026");
+			// No meeting since it was accepted 40 days ago: past the program's stale threshold.
+			assertThat(row.health()).isEqualTo(CoordinatorMentorshipHealth.RISKY);
+		});
+	}
+
+	@Test
+	void theDrawerCountsTheTeamsAMentorWorksWithThroughAcceptedRequestsInTheirLoad() {
+		Mentorship lumen = mentorship(ayse, LUMEN_ID, "Lumen", MentorshipStatus.ACTIVE);
+		stubScoped(lumen);
+		stubSnapshot(List.of(lumen), List.of(), Set.of());
+		when(mentorshipRepository.countOrganizationsByMentor(any(), any())).thenReturn(List.of(load(2)));
+		when(programService.acceptedRequestLoad(List.of(AYSE_ID))).thenReturn(Map.of(AYSE_ID, 1L));
+		when(mentorProfileRepository.findById(AYSE_ID)).thenReturn(Optional.empty());
+
+		assertThat(service.detail(COORDINATOR_ID, lumen.getId()).mentorLoad()).isEqualTo(3);
 	}
 
 	@Test
@@ -509,6 +582,42 @@ class CoordinatorMentorshipServiceTest {
 		when(programService.managedPrograms(coordinator)).thenReturn(List.of(program));
 		when(programService.scopeOf(COORDINATOR_ID, List.of(program), null)).thenReturn(List.of(program));
 		stubSnapshot(mentorships, meetings, overdueOrganizations, openBottlenecks);
+	}
+
+	private void stubRequestList(List<Program> scope, Map<UUID, List<ProgramStartup>> startups,
+			List<Mentorship> mentorships, List<Meeting> meetings, Map<UUID, List<MentorshipRequest>> accepted) {
+		Map<String, Instant> lastMeeting = new HashMap<>();
+		meetings.stream()
+				.filter(meeting -> meeting.getScheduledAt().isBefore(now))
+				.forEach(meeting -> lastMeeting.putIfAbsent(
+						CoordinatorProgramService.pairKey(meeting.getMentor().getId(),
+								meeting.getOrganization().getId()),
+						meeting.getScheduledAt()));
+		Snapshot snapshot = new Snapshot(today, now, Map.of(), Map.of(), startups, Map.of(), Map.of(),
+				mentorships.stream().collect(Collectors.groupingBy(mentorship -> mentorship.getOrganization().getId())),
+				lastMeeting,
+				meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
+				Map.of(), Set.of(), Map.of(), accepted);
+		when(programService.requireCoordinatorOrAdmin(COORDINATOR_ID)).thenReturn(coordinator);
+		when(programService.managedPrograms(coordinator)).thenReturn(scope);
+		when(programService.scopeOf(COORDINATOR_ID, scope, null)).thenReturn(scope);
+		when(programService.snapshot(scope)).thenReturn(snapshot);
+	}
+
+	private static MentorshipRequest accepted(AppUser mentor, Organization organization, Program program,
+			Instant acceptedAt) {
+		MentorshipRequest request = request(mentor, organization, null, acceptedAt.minus(1, ChronoUnit.DAYS));
+		request.setId(UUID.randomUUID());
+		request.setProgram(program);
+		request.setAcceptedAt(acceptedAt);
+		return request;
+	}
+
+	private static Organization organization(UUID id, String name) {
+		Organization organization = new Organization();
+		organization.setId(id);
+		organization.setName(name);
+		return organization;
 	}
 
 	private void stubScoped(Mentorship mentorship) {

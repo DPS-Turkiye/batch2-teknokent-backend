@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 import com.dps.teknokent.domain.MatchNeedSource;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 
 public final class ProgramMatchingResponse {
@@ -30,15 +31,21 @@ public final class ProgramMatchingResponse {
 			@Nullable String needText) {
 	}
 
+	/**
+	 * A team and its mentor. One working through an accepted request has no mentorship: {@code mentorshipId} is
+	 * null, {@code source} says so and {@code requestId} names the request.
+	 */
 	public record Match(
-			UUID mentorshipId,
+			@Nullable UUID mentorshipId,
 			UUID organizationId,
 			String teamName,
 			UUID mentorId,
 			String mentorName,
 			MentorshipStatus status,
 			LocalDate startDate,
-			LocalDate endDate) {
+			@Nullable LocalDate endDate,
+			MentorshipSource source,
+			@Nullable UUID requestId) {
 	}
 
 	/** Ranked suggestions from the program's pool, plus the whole pool for a manual pick. */

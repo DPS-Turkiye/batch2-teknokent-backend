@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +35,6 @@ import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
-import com.dps.teknokent.repository.MentorCount;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.MentorProgramName;
 import com.dps.teknokent.repository.MentorshipRepository;
@@ -276,9 +276,13 @@ public class MentorPoolService {
 				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
 		Map<UUID, MentorProfile> profiles = mentorProfileRepository.findAllById(mentorIds).stream()
 				.collect(Collectors.toMap(MentorProfile::getId, Function.identity()));
-		Map<UUID, Long> load = mentorIds.isEmpty() ? Map.of()
-				: mentorshipRepository.countOrganizationsByMentor(mentorIds, MATCHED).stream()
-						.collect(Collectors.toMap(MentorCount::getMentorId, MentorCount::getTotal));
+		Map<UUID, Long> load = new HashMap<>();
+		if (!mentorIds.isEmpty()) {
+			mentorshipRepository.countOrganizationsByMentor(mentorIds, MATCHED)
+					.forEach(count -> load.put(count.getMentorId(), count.getTotal()));
+			coordinatorProgramService.acceptedRequestLoad(mentorIds)
+					.forEach((mentorId, teams) -> load.merge(mentorId, teams, Long::sum));
+		}
 		Map<UUID, List<String>> programs = mentorIds.isEmpty() ? Map.of()
 				: programMentorRepository.findProgramNamesByMentorIds(mentorIds, ProgramMentorStatus.ACCEPTED).stream()
 						.collect(Collectors.groupingBy(MentorProgramName::getMentorId,

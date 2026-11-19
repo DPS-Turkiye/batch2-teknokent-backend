@@ -26,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dps.teknokent.domain.CoordinatorAgendaKind;
 import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramCalendarEntryKind;
 import com.dps.teknokent.domain.ProgramEventKind;
@@ -208,7 +209,7 @@ class CoordinatorCalendarServiceTest {
 		return new CoordinatorMentorshipResponse(
 				id, PROGRAM_ID, "METU Stars 2026", mentor.getId(), mentor.getFullName(), null,
 				organization.getId(), organization.getName(), MentorshipStatus.ACTIVE, health, topic,
-				null, null, null, next, 0, 0, 0);
+				null, null, null, next, 0, 0, 0, MentorshipSource.MENTORSHIP, null);
 	}
 
 	private static Instant at(LocalDate day, int hour, int minute) {
