@@ -86,4 +86,7 @@ public class Program {
 	/** Whether the program takes attendance by session QR codes; its coordinators turn it off. */
 	@Column(name = "attendance_enabled", nullable = false)
 	private boolean attendanceEnabled = true;
+	/** Whether the program's mentors carry labels; off until its coordinators turn it on. */
+	@Column(name = "mentor_labels_enabled", nullable = false)
+	private boolean mentorLabelsEnabled;
 }
