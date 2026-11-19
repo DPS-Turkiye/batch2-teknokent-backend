@@ -179,6 +179,28 @@ class CoordinatorCalendarServiceTest {
 		assertThat(calendar.summary().unscheduledRisky()).isEqualTo(1);
 	}
 
+	@Test
+	void aMeetingLinksThePairsMentorshipEvenWhenTheListAlsoHasAnAcceptedRequestForThePair() {
+		Meeting novaMeeting = meeting(ahmet, nova, at(MONDAY.plusDays(2), 11, 0));
+		stubScope(List.of(novaMeeting));
+		UUID mentorshipId = UUID.randomUUID();
+		CoordinatorMentorshipResponse fromRequest = new CoordinatorMentorshipResponse(
+				null, PROGRAM_ID, "METU Stars 2026", ahmet.getId(), ahmet.getFullName(), null,
+				nova.getId(), nova.getName(), MentorshipStatus.ACTIVE, CoordinatorMentorshipHealth.RISKY, "Pazarlama",
+				null, null, null, null, 0, 0, 0, MentorshipSource.ACCEPTED_REQUEST, UUID.randomUUID());
+		when(mentorshipService.list(COORDINATOR_ID, null)).thenReturn(List.of(fromRequest,
+				row(mentorshipId, ahmet, nova, "Teknik mimari", CoordinatorMentorshipHealth.HEALTHY, null)));
+		when(programEventRepository.findByProgramIdInAndStartsAtBetweenOrderByStartsAtAsc(eq(Set.of(PROGRAM_ID)), any(),
+				any())).thenReturn(List.of());
+
+		var calendar = service.calendar(COORDINATOR_ID, null, MONDAY, MONDAY.plusDays(6));
+
+		assertThat(calendar.items()).singleElement().satisfies(item -> {
+			assertThat(item.mentorshipId()).isEqualTo(mentorshipId);
+			assertThat(item.topic()).isEqualTo("Teknik mimari");
+		});
+	}
+
 	private void stubScope(List<Meeting> meetings) {
 		when(programService.requireCoordinatorOrAdmin(COORDINATOR_ID)).thenReturn(coordinator);
 		when(programService.managedPrograms(coordinator)).thenReturn(List.of(program));

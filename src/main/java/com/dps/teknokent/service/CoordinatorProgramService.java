@@ -980,7 +980,13 @@ public class CoordinatorProgramService {
 		Set<UUID> programIds = programStartupRepository.findByOrganizationIdIn(teams).stream()
 				.map(ProgramStartup::getProgramId)
 				.collect(Collectors.toSet());
-		List<Program> programs = programRepository.findAllById(programIds);
+		// A completed program's requests no longer count, so it is left out of the snapshot as its history grows.
+		List<Program> programs = programRepository.findAllById(programIds).stream()
+				.filter(program -> program.getStatus() != ProgramStatus.COMPLETED)
+				.toList();
+		if (programs.isEmpty()) {
+			return Map.of();
+		}
 		Snapshot snapshot = snapshot(programs);
 		Map<UUID, Set<UUID>> teamsByMentor = new HashMap<>();
 		for (Program program : programs) {

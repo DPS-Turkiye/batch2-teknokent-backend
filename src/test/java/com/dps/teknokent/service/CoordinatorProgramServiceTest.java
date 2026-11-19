@@ -1166,6 +1166,20 @@ class CoordinatorProgramServiceTest {
 	}
 
 	@Test
+	void aCompletedProgramsAcceptedRequestsAddNoLoad() {
+		Program program = program(COORDINATOR_ID);
+		program.setStatus(ProgramStatus.COMPLETED);
+		when(mentorshipRequestRepository.findByMentorIdInAndStatus(anyCollection(),
+				eq(MentorshipRequestStatus.ACCEPTED))).thenReturn(List.of(acceptedRequest(LUMEN_ID, MENTOR_ID, 3)));
+		when(programStartupRepository.findByOrganizationIdIn(anyCollection()))
+				.thenReturn(List.of(startup(LUMEN_ID, 30)));
+		when(programRepository.findAllById(any())).thenReturn(List.of(program));
+
+		assertThat(service.acceptedRequestLoad(List.of(MENTOR_ID))).isEmpty();
+		verify(programStartupRepository, never()).findByProgramIdIn(anyList());
+	}
+
+	@Test
 	void theProgramsRunningRequestsAreTheLatestAcceptedOnePerTeamAndMentor() {
 		Program program = program(COORDINATOR_ID);
 		MentorshipRequest older = acceptedRequest(LUMEN_ID, MENTOR_ID, 9);
