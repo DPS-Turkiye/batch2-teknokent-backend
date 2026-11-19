@@ -34,7 +34,6 @@ import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.MeetingFeedback;
 import com.dps.teknokent.entity.Mentorship;
-import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
@@ -85,16 +84,14 @@ class ProgramReportServiceTest {
 	}
 
 	@Test
-	void theReportCarriesTheProgramsRunningAcceptedRequests() {
+	void theReportIsTheManagedProgramsReport() {
 		UUID actorId = UUID.randomUUID();
 		Program program = new Program();
 		program.setId(UUID.randomUUID());
-		MentorshipRequest accepted = new MentorshipRequest();
 		AdminOverviewResponse report = new AdminOverviewResponse(List.of(), List.of(), List.of(), List.of(), List.of(),
-				0, List.of());
+				0, List.of(), List.of());
 		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
-		when(programService.runningRequests(program)).thenReturn(List.of(accepted));
-		when(adminOverviewService.programReport(program, List.of(accepted))).thenReturn(report);
+		when(adminOverviewService.programReport(program)).thenReturn(report);
 
 		assertThat(service.report(actorId, program.getId())).isSameAs(report);
 	}

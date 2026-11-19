@@ -6,6 +6,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,6 +70,7 @@ public class MentorProfileService {
 	private final MentorshipRepository mentorshipRepository;
 	private final ProgramMentorRepository programMentorRepository;
 	private final MenteeProgramService menteeProgramService;
+	private final CoordinatorProgramService coordinatorProgramService;
 
 	private static final List<MentorshipStatus> ONGOING_MENTORSHIP = List.of(
 			MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
@@ -292,13 +294,17 @@ public class MentorProfileService {
 		return mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
 	}
 
-	// Counts come from grouped queries so a mentor list costs three queries, not three per mentor.
+	// Counts come from grouped queries, so a mentor list costs a fixed number of queries, not a few per mentor.
 	private List<MentorProfileResponse> withActivity(List<MentorProfile> profiles) {
 		if (profiles.isEmpty()) {
 			return List.of();
 		}
 		List<UUID> ids = profiles.stream().map(MentorProfile::getId).toList();
-		Map<UUID, Long> active = totals(mentorshipRepository.countOrganizationsByMentor(ids, ONGOING_MENTORSHIP));
+		Map<UUID, Long> active = new HashMap<>(
+				totals(mentorshipRepository.countOrganizationsByMentor(ids, ONGOING_MENTORSHIP)));
+		// A team that found the mentor through an accepted request has no mentorship row, but is an active team.
+		coordinatorProgramService.acceptedRequestLoad(ids, ONGOING_MENTORSHIP)
+				.forEach((mentorId, teams) -> active.merge(mentorId, teams, Long::sum));
 		Map<UUID, Long> completed = totals(
 				mentorshipRepository.countMentorshipsByMentor(ids, MentorshipStatus.COMPLETED));
 		Map<UUID, List<MentorProgramResponse>> programs = programMentorRepository

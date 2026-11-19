@@ -22,6 +22,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -99,6 +100,8 @@ class MentorProfileServiceTest {
 	private ProgramMentorRepository programMentorRepository;
 	@Mock
 	private MenteeProgramService menteeProgramService;
+	@Mock
+	private CoordinatorProgramService coordinatorProgramService;
 
 	private MentorProfileService mentorProfileService;
 
@@ -111,7 +114,7 @@ class MentorProfileServiceTest {
 				mentorProfileRepository, mentorAvailabilityRuleRepository, mentorAvailabilityExceptionRepository,
 				mentorAvailabilitySlotRepository,
 				meetingRepository, domainLookupService, mentorshipRepository, programMentorRepository,
-				menteeProgramService);
+				menteeProgramService, coordinatorProgramService);
 	}
 
 	private AppUser mentor() {
@@ -446,6 +449,24 @@ class MentorProfileServiceTest {
 		assertThat(result.programNames()).containsExactly("METU Stars");
 		assertThat(result.programs()).containsExactly(
 				new MentorProgramResponse(programId, "METU Stars", ProgramStatus.COMPLETED, "Design mentor"));
+	}
+
+	@Test
+	void aTeamWorkingWithTheMentorThroughAnAcceptedRequestCountsAsAnActiveTeam() {
+		MentorProfile profile = new MentorProfile();
+		profile.setId(mentorId);
+		profile.setUser(mentor());
+		List<MentorshipStatus> ongoing = List.of(MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE,
+				MentorshipStatus.PAUSED);
+		when(mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED))
+				.thenReturn(List.of(profile));
+		when(mentorshipRepository.countOrganizationsByMentor(List.of(mentorId), ongoing))
+				.thenReturn(List.of(count(2)));
+		// The request load leaves out a pair that already has an ongoing mentorship, paused ones included.
+		when(coordinatorProgramService.acceptedRequestLoad(List.of(mentorId), ongoing))
+				.thenReturn(Map.of(mentorId, 1L));
+
+		assertThat(mentorProfileService.findAll().getFirst().activeMenteeCount()).isEqualTo(3);
 	}
 
 	private MentorCount count(long total) {

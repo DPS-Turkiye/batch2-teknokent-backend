@@ -955,7 +955,27 @@ public class CoordinatorProgramService {
 	/** The program's accepted requests that count as running mentorships (see {@link #acceptedRequestPairs}). */
 	@Transactional(readOnly = true)
 	public List<MentorshipRequest> runningRequests(Program program) {
-		return acceptedRequestPairs(snapshot(List.of(program)), program);
+		return acceptedRequestPairs(requestSnapshot(List.of(program)), program);
+	}
+
+	/** Per program, its running accepted requests, read from one snapshot; a completed program has none. */
+	@Transactional(readOnly = true)
+	public Map<UUID, List<MentorshipRequest>> runningRequests(List<Program> programs) {
+		List<Program> running = programs.stream()
+				.filter(program -> program.getStatus() != ProgramStatus.COMPLETED)
+				.toList();
+		if (running.isEmpty()) {
+			return Map.of();
+		}
+		Snapshot snapshot = requestSnapshot(running);
+		Map<UUID, List<MentorshipRequest>> byProgram = new LinkedHashMap<>();
+		for (Program program : running) {
+			List<MentorshipRequest> pairs = acceptedRequestPairs(snapshot, program);
+			if (!pairs.isEmpty()) {
+				byProgram.put(program.getId(), pairs);
+			}
+		}
+		return byProgram;
 	}
 
 	/**
@@ -965,6 +985,15 @@ public class CoordinatorProgramService {
 	 */
 	@Transactional(readOnly = true)
 	public Map<UUID, Long> acceptedRequestLoad(Collection<UUID> mentorIds) {
+		return acceptedRequestLoad(mentorIds, MATCHED);
+	}
+
+	/**
+	 * As {@link #acceptedRequestLoad(Collection)}, for a count of mentorships in {@code counted}: a pair with a
+	 * mentorship in one of those statuses is already in that count, so its request adds nothing.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, Long> acceptedRequestLoad(Collection<UUID> mentorIds, Collection<MentorshipStatus> counted) {
 		if (mentorIds.isEmpty()) {
 			return Map.of();
 		}
@@ -987,14 +1016,14 @@ public class CoordinatorProgramService {
 		if (programs.isEmpty()) {
 			return Map.of();
 		}
-		Snapshot snapshot = snapshot(programs);
+		Snapshot snapshot = requestSnapshot(programs);
 		Map<UUID, Set<UUID>> teamsByMentor = new HashMap<>();
 		for (Program program : programs) {
 			for (MentorshipRequest request : acceptedRequestPairs(snapshot, program)) {
 				UUID mentorId = request.getMentor().getId();
 				UUID organizationId = request.getOrganization().getId();
 				boolean matched = snapshot.mentorships().getOrDefault(organizationId, List.of()).stream()
-						.anyMatch(mentorship -> MATCHED.contains(mentorship.getStatus())
+						.anyMatch(mentorship -> counted.contains(mentorship.getStatus())
 								&& mentorship.getMentor().getId().equals(mentorId));
 				if (mentors.contains(mentorId) && !matched) {
 					teamsByMentor.computeIfAbsent(mentorId, key -> new HashSet<>()).add(organizationId);
@@ -1130,6 +1159,45 @@ public class CoordinatorProgramService {
 				lastMeeting,
 				meetings.stream().collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
 				openBottlenecks, overdue, formerTeams, acceptedRequests);
+	}
+
+	/**
+	 * Only what {@link #acceptedRequestPairs} reads: the programs' approved teams, with their mentorships, accepted
+	 * requests and meetings. The mentor directory asks for it on every read, so the rest of a snapshot is left out.
+	 */
+	private Snapshot requestSnapshot(List<Program> programs) {
+		Instant now = Instant.now();
+		LocalDate today = LocalDate.now(MeetingSlotTimes.APP_ZONE);
+		Map<UUID, List<ProgramStartup>> startups = programs.isEmpty()
+				? Map.of()
+				: programStartupRepository.findByProgramIdIn(programs.stream().map(Program::getId).toList())
+						.stream()
+						.collect(Collectors.groupingBy(ProgramStartup::getProgramId));
+		Set<UUID> organizationIds = new HashSet<>();
+		startups.values().forEach(rows -> rows.forEach(row -> organizationIds.add(row.getOrganizationId())));
+		if (organizationIds.isEmpty()) {
+			return new Snapshot(today, now, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+					Map.of(), Map.of(), Set.of());
+		}
+		Map<UUID, Organization> organizations = organizationRepository.findAllById(organizationIds).stream()
+				.collect(Collectors.toMap(Organization::getId, Function.identity()));
+		Map<UUID, List<ProgramStartup>> teams = startups.entrySet().stream()
+				.collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().stream()
+						.filter(startup -> Optional.ofNullable(organizations.get(startup.getOrganizationId()))
+								.map(Organization::isApprovedForProgram)
+								.orElse(false))
+						.toList()));
+		return new Snapshot(today, now, Map.of(), Map.of(), teams, Map.of(), organizations,
+				mentorshipRepository.findByOrganizationIdIn(organizationIds).stream()
+						.collect(Collectors.groupingBy(mentorship -> mentorship.getOrganization().getId())),
+				Map.of(),
+				meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds).stream()
+						.collect(Collectors.groupingBy(meeting -> meeting.getOrganization().getId())),
+				Map.of(), Set.of(), Map.of(),
+				mentorshipRequestRepository
+						.findByOrganizationIdInAndStatus(organizationIds, MentorshipRequestStatus.ACCEPTED)
+						.stream()
+						.collect(Collectors.groupingBy(request -> request.getOrganization().getId())));
 	}
 
 	/**

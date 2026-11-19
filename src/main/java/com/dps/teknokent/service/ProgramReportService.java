@@ -70,8 +70,7 @@ public class ProgramReportService {
 
 	@Transactional(readOnly = true)
 	public AdminOverviewResponse report(UUID actorId, UUID programId) {
-		Program program = programService.requireManagedProgram(actorId, programId);
-		return adminOverviewService.programReport(program, programService.runningRequests(program));
+		return adminOverviewService.programReport(programService.requireManagedProgram(actorId, programId));
 	}
 
 	/**

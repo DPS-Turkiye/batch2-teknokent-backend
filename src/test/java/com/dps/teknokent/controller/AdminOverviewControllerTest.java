@@ -64,7 +64,10 @@ class AdminOverviewControllerTest {
 				List.of(new AdminOverviewResponse.BottleneckRow(UUID.randomUUID(), "Hukuk", BottleneckSeverity.HIGH,
 						BottleneckStatus.IN_PROGRESS, ORG_ID, "Vega", AT)),
 				1,
-				List.of(new AdminOverviewResponse.MeetingMark(MENTOR_ID, ORG_ID, AT, MeetingStatus.COMPLETED))));
+				List.of(new AdminOverviewResponse.MeetingMark(MENTOR_ID, ORG_ID, AT, MeetingStatus.COMPLETED)),
+				List.of(new AdminOverviewResponse.MentorshipRow(UUID.randomUUID(), MENTOR_ID, "Kemal Arslan", ORG_ID,
+						"Vega", MentorshipStatus.ACTIVE, LocalDate.parse("2026-09-10"), null, 0, null, 0, 0,
+						PROGRAM_ID, MentorshipSource.ACCEPTED_REQUEST))));
 
 		mockMvc.perform(get("/api/admin/overview").param("actorId", ACTOR_ID.toString()).with(user("test-user")))
 				.andExpect(status().isOk())
@@ -75,6 +78,8 @@ class AdminOverviewControllerTest {
 				.andExpect(jsonPath("$.requests[0].status").value("MORE_INFO_REQUESTED"))
 				.andExpect(jsonPath("$.bottlenecks[0].severity").value("HIGH"))
 				.andExpect(jsonPath("$.bottlenecks[0].status").value("IN_PROGRESS"))
-				.andExpect(jsonPath("$.meetings[0].status").value("COMPLETED"));
+				.andExpect(jsonPath("$.meetings[0].status").value("COMPLETED"))
+				.andExpect(jsonPath("$.mentorships[0].source").value("MENTORSHIP"))
+				.andExpect(jsonPath("$.acceptedRequests[0].source").value("ACCEPTED_REQUEST"));
 	}
 }

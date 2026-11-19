@@ -26,7 +26,12 @@ public record AdminOverviewResponse(
 		List<RequestRow> requests,
 		List<BottleneckRow> bottlenecks,
 		long meetingsLast8Weeks,
-		List<MeetingMark> meetings) {
+		List<MeetingMark> meetings,
+		/*
+		 * Teams working with a mentor through an accepted request, which made no mentorship row: one active pair per
+		 * team, mentor and program, its id the request's. Apart from mentorships, whose ids the admin screens act on.
+		 */
+		List<MentorshipRow> acceptedRequests) {
 
 	public record ProgramRow(
 			UUID id,
@@ -96,7 +101,7 @@ public record AdminOverviewResponse(
 			int goalTotal,
 			/* The program the mentorship was made in; null for one made before V82. */
 			@Nullable UUID programId,
-			/* An accepted request is listed only in a Program raporu; its id is then the request's. */
+			/* ACCEPTED_REQUEST in acceptedRequests, where the id is the request's. */
 			MentorshipSource source) {
 	}
 
