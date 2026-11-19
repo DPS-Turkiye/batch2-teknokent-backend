@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dps.teknokent.domain.ProgramCalendarEntryKind;
 import com.dps.teknokent.domain.ProgramEventKind;
+import com.dps.teknokent.domain.WeekVisibility;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramEvent;
 import com.dps.teknokent.entity.ProgramSpecialDay;
@@ -279,6 +280,34 @@ class ProgramPlanCalendarServiceTest {
 		LocalDate day = WEEK_FOUR;
 		assertThat(ProgramPlanCalendarService.key(PROGRAM_ID, day, "KAPANIŞ İÇİN"))
 				.isEqualTo(ProgramPlanCalendarService.key(PROGRAM_ID, day, "kapanış için"));
+	}
+
+	@Test
+	void aWeekShownEarlyPutsItsSessionsInAParticipantsTakvimBeforeItStarts() {
+		weekNumbered(5).setMenteeVisibility(WeekVisibility.SHOWN);
+
+		List<Entry> entries = service.forParticipants(List.of(program), WEEK_FOUR.minusDays(1), FROM, TO, List.of());
+
+		assertThat(sessionTitles(entries)).containsExactly("Naim Zaheir Ziyaret", "Pazar ve Rakip Analizi");
+	}
+
+	@Test
+	void aHiddenWeekLeavesAParticipantsTakvimButItsSpecialDaysAndTheCoordinatorsTakvimKeepEverything() {
+		weekNumbered(3).setMenteeVisibility(WeekVisibility.HIDDEN);
+		weekNumbered(4).setMenteeVisibility(WeekVisibility.HIDDEN);
+
+		List<Entry> participant = service.forParticipants(List.of(program), WEEK_FIVE, FROM, TO, List.of());
+		List<Entry> coordinator = service.forCoordinator(List.of(program), FROM, TO, List.of());
+
+		assertThat(sessionTitles(participant)).containsExactly("Pazar ve Rakip Analizi");
+		assertThat(participant).filteredOn(entry -> entry.kind() == ProgramCalendarEntryKind.SPECIAL_DAY)
+				.extracting(Entry::title).containsExactly("DEMO DAY");
+		assertThat(sessionTitles(coordinator)).containsExactly("Naim Zaheir Ziyaret", "Değer Önerisi ve Market Fit",
+				"Workshop: Burcu Tarhan", "Pazar ve Rakip Analizi");
+	}
+
+	private ProgramWeek weekNumbered(int number) {
+		return plan.stream().filter(week -> week.getWeekNumber() == number).findFirst().orElseThrow();
 	}
 
 	private static List<String> sessionTitles(List<Entry> entries) {

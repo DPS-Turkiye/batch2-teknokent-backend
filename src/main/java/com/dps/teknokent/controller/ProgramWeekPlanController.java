@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.ReplaceProgramWeeksRequest;
+import com.dps.teknokent.dto.requests.UpdateWeekVisibilityRequest;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.ProgramWeekPlanService;
@@ -39,6 +40,13 @@ public class ProgramWeekPlanController {
 			@PathVariable UUID programId,
 			@Valid @RequestBody ReplaceProgramWeeksRequest request) {
 		return programWeekPlanService.replace(CurrentActor.resolve(request.actorId()), programId, request);
+	}
+
+	@PutMapping("/{week}/visibility")
+	public ProgramWeekPlanResponse.Week setVisibility(@PathVariable UUID programId, @PathVariable int week,
+			@Valid @RequestBody UpdateWeekVisibilityRequest request) {
+		return programWeekPlanService.setVisibility(CurrentActor.resolve(request.actorId()), programId, week,
+				request.visibility());
 	}
 
 	@PostMapping("/align-dates")

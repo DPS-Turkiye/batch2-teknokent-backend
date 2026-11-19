@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,6 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +28,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.OcrMode;
+import com.dps.teknokent.domain.WeekVisibility;
 import com.dps.teknokent.dto.requests.ReadWeeklyProgramRequest;
+import com.dps.teknokent.dto.requests.ReplaceProgramWeeksRequest;
+import com.dps.teknokent.dto.requests.SaveWeeklyProgramRequest;
 import com.dps.teknokent.dto.responses.WeeklyProgramProposalResponse;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramPhase;
@@ -136,6 +141,36 @@ class WeeklyProgramServiceTransactionTest {
 		assertThat(proposal.existing().weekCount()).isEqualTo(3);
 		assertThat(proposal.existing().phaseCount()).isEqualTo(1);
 		assertThat(proposal.existing().currentWeek()).as("week 4's printed dates contain today").isEqualTo(4);
+	}
+
+	@Test
+	void savingAReadAgainKeepsEachWeeksMenteeVisibilityByNumberAndDropsARemovedWeeks() {
+		for (int number = 4; number <= 6; number++) {
+			programWeekRepository.save(savedWeek(number));
+		}
+		setVisibility(5, WeekVisibility.HIDDEN);
+		setVisibility(6, WeekVisibility.SHOWN);
+		List<ReplaceProgramWeeksRequest.WeekInput> file = IntStream.rangeClosed(1, 5)
+				.mapToObj(number -> new ReplaceProgramWeeksRequest.WeekInput(number, "Dosya " + number, List.of(),
+						List.of(), List.of(), false))
+				.toList();
+
+		service.save(COORDINATOR_ID, programId,
+				new SaveWeeklyProgramRequest(null, DOCUMENT_ID, file, List.of(), 0, 3, true));
+
+		assertThat(programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId))
+				.extracting(ProgramWeek::getWeekNumber, ProgramWeek::getMenteeVisibility)
+				.containsExactly(tuple(1, WeekVisibility.AUTO),
+						tuple(2, WeekVisibility.AUTO),
+						tuple(3, WeekVisibility.AUTO),
+						tuple(4, WeekVisibility.AUTO),
+						tuple(5, WeekVisibility.HIDDEN));
+	}
+
+	private void setVisibility(int number, WeekVisibility visibility) {
+		ProgramWeek week = programWeekRepository.findByProgramIdAndWeekNumber(programId, number).orElseThrow();
+		week.setMenteeVisibility(visibility);
+		programWeekRepository.save(week);
 	}
 
 	private ProgramWeek savedWeek(int number) {

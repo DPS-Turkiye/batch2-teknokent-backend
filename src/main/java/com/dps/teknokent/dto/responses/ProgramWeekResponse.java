@@ -11,6 +11,8 @@ import org.jspecify.annotations.Nullable;
  * weekly plan the coordinator saved; null when that week has none) and the syllabus phases that fall in it.
  * {@code week} is null before the start, after the end, or without a start date. {@code hasSyllabus} is false while
  * the coordinator has saved neither phases nor weeks, so the screen can tell "no syllabus" from "nothing this week".
+ * {@code planHidden} is true when the coordinator hid the running week: its plan and phases are then left out, while
+ * the week number and dates stay.
  */
 public record ProgramWeekResponse(
 		UUID programId,
@@ -26,7 +28,17 @@ public record ProgramWeekResponse(
 		boolean hasSyllabus,
 		ProgramWeekPlanResponse.@Nullable Week plan,
 		List<Phase> phases,
-		List<ProgramWeekPlanResponse.SpecialDay> specialDays) {
+		List<ProgramWeekPlanResponse.SpecialDay> specialDays,
+		boolean planHidden) {
+
+	public ProgramWeekResponse(UUID programId, String programName, LocalDate programStart, LocalDate programEnd,
+			@Nullable Integer week, @Nullable Integer totalWeeks, @Nullable LocalDate weekStart,
+			@Nullable LocalDate weekEnd, boolean notStarted, boolean ended, boolean hasSyllabus,
+			ProgramWeekPlanResponse.@Nullable Week plan, List<Phase> phases,
+			List<ProgramWeekPlanResponse.SpecialDay> specialDays) {
+		this(programId, programName, programStart, programEnd, week, totalWeeks, weekStart, weekEnd, notStarted, ended,
+				hasSyllabus, plan, phases, specialDays, false);
+	}
 
 	public ProgramWeekResponse(UUID programId, String programName, LocalDate programStart, LocalDate programEnd,
 			@Nullable Integer week, @Nullable Integer totalWeeks, @Nullable LocalDate weekStart,
