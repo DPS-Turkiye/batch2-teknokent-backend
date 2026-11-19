@@ -9,10 +9,14 @@ import java.util.UUID;
 
 import org.hibernate.annotations.BatchSize;
 
+import com.dps.teknokent.domain.WeekVisibility;
+
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderColumn;
@@ -69,6 +73,10 @@ public class ProgramWeek {
 
 	@Column(nullable = false)
 	private boolean inferred;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "mentee_visibility", nullable = false, length = 16)
+	private WeekVisibility menteeVisibility = WeekVisibility.AUTO;
 
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;

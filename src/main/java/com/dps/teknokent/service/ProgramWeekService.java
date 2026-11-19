@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.domain.WeekVisibility;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekResponse;
 import com.dps.teknokent.dto.responses.ProgramWeeksSoFarResponse;
@@ -39,7 +40,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * The current week of a participant's program and the syllabus phases in it, and the weeks of its plan reached so far.
  * Open to the program's approved mentees (a startup's members or an individual student) and its accepted mentors;
- * nobody else. A week that has not begun is never sent to them.
+ * nobody else. A week that has not begun is sent to them only once the coordinator opens it early, and a week the
+ * coordinator hid never is (WeekVisibility).
  */
 @Service
 @RequiredArgsConstructor
@@ -72,7 +74,8 @@ public class ProgramWeekService {
 				response.programEnd(),
 				response.week(), response.totalWeeks(), response.weekStart(), response.weekEnd(),
 				todayEvents.isEmpty() && response.notStarted(), todayEvents.isEmpty() && response.ended(),
-				response.hasSyllabus() || !todayEvents.isEmpty(), response.plan(), response.phases(), todayEvents);
+				response.hasSyllabus() || !todayEvents.isEmpty(), response.plan(), response.phases(), todayEvents,
+				response.planHidden());
 	}
 
 	/**
@@ -91,8 +94,10 @@ public class ProgramWeekService {
 	}
 
 	/**
-	 * The saved weeks that have begun by {@code today}, each with its sessions and special days. A week is in once its
-	 * own first day has come; a session dated today does not open a later week early, as it may for "Bu hafta". In a
+	 * The saved weeks a participant may see by {@code today}, each with its sessions and special days. The
+	 * coordinator's setting decides first: a HIDDEN week is never in, and a SHOWN one is in now, whole, marked
+	 * {@code upcoming} while it has not begun. An AUTO week follows its dates: it is in once its own first day has
+	 * come; a session dated today does not open a later week early, as it may for "Bu hafta". In a
 	 * plan that prints dates, a week without its own has no first day to go by (the program calendar's is not the
 	 * syllabus's), so it is in once a later printed week has begun or the program has ended. Nothing dated after the
 	 * running week's last day goes out, because a session or special day of an earlier week can still lie ahead.
@@ -112,25 +117,31 @@ public class ProgramWeekService {
 				: today;
 		List<ProgramWeeksSoFarResponse.Week> weeks = new ArrayList<>();
 		for (ProgramWeek item : plan) {
+			WeekVisibility visibility = item.getMenteeVisibility();
+			if (visibility == WeekVisibility.HIDDEN) {
+				continue;
+			}
 			int number = item.getWeekNumber();
 			ProgramSchedule.Dates dates = schedule.datesOf(number);
 			boolean undated = printsDates && !schedule.printed(number);
 			boolean begun = undated
 					? over || laterPrintedWeekBegun(schedule, plan, number, today)
 					: startedBy(dates, today);
-			if (!begun) {
+			boolean shown = visibility == WeekVisibility.SHOWN;
+			if (!begun && !shown) {
 				continue;
 			}
 			ProgramWeekPlanResponse.Week week = ProgramWeekPlanService.weekOf(item, start, end);
+			// A week opened by the coordinator goes out whole; the others stop at the running week's last day.
 			List<ProgramWeekPlanResponse.Session> sessions = week.sessions().stream()
-					.filter(session -> !session.date().isAfter(horizon))
+					.filter(session -> shown || !session.date().isAfter(horizon))
 					.toList();
 			List<ProgramWeekPlanResponse.SpecialDay> inWeek = dates == null ? List.of()
-					: specialDaysIn(days, dates, horizon);
+					: specialDaysIn(days, dates, shown ? dates.end() : horizon);
 			weeks.add(new ProgramWeeksSoFarResponse.Week(new ProgramWeekPlanResponse.Week(week.week(),
 					week.startDate(), week.endDate(), week.datesFromSource(), week.title(), week.topics(),
 					week.activities(), week.deliverables(), week.inferred(), sessions),
-					current != null && current == number, inWeek));
+					current != null && current == number, !begun, inWeek));
 		}
 		return new ProgramWeeksSoFarResponse(program.getId(), program.getName(), current, weeks);
 	}
@@ -194,15 +205,16 @@ public class ProgramWeekService {
 								phase.getStartDate(), phase.getEndDate(), phase.getExpectedOutput(),
 								covers(phase, today)))
 						.toList();
-		ProgramWeekPlanResponse.Week planned = week == null ? null
-				: plan.stream()
-						.filter(item -> item.getWeekNumber() == week)
-						.findFirst()
-						.map(item -> ProgramWeekPlanService.weekOf(item, start, end))
-						.orElse(null);
+		Optional<ProgramWeek> saved = week == null ? Optional.empty()
+				: plan.stream().filter(item -> item.getWeekNumber() == week).findFirst();
+		// A hidden running week keeps its number and dates on the card; its plan and phases stay with the coordinator.
+		boolean hidden = saved.filter(item -> item.getMenteeVisibility() == WeekVisibility.HIDDEN).isPresent();
+		ProgramWeekPlanResponse.Week planned = hidden ? null
+				: saved.map(item -> ProgramWeekPlanService.weekOf(item, start, end)).orElse(null);
 		return new ProgramWeekResponse(program.getId(), program.getName(), start, end, week,
 				ProgramCalendar.totalWeeks(start, end), week == null ? null : from, week == null ? null : to,
-				notStarted, ended, !phases.isEmpty() || !plan.isEmpty(), planned, inWeek);
+				notStarted, ended, !phases.isEmpty() || !plan.isEmpty(), planned, hidden ? List.of() : inWeek,
+				List.of(), hidden);
 	}
 
 	private static boolean covers(ProgramPhase phase, LocalDate day) {

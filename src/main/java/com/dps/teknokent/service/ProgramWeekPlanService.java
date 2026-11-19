@@ -5,8 +5,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -15,6 +17,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.domain.WeekVisibility;
 import com.dps.teknokent.dto.requests.ReplaceProgramWeeksRequest;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.entity.Program;
@@ -22,6 +25,7 @@ import com.dps.teknokent.entity.ProgramSpecialDay;
 import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.entity.ProgramWeekSession;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ProgramSpecialDayRepository;
 import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.util.ProgramCalendar;
@@ -82,6 +86,22 @@ public class ProgramWeekPlanService {
 			program.setEndDate(check.syllabusEnd());
 		}
 		return readPlan(program);
+	}
+
+	/**
+	 * Sets who sees one saved week: its mentees and accepted mentors once it begins (AUTO), now (SHOWN) or never
+	 * (HIDDEN). Only the program's coordinators, as for saving the plan; a week not saved yet is 404.
+	 */
+	@Transactional
+	public ProgramWeekPlanResponse.Week setVisibility(UUID actorId, UUID programId, int weekNumber,
+			WeekVisibility visibility) {
+		Program program = coordinatorProgramService.requireSettingsEditor(actorId, programId);
+		ProgramWeek week = programWeekRepository.findByProgramIdAndWeekNumber(programId, weekNumber)
+				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.programWeekNotSaved")));
+		week.setMenteeVisibility(visibility);
+		week.setUpdatedAt(Instant.now());
+		week.setUpdatedBy(actorId);
+		return weekOf(week, program.getStartDate(), program.getEndDate()).withVisibility(visibility);
 	}
 
 	private static void requireTimeOrder(@Nullable LocalTime start, @Nullable LocalTime end) {
@@ -171,6 +191,10 @@ public class ProgramWeekPlanService {
 				throw new InvalidRequestException("The program has only " + total + " weeks.");
 			}
 		}
+		// The rows are replaced, so a week's visibility moves to the new row with its number; a removed week's goes.
+		Map<Integer, WeekVisibility> visibility = new HashMap<>();
+		programWeekRepository.findByProgramIdOrderByWeekNumberAsc(programId)
+				.forEach(saved -> visibility.put(saved.getWeekNumber(), saved.getMenteeVisibility()));
 		programWeekRepository.deleteByProgramId(programId);
 		// Inserts run before deletes at flush; without this a kept week number would hit uq_program_week.
 		programWeekRepository.flush();
@@ -194,6 +218,7 @@ public class ProgramWeekPlanService {
 					week.setActivities(ProgramWeek.joined(input.activities()));
 					week.setDeliverables(ProgramWeek.joined(input.deliverables()));
 					week.setInferred(input.inferred());
+					week.setMenteeVisibility(visibility.getOrDefault(input.week(), WeekVisibility.AUTO));
 					week.setUpdatedAt(now);
 					week.setUpdatedBy(actorId);
 					return week;
@@ -226,7 +251,10 @@ public class ProgramWeekPlanService {
 			}
 		}
 		return new ProgramWeekPlanResponse(ProgramCalendar.totalWeeks(program.getStartDate(), program.getEndDate()),
-				weeks.stream().map(week -> weekOf(week, program.getStartDate(), program.getEndDate())).toList(),
+				weeks.stream()
+						.map(week -> weekOf(week, program.getStartDate(), program.getEndDate())
+								.withVisibility(week.getMenteeVisibility()))
+						.toList(),
 				days.stream().map(ProgramWeekPlanService::specialDayOf).toList(), check);
 	}
 

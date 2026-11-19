@@ -43,7 +43,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>
  * A participant gets a special day ahead of time, like a program event, but a session only once its week has begun,
- * by the same rule as "Geçmiş haftalar" ({@link ProgramWeekService#reached}). A coordinator gets every session.
+ * by the same rule as "Geçmiş haftalar" ({@link ProgramWeekService#reached}): a week the coordinator opened early shows
+ * its sessions now, and a week they hid shows none. A coordinator gets every session.
  *
  * <p>
  * An entry that repeats a coordinator's own event is left out, so the day shows once: same program, same day in

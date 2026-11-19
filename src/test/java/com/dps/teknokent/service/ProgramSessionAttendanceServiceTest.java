@@ -28,6 +28,7 @@ import com.dps.teknokent.domain.AttendanceMethod;
 import com.dps.teknokent.domain.AttendanceSessionKind;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.domain.WeekVisibility;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramAttendance;
@@ -67,6 +68,7 @@ class ProgramSessionAttendanceServiceTest {
 
 	private final AppUser mentee = new AppUser();
 	private final Program program = new Program();
+	private final ProgramWeek week = new ProgramWeek();
 
 	// Growth Circuit week 1: the Monday lesson runs 18:00–20:00.
 	@BeforeEach
@@ -78,7 +80,6 @@ class ProgramSessionAttendanceServiceTest {
 		program.setStatus(ProgramStatus.ACTIVE);
 		program.setStartDate(MONDAY);
 		program.setEndDate(MONDAY.plusDays(34));
-		ProgramWeek week = new ProgramWeek();
 		week.setId(UUID.randomUUID());
 		week.setProgramId(program.getId());
 		week.setWeekNumber(1);
@@ -125,6 +126,18 @@ class ProgramSessionAttendanceServiceTest {
 		assertThat(saved.getValue().getSessionKind()).isEqualTo(AttendanceSessionKind.LESSON);
 		assertThat(response.alreadyRecorded()).isFalse();
 		assertThat(response.startTime()).isEqualTo(LocalTime.of(18, 0));
+		assertThat(response.title()).isEqualTo("PMF");
+	}
+
+	@Test
+	void aWeekHiddenFromMenteesStillTakesItsQrAttendance() {
+		week.setMenteeVisibility(WeekVisibility.HIDDEN);
+		noAttendanceYet();
+
+		var response = serviceAt(18, 0).checkIn(mentee.getId(), TOKEN);
+
+		verify(attendanceRepository).saveAndFlush(any());
+		assertThat(response.alreadyRecorded()).isFalse();
 		assertThat(response.title()).isEqualTo("PMF");
 	}
 

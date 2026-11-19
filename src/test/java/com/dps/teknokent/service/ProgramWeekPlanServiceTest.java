@@ -3,27 +3,34 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.dps.teknokent.domain.WeekVisibility;
 import com.dps.teknokent.dto.requests.ReplaceProgramWeeksRequest;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramSpecialDay;
 import com.dps.teknokent.entity.ProgramWeek;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ProgramSpecialDayRepository;
 import com.dps.teknokent.repository.ProgramWeekRepository;
 import com.dps.teknokent.util.ProgramSchedule;
@@ -298,6 +305,74 @@ class ProgramWeekPlanServiceTest {
 				List.of(sameDateAsASavedDay, beforeTheKeptWeeks, movedInsideAKeptWeek), keptWeeks, today))
 				.extracting(ReplaceProgramWeeksRequest.SpecialDayInput::title)
 				.containsExactly("Saved info day", "Saved visit", "Opening");
+	}
+
+	@Test
+	@SuppressWarnings("unchecked") // ArgumentCaptor.forClass takes the raw collection class.
+	void savingThePlanAgainKeepsEachWeeksVisibilityByNumberAndDropsARemovedWeeksOne() {
+		ProgramWeek shown = new ProgramWeek();
+		shown.setWeekNumber(3);
+		shown.setTitle("Prototip");
+		shown.setMenteeVisibility(WeekVisibility.SHOWN);
+		ProgramWeek hidden = new ProgramWeek();
+		hidden.setWeekNumber(4);
+		hidden.setTitle("Sunum");
+		hidden.setMenteeVisibility(WeekVisibility.HIDDEN);
+		when(weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of(shown, hidden));
+
+		ProgramWeekPlanResponse saved = service.replace(COORDINATOR, PROGRAM_ID,
+				new ReplaceProgramWeeksRequest(null, List.of(input(1, "Tanışma"), input(3, "Prototip v2"))));
+
+		ArgumentCaptor<List<ProgramWeek>> rows = ArgumentCaptor.forClass(List.class);
+		verify(weeks).saveAll(rows.capture());
+		assertThat(rows.getValue()).extracting(ProgramWeek::getMenteeVisibility)
+				.containsExactly(WeekVisibility.AUTO, WeekVisibility.SHOWN);
+		assertThat(saved.weeks()).extracting(ProgramWeekPlanResponse.Week::menteeVisibility)
+				.containsExactly(WeekVisibility.AUTO, WeekVisibility.SHOWN);
+
+		when(weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(rows.getValue());
+		service.replace(COORDINATOR, PROGRAM_ID,
+				new ReplaceProgramWeeksRequest(null, List.of(input(1, "Tanışma"), input(4, "Sunum"))));
+		verify(weeks, times(2)).saveAll(rows.capture());
+		assertThat(rows.getValue()).extracting(ProgramWeek::getMenteeVisibility)
+				.containsExactly(WeekVisibility.AUTO, WeekVisibility.AUTO);
+	}
+
+	@Test
+	void theCoordinatorSetsASavedWeeksVisibilityAndSeesIt() {
+		ProgramWeek saved = new ProgramWeek();
+		saved.setWeekNumber(3);
+		saved.setTitle("Prototip");
+		when(weeks.findByProgramIdAndWeekNumber(PROGRAM_ID, 3)).thenReturn(Optional.of(saved));
+
+		ProgramWeekPlanResponse.Week week = service.setVisibility(COORDINATOR, PROGRAM_ID, 3, WeekVisibility.HIDDEN);
+
+		assertThat(saved.getMenteeVisibility()).isEqualTo(WeekVisibility.HIDDEN);
+		assertThat(saved.getUpdatedBy()).isEqualTo(COORDINATOR);
+		assertThat(week.week()).isEqualTo(3);
+		assertThat(week.menteeVisibility()).isEqualTo(WeekVisibility.HIDDEN);
+		assertThat(week.startDate()).isEqualTo(LocalDate.of(2026, 10, 19));
+	}
+
+	@Test
+	void aWeekNotSavedYetHasNoVisibilityToSet() {
+		when(weeks.findByProgramIdAndWeekNumber(PROGRAM_ID, 2)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.setVisibility(COORDINATOR, PROGRAM_ID, 2, WeekVisibility.SHOWN))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	void anAdminOrACoordinatorOfAnotherProgramCannotSetAWeeksVisibility() {
+		UUID otherCoordinator = UUID.randomUUID();
+		when(coordinatorPrograms.requireSettingsEditor(otherCoordinator, PROGRAM_ID))
+				.thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN));
+
+		assertThatThrownBy(() -> service.setVisibility(otherCoordinator, PROGRAM_ID, 3, WeekVisibility.SHOWN))
+				.isInstanceOf(ResponseStatusException.class);
+		assertThatThrownBy(() -> service.setVisibility(ADMIN, PROGRAM_ID, 3, WeekVisibility.SHOWN))
+				.isInstanceOf(InvalidRequestException.class);
+		verify(weeks, never()).findByProgramIdAndWeekNumber(any(), anyInt());
 	}
 
 	private static ReplaceProgramWeeksRequest.WeekInput input(int week, String title) {

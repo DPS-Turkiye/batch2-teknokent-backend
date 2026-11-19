@@ -6,6 +6,8 @@ import java.util.List;
 
 import org.jspecify.annotations.Nullable;
 
+import com.dps.teknokent.domain.WeekVisibility;
+
 /**
  * A program's weekly plan, as the coordinator edits it. A week's dates are the ones its syllabus prints
  * ({@code datesFromSource}), else the program calendar's; null while the program has no start date and the week
@@ -22,6 +24,10 @@ public record ProgramWeekPlanResponse(
 		this(totalWeeks, weeks, List.of(), null);
 	}
 
+	/**
+	 * {@code menteeVisibility} is the coordinator's setting for the week, sent only in the coordinator's plan; null in
+	 * a read proposal and in what participants get.
+	 */
 	public record Week(
 			int week,
 			@Nullable LocalDate startDate,
@@ -32,7 +38,20 @@ public record ProgramWeekPlanResponse(
 			List<String> activities,
 			List<String> deliverables,
 			boolean inferred,
-			List<Session> sessions) {
+			List<Session> sessions,
+			@Nullable WeekVisibility menteeVisibility) {
+		public Week(int week, @Nullable LocalDate startDate, @Nullable LocalDate endDate, boolean datesFromSource,
+				String title, List<String> topics, List<String> activities, List<String> deliverables,
+				boolean inferred, List<Session> sessions) {
+			this(week, startDate, endDate, datesFromSource, title, topics, activities, deliverables, inferred,
+					sessions, null);
+		}
+
+		public Week withVisibility(@Nullable WeekVisibility visibility) {
+			return new Week(week, startDate, endDate, datesFromSource, title, topics, activities, deliverables,
+					inferred, sessions, visibility);
+		}
+
 		public Week(int week, @Nullable LocalDate startDate, @Nullable LocalDate endDate, String title,
 				List<String> topics, List<String> activities, List<String> deliverables, boolean inferred) {
 			this(week, startDate, endDate, false, title, topics, activities, deliverables, inferred, List.of());

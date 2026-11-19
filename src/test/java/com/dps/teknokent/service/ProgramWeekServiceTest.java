@@ -2,6 +2,7 @@ package com.dps.teknokent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.domain.WeekVisibility;
 import com.dps.teknokent.dto.responses.ProgramWeekPlanResponse;
 import com.dps.teknokent.dto.responses.ProgramWeekResponse;
 import com.dps.teknokent.dto.responses.ProgramWeeksSoFarResponse;
@@ -460,6 +462,157 @@ class ProgramWeekServiceTest {
 
 		assertThatThrownBy(() -> service.weeksSoFar(mentee.getId(), null, START))
 				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	void byDefaultEveryWeekFollowsItsDatesAsBefore() {
+		List<ProgramWeek> plan = List.of(week(1, "Tanışma"), week(2, "Görüşmeler"), week(3, "Prototip"));
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program, plan, List.of(),
+				LocalDate.of(2026, 10, 14));
+
+		assertThat(plan).extracting(ProgramWeek::getMenteeVisibility).containsOnly(WeekVisibility.AUTO);
+		assertThat(response.weeks()).extracting(week -> week.plan().week()).containsExactly(1, 2);
+		assertThat(response.weeks()).extracting(ProgramWeeksSoFarResponse.Week::upcoming).containsOnly(false);
+	}
+
+	@Test
+	void aFutureWeekShownEarlyGoesOutWholeMarkedUpcoming() {
+		ProgramWeek third = printedWeek(3, "2026-10-19", "2026-10-25");
+		third.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 10, 21), null, null, null, "Workshop"));
+		third.setMenteeVisibility(WeekVisibility.SHOWN);
+		List<ProgramSpecialDay> days = List.of(specialDay("2026-10-24", "Bootcamp"));
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program,
+				List.of(printedWeek(1, "2026-10-05", "2026-10-11"), printedWeek(2, "2026-10-12", "2026-10-18"),
+						third, printedWeek(4, "2026-10-26", "2026-11-01")),
+				days, LocalDate.of(2026, 10, 13));
+
+		assertThat(response.currentWeek()).isEqualTo(2);
+		assertThat(response.weeks()).extracting(week -> week.plan().week()).containsExactly(1, 2, 3);
+		assertThat(response.weeks()).extracting(ProgramWeeksSoFarResponse.Week::upcoming)
+				.containsExactly(false, false, true);
+		ProgramWeeksSoFarResponse.Week early = response.weeks().getLast();
+		assertThat(early.current()).isFalse();
+		assertThat(early.plan().sessions()).extracting(ProgramWeekPlanResponse.Session::title)
+				.containsExactly("Workshop");
+		assertThat(early.specialDays()).extracting(ProgramWeekPlanResponse.SpecialDay::title)
+				.containsExactly("Bootcamp");
+	}
+
+	@Test
+	void aHiddenWeekIsNeverSentWhetherCurrentOrPast() {
+		ProgramWeek first = week(1, "Tanışma");
+		first.setMenteeVisibility(WeekVisibility.HIDDEN);
+		ProgramWeek second = week(2, "Görüşmeler");
+		second.setMenteeVisibility(WeekVisibility.HIDDEN);
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program,
+				List.of(first, second, week(3, "Prototip")), List.of(), LocalDate.of(2026, 10, 14));
+
+		assertThat(response.currentWeek()).isEqualTo(2);
+		assertThat(response.weeks()).isEmpty();
+
+		ProgramWeeksSoFarResponse ended = ProgramWeekService.reached(program,
+				List.of(first, second, week(3, "Prototip")), List.of(), END.plusDays(1));
+		assertThat(ended.weeks()).extracting(week -> week.plan().week()).containsExactly(3);
+	}
+
+	@Test
+	void aHiddenRunningWeekKeepsItsNumberAndDatesButNotItsPlanOrPhases() {
+		ProgramWeek second = week(2, "Görüşmeler");
+		second.setMenteeVisibility(WeekVisibility.HIDDEN);
+		weekRows = List.of(week(1, "Tanışma"), second);
+
+		ProgramWeekResponse response = build(LocalDate.of(2026, 10, 14));
+
+		assertThat(response.week()).isEqualTo(2);
+		assertThat(response.totalWeeks()).isEqualTo(12);
+		assertThat(response.weekStart()).isEqualTo(LocalDate.of(2026, 10, 12));
+		assertThat(response.weekEnd()).isEqualTo(LocalDate.of(2026, 10, 18));
+		assertThat(response.planHidden()).isTrue();
+		assertThat(response.plan()).isNull();
+		assertThat(response.phases()).isEmpty();
+		assertThat(response.hasSyllabus()).isTrue();
+	}
+
+	@Test
+	void aRunningWeekShownOrAutomaticKeepsItsPlanAndPhases() {
+		ProgramWeek second = week(2, "Görüşmeler");
+		second.setMenteeVisibility(WeekVisibility.SHOWN);
+		weekRows = List.of(second);
+
+		ProgramWeekResponse response = build(LocalDate.of(2026, 10, 14));
+
+		assertThat(response.planHidden()).isFalse();
+		assertThat(response.plan()).isNotNull();
+		assertThat(response.phases()).isNotEmpty();
+	}
+
+	@Test
+	void aMenteeReadingThisWeekGetsTheHiddenFlagWithTodaysSpecialDay() {
+		AppUser mentee = user(UserAccountStatus.APPROVED, UserRole.MENTEE);
+		when(menteePrograms.programOf(mentee)).thenReturn(Optional.of(PROGRAM_ID));
+		ProgramWeek second = week(2, "Görüşmeler");
+		second.setMenteeVisibility(WeekVisibility.HIDDEN);
+		when(weeks.findByProgramIdOrderByWeekNumberAsc(PROGRAM_ID)).thenReturn(List.of(second));
+		when(specialDays.findByProgramIdOrderByDateAsc(PROGRAM_ID))
+				.thenReturn(List.of(specialDay("2026-10-14", "Bootcamp")));
+
+		ProgramWeekResponse response = service.weekOf(mentee.getId(), null, LocalDate.of(2026, 10, 14));
+
+		assertThat(response.planHidden()).isTrue();
+		assertThat(response.plan()).isNull();
+		assertThat(response.specialDays()).extracting(ProgramWeekPlanResponse.SpecialDay::title)
+				.containsExactly("Bootcamp");
+	}
+
+	@Test
+	void aBegunWeekShownByTheCoordinatorGoesOutWholeAndIsNotUpcoming() {
+		ProgramWeek first = printedWeek(1, "2026-10-05", "2026-10-11");
+		first.getSessions().add(new ProgramWeekSession(LocalDate.of(2026, 11, 20), null, null, null, "Ziyaret"));
+		first.setMenteeVisibility(WeekVisibility.SHOWN);
+
+		ProgramWeeksSoFarResponse response = ProgramWeekService.reached(program,
+				List.of(first, printedWeek(2, "2026-10-12", "2026-10-18")), List.of(), LocalDate.of(2026, 10, 13));
+
+		assertThat(response.weeks()).extracting(ProgramWeeksSoFarResponse.Week::upcoming).containsOnly(false);
+		assertThat(response.weeks().getFirst().plan().sessions()).extracting(ProgramWeekPlanResponse.Session::title)
+				.containsExactly("Ziyaret");
+	}
+
+	@Test
+	void anUndatedWeekOfAPrintedPlanShownEarlyIsUpcomingAndAHiddenOneNeverComes() {
+		ProgramWeek shown = week(3, "Ara hafta");
+		shown.setMenteeVisibility(WeekVisibility.SHOWN);
+		ProgramWeek hidden = week(4, "Ara hafta 2");
+		hidden.setMenteeVisibility(WeekVisibility.HIDDEN);
+		List<ProgramWeek> plan = List.of(printedWeek(1, "2026-10-05", "2026-10-11"), shown, hidden,
+				printedWeek(5, "2026-11-02", "2026-11-08"));
+
+		ProgramWeeksSoFarResponse early = ProgramWeekService.reached(program, plan, List.of(),
+				LocalDate.of(2026, 10, 6));
+		ProgramWeeksSoFarResponse ended = ProgramWeekService.reached(program, plan, List.of(), END.plusDays(1));
+
+		assertThat(early.weeks()).extracting(week -> week.plan().week(), ProgramWeeksSoFarResponse.Week::upcoming)
+				.containsExactly(tuple(1, false),
+						tuple(3, true));
+		assertThat(ended.weeks()).extracting(week -> week.plan().week()).containsExactly(1, 3, 5);
+	}
+
+	@Test
+	void participantsNeverSeeTheCoordinatorsSetting() {
+		ProgramWeek second = week(2, "Görüşmeler");
+		second.setMenteeVisibility(WeekVisibility.SHOWN);
+		weekRows = List.of(week(1, "Tanışma"), second, week(3, "Prototip"));
+
+		ProgramWeeksSoFarResponse soFar = ProgramWeekService.reached(program, weekRows, List.of(),
+				LocalDate.of(2026, 10, 6));
+		ProgramWeekResponse thisWeek = build(LocalDate.of(2026, 10, 14));
+
+		assertThat(soFar.weeks()).extracting(week -> week.plan().menteeVisibility()).containsOnlyNulls();
+		assertThat(thisWeek.plan()).isNotNull();
+		assertThat(thisWeek.plan().menteeVisibility()).isNull();
 	}
 
 	private ProgramWeekResponse build(LocalDate today) {
