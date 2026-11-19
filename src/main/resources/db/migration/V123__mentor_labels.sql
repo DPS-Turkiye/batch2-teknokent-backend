@@ -26,7 +26,8 @@ CREATE TABLE program_mentor_label (
 CREATE UNIQUE INDEX uq_program_mentor_label_name ON program_mentor_label (program_id, lower(name));
 
 -- A label on a mentor. Tied to the mentor's membership of the program, so the labels go when the mentor leaves the
--- program's pool (or the account is deleted) and a label is deleted with all its assignments.
+-- program's pool and a label is deleted with all its assignments. Deleting an account removes them too
+-- (UserDataEraser), since its memberships can outlive it.
 CREATE TABLE program_mentor_label_assignment (
     id         UUID PRIMARY KEY,
     label_id   UUID NOT NULL,

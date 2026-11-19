@@ -12,9 +12,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class MentorLabelService {
 
+	private static final Pattern INVISIBLE = Pattern.compile("[\\p{Cf}\\p{Cc}&&[^\\s]]");
+	private static final Pattern SPACES = Pattern.compile("[\\p{Z}\\s]+");
 	private static final Comparator<ProgramMentorLabel> BY_NAME = Comparator.comparing(ProgramMentorLabel::getName,
 			String.CASE_INSENSITIVE_ORDER);
 
@@ -86,7 +90,7 @@ public class MentorLabelService {
 		label.setColor(request.color());
 		label.setCreatedAt(Instant.now());
 		label.setCreatedBy(actorId);
-		labelRepository.save(label);
+		saveName(label);
 		return boardOf(program);
 	}
 
@@ -99,7 +103,7 @@ public class MentorLabelService {
 		requireUniqueName(labelRepository.findByProgramIdOrderByNameAsc(programId), name, labelId);
 		label.setName(name);
 		label.setColor(request.color());
-		labelRepository.save(label);
+		saveName(label);
 		return boardOf(program);
 	}
 
@@ -277,7 +281,11 @@ public class MentorLabelService {
 	}
 
 	private Program requireLabelEditor(UUID actorId, UUID programId) {
-		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		coordinatorProgramService.requireManagedProgram(actorId, programId);
+		// Locked for the rest of the change: two editors creating labels at once cannot pass the 50-label check
+		// together, and a label cannot be deleted while it is being given to a mentor.
+		Program program = programRepository.findByIdForUpdate(programId)
+				.orElseThrow(() -> new ResourceNotFoundException("Program not found: " + programId));
 		if (!program.isMentorLabelsEnabled()) {
 			throw new InvalidRequestException(Texts.forRequest("error.mentorLabelsOff"));
 		}
@@ -287,14 +295,29 @@ public class MentorLabelService {
 		return program;
 	}
 
+	/**
+	 * Flushed here so a clash with the database's case-insensitive name index is answered as "name taken": its
+	 * lower() can fold a letter (Turkish İ) that the check above, in Locale.ROOT, keeps apart.
+	 */
+	private void saveName(ProgramMentorLabel label) {
+		try {
+			labelRepository.saveAndFlush(label);
+		} catch (DataIntegrityViolationException clash) {
+			throw new ConflictException(Texts.forRequest("error.mentorLabelNameTaken"));
+		}
+	}
+
 	private ProgramMentorLabel requireLabel(UUID programId, UUID labelId) {
 		return labelRepository.findByIdAndProgramId(labelId, programId)
 				.orElseThrow(() -> new ResourceNotFoundException(Texts.forRequest("error.mentorLabelNotFound")));
 	}
 
-	/** Trimmed, with inner runs of whitespace made one space, so "Fin tech" and "Fin tech" are one spelling. */
+	/**
+	 * Without invisible characters (zero-width spaces, direction marks), trimmed, and with inner runs of any kind of
+	 * space made one, so look-alike spellings are one name.
+	 */
 	static String normalizedName(String raw) {
-		String name = raw.strip().replaceAll("\\s+", " ");
+		String name = SPACES.matcher(INVISIBLE.matcher(raw).replaceAll("")).replaceAll(" ").strip();
 		if (name.isEmpty()) {
 			throw new InvalidRequestException(Texts.forRequest("error.mentorLabelNameRequired"));
 		}

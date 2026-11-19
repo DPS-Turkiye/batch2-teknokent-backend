@@ -91,11 +91,11 @@ class MentorLabelControllerTest {
 	}
 
 	@Test
-	void refusesAColorOutsideThePaletteANameOverThirtyAndABlankName() throws Exception {
+	void refusesAColorOutsideThePaletteAndABlankName() throws Exception {
 		for (String body : List.of(
 				"{\"name\":\"Fintech\",\"color\":\"#ff0000\"}",
 				"{\"name\":\"Fintech\"}",
-				"{\"name\":\"" + "a".repeat(31) + "\",\"color\":\"BLUE\"}",
+				"{\"color\":\"BLUE\"}",
 				"{\"name\":\"  \",\"color\":\"BLUE\"}")) {
 			mockMvc.perform(put("/api/coordinator/programs/{id}/mentor-labels/{labelId}", PROGRAM_ID, LABEL_ID)
 					.with(user("test-user"))

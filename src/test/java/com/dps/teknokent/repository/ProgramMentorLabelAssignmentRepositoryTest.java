@@ -67,7 +67,6 @@ class ProgramMentorLabelAssignmentRepositoryTest {
 		assertThat(labels.findByProgramIdInOrderByNameAsc(List.of(PROGRAM_A))).extracting(ProgramMentorLabel::getName)
 				.containsExactly("AI", "Fintech");
 		assertThat(labels.findByIdAndProgramId(fintech.getId(), PROGRAM_B)).isEmpty();
-		assertThat(labels.countByProgramId(PROGRAM_A)).isEqualTo(2);
 	}
 
 	private ProgramMentorLabel label(UUID programId, String name) {

@@ -25,6 +25,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import com.dps.teknokent.domain.MentorLabelColor;
 import com.dps.teknokent.domain.MentorLabelLimits;
@@ -81,15 +82,14 @@ class MentorLabelServiceTest {
 
 	@Test
 	void createsALabelWithItsNameTidiedUp() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		when(labelRepository.findByProgramIdOrderByNameAsc(PROGRAM_A)).thenReturn(List.of());
 		when(menteeProgramService.acceptedMentorIds(PROGRAM_A)).thenReturn(Set.of());
 
 		service.create(COORDINATOR, PROGRAM_A, new MentorLabelRequest(null, "  Yapay   zekâ ", MentorLabelColor.TEAL));
 
 		ArgumentCaptor<ProgramMentorLabel> saved = ArgumentCaptor.forClass(ProgramMentorLabel.class);
-		verify(labelRepository).save(saved.capture());
+		verify(labelRepository).saveAndFlush(saved.capture());
 		assertThat(saved.getValue().getName()).isEqualTo("Yapay zekâ");
 		assertThat(saved.getValue().getColor()).isEqualTo(MentorLabelColor.TEAL);
 		assertThat(saved.getValue().getProgramId()).isEqualTo(PROGRAM_A);
@@ -98,8 +98,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void refusesASecondLabelWithTheSameNameWhateverItsCase() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		when(labelRepository.findByProgramIdOrderByNameAsc(PROGRAM_A))
 				.thenReturn(List.of(label(PROGRAM_A, "Fintech")));
 
@@ -107,13 +106,12 @@ class MentorLabelServiceTest {
 				new MentorLabelRequest(null, "FINTECH", MentorLabelColor.BLUE)))
 				.isInstanceOf(ConflictException.class)
 				.hasMessage(Texts.forRequest("error.mentorLabelNameTaken"));
-		verify(labelRepository, never()).save(any());
+		verify(labelRepository, never()).saveAndFlush(any());
 	}
 
 	@Test
 	void refusesANewLabelOnceTheProgramHasFifty() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		when(labelRepository.findByProgramIdOrderByNameAsc(PROGRAM_A)).thenReturn(IntStream
 				.range(0, MentorLabelLimits.PER_PROGRAM).mapToObj(index -> label(PROGRAM_A, "Etiket " + index))
 				.toList());
@@ -122,7 +120,7 @@ class MentorLabelServiceTest {
 				new MentorLabelRequest(null, "Yeni", MentorLabelColor.BLUE)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessage(Texts.forRequest("error.mentorLabelProgramFull", MentorLabelLimits.PER_PROGRAM));
-		verify(labelRepository, never()).save(any());
+		verify(labelRepository, never()).saveAndFlush(any());
 	}
 
 	@Test
@@ -140,8 +138,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void changesNothingWhileTheProgramSwitchIsOff() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, false));
+		editable(program(PROGRAM_A, false));
 		UUID labelId = UUID.randomUUID();
 		String off = Texts.forRequest("error.mentorLabelsOff");
 
@@ -159,7 +156,7 @@ class MentorLabelServiceTest {
 	void changesNothingInAnArchivedProgram() {
 		Program archived = program(PROGRAM_A, true);
 		archived.setStatus(ProgramStatus.COMPLETED);
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A)).thenReturn(archived);
+		editable(archived);
 
 		assertThatThrownBy(() -> service.setMentorLabels(COORDINATOR, PROGRAM_A, MENTOR, List.of()))
 				.isInstanceOf(InvalidRequestException.class)
@@ -225,8 +222,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void savingAMentorsLabelsReplacesTheWholeSetOnceEach() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		when(programMentorRepository.findByProgramIdAndMentorIdForUpdate(PROGRAM_A, MENTOR))
 				.thenReturn(Optional.of(membership(PROGRAM_A, MENTOR, ProgramMentorStatus.ACCEPTED)));
 		ProgramMentorLabel ai = label(PROGRAM_A, "AI");
@@ -251,8 +247,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void refusesASixthLabelOnOneMentor() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		when(programMentorRepository.findByProgramIdAndMentorIdForUpdate(PROGRAM_A, MENTOR))
 				.thenReturn(Optional.of(membership(PROGRAM_A, MENTOR, ProgramMentorStatus.ACCEPTED)));
 		List<UUID> six = IntStream.range(0, MentorLabelLimits.PER_MENTOR + 1).mapToObj(index -> UUID.randomUUID())
@@ -266,8 +261,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void refusesALabelFromAnotherProgram() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		when(programMentorRepository.findByProgramIdAndMentorIdForUpdate(PROGRAM_A, MENTOR))
 				.thenReturn(Optional.of(membership(PROGRAM_A, MENTOR, ProgramMentorStatus.ACCEPTED)));
 		when(labelRepository.findByProgramIdOrderByNameAsc(PROGRAM_A)).thenReturn(List.of(label(PROGRAM_A, "AI")));
@@ -280,8 +274,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void labelsOnlyAMentorWhoIsInThePool() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		when(programMentorRepository.findByProgramIdAndMentorIdForUpdate(PROGRAM_A, MENTOR))
 				.thenReturn(Optional.of(membership(PROGRAM_A, MENTOR, ProgramMentorStatus.PENDING)));
 		when(programMentorRepository.findByProgramIdAndMentorIdForUpdate(PROGRAM_A, OTHER_MENTOR))
@@ -297,8 +290,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void renamingKeepsItsOwnNameFreeAndDeletingTakesTheLabelOffEveryone() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		ProgramMentorLabel fintech = label(PROGRAM_A, "fintech");
 		when(labelRepository.findByIdAndProgramId(fintech.getId(), PROGRAM_A)).thenReturn(Optional.of(fintech));
 		when(labelRepository.findByProgramIdOrderByNameAsc(PROGRAM_A)).thenReturn(List.of(fintech));
@@ -316,8 +308,7 @@ class MentorLabelServiceTest {
 
 	@Test
 	void refusesToChangeALabelOfAnotherProgram() {
-		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, PROGRAM_A))
-				.thenReturn(program(PROGRAM_A, true));
+		editable(program(PROGRAM_A, true));
 		UUID programBLabel = UUID.randomUUID();
 		when(labelRepository.findByIdAndProgramId(programBLabel, PROGRAM_A)).thenReturn(Optional.empty());
 
@@ -417,9 +408,80 @@ class MentorLabelServiceTest {
 	}
 
 	@Test
+	void answersAClashWithTheDatabaseNameIndexAsNameTaken() {
+		editable(program(PROGRAM_A, true));
+		when(labelRepository.findByProgramIdOrderByNameAsc(PROGRAM_A)).thenReturn(List.of(label(PROGRAM_A, "izmir")));
+		when(labelRepository.saveAndFlush(any()))
+				.thenThrow(new DataIntegrityViolationException("uq_program_mentor_label_name"));
+
+		assertThatThrownBy(() -> service.create(COORDINATOR, PROGRAM_A,
+				new MentorLabelRequest(null, "İzmir", MentorLabelColor.BLUE)))
+				.isInstanceOf(ConflictException.class)
+				.hasMessage(Texts.forRequest("error.mentorLabelNameTaken"));
+	}
+
+	@Test
+	void dropsInvisibleCharactersAndFoldsEveryKindOfSpace() {
+		String zeroWidth = Character.toString(0x200B);
+		String noBreak = Character.toString(0x00A0);
+		String rightToLeft = Character.toString(0x202E);
+		String byteOrderMark = Character.toString(0xFEFF);
+
+		assertThat(MentorLabelService.normalizedName("Fin" + zeroWidth + "tech" + noBreak + noBreak + "AI\t"))
+				.isEqualTo("Fintech AI");
+		assertThat(MentorLabelService.normalizedName("Fin" + byteOrderMark + "tech")).isEqualTo("Fintech");
+		assertThatThrownBy(() -> MentorLabelService.normalizedName(zeroWidth + rightToLeft))
+				.hasMessage(Texts.forRequest("error.mentorLabelNameRequired"));
+	}
+
+	@Test
+	void anEmptyListTakesEveryLabelOffTheMentor() {
+		editable(program(PROGRAM_A, true));
+		when(programMentorRepository.findByProgramIdAndMentorIdForUpdate(PROGRAM_A, MENTOR))
+				.thenReturn(Optional.of(membership(PROGRAM_A, MENTOR, ProgramMentorStatus.ACCEPTED)));
+		when(labelRepository.findByProgramIdOrderByNameAsc(PROGRAM_A)).thenReturn(List.of(label(PROGRAM_A, "AI")));
+		when(menteeProgramService.acceptedMentorIds(PROGRAM_A)).thenReturn(Set.of(MENTOR));
+
+		service.setMentorLabels(COORDINATOR, PROGRAM_A, MENTOR, List.of());
+
+		verify(assignmentRepository).deleteByProgramIdAndMentorId(PROGRAM_A, MENTOR);
+		verify(assignmentRepository).saveAll(List.of());
+	}
+
+	@Test
+	void anAdminSeesTheMentorsLabelsInEveryProgram() {
+		AppUser admin = user(UUID.randomUUID(), UserRole.ADMIN);
+		when(appUserRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
+		when(coordinatorProgramService.managedPrograms(admin))
+				.thenReturn(List.of(program(PROGRAM_A, true), program(PROGRAM_B, true)));
+		givenMentorInBothProgramsWithLabelsOn();
+
+		assertThat(service.ofMentor(MENTOR, admin.getId())).extracting(MentorLabelResponse.ProgramLabels::programId)
+				.containsExactly(PROGRAM_A, PROGRAM_B);
+	}
+
+	@Test
+	void anotherMentorSeesNoLabels() {
+		AppUser other = user(OTHER_MENTOR, UserRole.MENTOR);
+		when(appUserRepository.findById(OTHER_MENTOR)).thenReturn(Optional.of(other));
+		when(programMentorRepository.findProgramNamesByMentorIds(List.of(MENTOR), ProgramMentorStatus.ACCEPTED))
+				.thenReturn(List.of(programName(PROGRAM_A, "Build '26")));
+		when(programRepository.findAllById(Set.of(PROGRAM_A))).thenReturn(List.of(program(PROGRAM_A, true)));
+
+		assertThat(service.ofMentor(MENTOR, OTHER_MENTOR)).isEmpty();
+		verifyNoInteractions(labelRepository, assignmentRepository);
+	}
+
+	@Test
 	void showsNothingToSomeoneWhoIsNotSignedIn() {
 		assertThat(service.ofMentor(MENTOR, null)).isEmpty();
 		verifyNoInteractions(programMentorRepository, labelRepository, assignmentRepository);
+	}
+
+	/** A program the coordinator manages, as the write path loads it: checked, then locked. */
+	private void editable(Program program) {
+		when(coordinatorProgramService.requireManagedProgram(COORDINATOR, program.getId())).thenReturn(program);
+		when(programRepository.findByIdForUpdate(program.getId())).thenReturn(Optional.of(program));
 	}
 
 	/** Build '26 (A): AI and Fintech; Growth (B): Pazarlama; both switched on. */

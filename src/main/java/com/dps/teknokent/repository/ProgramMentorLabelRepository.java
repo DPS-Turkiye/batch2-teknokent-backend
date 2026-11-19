@@ -16,6 +16,4 @@ public interface ProgramMentorLabelRepository extends JpaRepository<ProgramMento
 	List<ProgramMentorLabel> findByProgramIdInOrderByNameAsc(Collection<UUID> programIds);
 
 	Optional<ProgramMentorLabel> findByIdAndProgramId(UUID id, UUID programId);
-
-	long countByProgramId(UUID programId);
 }
