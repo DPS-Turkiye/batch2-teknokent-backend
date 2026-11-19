@@ -214,6 +214,9 @@ public class CoordinatorProgramService {
 		if (request.attendanceEnabled() != null) {
 			program.setAttendanceEnabled(request.attendanceEnabled());
 		}
+		if (request.mentorLabelsEnabled() != null) {
+			program.setMentorLabelsEnabled(request.mentorLabelsEnabled());
+		}
 		if (program.getProgramType() == ProgramType.PEER_MENTORING) {
 			program.setIndividualMentees(true);
 		} else if (request.individualMentees() != null) {
@@ -690,7 +693,8 @@ public class CoordinatorProgramService {
 						program.getEligibleEmailDomain(),
 						program.isRosterOnly(),
 						program.isIndividualMentees(),
-						program.isAttendanceEnabled()),
+						program.isAttendanceEnabled(),
+						program.isMentorLabelsEnabled()),
 				health(program, snapshot),
 				awaitingTeams,
 				upcoming,

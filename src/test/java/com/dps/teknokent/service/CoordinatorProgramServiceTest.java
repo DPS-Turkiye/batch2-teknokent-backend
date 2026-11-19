@@ -398,7 +398,8 @@ class CoordinatorProgramServiceTest {
 		stubManagedProgram(program);
 
 		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null)))
 				.isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> service.deleteEvent(COORDINATOR_ID, PROGRAM_ID, UUID.randomUUID()))
 				.isInstanceOf(InvalidRequestException.class);
@@ -428,7 +429,8 @@ class CoordinatorProgramServiceTest {
 				.thenReturn(List.of());
 
 		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "Akran", null, null, null, null, null, null, null, null, null, null, null, null, false, null));
+				null, "Akran", null, null, null, null, null, null, null, null, null, null, null, null, false, null,
+				null));
 
 		assertThat(program.isIndividualMentees()).isTrue();
 		assertThat(detail.rules().individualMentees()).isTrue();
@@ -513,7 +515,8 @@ class CoordinatorProgramServiceTest {
 		when(domainLookupService.requireUser(ADMIN_ID)).thenReturn(user(ADMIN_ID, UserRole.ADMIN));
 
 		assertThatThrownBy(() -> service.updateDetails(ADMIN_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+				null, "Yeni ad", null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("admin views");
 		verify(programRepository, never()).save(any());
@@ -546,7 +549,7 @@ class CoordinatorProgramServiceTest {
 
 		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
 				null, " METU Stars 2026 ", "  ", today, today.plusDays(100), 10, null, false, null, null, null, null,
-				null, null, null, null));
+				null, null, null, null, null));
 
 		assertThat(program.getName()).isEqualTo("METU Stars 2026");
 		assertThat(program.getDescription()).isNull();
@@ -567,14 +570,14 @@ class CoordinatorProgramServiceTest {
 
 		var detail = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
 				null, "İŞKUR", null, null, null, null, null, null, null, null, null, null, " @METU.edu.tr ", true,
-				true, null));
+				true, null, null));
 
 		assertThat(detail.rules().eligibleEmailDomain()).isEqualTo("metu.edu.tr");
 		assertThat(detail.rules().rosterOnly()).isTrue();
 		assertThat(detail.rules().individualMentees()).isTrue();
 
 		service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
-				null, "İŞKUR", null, null, null, null, null, null, null, null, null, null, "", null, null, null));
+				null, "İŞKUR", null, null, null, null, null, null, null, null, null, null, "", null, null, null, null));
 		assertThat(program.getEligibleEmailDomain()).isNull();
 		assertThat(program.isRosterOnly()).isTrue();
 	}
@@ -585,7 +588,7 @@ class CoordinatorProgramServiceTest {
 
 		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
 				null, "İŞKUR", null, null, null, null, null, null, null, null, null, null, "metu edu", null, null,
-				null)))
+				null, null)))
 				.isInstanceOf(InvalidRequestException.class)
 				.hasMessageContaining("metu edu");
 		verify(programRepository, never()).save(any());
@@ -597,7 +600,7 @@ class CoordinatorProgramServiceTest {
 
 		assertThatThrownBy(() -> service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
 				null, "METU Stars", null, today, today.minusDays(1), null, null, null, null, null, null, null, null,
-				null, null, null)))
+				null, null, null, null)))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programRepository, never()).save(any());
 	}
@@ -715,7 +718,7 @@ class CoordinatorProgramServiceTest {
 
 		var rules = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
 				null, "METU Stars", " Hızlandırma ", null, today, null, 30, null, false, 6, 10, 45, null, null, true,
-				null))
+				null, null))
 				.rules();
 
 		assertThat(rules.staleAfterDays()).isEqualTo(30);
@@ -729,6 +732,31 @@ class CoordinatorProgramServiceTest {
 		assertThat(program.getDescription()).isEqualTo("Hızlandırma");
 		// An end date alone is fine: there is no start to come after.
 		assertThat(program.getEndDate()).isEqualTo(today);
+	}
+
+	@Test
+	void mentorLabelsStayOffUntilTheCoordinatorTurnsThemOnAndAnOmittedSwitchLeavesThemAsTheyAre() {
+		Program program = program(COORDINATOR_ID);
+		stubManagedProgram(program);
+		stubProgramRows(List.of(), List.of(), List.of());
+		when(programEventRepository.findByProgramIdInAndStartsAtGreaterThanEqualOrderByStartsAtAsc(anyList(), any()))
+				.thenReturn(List.of());
+		assertThat(program.isMentorLabelsEnabled()).isFalse();
+
+		var on = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "METU Stars", null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, true)).rules();
+		assertThat(on.mentorLabelsEnabled()).isTrue();
+
+		var untouched = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "METU Stars", null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null)).rules();
+		assertThat(untouched.mentorLabelsEnabled()).isTrue();
+
+		var off = service.updateDetails(COORDINATOR_ID, PROGRAM_ID, new UpdateProgramDetailsRequest(
+				null, "METU Stars", null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, false)).rules();
+		assertThat(off.mentorLabelsEnabled()).isFalse();
 	}
 
 	@Test

@@ -77,7 +77,8 @@ public record CoordinatorProgramResponse(
 			String eligibleEmailDomain,
 			boolean rosterOnly,
 			boolean individualMentees,
-			boolean attendanceEnabled) {
+			boolean attendanceEnabled,
+			boolean mentorLabelsEnabled) {
 	}
 
 	/** Active mentorships by how recently the team met its mentor; see CoordinatorProgramService#classify. */

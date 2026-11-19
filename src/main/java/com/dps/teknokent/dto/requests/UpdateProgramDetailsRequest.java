@@ -28,5 +28,6 @@ public record UpdateProgramDetailsRequest(
 		@Size(max = 255) String eligibleEmailDomain,
 		Boolean rosterOnly,
 		Boolean individualMentees,
-		Boolean attendanceEnabled) {
+		Boolean attendanceEnabled,
+		Boolean mentorLabelsEnabled) {
 }
