@@ -9,11 +9,16 @@ import org.jspecify.annotations.Nullable;
 
 import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
 import com.dps.teknokent.domain.MeetingStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 
-/** One row of the coordinator's Mentorluklar table. */
+/**
+ * One row of the coordinator's Mentorluklar table. A team working with a mentor through an accepted request has no
+ * mentorship row: its {@code id} is null, {@code source} says so and {@code requestId} names the request. The drawer
+ * and "İki tarafa hatırlat" take a mentorship id, so they are not offered for such a row.
+ */
 public record CoordinatorMentorshipResponse(
-		UUID id,
+		@Nullable UUID id,
 		UUID programId,
 		String programName,
 		UUID mentorId,
@@ -30,7 +35,9 @@ public record CoordinatorMentorshipResponse(
 		@Nullable Instant nextMeetingAt,
 		int openActions,
 		int overdueActions,
-		int missingNotes) {
+		int missingNotes,
+		MentorshipSource source,
+		@Nullable UUID requestId) {
 
 	/**
 	 * The drawer. Goal titles stay between the mentor and the team, so the coordinator only gets the counts.

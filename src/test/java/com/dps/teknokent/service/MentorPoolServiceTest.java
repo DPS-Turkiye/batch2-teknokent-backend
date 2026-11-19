@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -724,6 +725,8 @@ class MentorPoolServiceTest {
 		when(mentorProfileRepository.findAllById(shown)).thenReturn(List.of(profile));
 		when(mentorshipRepository.countOrganizationsByMentor(eq(shown), any()))
 				.thenReturn(List.of(load(full.getId(), 2)));
+		// A team that works with the mentor through an accepted request has no mentorship row but is load all the same.
+		when(coordinatorProgramService.acceptedRequestLoad(shown)).thenReturn(Map.of(waiting.getId(), 1L));
 		when(programMentorRepository.findProgramNamesByMentorIds(shown, ProgramMentorStatus.ACCEPTED))
 				.thenReturn(List.of(programName(full.getId(), "METU Stars 2026"), programName(full.getId(), "BİGG")));
 
@@ -736,6 +739,8 @@ class MentorPoolServiceTest {
 		assertThat(rows.get(0).capacity()).isEqualTo(4);
 		assertThat(rows.get(0).expertise()).isEmpty();
 		assertThat(rows.get(0).programs()).isEmpty();
+		assertThat(rows.get(0).activeTeams()).isZero();
+		assertThat(rows.get(1).activeTeams()).isEqualTo(1);
 		assertThat(rows.get(2).activeTeams()).isEqualTo(2);
 		assertThat(rows.get(2).capacity()).isEqualTo(2);
 		assertThat(rows.get(2).expertise()).containsExactly("Finans");

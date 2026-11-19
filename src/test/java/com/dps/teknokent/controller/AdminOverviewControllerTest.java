@@ -23,6 +23,7 @@ import com.dps.teknokent.domain.BottleneckSeverity;
 import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
@@ -57,7 +58,7 @@ class AdminOverviewControllerTest {
 				List.of(),
 				List.of(new AdminOverviewResponse.MentorshipRow(UUID.randomUUID(), MENTOR_ID, "Kemal Arslan", ORG_ID,
 						"Vega", MentorshipStatus.ACTIVE, LocalDate.parse("2026-09-01"), null, 40, 3L, 1, 2,
-						PROGRAM_ID)),
+						PROGRAM_ID, MentorshipSource.MENTORSHIP)),
 				List.of(new AdminOverviewResponse.RequestRow(UUID.randomUUID(), ORG_ID, "Vega", MENTOR_ID,
 						"Kemal Arslan", "Finans", MentorshipRequestStatus.MORE_INFO_REQUESTED, AT)),
 				List.of(new AdminOverviewResponse.BottleneckRow(UUID.randomUUID(), "Hukuk", BottleneckSeverity.HIGH,

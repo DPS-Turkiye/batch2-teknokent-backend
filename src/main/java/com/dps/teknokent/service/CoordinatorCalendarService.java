@@ -72,7 +72,9 @@ public class CoordinatorCalendarService {
 				.collect(Collectors.toMap(
 						row -> CoordinatorProgramService.pairKey(row.mentorId(), row.organizationId()),
 						Function.identity(),
-						(first, second) -> first));
+						// A pair can have a request row in one program and a mentorship in another: link the
+						// mentorship.
+						(first, second) -> first.id() != null ? first : second));
 
 		// A meeting is shown under the program it was held in, also after its team moved to another one.
 		record Placed(Meeting meeting, Program program) {

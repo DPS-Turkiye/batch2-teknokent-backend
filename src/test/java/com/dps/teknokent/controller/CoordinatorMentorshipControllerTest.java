@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.CoordinatorMentorshipHealth;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -115,6 +116,6 @@ class CoordinatorMentorshipControllerTest {
 				MENTORSHIP_ID, PROGRAM_ID, "METU Stars 2026", UUID.randomUUID(), "Ayşe Demir", null,
 				UUID.randomUUID(), "Lumen", MentorshipStatus.ACTIVE, CoordinatorMentorshipHealth.RISKY,
 				"Finansal model",
-				null, null, 18L, null, 2, 1, 0);
+				null, null, 18L, null, 2, 1, 0, MentorshipSource.MENTORSHIP, null);
 	}
 }

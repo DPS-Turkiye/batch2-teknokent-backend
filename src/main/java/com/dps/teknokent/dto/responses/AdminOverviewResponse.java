@@ -11,6 +11,7 @@ import com.dps.teknokent.domain.BottleneckSeverity;
 import com.dps.teknokent.domain.BottleneckStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
+import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.ProgramStatus;
@@ -88,13 +89,15 @@ public record AdminOverviewResponse(
 			String organizationName,
 			MentorshipStatus status,
 			LocalDate startDate,
-			LocalDate endDate,
+			@Nullable LocalDate endDate,
 			int progressPercent,
 			@Nullable Long daysSinceMeeting,
 			int goalDone,
 			int goalTotal,
 			/* The program the mentorship was made in; null for one made before V82. */
-			@Nullable UUID programId) {
+			@Nullable UUID programId,
+			/* An accepted request is listed only in a Program raporu; its id is then the request's. */
+			MentorshipSource source) {
 	}
 
 	public record MeetingMark(
