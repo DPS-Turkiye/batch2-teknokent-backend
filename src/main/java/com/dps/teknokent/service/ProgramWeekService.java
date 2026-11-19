@@ -95,10 +95,9 @@ public class ProgramWeekService {
 
 	/**
 	 * The saved weeks a participant may see by {@code today}, each with its sessions and special days. The
-	 * coordinator's
-	 * setting decides first: a HIDDEN week is never in, and a SHOWN one is in now, whole, marked {@code upcoming} while
-	 * it has not begun. An AUTO week follows its dates. A week is in once its
-	 * own first day has come; a session dated today does not open a later week early, as it may for "Bu hafta". In a
+	 * coordinator's setting decides first: a HIDDEN week is never in, and a SHOWN one is in now, whole, marked
+	 * {@code upcoming} while it has not begun. An AUTO week follows its dates: it is in once its own first day has
+	 * come; a session dated today does not open a later week early, as it may for "Bu hafta". In a
 	 * plan that prints dates, a week without its own has no first day to go by (the program calendar's is not the
 	 * syllabus's), so it is in once a later printed week has begun or the program has ended. Nothing dated after the
 	 * running week's last day goes out, because a session or special day of an earlier week can still lie ahead.

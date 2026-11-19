@@ -12,7 +12,8 @@ import org.jspecify.annotations.Nullable;
  * after the running week's last day (a session or special day of an earlier week included). Empty before the first
  * week begins; every week once the program is over (unless the syllabus prints one later). {@code currentWeek} is the
  * running week once it has begun: null between two printed weeks, outside the program, or when a session dated today
- * belongs to a week that has not begun yet.
+ * belongs to a week that has not begun yet. It still names a running week the coordinator hid, which is then not in
+ * {@code weeks}.
  */
 public record ProgramWeeksSoFarResponse(
 		UUID programId,

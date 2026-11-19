@@ -77,14 +77,15 @@ class ProgramControllerTest {
 	@Test
 	void givesTheCallerTheirProgramsWeek() throws Exception {
 		when(programWeekService.thisWeek(ACTOR_ID, null)).thenReturn(new ProgramWeekResponse(PROGRAM_ID, "Seed 2026",
-				null, null, 3, 12, null, null, false, false, true, null, List.of()));
+				null, null, 3, 12, null, null, false, false, true, null, List.of(), List.of(), true));
 
 		mockMvc.perform(get("/api/programs/mine/this-week")
 				.param("actorId", ACTOR_ID.toString())
 				.with(user("test-user")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.week").value(3))
-				.andExpect(jsonPath("$.hasSyllabus").value(true));
+				.andExpect(jsonPath("$.hasSyllabus").value(true))
+				.andExpect(jsonPath("$.planHidden").value(true));
 	}
 
 	@Test
@@ -107,6 +108,8 @@ class ProgramControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.currentWeek").value(1))
 				.andExpect(jsonPath("$.weeks[0].current").value(true))
+				.andExpect(jsonPath("$.weeks[0].upcoming").value(false))
+				.andExpect(jsonPath("$.weeks[0].plan.menteeVisibility").doesNotExist())
 				.andExpect(jsonPath("$.weeks[0].plan.title").value("Tanışma"))
 				.andExpect(jsonPath("$.weeks[0].plan.activities[0]").value("Workshop: Keşif"));
 	}
