@@ -294,7 +294,7 @@ public class MentorProfileService {
 		return mentorProfileRepository.findAllByUserStatusOrderBySortOrderAsc(UserAccountStatus.APPROVED);
 	}
 
-	// Counts come from grouped queries so a mentor list costs three queries, not three per mentor.
+	// Counts come from grouped queries, so a mentor list costs a fixed number of queries, not a few per mentor.
 	private List<MentorProfileResponse> withActivity(List<MentorProfile> profiles) {
 		if (profiles.isEmpty()) {
 			return List.of();

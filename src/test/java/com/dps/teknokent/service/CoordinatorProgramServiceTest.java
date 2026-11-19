@@ -1147,12 +1147,9 @@ class CoordinatorProgramServiceTest {
 				.thenReturn(List.of(terra, lumen, lumenAgain, kavun, otherMentor));
 		when(programStartupRepository.findByOrganizationIdIn(anyCollection())).thenReturn(startups);
 		when(programRepository.findAllById(any())).thenReturn(List.of(program));
-		stubProgramRows(startups, List.of(), List.of());
-		stubTeamData(
-				List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"),
-						organization(KAVUN_ID, "Kavun")),
-				List.of(mentorship(TERRA_ID, MentorshipStatus.ACTIVE, today.minusDays(10)), kavunElsewhere),
-				List.of(), List.of(), List.of());
+		stubRequestRows(startups, List.of(organization(TERRA_ID, "Terra"), organization(LUMEN_ID, "Lumen"),
+				organization(KAVUN_ID, "Kavun")),
+				List.of(mentorship(TERRA_ID, MentorshipStatus.ACTIVE, today.minusDays(10)), kavunElsewhere));
 		stubRequests(terra, lumen, lumenAgain, kavun, otherMentor);
 
 		assertThat(service.acceptedRequestLoad(List.of(MENTOR_ID))).containsExactly(Map.entry(MENTOR_ID, 1L));
@@ -1177,8 +1174,7 @@ class CoordinatorProgramServiceTest {
 				eq(MentorshipRequestStatus.ACCEPTED))).thenReturn(List.of(lumen));
 		when(programStartupRepository.findByOrganizationIdIn(anyCollection())).thenReturn(startups);
 		when(programRepository.findAllById(any())).thenReturn(List.of(program));
-		stubProgramRows(startups, List.of(), List.of());
-		stubTeamData(List.of(organization(LUMEN_ID, "Lumen")), List.of(paused), List.of(), List.of(), List.of());
+		stubRequestRows(startups, List.of(organization(LUMEN_ID, "Lumen")), List.of(paused));
 		stubRequests(lumen);
 
 		assertThat(service.acceptedRequestLoad(List.of(MENTOR_ID))).containsExactly(Map.entry(MENTOR_ID, 1L));
@@ -1193,9 +1189,8 @@ class CoordinatorProgramServiceTest {
 		completed.setId(UUID.randomUUID());
 		completed.setStatus(ProgramStatus.COMPLETED);
 		MentorshipRequest lumen = acceptedRequest(LUMEN_ID, MENTOR_ID, 2);
-		stubProgramRows(List.of(startup(LUMEN_ID, 30), startup(KAVUN_ID, 30)), List.of(), List.of());
-		stubTeamData(List.of(organization(LUMEN_ID, "Lumen"), organization(KAVUN_ID, "Kavun")), List.of(),
-				List.of(), List.of(), List.of());
+		stubRequestRows(List.of(startup(LUMEN_ID, 30), startup(KAVUN_ID, 30)),
+				List.of(organization(LUMEN_ID, "Lumen"), organization(KAVUN_ID, "Kavun")), List.of());
 		stubRequests(lumen);
 
 		assertThat(service.runningRequests(List.of(stars, completed)))
@@ -1223,8 +1218,7 @@ class CoordinatorProgramServiceTest {
 		Program program = program(COORDINATOR_ID);
 		MentorshipRequest older = acceptedRequest(LUMEN_ID, MENTOR_ID, 9);
 		MentorshipRequest latest = acceptedRequest(LUMEN_ID, MENTOR_ID, 2);
-		stubProgramRows(List.of(startup(LUMEN_ID, 30)), List.of(), List.of());
-		stubTeamData(List.of(organization(LUMEN_ID, "Lumen")), List.of(), List.of(), List.of(), List.of());
+		stubRequestRows(List.of(startup(LUMEN_ID, 30)), List.of(organization(LUMEN_ID, "Lumen")), List.of());
 		stubRequests(older, latest);
 
 		assertThat(service.runningRequests(program)).containsExactly(latest);
@@ -1758,6 +1752,15 @@ class CoordinatorProgramServiceTest {
 		when(programPhaseRepository.findByProgramIdInOrderByPositionAsc(anyList())).thenReturn(phases);
 		when(programStartupRepository.findByProgramIdIn(anyList())).thenReturn(startups);
 		when(programMentorRepository.findByProgramIdIn(anyList())).thenReturn(mentors);
+	}
+
+	/** What the request-only snapshot reads. */
+	private void stubRequestRows(List<ProgramStartup> startups, List<Organization> organizations,
+			List<Mentorship> mentorships) {
+		when(programStartupRepository.findByProgramIdIn(anyList())).thenReturn(startups);
+		when(organizationRepository.findAllById(any())).thenReturn(organizations);
+		when(mentorshipRepository.findByOrganizationIdIn(anyCollection())).thenReturn(mentorships);
+		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(anyCollection())).thenReturn(List.of());
 	}
 
 	private void stubTeamData(
