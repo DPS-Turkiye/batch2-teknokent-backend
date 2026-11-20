@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 import com.dps.teknokent.config.FirebaseApps;
 import com.dps.teknokent.config.FirebaseProperties;
 import com.google.firebase.auth.AuthErrorCode;
@@ -69,7 +71,8 @@ public class FirebaseAdminTokenVerifier implements FirebaseTokenVerifier {
 			if (email == null || email.isBlank()) {
 				return Optional.empty();
 			}
-			FirebaseIdentity identity = new FirebaseIdentity(decoded.getUid(), email, decoded.isEmailVerified());
+			FirebaseIdentity identity = new FirebaseIdentity(decoded.getUid(), email, decoded.isEmailVerified(),
+					signedInAt(decoded));
 			remember(key, new Checked(identity, trustedUntil(decoded, now)), now);
 			return Optional.of(identity);
 		} catch (FirebaseAuthException exception) {
@@ -82,6 +85,13 @@ public class FirebaseAdminTokenVerifier implements FirebaseTokenVerifier {
 		} catch (IllegalArgumentException exception) {
 			return Optional.empty();
 		}
+	}
+
+	private static @Nullable Instant signedInAt(FirebaseToken decoded) {
+		if (decoded.getClaims() != null && decoded.getClaims().get("auth_time") instanceof Number seconds) {
+			return Instant.ofEpochSecond(seconds.longValue());
+		}
+		return null;
 	}
 
 	/** Never past the token's own expiry. */

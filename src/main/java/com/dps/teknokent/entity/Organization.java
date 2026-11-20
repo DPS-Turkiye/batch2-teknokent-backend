@@ -48,6 +48,9 @@ import lombok.Setter;
 @NoArgsConstructor
 public class Organization {
 
+	/** The name a startup keeps once its founder deleted it: the row stays for the history other people share. */
+	public static final String DELETED_NAME = "Silinmiş girişim";
+
 	public static Organization fromRequest(CreateOrganizationRequest request) {
 		Organization organization = new Organization();
 		organization.name = TextUtils.trim(request.name());
@@ -169,6 +172,37 @@ public class Organization {
 	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
+
+	/**
+	 * Erases what the startup said about itself and archives it, so it is never listed or joined again. The row
+	 * stays, because mentorships, meetings and requests other people keep point at it.
+	 */
+	public void erase(Instant now) {
+		name = DELETED_NAME;
+		description = null;
+		website = null;
+		mvpUrl = null;
+		problem = null;
+		solution = null;
+		currentSolution = null;
+		targetUser = null;
+		sector = null;
+		maturity = null;
+		programLevel = null;
+		fundingStage = null;
+		foundedYear = null;
+		supportAreas.clear();
+		founder = null;
+		inviteCode = null;
+		activeProgramId = null;
+		statusVersion = null;
+		statusSummary = null;
+		completionPercent = null;
+		currentStage = null;
+		if (archivedAt == null) {
+			archivedAt = now;
+		}
+	}
 
 	/** The name to print as a startup or team name: none for a personal team, which is never shown as one. */
 	public static String visibleName(Organization organization) {

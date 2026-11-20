@@ -51,6 +51,12 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final Pattern USER_DELETION_PATH = Pattern.compile(
 			"/api/admin/users/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/delete");
 	/**
+	 * Deleting one's own account or startup, and reading what one may delete. Each takes its actor from the token
+	 * alone and needs a recent sign-in from it, so it is reachable with the person's own token only.
+	 */
+	private static final String SELF_DELETION_STATUS_PATH = "/api/me/deletion";
+	private static final Set<String> SELF_DELETION_PATHS = Set.of("/api/me/delete", "/api/me/startup/delete");
+	/**
 	 * Reading a weekly program PDF takes its actor from the token, so the coordinator's own token may reach it
 	 * and the read counts against that person's parse budget. The save and every other coordinator path stay
 	 * on the proxy.
@@ -148,7 +154,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 
 		Set<UserRole> permissions = user.activePermissions();
 		AppUserPrincipal principal = new AppUserPrincipal(
-				user.getId(), user.getEmail(), user.getRole(), permissions, user.getStatus(), user.getFirebaseUid());
+				user.getId(), user.getEmail(), user.getRole(), permissions, user.getStatus(), user.getFirebaseUid(),
+				identity.get().signedInAt());
 		authenticate(request, response, principal, permissions.stream()
 				.<GrantedAuthority>map(permission -> new SimpleGrantedAuthority("ROLE_" + permission.name()))
 				.toList());
@@ -216,6 +223,8 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				|| uri.startsWith(NOTIFICATIONS_PATH + "/")
 				|| uri.startsWith(ASSISTANT_PATH_PREFIX)
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && USER_DELETION_PATH.matcher(uri).matches())
+				|| ("GET".equalsIgnoreCase(request.getMethod()) && SELF_DELETION_STATUS_PATH.equals(uri))
+				|| ("POST".equalsIgnoreCase(request.getMethod()) && SELF_DELETION_PATHS.contains(uri))
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && WEEKLY_PROGRAM_READ_PATH.matcher(uri).matches())
 				|| isOwnMentorProfileUpdate(request, user)
 				|| isOwnUserProfileUpdate(request, user);

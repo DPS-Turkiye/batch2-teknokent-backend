@@ -51,6 +51,16 @@ class FirebaseAdminTokenVerifierTest {
 	}
 
 	@Test
+	void carriesWhenThePersonLastEnteredTheirCredentials() throws Exception {
+		FirebaseToken valid = token("uid-1", "qa@teknokent-dev.test");
+		when(valid.getClaims()).thenReturn(Map.of("auth_time", T0.minusSeconds(120).getEpochSecond()));
+		when(firebaseAuth.verifyIdToken("token", true)).thenReturn(valid);
+
+		assertThat(verifier.verify("token")).contains(
+				new FirebaseIdentity("uid-1", "qa@teknokent-dev.test", true, T0.minusSeconds(120)));
+	}
+
+	@Test
 	void refusesARevokedTokenOrDisabledAccount() throws Exception {
 		for (AuthErrorCode code : new AuthErrorCode[] { AuthErrorCode.REVOKED_ID_TOKEN, AuthErrorCode.USER_DISABLED }) {
 			FirebaseAuthException failure = mock(FirebaseAuthException.class);

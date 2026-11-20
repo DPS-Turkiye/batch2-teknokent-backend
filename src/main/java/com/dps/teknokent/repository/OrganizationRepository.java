@@ -25,6 +25,9 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
 	Optional<Organization> findByFounderId(UUID founderId);
 
+	/** A startup this person still leads: its founder may not delete their account before deleting it. */
+	boolean existsByFounderIdAndArchivedAtIsNullAndPersonalFalse(UUID founderId);
+
 	boolean existsByInviteCode(String inviteCode);
 
 	/** An archived startup is no one's to approve any more, so it leaves the Onaylar list and its count alike. */

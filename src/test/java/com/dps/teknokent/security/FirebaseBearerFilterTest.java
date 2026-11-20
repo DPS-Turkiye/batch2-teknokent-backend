@@ -6,6 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -329,6 +330,49 @@ class FirebaseBearerFilterTest {
 				{ "POST", "/api/admin/users/" + OTHER_USER_ID },
 				{ "GET", "/api/admin/overview" },
 				{ "POST", "/api/admin/programs/" + OTHER_USER_ID + "/mentors/" + OTHER_USER_ID } }) {
+			MockHttpServletResponse refused = new MockHttpServletResponse();
+			MockFilterChain stopped = new MockFilterChain();
+
+			filter.doFilter(request(call[0], call[1], "Bearer good"), refused, stopped);
+
+			assertThat(refused.getStatus()).as(call[0] + " " + call[1]).isEqualTo(403);
+			assertThat(stopped.getRequest()).isNull();
+			SecurityContextHolder.clearContext();
+		}
+	}
+
+	// Deleting oneself takes the actor and the sign-in time from the token alone, so the person's own token reaches
+	// these three paths, and with the time it was signed in at.
+	@Test
+	void aPersonsOwnTokenReachesTheSelfDeletionPathsWithItsSignInTime() throws Exception {
+		AppUser member = user(UserAccountStatus.APPROVED);
+		Instant signedInAt = Instant.parse("2026-11-20T08:00:00Z");
+		when(firebaseTokenVerifier.enabled()).thenReturn(true);
+		when(firebaseTokenVerifier.verify("good"))
+				.thenReturn(Optional.of(new FirebaseIdentity("uid-1", member.getEmail(), true, signedInAt)));
+		when(appUserRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(member));
+
+		for (String[] call : new String[][] {
+				{ "GET", "/api/me/deletion" },
+				{ "POST", "/api/me/delete" },
+				{ "POST", "/api/me/startup/delete" } }) {
+			MockFilterChain chain = new MockFilterChain();
+
+			filter.doFilter(request(call[0], call[1], "Bearer good"), new MockHttpServletResponse(), chain);
+
+			assertThat(chain.getRequest()).as(call[0] + " " + call[1]).isNotNull();
+			AppUserPrincipal principal = (AppUserPrincipal) SecurityContextHolder.getContext().getAuthentication()
+					.getPrincipal();
+			assertThat(principal.id()).isEqualTo(USER_ID);
+			assertThat(principal.signedInAt()).isEqualTo(signedInAt);
+			SecurityContextHolder.clearContext();
+		}
+
+		for (String[] call : new String[][] {
+				{ "GET", "/api/me/delete" },
+				{ "POST", "/api/me/deletion" },
+				{ "GET", "/api/me/startup/delete" },
+				{ "POST", "/api/me/startup/delete/extra" } }) {
 			MockHttpServletResponse refused = new MockHttpServletResponse();
 			MockFilterChain stopped = new MockFilterChain();
 
