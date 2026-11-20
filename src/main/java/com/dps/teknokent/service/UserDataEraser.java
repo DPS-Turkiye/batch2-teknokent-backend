@@ -51,7 +51,8 @@ import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The database half of a user deletion, by an admin or by the person; the caller holds the transaction and the lock on the account.
+ * The database half of a user deletion, by an admin or by the person; the caller holds the transaction and the lock on
+ * the account.
  * Three rules decide every table:
  * <ul>
  * <li>what belongs to the person alone is deleted (profile, files, notifications, progress, sign-in links);</li>

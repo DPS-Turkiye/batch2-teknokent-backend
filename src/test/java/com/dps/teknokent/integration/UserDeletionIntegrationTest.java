@@ -214,7 +214,8 @@ class UserDeletionIntegrationTest {
 		// The table has no column that could hold a name, an address or a uid.
 		assertThat(UserDeletionAudit.class.getDeclaredFields())
 				.extracting(Field::getName)
-				.containsExactlyInAnyOrder("id", "deletedUserId", "deletedById", "deletedAt", "cleanupCompletedAt");
+				.containsExactlyInAnyOrder("id", "deletedUserId", "deletedOrganizationId", "deletedById", "deletedAt",
+						"cleanupCompletedAt");
 	}
 
 	@Test

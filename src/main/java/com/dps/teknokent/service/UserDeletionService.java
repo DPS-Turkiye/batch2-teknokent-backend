@@ -7,7 +7,6 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import org.jspecify.annotations.Nullable;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;

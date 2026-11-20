@@ -81,7 +81,8 @@ class OrganizationDataEraser {
 		UUID id = startup.getId();
 		String name = startup.getName();
 		List<ProgramStartup> places = programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(id);
-		@Nullable UUID program = programOf(startup, places);
+		@Nullable
+		UUID program = programOf(startup, places);
 		Map<UUID, AppUser> mentors = new LinkedHashMap<>();
 
 		closeOpenWork(id, now, mentors);
