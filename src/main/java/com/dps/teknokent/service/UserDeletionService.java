@@ -4,7 +4,9 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -27,7 +29,7 @@ import com.dps.teknokent.util.Texts;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * An admin deletes a user for good. The order is what makes a failure harmless:
+ * An admin deletes a user for good, or a person deletes their own account. The order is what makes a failure harmless:
  * <ol>
  * <li>the Firebase logins to remove are looked up first (a read; if Firebase cannot answer, nothing has changed);</li>
  * <li>one database transaction erases the account ({@link UserDataEraser}); it commits or leaves no trace;</li>
@@ -52,6 +54,7 @@ public class UserDeletionService {
 	private final UserDataEraser eraser;
 	private final LoginProvisioner loginProvisioner;
 	private final UserDeletionCleanupService cleanupService;
+	private final SelfDeletionPolicy selfDeletionPolicy;
 	private final TransactionTemplate transaction;
 	private final TransactionTemplate readOnlyTransaction;
 
@@ -62,6 +65,7 @@ public class UserDeletionService {
 			UserDataEraser eraser,
 			LoginProvisioner loginProvisioner,
 			UserDeletionCleanupService cleanupService,
+			SelfDeletionPolicy selfDeletionPolicy,
 			PlatformTransactionManager transactionManager) {
 		this.appUserRepository = appUserRepository;
 		this.identityRepository = identityRepository;
@@ -69,6 +73,7 @@ public class UserDeletionService {
 		this.eraser = eraser;
 		this.loginProvisioner = loginProvisioner;
 		this.cleanupService = cleanupService;
+		this.selfDeletionPolicy = selfDeletionPolicy;
 		this.transaction = new TransactionTemplate(transactionManager);
 		this.readOnlyTransaction = new TransactionTemplate(transactionManager);
 		this.readOnlyTransaction.setReadOnly(true);
@@ -79,8 +84,24 @@ public class UserDeletionService {
 	 * transactional itself: the Firebase and storage calls must stay outside the database transaction.
 	 */
 	public UserDeletionResponse delete(UUID actorId, UUID targetId, String confirmEmail) {
+		return erase(actorId, targetId, () -> requireDeletable(actorId, targetId, confirmEmail));
+	}
+
+	/**
+	 * The person deletes their own account, after typing the confirmation word and with a recent sign-in. Admins and
+	 * coordinators cannot, and nor can a founder whose startup still exists (it is deleted first).
+	 */
+	public UserDeletionResponse deleteSelf(UUID actorId, @Nullable Instant signedInAt, String confirmation) {
+		return erase(actorId, actorId, () -> requireSelfDeletable(actorId, signedInAt, confirmation));
+	}
+
+	/**
+	 * The order is what makes a failure harmless; see the class comment. {@code check} returns the account to erase
+	 * and runs twice: before the Firebase lookup, and again under the row lock.
+	 */
+	private UserDeletionResponse erase(UUID actorId, UUID targetId, Supplier<AppUser> check) {
 		Login login = readOnlyTransaction.execute(status -> {
-			AppUser target = requireDeletable(actorId, targetId, confirmEmail);
+			AppUser target = check.get();
 			return new Login(target.getEmail(), target.getFirebaseUid());
 		});
 
@@ -96,15 +117,15 @@ public class UserDeletionService {
 			if (appUserRepository.findByIdForUpdate(targetId).isEmpty()) {
 				throw new ResourceNotFoundException("User not found: " + targetId);
 			}
-			// Checked again under the lock: another admin may have deleted or promoted the account meanwhile.
-			AppUser target = requireDeletable(actorId, targetId, confirmEmail);
+			// Checked again under the lock: the account may have been deleted, promoted or made a founder meanwhile.
+			AppUser target = check.get();
 			if (target.getFirebaseUid() != null && !target.getFirebaseUid().isBlank()) {
 				firebaseUids.add(target.getFirebaseUid());
 			}
 			AppUser actor = appUserRepository.findById(actorId).orElseThrow();
 			return eraser.erase(target, actor, firebaseUids, Instant.now());
 		});
-		log.info("Admin {} deleted user {} (audit {})", actorId, targetId, auditId);
+		log.info("User {} deleted by {} (audit {})", targetId, actorId, auditId);
 
 		boolean cleanupPending;
 		try {
@@ -116,6 +137,21 @@ public class UserDeletionService {
 			cleanupPending = true;
 		}
 		return new UserDeletionResponse(targetId, cleanupPending);
+	}
+
+	private AppUser requireSelfDeletable(UUID actorId, @Nullable Instant signedInAt, String confirmation) {
+		AppUser self = appUserRepository.findById(actorId)
+				.filter(user -> user.getStatus() == UserAccountStatus.APPROVED)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+						Texts.forRequest("error.signInRequiredForAction")));
+		selfDeletionPolicy.requireAccountDeletable(self);
+		// After the role checks, so a coordinator is refused outright instead of being sent to sign in again first.
+		selfDeletionPolicy.requireRecentSignIn(signedInAt);
+		if (!SelfDeletionPolicy.confirmsAccount(confirmation)) {
+			throw new InvalidRequestException(Texts.forRequest("error.selfDeleteConfirmation"),
+					SelfDeletionPolicy.CODE_CONFIRMATION);
+		}
+		return self;
 	}
 
 	private AppUser requireDeletable(UUID actorId, UUID targetId, String confirmEmail) {
@@ -149,6 +185,6 @@ public class UserDeletionService {
 		return target;
 	}
 
-	private record Login(String email, String firebaseUid) {
+	private record Login(String email, @Nullable String firebaseUid) {
 	}
 }

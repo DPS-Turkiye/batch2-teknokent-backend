@@ -3,7 +3,6 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,7 +15,6 @@ import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Component;
 
-import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MeetingProposalStatus;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
@@ -53,7 +51,8 @@ import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The database half of an admin's user deletion; the caller holds the transaction and the lock on the account.
+ * The database half of a user deletion, by an admin or by the person; the caller holds the transaction and the lock on
+ * the account.
  * Three rules decide every table:
  * <ul>
  * <li>what belongs to the person alone is deleted (profile, files, notifications, progress, sign-in links);</li>
@@ -74,12 +73,6 @@ class UserDataEraser {
 			MentorshipRequestStatus.COUNTER_PROPOSED);
 	private static final List<MentorshipStatus> LIVE_MENTORSHIPS = List.of(
 			MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE, MentorshipStatus.PAUSED);
-	/** Files about the person, deleted wherever they hang. */
-	private static final Set<DocumentKind> PERSONAL_KINDS = EnumSet.of(
-			DocumentKind.CV, DocumentKind.AVATAR, DocumentKind.PROFILE_PDF, DocumentKind.PEER_EVIDENCE);
-	/** Files that belong to a program, whoever uploaded them. */
-	private static final Set<DocumentKind> PROGRAM_KINDS = EnumSet.of(
-			DocumentKind.SYLLABUS, DocumentKind.WEEKLY_PROGRAM);
 	/** A shorter name would also match ordinary words inside other people's notifications. */
 	private static final int MIN_NAME_LENGTH_TO_REPLACE = 5;
 	/** The widths of notification.title and notification.body. */
@@ -345,17 +338,8 @@ class UserDataEraser {
 					.setParameter("id", id)
 					.getResultList());
 		}
-		List<StoredDocument> going = candidates.stream().filter(document -> goes(document, id, archived)).toList();
-		if (going.isEmpty()) {
-			return List.of();
-		}
-		List<UUID> ids = going.stream().map(StoredDocument::getId).toList();
-		update("delete from StoredDocumentShare s where s.documentId in :ids", "ids", ids);
-		update("delete from DocumentRequestUpload u where u.storedDocument.id in :ids", "ids", ids);
-		update("update ActionItem a set a.submissionDocumentId = null where a.submissionDocumentId in :ids", "ids",
-				ids);
-		update("delete from StoredDocument d where d.id in :ids", "ids", ids);
-		return going.stream().map(StoredDocument::getS3Key).toList();
+		return StoredDocumentRows.remove(entityManager,
+				candidates.stream().filter(document -> goes(document, id, archived)).toList());
 	}
 
 	/**
@@ -365,10 +349,10 @@ class UserDataEraser {
 	 */
 	private static boolean goes(StoredDocument document, UUID id, Collection<UUID> archived) {
 		boolean own = id.equals(document.getUserId());
-		if (PERSONAL_KINDS.contains(document.getKind())) {
+		if (StoredDocumentRows.PERSONAL_KINDS.contains(document.getKind())) {
 			return own;
 		}
-		if (PROGRAM_KINDS.contains(document.getKind()) || document.getMeetingId() != null) {
+		if (StoredDocumentRows.PROGRAM_KINDS.contains(document.getKind()) || document.getMeetingId() != null) {
 			return false;
 		}
 		if (document.getOrganizationId() == null) {

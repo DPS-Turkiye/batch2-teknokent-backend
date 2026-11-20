@@ -25,6 +25,9 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
 	Optional<Organization> findByFounderId(UUID founderId);
 
+	/** A startup this person still leads: its founder may not delete their account before deleting it. */
+	boolean existsByFounderIdAndArchivedAtIsNullAndPersonalFalse(UUID founderId);
+
 	/** Every startup with its founder, for lists that ask whether each one is an open team. */
 	@Query("select o from Organization o left join fetch o.founder")
 	List<Organization> findAllWithFounder();

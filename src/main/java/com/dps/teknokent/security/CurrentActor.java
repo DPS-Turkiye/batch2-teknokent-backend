@@ -1,5 +1,6 @@
 package com.dps.teknokent.security;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
@@ -57,6 +58,18 @@ public final class CurrentActor {
 			throw new InvalidRequestException("actorId is required");
 		}
 		return requestedActorId;
+	}
+
+	/**
+	 * When the caller behind the verified token last entered their credentials; null on the service credentials or
+	 * when the token did not say.
+	 */
+	public static @Nullable Instant signedInAt() {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication != null && authentication.getPrincipal() instanceof AppUserPrincipal principal) {
+			return principal.signedInAt();
+		}
+		return null;
 	}
 
 	/**

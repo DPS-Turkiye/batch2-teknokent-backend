@@ -10,4 +10,6 @@ import com.dps.teknokent.entity.UserDeletionAudit;
 public interface UserDeletionAuditRepository extends JpaRepository<UserDeletionAudit, UUID> {
 
 	List<UserDeletionAudit> findByDeletedUserId(UUID deletedUserId);
+
+	List<UserDeletionAudit> findByDeletedOrganizationId(UUID deletedOrganizationId);
 }

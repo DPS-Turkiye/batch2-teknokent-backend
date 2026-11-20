@@ -54,6 +54,8 @@ class UserDeletionServiceTest {
 	@Mock
 	private UserDeletionCleanupService cleanupService;
 	@Mock
+	private SelfDeletionPolicy selfDeletionPolicy;
+	@Mock
 	private PlatformTransactionManager transactionManager;
 
 	private final UUID auditId = UUID.randomUUID();
@@ -64,7 +66,7 @@ class UserDeletionServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new UserDeletionService(appUserRepository, identityRepository, institutionPersonRepository, eraser,
-				loginProvisioner, cleanupService, transactionManager);
+				loginProvisioner, cleanupService, selfDeletionPolicy, transactionManager);
 		admin = user(UserRole.ADMIN, "admin@menton.test", "uid-admin");
 		target = user(UserRole.MENTEE, EMAIL, "uid-stored");
 		when(appUserRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
