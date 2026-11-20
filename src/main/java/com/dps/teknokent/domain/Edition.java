@@ -25,6 +25,7 @@ public enum Edition {
 					"/api/bottlenecks/**",
 					"/api/meetings/*/assistant-share/**",
 					"/api/organizations/*/bottlenecks/**",
+					"/api/organizations/*/founder",
 					"/api/organizations/*/progress/**",
 					"/api/users/*/team-move")),
 

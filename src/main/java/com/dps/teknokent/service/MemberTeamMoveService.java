@@ -64,8 +64,6 @@ public class MemberTeamMoveService {
 
 	static final String FOUNDER_CODE = "TEAM_FOUNDER";
 	private static final String TEAM_HREF = "/startup/team";
-	private static final Set<UserRole> NOT_TEAM_ROLES = Set.of(
-			UserRole.ADMIN, UserRole.COORDINATOR, UserRole.MENTOR, UserRole.ACADEMICIAN);
 
 	private final AppUserRepository appUserRepository;
 	private final OrganizationRepository organizationRepository;
@@ -188,7 +186,7 @@ public class MemberTeamMoveService {
 		if (person.getStatus() != UserAccountStatus.APPROVED) {
 			return TeamMoveBlock.NOT_APPROVED;
 		}
-		if (!person.has(UserRole.MENTEE) || NOT_TEAM_ROLES.stream().anyMatch(person::has)) {
+		if (!person.isTeamMemberAccount()) {
 			return TeamMoveBlock.NOT_A_TEAM_MEMBER;
 		}
 		return team == null ? TeamMoveBlock.NO_TEAM : null;
