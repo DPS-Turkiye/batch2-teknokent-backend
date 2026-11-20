@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -526,7 +527,8 @@ class RegistrationServiceTest {
 		AppUser person = menteeWithoutStartup();
 		Organization startup = startup();
 		when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
-		when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup));
+		when(organizationRepository.findIdByInviteCode("KARGO1")).thenReturn(Optional.of(startup.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(startup));
 		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORGANIZATION_ID))
 				.thenReturn(Optional.of(new ProgramStartup()));
 		when(appUserRepository.save(person)).thenReturn(person);
@@ -548,7 +550,8 @@ class RegistrationServiceTest {
 		leader.setFullName("Mehmet Can");
 		startup.setFounder(leader);
 		when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
-		when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup));
+		when(organizationRepository.findIdByInviteCode("KARGO1")).thenReturn(Optional.of(startup.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(startup));
 		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORGANIZATION_ID))
 				.thenReturn(Optional.of(new ProgramStartup()));
 		when(appUserRepository.save(person)).thenReturn(person);
@@ -564,7 +567,9 @@ class RegistrationServiceTest {
 	void joinStartup_refusesAStartupOfAnotherProgram() {
 		AppUser person = menteeWithoutStartup();
 		when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
-		when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup()));
+		Organization codeTeam = startup();
+		when(organizationRepository.findIdByInviteCode("KARGO1")).thenReturn(Optional.of(codeTeam.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(codeTeam));
 		when(programStartupRepository.findByProgramIdAndOrganizationId(PROGRAM_ID, ORGANIZATION_ID))
 				.thenReturn(Optional.empty());
 
@@ -744,7 +749,8 @@ class RegistrationServiceTest {
 		organization.setInviteCode("ABCD1234");
 
 		when(appUserRepository.existsByEmailIgnoreCase("elif@startup.com")).thenReturn(false);
-		when(organizationRepository.findByInviteCode("ABCD1234")).thenReturn(Optional.of(organization));
+		when(organizationRepository.findIdByInviteCode("ABCD1234")).thenReturn(Optional.of(organization.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(organization));
 		when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> {
 			AppUser user = invocation.getArgument(0);
 			user.setId(USER_ID);
@@ -792,7 +798,7 @@ class RegistrationServiceTest {
 		assertThat(invite.getJoinedAt()).isNotNull();
 		verify(programStartupRepository).save(argThat(startup -> startup.getProgramId().equals(programId)
 				&& startup.getOrganizationId().equals(ORGANIZATION_ID)));
-		verify(organizationRepository, never()).findByInviteCode(any());
+		verify(organizationRepository, never()).findIdByInviteCode(any());
 	}
 
 	@Test
@@ -887,7 +893,8 @@ class RegistrationServiceTest {
 		organization.setInviteCode("ABCD1234");
 
 		when(appUserRepository.existsByEmailIgnoreCase("elif@startup.com")).thenReturn(false);
-		when(organizationRepository.findByInviteCode("ABCD1234")).thenReturn(Optional.of(organization));
+		when(organizationRepository.findIdByInviteCode("ABCD1234")).thenReturn(Optional.of(organization.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(organization));
 		when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> {
 			AppUser user = invocation.getArgument(0);
 			user.setId(USER_ID);
@@ -907,7 +914,7 @@ class RegistrationServiceTest {
 	@Test
 	void registerMember_rejectsUnknownInviteCode() {
 		when(appUserRepository.existsByEmailIgnoreCase("elif@startup.com")).thenReturn(false);
-		when(organizationRepository.findByInviteCode("NOPE")).thenReturn(Optional.empty());
+		when(organizationRepository.findIdByInviteCode("NOPE")).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> registrationService.registerMember(new RegisterMemberRequest(
 				"Elif Demir",
@@ -916,7 +923,7 @@ class RegistrationServiceTest {
 				null,
 				null)))
 				.isInstanceOf(InvalidRequestException.class)
-				.hasMessageContaining("Invalid invite code");
+				.hasMessageContaining("Bu kodla bir startup bulunamadı");
 	}
 
 	@Test
@@ -1038,7 +1045,7 @@ class RegistrationServiceTest {
 	void registerMentor_withAProgramInviteWaitsInThatProgramsPoolForTheCoordinator() {
 		UUID programId = UUID.randomUUID();
 		ProgramMentorInvite invite = mentorInvite(programId, "cagri@yilmazfinans.com",
-				java.time.Instant.now().plusSeconds(3600));
+				Instant.now().plusSeconds(3600));
 		when(programMentorInviteRepository.findByCode("abc123")).thenReturn(java.util.Optional.of(invite));
 		when(appUserRepository.saveAndFlush(any(AppUser.class))).thenAnswer(invocation -> {
 			AppUser user = invocation.getArgument(0);
@@ -1064,9 +1071,9 @@ class RegistrationServiceTest {
 	void registerMentor_refusesAnExpiredInviteOrAnotherEmail() {
 		UUID programId = UUID.randomUUID();
 		when(programMentorInviteRepository.findByCode("old")).thenReturn(java.util.Optional.of(
-				mentorInvite(programId, "cagri@yilmazfinans.com", java.time.Instant.now().minusSeconds(60))));
+				mentorInvite(programId, "cagri@yilmazfinans.com", Instant.now().minusSeconds(60))));
 		when(programMentorInviteRepository.findByCode("other")).thenReturn(java.util.Optional.of(
-				mentorInvite(programId, "cagri@yilmazfinans.com", java.time.Instant.now().plusSeconds(3600))));
+				mentorInvite(programId, "cagri@yilmazfinans.com", Instant.now().plusSeconds(3600))));
 
 		assertThatThrownBy(() -> registrationService.registerMentor(new RegisterMentorRequest(
 				"Çağrı Yılmaz", "cagri@yilmazfinans.com", null, null, "old")))
@@ -1085,7 +1092,9 @@ class RegistrationServiceTest {
 		AppUser person = menteeWithoutStartup();
 		person.setProgramId(null);
 		when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
-		when(organizationRepository.findByInviteCode("KARGO1")).thenReturn(Optional.of(startup()));
+		Organization codeTeam = startup();
+		when(organizationRepository.findIdByInviteCode("KARGO1")).thenReturn(Optional.of(codeTeam.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(codeTeam));
 
 		assertThatThrownBy(() -> registrationService.joinStartup(USER_ID, "KARGO1"))
 				.isInstanceOf(InvalidRequestException.class)
@@ -1095,10 +1104,50 @@ class RegistrationServiceTest {
 		verify(appUserRepository, never()).save(any());
 	}
 
+	// The code was read while the startup's last member was leaving or being moved: once archived, it takes nobody.
+	@Test
+	void joinStartup_refusesAStartupArchivedWhileTheCodeWasBeingTyped() {
+		AppUser person = menteeWithoutStartup();
+		when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+		Organization seen = startup();
+		Organization locked = startup();
+		locked.setArchivedAt(Instant.now());
+		when(organizationRepository.findIdByInviteCode("KARGO1")).thenReturn(Optional.of(seen.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(locked));
+
+		assertThatThrownBy(() -> registrationService.joinStartup(USER_ID, "KARGO1"))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Bu kodla bir startup bulunamadı");
+		assertThat(person.getOrganization()).isNull();
+		verify(appUserRepository, never()).save(any());
+	}
+
+	// Founder before startup, as a member move and a startup deletion lock them, so a join never deadlocks with them.
+	@Test
+	void joinStartup_locksTheFounderBeforeTheStartup() {
+		AppUser person = menteeWithoutStartup();
+		when(domainLookupService.requireUser(USER_ID)).thenReturn(person);
+		UUID founderId = UUID.fromString("00000000-0000-0000-0000-000000000902");
+		AppUser founder = new AppUser();
+		founder.setId(founderId);
+		Organization codeTeam = startup();
+		when(organizationRepository.findIdByInviteCode("KARGO1")).thenReturn(Optional.of(ORGANIZATION_ID));
+		when(organizationRepository.findFounderIdById(ORGANIZATION_ID)).thenReturn(Optional.of(founderId));
+		when(appUserRepository.findByIdForUpdate(founderId)).thenReturn(Optional.of(founder));
+		when(organizationRepository.findByIdForUpdate(ORGANIZATION_ID)).thenReturn(Optional.of(codeTeam));
+
+		assertThatThrownBy(() -> registrationService.joinStartup(USER_ID, "KARGO1"))
+				.isInstanceOf(InvalidRequestException.class);
+
+		org.mockito.InOrder order = org.mockito.Mockito.inOrder(appUserRepository, organizationRepository);
+		order.verify(appUserRepository).findByIdForUpdate(founderId);
+		order.verify(organizationRepository).findByIdForUpdate(ORGANIZATION_ID);
+	}
+
 	@Test
 	void joinStartup_refusesACodeNoStartupHas() {
 		when(domainLookupService.requireUser(USER_ID)).thenReturn(menteeWithoutStartup());
-		when(organizationRepository.findByInviteCode("NOBODY")).thenReturn(Optional.empty());
+		when(organizationRepository.findIdByInviteCode("NOBODY")).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> registrationService.joinStartup(USER_ID, "nobody"))
 				.isInstanceOf(InvalidRequestException.class);
@@ -1150,7 +1199,7 @@ class RegistrationServiceTest {
 	@Test
 	void registerMentor_refusesAProgramInviteThatWasAlreadyUsedOrNeverExisted() {
 		ProgramMentorInvite used = mentorInvite(UUID.randomUUID(), "cagri@yilmazfinans.com",
-				java.time.Instant.now().plusSeconds(3600));
+				Instant.now().plusSeconds(3600));
 		used.setMentorId(UUID.randomUUID());
 		when(programMentorInviteRepository.findByCode("abc123")).thenReturn(Optional.of(used));
 		when(programMentorInviteRepository.findByCode("made-up")).thenReturn(Optional.empty());
@@ -1178,7 +1227,8 @@ class RegistrationServiceTest {
 		Organization team = startup();
 		team.setFounder(lead);
 		when(programTeamInviteRepository.findByCode("BIGG26-K4TX")).thenReturn(Optional.of(claimed));
-		when(organizationRepository.findByInviteCode("BIGG26-K4TX")).thenReturn(Optional.of(team));
+		when(organizationRepository.findIdByInviteCode("BIGG26-K4TX")).thenReturn(Optional.of(team.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(team));
 		when(appUserRepository.save(any(AppUser.class))).thenAnswer(invocation -> {
 			AppUser user = invocation.getArgument(0);
 			user.setId(USER_ID);
@@ -1200,7 +1250,8 @@ class RegistrationServiceTest {
 	@Test
 	void registerMember_isRefusedWhenTheTeamsProgramDoesNotAllowThePerson() {
 		Organization team = startup();
-		when(organizationRepository.findByInviteCode("ABCD1234")).thenReturn(Optional.of(team));
+		when(organizationRepository.findIdByInviteCode("ABCD1234")).thenReturn(Optional.of(team.getId()));
+		when(organizationRepository.findByIdForUpdate(any())).thenReturn(Optional.of(team));
 		doThrow(new InvalidRequestException("This program is for another institution."))
 				.when(programEligibilityService).requireTeamMember(ORGANIZATION_ID, "elif@startup.com");
 

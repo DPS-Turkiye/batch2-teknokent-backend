@@ -27,6 +27,7 @@ import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.util.InviteCodeGenerator;
 import com.dps.teknokent.util.TextUtils;
+import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
 
@@ -128,6 +129,10 @@ public class OrganizationService {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		if (!isFounder(organization, actorId) || actor.getStatus() != UserAccountStatus.APPROVED) {
 			throw new InvalidRequestException("Only the approved founder can regenerate the invite code");
+		}
+		// An archived startup keeps its founder for history, but takes nobody in again.
+		if (organization.isArchived()) {
+			throw new InvalidRequestException(Texts.forRequest("error.startupArchivedNoCode"));
 		}
 
 		String current = organization.getInviteCode();

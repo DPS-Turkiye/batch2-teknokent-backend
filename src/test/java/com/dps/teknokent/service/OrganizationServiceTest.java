@@ -142,6 +142,22 @@ class OrganizationServiceTest {
 		assertThat(organization.getInviteCode()).isEqualTo("NEWCODE8");
 	}
 
+	// The founder of an emptied, archived startup keeps the title for history but cannot reopen it to joins.
+	@Test
+	void regenerateInviteCode_refusesAnArchivedStartup() {
+		Organization organization = organizationWithFounder(null);
+		organization.setArchivedAt(Instant.now());
+
+		when(domainLookupService.requireOrganization(ORGANIZATION_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(FOUNDER_ID)).thenReturn(organization.getFounder());
+
+		assertThatThrownBy(() -> organizationService.regenerateInviteCode(ORGANIZATION_ID, FOUNDER_ID))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessageContaining("Arşivlenmiş");
+		assertThat(organization.getInviteCode()).isNull();
+		verify(inviteCodeGenerator, never()).nextUnique(any());
+	}
+
 	@Test
 	void regenerateInviteCode_rejectsPendingFounder() {
 		Organization organization = organizationWithFounder("OLDCODE12");

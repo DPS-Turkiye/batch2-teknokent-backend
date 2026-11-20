@@ -8,6 +8,6 @@ public enum TeamMoveBlock {
 	NOT_A_TEAM_MEMBER,
 	/** No startup to move out of (none at all, or an ODTÜ personal team). */
 	NO_TEAM,
-	/** The founder leads the team: change the founder or delete the startup first. */
+	/** The founder leads a team with other members in it: make one of them the founder first. */
 	FOUNDER
 }

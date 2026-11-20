@@ -376,6 +376,98 @@ class MemberTeamMoveIntegrationTest {
 				.andExpect(jsonPath("$.targets").isEmpty());
 	}
 
+	@Test
+	void aFounderAloneInTheirStartupIsMovedAndTheEmptiedStartupArchived() throws Exception {
+		Organization solo = team("Karar vermedik", program);
+		solo.setInviteCode("KARAR-" + UUID.randomUUID());
+		organizationRepository.saveAndFlush(solo);
+		AppUser founder = founderOf(solo, "Merve Geçer");
+		teamMembershipService.joined(founder, solo);
+		AppUser mentor = user("Leyla Aksoy", UserRole.MENTOR, null);
+		MentorshipRequest waiting = openRequest(founder, solo, mentor);
+
+		move(coordinator, founder, newTeam)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.archivedFrom").value(true))
+				.andExpect(jsonPath("$.withdrawnRequests").value(1))
+				.andExpect(jsonPath("$.to.organizationId").value(newTeam.getId().toString()));
+
+		Organization archived = organizationRepository.findById(solo.getId()).orElseThrow();
+		assertThat(archived.getArchivedAt()).isNotNull();
+		assertThat(archived.getInviteCode()).isNull();
+		assertThat(userRepository.findById(founder.getId()).orElseThrow().getOrganization().getId())
+				.isEqualTo(newTeam.getId());
+		assertThat(mentorshipRequestRepository.findById(waiting.getId()).orElseThrow().getStatus())
+				.isEqualTo(MentorshipRequestStatus.WITHDRAWN);
+		assertThat(teamMembershipRepository.findByUserIdOrderByJoinedAtDesc(founder.getId()))
+				.filteredOn(stay -> stay.getOrganization().getId().equals(solo.getId()))
+				.singleElement()
+				.satisfies(stay -> assertThat(stay.getExitReason()).isEqualTo(TeamExitReason.MOVED));
+		assertThat(notifications(mentor)).singleElement()
+				.satisfies(notification -> assertThat(notification.getBody()).contains("Karar vermedik"));
+		assertThat(notifications(coordinator)).anySatisfy(notification -> assertThat(notification.getBody())
+				.contains("Karar vermedik", "Merve Geçer"));
+		assertThat(notifications(founder)).singleElement()
+				.satisfies(notification -> assertThat(notification.getBody()).contains("Karar vermedik"));
+	}
+
+	@Test
+	void aSoloFounderIsOfferedTeamsAndToldTheirStartupWillBeArchived() throws Exception {
+		Organization solo = team("Karar vermedik", program);
+		AppUser founder = founderOf(solo, "Merve Geçer");
+
+		mockMvc.perform(get(MOVE, founder.getId()).with(authentication(signedIn(coordinator))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.blockedBy").doesNotExist())
+				.andExpect(jsonPath("$.archivesCurrentTeam").value(true))
+				.andExpect(jsonPath("$.targets[?(@.name == 'Pazar Lab')]").exists());
+		mockMvc.perform(get(MOVE, member.getId()).with(authentication(signedIn(coordinator))))
+				.andExpect(jsonPath("$.archivesCurrentTeam").value(false));
+	}
+
+	@Test
+	void aFounderWithAPendingTeammateIsStillNotAlone() throws Exception {
+		Organization pair = team("İkili", program);
+		AppUser founder = founderOf(pair, "Merve Geçer");
+		AppUser waiting = user("Bekleyen Üye", UserRole.MENTEE, pair);
+		waiting.setStatus(UserAccountStatus.PENDING);
+		userRepository.saveAndFlush(waiting);
+
+		move(admin, founder, newTeam)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("TEAM_FOUNDER"))
+				.andExpect(jsonPath("$.message").value(containsString("Kurucuyu değiştir")));
+
+		assertThat(organizationRepository.findById(pair.getId()).orElseThrow().getArchivedAt()).isNull();
+	}
+
+	@Test
+	void aRejectedAccountLeftOnTheTeamDoesNotKeepTheFounderFromMoving() throws Exception {
+		Organization solo = team("Karar vermedik", program);
+		AppUser founder = founderOf(solo, "Merve Geçer");
+		AppUser rejected = user("Reddedilen Üye", UserRole.MENTEE, solo);
+		rejected.setStatus(UserAccountStatus.REJECTED);
+		userRepository.saveAndFlush(rejected);
+
+		move(admin, founder, newTeam)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.archivedFrom").value(true));
+	}
+
+	@Test
+	void aCoordinatorCannotMoveASoloFounderOutsideTheirPrograms() throws Exception {
+		Organization solo = team("Yıldız Team", othersProgram);
+		AppUser founder = founderOf(solo, "Zeynep Beyza Takkabulan");
+
+		mockMvc.perform(get(MOVE, founder.getId()).with(authentication(signedIn(coordinator))))
+				.andExpect(status().isNotFound());
+		move(coordinator, founder, newTeam).andExpect(status().isNotFound());
+
+		assertThat(organizationRepository.findById(solo.getId()).orElseThrow().getArchivedAt()).isNull();
+		assertThat(userRepository.findById(founder.getId()).orElseThrow().getOrganization().getId())
+				.isEqualTo(solo.getId());
+	}
+
 	private void assertStillInOldTeam() {
 		AppUser unchanged = userRepository.findById(member.getId()).orElseThrow();
 		assertThat(unchanged.getOrganization().getId()).isEqualTo(oldTeam.getId());
@@ -400,10 +492,13 @@ class MemberTeamMoveIntegrationTest {
 	}
 
 	private MentorshipRequest openRequest() {
-		AppUser mentor = user("Leyla Aksoy", UserRole.MENTOR, null);
+		return openRequest(member, oldTeam, user("Leyla Aksoy", UserRole.MENTOR, null));
+	}
+
+	private MentorshipRequest openRequest(AppUser requester, Organization team, AppUser mentor) {
 		MentorshipRequest request = new MentorshipRequest();
-		request.setRequester(member);
-		request.setOrganization(oldTeam);
+		request.setRequester(requester);
+		request.setOrganization(team);
 		request.setMentor(mentor);
 		request.setProgram(program);
 		request.setRequestedForName("Döngü");

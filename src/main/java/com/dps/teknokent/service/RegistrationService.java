@@ -132,8 +132,7 @@ public class RegistrationService {
 	@Transactional
 	public UserResponse joinStartup(UUID actorId, String rawCode) {
 		AppUser person = requireWithoutStartup(actorId);
-		Organization organization = organizationRepository.findByInviteCode(TextUtils.normalizeInviteCode(rawCode))
-				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid")));
+		Organization organization = openTeamForCode(TextUtils.normalizeInviteCode(rawCode));
 		if (person.getProgramId() == null || programStartupRepository
 				.findByProgramIdAndOrganizationId(person.getProgramId(), organization.getId()).isEmpty()) {
 			throw new InvalidRequestException(Texts.forRequest("error.startupCodeOtherProgram"));
@@ -370,8 +369,7 @@ public class RegistrationService {
 		if (teamInvite.isPresent()) {
 			return claimTeam(teamInvite.get(), request, email);
 		}
-		Organization organization = organizationRepository.findByInviteCode(inviteCode)
-				.orElseThrow(() -> new InvalidRequestException("Invalid invite code."));
+		Organization organization = openTeamForCode(inviteCode);
 		programEligibilityService.requireTeamMember(organization.getId(), email);
 
 		AppUser member = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
@@ -382,6 +380,23 @@ public class RegistrationService {
 		teamMembershipService.joined(joined, organization);
 		notifyLeaderOfNewMember(organization, joined);
 		return UserResponse.fromEntity(joined);
+	}
+
+	/**
+	 * The startup a code opens, first read under its lock, so one archived while the code was being typed (its
+	 * last member left or was moved) takes nobody in. Its founder is locked before it, in the order a member move
+	 * and a startup deletion take them; the founder is told about the join, which touches their row.
+	 */
+	private Organization openTeamForCode(String inviteCode) {
+		UUID teamId = organizationRepository.findIdByInviteCode(inviteCode)
+				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid")));
+		Optional<UUID> founderId = organizationRepository.findFounderIdById(teamId);
+		if (founderId.isPresent() && appUserRepository.findByIdForUpdate(founderId.get()).isEmpty()) {
+			throw new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid"));
+		}
+		return organizationRepository.findByIdForUpdate(teamId)
+				.filter(team -> !team.isArchived())
+				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid")));
 	}
 
 	/** Whoever joins with the startup's code, at signup or later, is announced to the team's current leader. */

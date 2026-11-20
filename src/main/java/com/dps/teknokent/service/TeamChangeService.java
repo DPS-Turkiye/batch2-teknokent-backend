@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.TeamChangeKind;
@@ -113,12 +114,8 @@ public class TeamChangeService {
 		Optional<UUID> programId = programOf(organization);
 
 		if (others.isEmpty()) {
-			organization.setArchivedAt(Instant.now());
-			organization.setInviteCode(null);
-			organizationRepository.save(organization);
+			archiveEmptied(organization, leader);
 			depart(leader, organization, TeamExitReason.LEFT);
-			programId.ifPresent(id -> notifyCoordinators(id, "notification.teamArchived", organization.getName(),
-					leader.getFullName()));
 			return UserResponse.fromEntity(leader);
 		}
 
@@ -141,6 +138,19 @@ public class TeamChangeService {
 		programId.ifPresent(id -> notifyCoordinators(id, "notification.teamLeaderLeft", leader.getFullName(),
 				organization.getName(), successor.getFullName()));
 		return UserResponse.fromEntity(leader);
+	}
+
+	/**
+	 * The last member is leaving: the startup and its history stay, but it is no longer a team, its code stops
+	 * working and its coordinators are told. Shared by a founder leaving alone and a solo founder being moved.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void archiveEmptied(Organization organization, AppUser lastMember) {
+		organization.setArchivedAt(Instant.now());
+		organization.setInviteCode(null);
+		organizationRepository.save(organization);
+		programOf(organization).ifPresent(id -> notifyCoordinators(id, "notification.teamArchived",
+				organization.getName(), lastMember.getFullName()));
 	}
 
 	/** The coordinator's decision from "Onaylar"; the caller has already checked they run the program. */
