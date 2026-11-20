@@ -24,6 +24,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.dps.teknokent.config.RateLimitingConfig;
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -34,11 +35,13 @@ import com.dps.teknokent.dto.responses.ProgramEligibilityResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.security.FirebaseIdentity;
+import com.dps.teknokent.service.CodeJoinService;
+import com.dps.teknokent.service.JoinCodeAttemptLimiter;
 import com.dps.teknokent.service.ProgramEligibilityService;
 import com.dps.teknokent.service.RegistrationService;
 
 @WebMvcTest(AuthRegistrationController.class)
-@Import(SecurityConfig.class)
+@Import({ SecurityConfig.class, CodeJoinService.class, JoinCodeAttemptLimiter.class, RateLimitingConfig.class })
 class AuthRegistrationControllerTest {
 
 	@Autowired

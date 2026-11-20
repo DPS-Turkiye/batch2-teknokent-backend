@@ -29,6 +29,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.dps.teknokent.config.RateLimitingConfig;
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -41,12 +42,14 @@ import com.dps.teknokent.dto.responses.OrganizationMemberResponse;
 import com.dps.teknokent.dto.responses.OrganizationResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.CodeJoinService;
+import com.dps.teknokent.service.JoinCodeAttemptLimiter;
 import com.dps.teknokent.service.OrganizationService;
 import com.dps.teknokent.service.RegistrationService;
 import com.dps.teknokent.service.TeamChangeService;
 
 @WebMvcTest(OrganizationController.class)
-@Import(SecurityConfig.class)
+@Import({ SecurityConfig.class, CodeJoinService.class, JoinCodeAttemptLimiter.class, RateLimitingConfig.class })
 class OrganizationControllerTest {
 
 	private static OrganizationResponse organizationResponse(UUID id, String name, String description,

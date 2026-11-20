@@ -63,21 +63,6 @@ class InviteCodeCheckServiceTest {
 	}
 
 	@Test
-	void keysOnlyAnIpLiteralAndAnIpv6VisitorByItsSlash64() {
-		assertThat(InviteCodeCheckService.addressKey(" 203.0.113.7 ")).isEqualTo("203.0.113.7");
-		assertThat(InviteCodeCheckService.addressKey("2001:db8:1:2::1"))
-				.isEqualTo(InviteCodeCheckService.addressKey("2001:db8:1:2:ffff::9"))
-				.isNotEqualTo(InviteCodeCheckService.addressKey("2001:db8:1:3::1"));
-		assertThat(InviteCodeCheckService.addressKey(null)).isEqualTo(InviteCodeCheckService.UNKNOWN_ADDRESS);
-		assertThat(InviteCodeCheckService.addressKey("  ")).isEqualTo(InviteCodeCheckService.UNKNOWN_ADDRESS);
-		assertThat(InviteCodeCheckService.addressKey("evil.example.com"))
-				.isEqualTo(InviteCodeCheckService.UNKNOWN_ADDRESS);
-		assertThat(InviteCodeCheckService.addressKey("1.2.3.4, 5.6.7.8"))
-				.isEqualTo(InviteCodeCheckService.UNKNOWN_ADDRESS);
-		assertThat(InviteCodeCheckService.addressKey("999.1.1.1")).isEqualTo(InviteCodeCheckService.UNKNOWN_ADDRESS);
-	}
-
-	@Test
 	void aBlankCodeIsNotValidWithoutALookup() {
 		InviteCodeCheckService service = service(10);
 

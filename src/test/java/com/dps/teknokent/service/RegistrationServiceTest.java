@@ -55,6 +55,7 @@ import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.InvalidTeamCodeException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.OnboardingDraftRepository;
@@ -1273,7 +1274,9 @@ class RegistrationServiceTest {
 
 		assertThatThrownBy(() -> registrationService.registerMember(new RegisterMemberRequest(
 				"Elif Demir", "elif@startup.com", "ABCD1234", null, null)))
-				.isInstanceOf(InvalidRequestException.class);
+				// Counted as a wrong code: the refusal would otherwise confirm the code is real.
+				.isInstanceOf(InvalidTeamCodeException.class)
+				.hasMessage("This program is for another institution.");
 		verify(appUserRepository, never()).save(any());
 		verify(pendingMemberRepository, never()).deleteByOrganizationIdAndEmailIgnoreCase(any(), any());
 	}

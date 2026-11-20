@@ -19,7 +19,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.dps.teknokent.controller.AuthInviteCodeController;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -32,6 +31,7 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
+import com.dps.teknokent.util.ClientAddressKey;
 
 /** /invite's check of a team code before any login is made: valid or not, and the team's name, nothing more. */
 @SpringBootTest
@@ -147,7 +147,7 @@ class InviteCodeCheckIntegrationTest {
 	private ResultActions check(String code) throws Exception {
 		return mockMvc.perform(post(CHECK)
 				.with(httpBasic("test", "test"))
-				.header(AuthInviteCodeController.CLIENT_ADDRESS_HEADER, "10.1.0." + ++visitor)
+				.header(ClientAddressKey.HEADER, "10.1.0." + ++visitor)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"code\": \"" + code + "\"}"));
 	}
