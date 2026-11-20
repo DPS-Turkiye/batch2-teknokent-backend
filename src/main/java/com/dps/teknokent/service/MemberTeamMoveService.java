@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -82,7 +83,7 @@ public class MemberTeamMoveService {
 		Mover mover = requireMover(actorId);
 		AppUser person = appUserRepository.findById(userId).orElseThrow(() -> personNotFound(userId));
 		Organization current = person.getOrganization();
-		requireReach(mover, current, userId);
+		requireReach(mover, current == null ? null : current.getId(), userId);
 		TeamMoveBlock block = blockOf(person, current);
 		TeamMoveTeamResponse currentTeam = null;
 		List<TeamMoveTeamResponse> targets = List.of();
@@ -98,23 +99,31 @@ public class MemberTeamMoveService {
 	@Transactional
 	public MemberTeamMoveResponse move(UUID actorId, UUID userId, UUID targetOrganizationId) {
 		Mover mover = requireMover(actorId);
-		// Locked until the transaction ends, so two moves of one person cannot both go through.
+		// A coordinator's reach is settled before any lock, so nobody can hold rows outside their programs.
+		if (!mover.admin()) {
+			UUID teamId = appUserRepository.findOrganizationIdById(userId).orElseThrow(() -> personNotFound(userId));
+			requireReach(mover, teamId, userId);
+			requireTargetReach(mover, targetOrganizationId);
+		}
+		// The person, then both teams in id order. Each row is first read under its lock, so the checks below see
+		// what is committed: a founder handover or another move that got there first is not missed.
 		AppUser person = appUserRepository.findByIdForUpdate(userId).orElseThrow(() -> personNotFound(userId));
 		Organization current = person.getOrganization();
-		requireReach(mover, current, userId);
-		refuse(blockOf(person, current));
+		requireReach(mover, current == null ? null : current.getId(), userId);
+		refuse(personBlock(person, current));
 		if (current == null || current.getId().equals(targetOrganizationId)) {
 			throw new InvalidRequestException(Texts.forRequest("error.memberMoveSameTeam"));
 		}
 		Map<UUID, Organization> locked = lockInOrder(current.getId(), targetOrganizationId);
 		Organization from = locked.get(current.getId());
 		Organization to = locked.get(targetOrganizationId);
-		if (from == null || to == null || (!mover.admin() && !coordinates(mover, to.getId()))) {
+		if (from == null || to == null) {
 			throw new ResourceNotFoundException("Team not found: " + targetOrganizationId);
 		}
-		// Read again under the lock: the founder may have handed the team over while we waited.
-		refuse(blockOf(person, from));
-		if (!isOpenTeam(to)) {
+		// Asked again now the rows are held: the target may have left the coordinator's programs while we waited.
+		requireTargetReach(mover, to.getId());
+		refuse(teamBlock(person, from));
+		if (!isOpenTeam(to) || programsOf(to.getId()).isEmpty()) {
 			throw new InvalidRequestException(Texts.forRequest("error.memberMoveTargetClosed"));
 		}
 
@@ -151,9 +160,16 @@ public class MemberTeamMoveService {
 	}
 
 	/** A coordinator sees only people whose current team is in one of their programs. */
-	private void requireReach(Mover mover, @Nullable Organization current, UUID userId) {
-		if (!mover.admin() && (current == null || !coordinates(mover, current.getId()))) {
+	private void requireReach(Mover mover, @Nullable UUID currentTeamId, UUID userId) {
+		if (!mover.admin() && (currentTeamId == null || !coordinates(mover, currentTeamId))) {
 			throw personNotFound(userId);
+		}
+	}
+
+	/** A coordinator moves people only into teams in their own programs; any other team "does not exist". */
+	private void requireTargetReach(Mover mover, UUID targetOrganizationId) {
+		if (!mover.admin() && !coordinates(mover, targetOrganizationId)) {
+			throw new ResourceNotFoundException("Team not found: " + targetOrganizationId);
 		}
 	}
 
@@ -163,13 +179,23 @@ public class MemberTeamMoveService {
 	}
 
 	private static @Nullable TeamMoveBlock blockOf(AppUser person, @Nullable Organization team) {
+		TeamMoveBlock block = personBlock(person, team);
+		return block != null || team == null ? block : teamBlock(person, team);
+	}
+
+	/** What the person's own row decides; it never reads the team's state, which is only read under its lock. */
+	private static @Nullable TeamMoveBlock personBlock(AppUser person, @Nullable Organization team) {
 		if (person.getStatus() != UserAccountStatus.APPROVED) {
 			return TeamMoveBlock.NOT_APPROVED;
 		}
 		if (!person.has(UserRole.MENTEE) || NOT_TEAM_ROLES.stream().anyMatch(person::has)) {
 			return TeamMoveBlock.NOT_A_TEAM_MEMBER;
 		}
-		if (team == null || team.isPersonal()) {
+		return team == null ? TeamMoveBlock.NO_TEAM : null;
+	}
+
+	private static @Nullable TeamMoveBlock teamBlock(AppUser person, Organization team) {
+		if (team.isPersonal()) {
 			return TeamMoveBlock.NO_TEAM;
 		}
 		if (team.getFounder() != null && team.getFounder().getId().equals(person.getId())) {
@@ -190,15 +216,22 @@ public class MemberTeamMoveService {
 		}
 	}
 
-	/** A team someone can be put in: listed among a program's teams, so approved, not archived, not personal. */
+	/**
+	 * A team someone can be put in: approved, not archived, not personal. It must also be in a program (checked
+	 * separately), so the person's program can follow it and is never silently dropped.
+	 */
 	private static boolean isOpenTeam(Organization team) {
 		return !team.isPersonal() && team.isApprovedForProgram();
 	}
 
-	/** Both teams, locked in id order so two opposite moves cannot wait on each other. */
+	/**
+	 * Both teams, locked in id order so two opposite moves cannot wait on each other. The person is locked
+	 * first, as user deletion does; a whole-team program move locks the team first, and Postgres ends either
+	 * one if the two ever meet on the same person, which only an admin can retry.
+	 */
 	private Map<UUID, Organization> lockInOrder(UUID first, UUID second) {
 		Map<UUID, Organization> locked = new HashMap<>();
-		List.of(first, second).stream()
+		Stream.of(first, second)
 				.sorted()
 				.forEach(id -> organizationRepository.findByIdForUpdate(id)
 						.ifPresent(team -> locked.put(id, team)));
@@ -208,7 +241,7 @@ public class MemberTeamMoveService {
 	private List<TeamMoveTeamResponse> targets(Mover mover, Organization current) {
 		List<Organization> candidates;
 		if (mover.admin()) {
-			candidates = organizationRepository.findAll();
+			candidates = organizationRepository.findAllWithFounder();
 		} else {
 			List<UUID> programIds = ProgramCoordination
 					.programsOf(mover.actor().getId(), programRepository, programCoordinatorRepository).stream()
@@ -217,14 +250,16 @@ public class MemberTeamMoveService {
 			Set<UUID> teamIds = programStartupRepository.findByProgramIdIn(programIds).stream()
 					.map(ProgramStartup::getOrganizationId)
 					.collect(Collectors.toSet());
-			candidates = organizationRepository.findAllById(teamIds);
+			candidates = organizationRepository.findAllWithFounderByIdIn(teamIds);
 		}
 		Collator turkish = Collator.getInstance(Locale.forLanguageTag("tr"));
 		return describe(candidates.stream()
 				.filter(MemberTeamMoveService::isOpenTeam)
 				.filter(team -> !team.getId().equals(current.getId()))
 				.sorted(Comparator.comparing(Organization::getName, turkish))
-				.toList(), mover);
+				.toList(), mover).stream()
+				.filter(team -> team.programId() != null)
+				.toList();
 	}
 
 	/**
@@ -285,20 +320,21 @@ public class MemberTeamMoveService {
 
 	/**
 	 * The person's own program follows the team, as when a whole team changes program, so they are not left in the
-	 * old team's program. Someone who signed up into an unrelated program keeps it.
+	 * old team's program. Someone who signed up into an unrelated program, or whose program the new team is in
+	 * too, keeps it; someone without one gets the new team's, as leaving a team fills it from the old one.
 	 */
 	private void followTeamProgram(AppUser person, Set<UUID> fromPrograms, Organization to) {
 		UUID own = person.getProgramId();
 		if (own != null && !fromPrograms.contains(own)) {
 			return;
 		}
-		UUID active = to.getActiveProgramId();
 		List<ProgramStartup> joined = programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(to.getId());
-		if (active != null && joined.stream().anyMatch(row -> active.equals(row.getProgramId()))) {
-			person.setProgramId(active);
-		} else {
-			person.setProgramId(joined.isEmpty() ? null : joined.get(joined.size() - 1).getProgramId());
+		if (joined.isEmpty() || (own != null && joined.stream().anyMatch(row -> own.equals(row.getProgramId())))) {
+			return;
 		}
+		UUID active = to.getActiveProgramId();
+		boolean activeJoined = active != null && joined.stream().anyMatch(row -> active.equals(row.getProgramId()));
+		person.setProgramId(activeJoined ? active : joined.get(joined.size() - 1).getProgramId());
 	}
 
 	/** A leave or removal the person was waiting on in the old team has nothing left to decide. */
@@ -315,10 +351,8 @@ public class MemberTeamMoveService {
 	}
 
 	private void notifyEveryone(AppUser person, Organization from, Organization to) {
-		if (person.getStatus() != UserAccountStatus.DELETED) {
-			notificationService.create(person, Texts.get(person, "notification.memberMoved.title"),
-					Texts.get(person, "notification.memberMoved.body", from.getName(), to.getName()), TEAM_HREF);
-		}
+		notificationService.create(person, Texts.get(person, "notification.memberMoved.title"),
+				Texts.get(person, "notification.memberMoved.body", from.getName(), to.getName()), TEAM_HREF);
 		notifyFounder(from.getFounder(), person, "notification.memberMovedOut", from, to);
 		notifyFounder(to.getFounder(), person, "notification.memberMovedIn", from, to);
 	}

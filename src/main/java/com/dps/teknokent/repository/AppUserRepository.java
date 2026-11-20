@@ -40,6 +40,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	@Query("select u from AppUser u where u.id = :id")
 	Optional<AppUser> findByIdForUpdate(@Param("id") UUID id);
 
+	/** The person's team id alone, without loading the person: empty for a missing person or one with no team. */
+	@Query("select u.organization.id from AppUser u where u.id = :id and u.organization is not null")
+	Optional<UUID> findOrganizationIdById(@Param("id") UUID id);
+
 	List<AppUser> findByStatusNot(UserAccountStatus status);
 
 	/** Match effective grants, using role only for legacy users without that permission's row. */
