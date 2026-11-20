@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -35,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.ActionItemStatus;
 import com.dps.teknokent.domain.DocumentKind;
+import com.dps.teknokent.domain.InstitutionDataSource;
 import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
@@ -42,12 +44,14 @@ import com.dps.teknokent.domain.MentorshipRequestMessageType;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipRequestUrgency;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgressStatus;
 import com.dps.teknokent.domain.TeamExitReason;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.InstitutionPerson;
 import com.dps.teknokent.entity.Meeting;
 import com.dps.teknokent.entity.Mentorship;
 import com.dps.teknokent.entity.MentorshipRequest;
@@ -67,7 +71,9 @@ import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.UserDeletionAuditRepository;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.security.LoginProvisioner;
+import com.dps.teknokent.security.institution.DevInstitutionLoginProvider;
 import com.dps.teknokent.service.ObjectStorage;
+import com.dps.teknokent.service.UserDeletionService;
 import com.dps.teknokent.util.MeetingSlotTimes;
 
 import jakarta.persistence.EntityManager;
@@ -395,6 +401,81 @@ class SelfDeletionIntegrationTest {
 		assertThat(untouched.isArchived()).isFalse();
 		assertThat(userRepository.findById(member.getId()).orElseThrow().getOrganization()).isNotNull();
 		assertThat(auditRepository.findByDeletedOrganizationId(startup.getId())).isEmpty();
+	}
+
+	@Test
+	void staffAndNonFoundersAreRefusedBeforeBeingAskedToSignInAgain() throws Exception {
+		AppUser coordinator = user(UserRole.COORDINATOR, "Staff Person", null);
+		AppUser mentorAndAdmin = user(UserRole.MENTOR, "Mentor And Admin", null);
+		mentorAndAdmin.grant(UserRole.ADMIN, PermissionSource.ADMIN, Instant.now());
+		userRepository.saveAndFlush(mentorAndAdmin);
+		AppUser founder = user(UserRole.MENTEE, "Ayla Yurt", null);
+		AppUser member = user(UserRole.MENTEE, "Deniz Kaya", null);
+		Organization startup = organization("Döngü Labs", founder);
+		join(founder, startup);
+		join(member, startup);
+		flushAndClear();
+		Instant stale = Instant.now().minus(1, ChronoUnit.HOURS);
+
+		send("/api/me/delete", coordinator, stale, "{\"confirmation\":\"SİL\"}").andExpect(status().isForbidden());
+		deleteAccount(mentorAndAdmin, "SİL").andExpect(status().isForbidden());
+		send("/api/me/startup/delete", member, stale, "{\"confirmName\":\"Döngü Labs\"}")
+				.andExpect(status().isNotFound());
+
+		assertUntouched(coordinator);
+		assertUntouched(mentorAndAdmin);
+	}
+
+	@Test
+	void aSignInStampedTooFarInTheFutureIsNotRecent() throws Exception {
+		AppUser mentee = user(UserRole.MENTEE, "Deniz Kaya", null);
+		flushAndClear();
+
+		send("/api/me/delete", mentee, Instant.now().plus(5, ChronoUnit.MINUTES), "{\"confirmation\":\"SİL\"}")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
+
+		assertUntouched(mentee);
+	}
+
+	@Test
+	void pendingAndInstitutionLinkedAccountsCannotDeleteThemselves() throws Exception {
+		AppUser pending = user(UserRole.MENTEE, "Bekleyen Kişi", null);
+		pending.setStatus(UserAccountStatus.PENDING);
+		userRepository.saveAndFlush(pending);
+		AppUser rostered = user(UserRole.MENTEE, "Deniz Kaya", null);
+		InstitutionPerson person = new InstitutionPerson(DevInstitutionLoginProvider.ID, "roster-" + rostered.getId());
+		person.setFullName("Deniz Kaya");
+		person.setEmail(rostered.getEmail());
+		person.setSource(InstitutionDataSource.IMPORT);
+		person.setSyncedAt(Instant.now());
+		person.setUser(rostered);
+		entityManager.persist(person);
+		flushAndClear();
+
+		deleteAccount(pending, "SİL").andExpect(status().isForbidden());
+		deleteAccount(rostered, "SİL")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(UserDeletionService.CODE_INSTITUTION_LINKED));
+
+		entityManager.clear();
+		assertThat(userRepository.findById(pending.getId()).orElseThrow().getStatus())
+				.isEqualTo(UserAccountStatus.PENDING);
+		assertUntouched(rostered);
+	}
+
+	@Test
+	void aStartupNamePastedInDecomposedFormStillMatches() throws Exception {
+		AppUser founder = user(UserRole.MENTEE, "Ayla Yurt", null);
+		Organization startup = organization("Döngü Labs", founder);
+		join(founder, startup);
+		flushAndClear();
+
+		deleteStartup(founder, Normalizer.normalize("Döngü Labs", Normalizer.Form.NFD)).andExpect(status().isOk());
+
+		entityManager.clear();
+		assertThat(entityManager.find(Organization.class, startup.getId()).getName())
+				.isEqualTo(Organization.DELETED_NAME);
 	}
 
 	// ---------------------------------------------------------------- helpers

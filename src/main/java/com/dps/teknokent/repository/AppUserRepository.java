@@ -40,6 +40,11 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 	@Query("select u from AppUser u where u.id = :id")
 	Optional<AppUser> findByIdForUpdate(@Param("id") UUID id);
 
+	/** A team's members locked in id order, so a startup deletion and a member's own deletion cannot deadlock. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select u from AppUser u where u.organization.id = :organizationId order by u.id")
+	List<AppUser> findByOrganizationIdForUpdate(@Param("organizationId") UUID organizationId);
+
 	List<AppUser> findByStatusNot(UserAccountStatus status);
 
 	/** Match effective grants, using role only for legacy users without that permission's row. */

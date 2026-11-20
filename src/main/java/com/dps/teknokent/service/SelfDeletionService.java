@@ -82,7 +82,6 @@ public class SelfDeletionService {
 
 	/** Not transactional itself: the storage calls must stay outside the database transaction. */
 	public StartupDeletionResponse deleteStartup(UUID actorId, @Nullable Instant signedInAt, String confirmName) {
-		policy.requireRecentSignIn(signedInAt);
 		Deleted deleted = transaction.execute(status -> {
 			AppUser founder = appUserRepository.findByIdForUpdate(actorId)
 					.filter(user -> user.getStatus() == UserAccountStatus.APPROVED)
@@ -94,6 +93,7 @@ public class SelfDeletionService {
 			if (startup == null || policy.deletableStartup(founder).isEmpty()) {
 				throw new ResourceNotFoundException("Startup not found");
 			}
+			policy.requireRecentSignIn(signedInAt);
 			if (!SelfDeletionPolicy.confirmsStartup(confirmName, startup.getName())) {
 				throw new InvalidRequestException(Texts.forRequest("error.startupDeleteConfirmation"),
 						SelfDeletionPolicy.CODE_CONFIRMATION);

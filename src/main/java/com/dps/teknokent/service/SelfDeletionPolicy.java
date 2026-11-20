@@ -1,5 +1,6 @@
 package com.dps.teknokent.service;
 
+import java.text.Normalizer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -121,9 +122,16 @@ class SelfDeletionPolicy {
 		return typed != null && typed.trim().toUpperCase(TURKISH).replace('I', 'İ').equals(ACCOUNT_CONFIRMATION);
 	}
 
-	/** The startup's name exactly, apart from surrounding spaces: case and diacritics count. */
+	/**
+	 * The startup's name exactly, apart from surrounding spaces: case and diacritics count. Both sides are NFC, so a
+	 * name pasted with a decomposed "ö" or "İ" still matches.
+	 */
 	static boolean confirmsStartup(@Nullable String typed, String name) {
-		return typed != null && typed.trim().equals(name.trim());
+		return typed != null && nfc(typed).equals(nfc(name));
+	}
+
+	private static String nfc(String text) {
+		return Normalizer.normalize(text.trim(), Normalizer.Form.NFC);
 	}
 
 	private static boolean isStaff(AppUser user) {

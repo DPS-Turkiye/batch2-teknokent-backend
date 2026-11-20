@@ -84,9 +84,11 @@ class OrganizationDataEraser {
 		@Nullable
 		UUID program = programOf(startup, places);
 		Map<UUID, AppUser> mentors = new LinkedHashMap<>();
+		// Members are locked before the requests and mentorships, the same order a member's own deletion takes them.
+		List<AppUser> team = appUserRepository.findByOrganizationIdForUpdate(id);
 
 		closeOpenWork(id, now, mentors);
-		List<AppUser> members = dissolveTeam(id, founder, program, now);
+		List<AppUser> members = dissolveTeam(id, team, founder, program, now);
 		entityManager.flush();
 
 		List<String> storageKeys = deleteOwnData(id);
@@ -162,9 +164,10 @@ class OrganizationDataEraser {
 	 * Every member leaves, the founder too. Like a member who leaves on their own, each keeps the startup's program
 	 * as their own, so a coordinator can still find them there. Returns the members other than the founder.
 	 */
-	private List<AppUser> dissolveTeam(UUID id, AppUser founder, @Nullable UUID program, Instant now) {
+	private List<AppUser> dissolveTeam(UUID id, List<AppUser> team, AppUser founder, @Nullable UUID program,
+			Instant now) {
 		List<AppUser> others = new ArrayList<>();
-		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(id)) {
+		for (AppUser member : team) {
 			if (member.getProgramId() == null && program != null) {
 				member.setProgramId(program);
 			}

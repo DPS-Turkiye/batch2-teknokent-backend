@@ -84,10 +84,7 @@ public class UserDeletionService {
 	 * transactional itself: the Firebase and storage calls must stay outside the database transaction.
 	 */
 	public UserDeletionResponse delete(UUID actorId, UUID targetId, String confirmEmail) {
-		UserDeletionResponse response = erase(actorId, targetId,
-				() -> requireDeletable(actorId, targetId, confirmEmail));
-		log.info("Admin {} deleted user {}", actorId, targetId);
-		return response;
+		return erase(actorId, targetId, () -> requireDeletable(actorId, targetId, confirmEmail));
 	}
 
 	/**
@@ -95,10 +92,7 @@ public class UserDeletionService {
 	 * coordinators cannot, and nor can a founder whose startup still exists (it is deleted first).
 	 */
 	public UserDeletionResponse deleteSelf(UUID actorId, @Nullable Instant signedInAt, String confirmation) {
-		selfDeletionPolicy.requireRecentSignIn(signedInAt);
-		UserDeletionResponse response = erase(actorId, actorId, () -> requireSelfDeletable(actorId, confirmation));
-		log.info("User {} deleted their own account", actorId);
-		return response;
+		return erase(actorId, actorId, () -> requireSelfDeletable(actorId, signedInAt, confirmation));
 	}
 
 	/**
@@ -131,6 +125,7 @@ public class UserDeletionService {
 			AppUser actor = appUserRepository.findById(actorId).orElseThrow();
 			return eraser.erase(target, actor, firebaseUids, Instant.now());
 		});
+		log.info("User {} deleted by {} (audit {})", targetId, actorId, auditId);
 
 		boolean cleanupPending;
 		try {
@@ -144,12 +139,14 @@ public class UserDeletionService {
 		return new UserDeletionResponse(targetId, cleanupPending);
 	}
 
-	private AppUser requireSelfDeletable(UUID actorId, String confirmation) {
+	private AppUser requireSelfDeletable(UUID actorId, @Nullable Instant signedInAt, String confirmation) {
 		AppUser self = appUserRepository.findById(actorId)
 				.filter(user -> user.getStatus() == UserAccountStatus.APPROVED)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
 						Texts.forRequest("error.signInRequiredForAction")));
 		selfDeletionPolicy.requireAccountDeletable(self);
+		// After the role checks, so a coordinator is refused outright instead of being sent to sign in again first.
+		selfDeletionPolicy.requireRecentSignIn(signedInAt);
 		if (!SelfDeletionPolicy.confirmsAccount(confirmation)) {
 			throw new InvalidRequestException(Texts.forRequest("error.selfDeleteConfirmation"),
 					SelfDeletionPolicy.CODE_CONFIRMATION);
