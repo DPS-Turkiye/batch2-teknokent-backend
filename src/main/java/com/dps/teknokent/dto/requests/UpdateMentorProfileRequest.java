@@ -20,7 +20,8 @@ public record UpdateMentorProfileRequest(
 		@NotNull @Size(max = 200) String responseTimeLabel,
 		@NotNull @Size(max = 200) String meetingMode,
 		@NotNull @Size(max = 200) String communicationPreference,
-		@NotNull @Size(max = 200) String mentoringStyle,
+		// A paragraph, one line per point; keep in step with the length of MentorProfile.mentoringStyle (V125).
+		@NotNull @Size(max = 2000) String mentoringStyle,
 		@NotNull @Size(max = 200) String fitLabel,
 		@NotBlank @Size(max = 200) String experienceLevel,
 		@NotNull @Size(max = 200) String sectorExperience,
