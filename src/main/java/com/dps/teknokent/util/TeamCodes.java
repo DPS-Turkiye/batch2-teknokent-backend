@@ -6,13 +6,18 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
-/** Team codes look like {@code BIGG26-K4TX}: the program's last word, its year, and four random characters. */
+/**
+ * Team codes look like {@code BIGG26-K4TX9P}: the program's last word, its year, and six random characters. Codes
+ * made before 20 Nov 2026 have four and keep working, since a code is looked up exactly as stored.
+ */
 public final class TeamCodes {
 
 	// No 0/O or 1/I/L, so a code read aloud or retyped from paper comes out the same.
 	private static final char[] ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789".toCharArray();
 	private static final SecureRandom RANDOM = new SecureRandom();
 	private static final int PREFIX_LETTERS = 6;
+	/** The prefix is guessable from the program's name, so the random part alone has to resist guessing. */
+	static final int RANDOM_CHARACTERS = 6;
 
 	private TeamCodes() {
 	}
@@ -34,7 +39,7 @@ public final class TeamCodes {
 
 	public static String next(String prefix) {
 		StringBuilder code = new StringBuilder(prefix).append('-');
-		for (int i = 0; i < 4; i++) {
+		for (int i = 0; i < RANDOM_CHARACTERS; i++) {
 			code.append(ALPHABET[RANDOM.nextInt(ALPHABET.length)]);
 		}
 		return code.toString();

@@ -1,11 +1,5 @@
 package com.dps.teknokent.service;
 
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.util.Arrays;
-import java.util.HexFormat;
-import java.util.regex.Pattern;
-
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -20,6 +14,7 @@ import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
+import com.dps.teknokent.util.ClientAddressKey;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
@@ -39,15 +34,9 @@ public class InviteCodeCheckService {
 
 	static final String GLOBAL_KEY = "invite_code_check";
 	static final String ADDRESS_KEY = "invite_code_check_ip:";
-	static final String UNKNOWN_ADDRESS = "unknown";
 	static final long WINDOW_MS = 60_000;
 	static final long PER_ADDRESS = 10;
 	static final long PER_ADDRESS_WINDOW_MS = 10 * 60_000;
-
-	/** Only an IP literal is taken, so a header cannot make a host name lookup or mint endless bucket keys. */
-	private static final Pattern IP_LITERAL = Pattern.compile("[0-9A-Fa-f:.]{2,45}");
-	/** An IPv6 visitor usually holds a whole /64, so the budget is per /64, not per address in it. */
-	private static final int IPV6_PREFIX_BYTES = 8;
 
 	private final OrganizationRepository organizationRepository;
 	private final ProgramTeamInviteRepository programTeamInviteRepository;
@@ -74,7 +63,7 @@ public class InviteCodeCheckService {
 	 */
 	public InviteCodeCheckResponse check(String rawCode, @Nullable String clientAddress) {
 		// In order, stopping at the first refusal: a visitor over its own budget spends nothing of the shared one.
-		if (!rateLimitingConfig.resolveBucket(ADDRESS_KEY + addressKey(clientAddress), PER_ADDRESS,
+		if (!rateLimitingConfig.resolveBucket(ADDRESS_KEY + ClientAddressKey.of(clientAddress), PER_ADDRESS,
 				PER_ADDRESS_WINDOW_MS).tryConsume(1)
 				|| !rateLimitingConfig.resolveBucket(GLOBAL_KEY, checksPerWindow, WINDOW_MS).tryConsume(1)) {
 			throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
@@ -101,21 +90,5 @@ public class InviteCodeCheckService {
 				.filter(program -> program.getStatus() != ProgramStatus.DRAFT)
 				.filter(editionService::serves)
 				.isPresent();
-	}
-
-	static String addressKey(@Nullable String clientAddress) {
-		String value = clientAddress == null ? "" : clientAddress.trim();
-		if (!IP_LITERAL.matcher(value).matches()) {
-			return UNKNOWN_ADDRESS;
-		}
-		try {
-			InetAddress address = InetAddress.ofLiteral(value);
-			if (address instanceof Inet6Address) {
-				return "v6:" + HexFormat.of().formatHex(Arrays.copyOf(address.getAddress(), IPV6_PREFIX_BYTES));
-			}
-			return address.getHostAddress();
-		} catch (IllegalArgumentException invalid) {
-			return UNKNOWN_ADDRESS;
-		}
 	}
 }

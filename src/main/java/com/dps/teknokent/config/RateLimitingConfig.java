@@ -50,6 +50,16 @@ public class RateLimitingConfig {
 			return -math.max(ttl, 1)
 			""", Long.class);
 
+	/** Gives back up to the tokens asked for, never more than were spent; a key that has expired is left alone. */
+	static final RedisScript<Long> REFUND_SCRIPT = RedisScript.of("""
+			local used = tonumber(redis.call('GET', KEYS[1]) or '0')
+			local back = math.min(used, tonumber(ARGV[1]))
+			if back > 0 then
+			  redis.call('DECRBY', KEYS[1], back)
+			end
+			return back
+			""", Long.class);
+
 	/** Far more callers than one instance sees in a window; a flood of new keys must not grow the heap without end. */
 	static final int MAX_MEMORY_KEYS = 100_000;
 	private static final long LOG_INTERVAL_MS = 60_000;
@@ -113,6 +123,12 @@ public class RateLimitingConfig {
 
 		/** Whole seconds until a refused caller may try again: 0 while tokens are left, otherwise at least 1. */
 		long getSecondsToWait();
+
+		/**
+		 * Gives back tokens this request took, never above the capacity: for a spend taken up front to hold a place
+		 * that turned out not to count.
+		 */
+		void refund(long tokens);
 	}
 
 	/** One request's view of a window kept in Redis; falls back to memory for this key when Redis fails. */
@@ -169,6 +185,20 @@ public class RateLimitingConfig {
 		@Override
 		public long getSecondsToWait() {
 			return fallback != null ? fallback.getSecondsToWait() : secondsToWait;
+		}
+
+		@Override
+		public void refund(long tokens) {
+			if (fallback != null) {
+				fallback.refund(tokens);
+				return;
+			}
+			try {
+				redis.execute(REFUND_SCRIPT, List.of(KEY_PREFIX + key), String.valueOf(tokens));
+			} catch (RuntimeException error) {
+				// The spend stays counted until its window ends: a lost refund only makes the limit stricter.
+				warnRedisUnavailable(error.toString());
+			}
 		}
 	}
 
@@ -264,6 +294,12 @@ public class RateLimitingConfig {
 			}
 			long timeToWait = windowMs - (clock.millis() - windowStart);
 			return Math.max(1, (timeToWait + 999) / 1000);
+		}
+
+		@Override
+		public synchronized void refund(long tokens) {
+			refill();
+			this.tokens = Math.min(capacity, this.tokens + tokens);
 		}
 
 		synchronized boolean windowEnded(long now) {

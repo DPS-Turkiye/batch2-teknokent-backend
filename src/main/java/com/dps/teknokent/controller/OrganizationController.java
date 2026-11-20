@@ -3,6 +3,7 @@ package com.dps.teknokent.controller;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -33,9 +35,11 @@ import com.dps.teknokent.dto.responses.TeamChangeResponse;
 import com.dps.teknokent.dto.responses.UserResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.AppUserService;
+import com.dps.teknokent.service.CodeJoinService;
 import com.dps.teknokent.service.OrganizationService;
 import com.dps.teknokent.service.RegistrationService;
 import com.dps.teknokent.service.TeamChangeService;
+import com.dps.teknokent.util.ClientAddressKey;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -50,6 +54,7 @@ public class OrganizationController {
 	private final OrganizationService organizationService;
 	private final AppUserService appUserService;
 	private final RegistrationService registrationService;
+	private final CodeJoinService codeJoinService;
 	private final TeamChangeService teamChangeService;
 
 	@GetMapping
@@ -88,8 +93,10 @@ public class OrganizationController {
 
 	/** "Kodum var" on /startup: an approved mentee without a startup joins one of their program's startups. */
 	@PostMapping("/join")
-	public UserResponse join(@Valid @RequestBody JoinStartupRequest request) {
-		return registrationService.joinStartup(CurrentActor.resolve(request.actorId()), request.inviteCode());
+	public UserResponse join(@Valid @RequestBody JoinStartupRequest request,
+			@RequestHeader(name = ClientAddressKey.HEADER, required = false) @Nullable String clientAddress) {
+		return codeJoinService.joinStartup(CurrentActor.resolve(request.actorId()), request.inviteCode(),
+				clientAddress);
 	}
 
 	/** "Startup'ımı oluştur" on /startup; the startup waits for its program's coordinator. */

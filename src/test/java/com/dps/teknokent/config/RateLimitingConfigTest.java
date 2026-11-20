@@ -66,6 +66,30 @@ class RateLimitingConfigTest {
 	}
 
 	@Test
+	void aRefundGivesBackWhatWasTakenButNeverMoreThanTheCapacity() {
+		TokenBucket bucket = inMemory().resolveBucket(KEY, 3, TEN_MINUTES_MS);
+
+		assertThat(bucket.tryConsume(2)).isTrue();
+		bucket.refund(1);
+		assertThat(bucket.getRemainingTokens()).isEqualTo(2);
+		bucket.refund(5);
+		assertThat(bucket.getRemainingTokens()).isEqualTo(3);
+	}
+
+	@Test
+	void withRedisARefundRunsTheRefundScriptAndAFailedOneIsSwallowed() {
+		RateLimitingConfig config = withRedis();
+		TokenBucket bucket = config.resolveBucket(KEY, 10, TEN_MINUTES_MS);
+
+		bucket.refund(1);
+		verify(redis).execute(RateLimitingConfig.REFUND_SCRIPT, REDIS_KEY, "1");
+
+		when(redis.execute(eq(RateLimitingConfig.REFUND_SCRIPT), eq(REDIS_KEY), eq("1")))
+				.thenThrow(new IllegalStateException("redis down"));
+		bucket.refund(1);
+	}
+
+	@Test
 	void aSpentBucketIsFullAgainOnceItsWindowHasPassed() {
 		TokenBucket bucket = inMemory().resolveBucket(KEY, 3, TEN_MINUTES_MS);
 		bucket.tryConsume(3);

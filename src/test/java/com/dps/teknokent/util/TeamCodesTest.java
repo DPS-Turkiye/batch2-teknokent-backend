@@ -17,7 +17,7 @@ class TeamCodesTest {
 	@Test
 	void codesUseOnlyUnambiguousCharacters() {
 		for (int i = 0; i < 200; i++) {
-			assertThat(TeamCodes.next("BIGG26")).matches("BIGG26-[A-HJKMNP-Z2-9]{4}");
+			assertThat(TeamCodes.next("BIGG26")).matches("BIGG26-[A-HJKMNP-Z2-9]{6}");
 		}
 	}
 }

@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,6 +38,7 @@ import com.dps.teknokent.entity.ProgramMentorInvite;
 import com.dps.teknokent.entity.ProgramStartup;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.exception.InvalidRequestException;
+import com.dps.teknokent.exception.InvalidTeamCodeException;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorProfileRepository;
 import com.dps.teknokent.repository.OnboardingDraftRepository;
@@ -135,9 +137,9 @@ public class RegistrationService {
 		Organization organization = openTeamForCode(TextUtils.normalizeInviteCode(rawCode));
 		if (person.getProgramId() == null || programStartupRepository
 				.findByProgramIdAndOrganizationId(person.getProgramId(), organization.getId()).isEmpty()) {
-			throw new InvalidRequestException(Texts.forRequest("error.startupCodeOtherProgram"));
+			throw new InvalidTeamCodeException(Texts.forRequest("error.startupCodeOtherProgram"));
 		}
-		programEligibilityService.requireTeamMember(organization.getId(), person.getEmail());
+		requireTeamMemberForCode(organization.getId(), person.getEmail());
 		person.setOrganization(organization);
 		pendingMemberRepository.deleteByOrganizationIdAndEmailIgnoreCase(organization.getId(), person.getEmail());
 		AppUser joined = appUserRepository.save(person);
@@ -187,7 +189,7 @@ public class RegistrationService {
 	 */
 	private UserResponse claimTeam(ProgramTeamInvite invite, RegisterMemberRequest request, String email) {
 		if (!invite.getLeadEmail().equalsIgnoreCase(email)) {
-			throw new InvalidRequestException(Texts.forRequest("error.teamCodeLeadOnly"));
+			throw new InvalidTeamCodeException(Texts.forRequest("error.teamCodeLeadOnly"));
 		}
 		requireLaunched(invite.getProgramId());
 		requireEditionProgram(invite.getProgramId());
@@ -369,7 +371,7 @@ public class RegistrationService {
 			return claimTeam(teamInvite.get(), request, email);
 		}
 		Organization organization = openTeamForCode(inviteCode);
-		programEligibilityService.requireTeamMember(organization.getId(), email);
+		requireTeamMemberForCode(organization.getId(), email);
 
 		AppUser member = newUser(email, request.fullName(), request.jobTitle(), request.phone(), UserRole.MENTEE,
 				UserAccountStatus.APPROVED, organization);
@@ -388,14 +390,26 @@ public class RegistrationService {
 	 */
 	private Organization openTeamForCode(String inviteCode) {
 		UUID teamId = organizationRepository.findIdByInviteCode(inviteCode)
-				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid")));
+				.orElseThrow(() -> new InvalidTeamCodeException(Texts.forRequest("error.startupCodeInvalid")));
 		Optional<UUID> founderId = organizationRepository.findFounderIdById(teamId);
 		if (founderId.isPresent() && appUserRepository.findByIdForUpdate(founderId.get()).isEmpty()) {
-			throw new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid"));
+			throw new InvalidTeamCodeException(Texts.forRequest("error.startupCodeInvalid"));
 		}
 		return organizationRepository.findByIdForUpdate(teamId)
 				.filter(team -> !team.isArchived())
-				.orElseThrow(() -> new InvalidRequestException(Texts.forRequest("error.startupCodeInvalid")));
+				.orElseThrow(() -> new InvalidTeamCodeException(Texts.forRequest("error.startupCodeInvalid")));
+	}
+
+	/**
+	 * Refused only once the code has opened a team, so the refusal would tell a guesser the code is real; it counts
+	 * as a wrong-code attempt, with its own message kept for the person who is simply not on the list.
+	 */
+	private void requireTeamMemberForCode(UUID organizationId, String email) {
+		try {
+			programEligibilityService.requireTeamMember(organizationId, email);
+		} catch (InvalidRequestException notOnTheList) {
+			throw new InvalidTeamCodeException(Objects.requireNonNullElse(notOnTheList.getMessage(), ""));
+		}
 	}
 
 	/** Whoever joins with the startup's code, at signup or later, is announced to the team's current leader. */

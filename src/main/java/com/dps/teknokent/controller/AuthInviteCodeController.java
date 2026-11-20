@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dps.teknokent.dto.requests.InviteCodeCheckRequest;
 import com.dps.teknokent.dto.responses.InviteCodeCheckResponse;
 import com.dps.teknokent.service.InviteCodeCheckService;
+import com.dps.teknokent.util.ClientAddressKey;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -23,9 +24,6 @@ public class AuthInviteCodeController {
 
 	private final InviteCodeCheckService inviteCodeCheckService;
 
-	/** Set by the frontend's server to the visitor's address, so the check's budget is per visitor. */
-	public static final String CLIENT_ADDRESS_HEADER = "X-Menton-Client-Address";
-
 	/**
 	 * Asked before a Firebase login exists, so it is outside /register and reached only on the proxy's service
 	 * login, like "Şifremi unuttum"; that login is why the address header can be trusted. A POST so the code stays
@@ -33,7 +31,7 @@ public class AuthInviteCodeController {
 	 */
 	@PostMapping("/check")
 	public InviteCodeCheckResponse check(@Valid @RequestBody InviteCodeCheckRequest request,
-			@RequestHeader(name = CLIENT_ADDRESS_HEADER, required = false) @Nullable String clientAddress) {
+			@RequestHeader(name = ClientAddressKey.HEADER, required = false) @Nullable String clientAddress) {
 		return inviteCodeCheckService.check(request.code(), clientAddress);
 	}
 }
