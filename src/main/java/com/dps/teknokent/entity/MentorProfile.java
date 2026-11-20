@@ -71,7 +71,7 @@ public class MentorProfile {
 	@Column(name = "communication_preference", nullable = false)
 	private String communicationPreference;
 
-	@Column(name = "mentoring_style", nullable = false)
+	@Column(name = "mentoring_style", nullable = false, length = 2000)
 	private String mentoringStyle;
 
 	@Column(name = "fit_label", nullable = false)
