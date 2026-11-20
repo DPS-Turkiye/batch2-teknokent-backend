@@ -41,7 +41,7 @@ class InviteCodeCheckServiceTest {
 		emptyRepositories();
 		InviteCodeCheckService service = service(1_000);
 
-		for (int i = 0; i < InviteCodeCheckService.PER_ADDRESS; i++) {
+		for (long i = 0; i < InviteCodeCheckService.PER_ADDRESS; i++) {
 			service.check("AAAA2345", "10.0.0.9");
 		}
 		assertTooMany(() -> service.check("AAAA2345", "10.0.0.9"));
@@ -53,7 +53,7 @@ class InviteCodeCheckServiceTest {
 		emptyRepositories();
 		InviteCodeCheckService service = service(InviteCodeCheckService.PER_ADDRESS + 1);
 
-		for (int i = 0; i < InviteCodeCheckService.PER_ADDRESS; i++) {
+		for (long i = 0; i < InviteCodeCheckService.PER_ADDRESS; i++) {
 			service.check("AAAA2345", "10.0.0.20");
 		}
 		for (int i = 0; i < 5; i++) {

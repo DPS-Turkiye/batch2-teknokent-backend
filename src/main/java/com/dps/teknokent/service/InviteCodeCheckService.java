@@ -41,7 +41,7 @@ public class InviteCodeCheckService {
 	static final String ADDRESS_KEY = "invite_code_check_ip:";
 	static final String UNKNOWN_ADDRESS = "unknown";
 	static final long WINDOW_MS = 60_000;
-	static final long PER_ADDRESS = 10;
+	static final long PER_ADDRESS = 30;
 	static final long PER_ADDRESS_WINDOW_MS = 10 * 60_000;
 
 	/** Only an IP literal is taken, so a header cannot make a host name lookup or mint endless bucket keys. */
