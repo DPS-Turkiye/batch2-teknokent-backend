@@ -25,7 +25,8 @@ public enum Edition {
 					"/api/bottlenecks/**",
 					"/api/meetings/*/assistant-share/**",
 					"/api/organizations/*/bottlenecks/**",
-					"/api/organizations/*/progress/**")),
+					"/api/organizations/*/progress/**",
+					"/api/users/*/team-move")),
 
 	ODTU(
 			EnumSet.of(ProgramType.PEER_MENTORING, ProgramType.OFFICE_HOURS),

@@ -28,6 +28,14 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 	/** A startup this person still leads: its founder may not delete their account before deleting it. */
 	boolean existsByFounderIdAndArchivedAtIsNullAndPersonalFalse(UUID founderId);
 
+	/** Every startup with its founder, for lists that ask whether each one is an open team. */
+	@Query("select o from Organization o left join fetch o.founder")
+	List<Organization> findAllWithFounder();
+
+	/** The given startups with their founders, for lists that ask whether each one is an open team. */
+	@Query("select o from Organization o left join fetch o.founder where o.id in :ids")
+	List<Organization> findAllWithFounderByIdIn(@Param("ids") Collection<UUID> ids);
+
 	boolean existsByInviteCode(String inviteCode);
 
 	/** An archived startup is no one's to approve any more, so it leaves the Onaylar list and its count alike. */
