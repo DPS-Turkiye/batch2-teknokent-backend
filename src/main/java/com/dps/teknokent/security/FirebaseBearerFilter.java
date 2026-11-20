@@ -58,6 +58,13 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final Pattern WEEKLY_PROGRAM_READ_PATH = Pattern.compile(
 			"/api/coordinator/programs/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/weekly-program/read");
 
+	/**
+	 * Moving a member to another team takes its actor from the token alone and checks both teams' programs
+	 * itself, so the admin's or coordinator's own token may reach it (GET for the options, POST for the move).
+	 */
+	private static final Pattern TEAM_MOVE_PATH = Pattern.compile(
+			"/api/users/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/team-move");
+
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
 	/**
@@ -217,8 +224,13 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				|| uri.startsWith(ASSISTANT_PATH_PREFIX)
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && USER_DELETION_PATH.matcher(uri).matches())
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && WEEKLY_PROGRAM_READ_PATH.matcher(uri).matches())
+				|| (isGetOrPost(request) && TEAM_MOVE_PATH.matcher(uri).matches())
 				|| isOwnMentorProfileUpdate(request, user)
 				|| isOwnUserProfileUpdate(request, user);
+	}
+
+	private static boolean isGetOrPost(HttpServletRequest request) {
+		return "GET".equalsIgnoreCase(request.getMethod()) || "POST".equalsIgnoreCase(request.getMethod());
 	}
 
 	/**
