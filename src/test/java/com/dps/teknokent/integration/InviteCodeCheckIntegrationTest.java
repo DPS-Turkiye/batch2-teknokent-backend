@@ -20,13 +20,17 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.controller.AuthInviteCodeController;
+import com.dps.teknokent.domain.ProgramStatus;
+import com.dps.teknokent.domain.ProgramType;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramTeamInvite;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.ProgramTeamInviteRepository;
 
 /** /invite's check of a team code before any login is made: valid or not, and the team's name, nothing more. */
@@ -45,6 +49,8 @@ class InviteCodeCheckIntegrationTest {
 	private AppUserRepository userRepository;
 	@Autowired
 	private ProgramTeamInviteRepository programTeamInviteRepository;
+	@Autowired
+	private ProgramRepository programRepository;
 
 	private Organization team;
 	private int visitor;
@@ -98,7 +104,7 @@ class InviteCodeCheckIntegrationTest {
 
 	@Test
 	void aProgramTeamInviteWhoseLeadHasNotJoinedIsValid() throws Exception {
-		invite("Ay Team", "AYTM2345", null);
+		invite("Ay Team", "AYTM2345", null, program(ProgramStatus.ACTIVE, ProgramType.STARTUP_MENTORING));
 
 		check("AYTM2345")
 				.andExpect(jsonPath("$.valid").value(true))
@@ -106,9 +112,20 @@ class InviteCodeCheckIntegrationTest {
 	}
 
 	@Test
+	void aDraftOrOtherEditionProgramsTeamInviteOpensNothingYet() throws Exception {
+		invite("Taslak Team", "TSLK2345", null, program(ProgramStatus.DRAFT, ProgramType.STARTUP_MENTORING));
+		invite("Akran Team", "AKRN2345", null, program(ProgramStatus.ACTIVE, ProgramType.PEER_MENTORING));
+
+		check("TSLK2345").andExpect(jsonPath("$.valid").value(false))
+				.andExpect(jsonPath("$.teamName").doesNotExist());
+		check("AKRN2345").andExpect(jsonPath("$.valid").value(false));
+	}
+
+	@Test
 	void aClaimedProgramTeamInviteAnswersThroughItsStartup() throws Exception {
 		Organization claimed = team("Güneş Team", "GNST2345");
-		invite("Güneş (davet adı)", "GNST2345", claimed.getId());
+		invite("Güneş (davet adı)", "GNST2345", claimed.getId(),
+				program(ProgramStatus.ACTIVE, ProgramType.STARTUP_MENTORING));
 
 		check("GNST2345").andExpect(jsonPath("$.teamName").value("Güneş Team"));
 	}
@@ -142,10 +159,21 @@ class InviteCodeCheckIntegrationTest {
 		return organizationRepository.saveAndFlush(organization);
 	}
 
-	private void invite(String teamName, String code, UUID organizationId) {
+	private Program program(ProgramStatus status, ProgramType type) {
+		Program created = new Program();
+		created.setId(UUID.randomUUID());
+		created.setName("Program " + created.getId());
+		created.setProgramType(type);
+		created.setCreatedBy(UUID.randomUUID());
+		created.setCreatedAt(Instant.now());
+		created.setStatus(status);
+		return programRepository.saveAndFlush(created);
+	}
+
+	private void invite(String teamName, String code, UUID organizationId, Program program) {
 		ProgramTeamInvite invite = new ProgramTeamInvite();
 		invite.setId(UUID.randomUUID());
-		invite.setProgramId(UUID.randomUUID());
+		invite.setProgramId(program.getId());
 		invite.setTeamName(teamName);
 		invite.setLeadEmail(UUID.randomUUID() + "@code-check.test");
 		invite.setCode(code);
