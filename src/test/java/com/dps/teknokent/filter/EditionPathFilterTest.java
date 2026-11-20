@@ -54,6 +54,7 @@ class EditionPathFilterTest {
 				"/api/assistant/bots",
 				"/api/assistant/transcripts/google_meet/abc-defg-hij",
 				"/api/auth/institution/otg/start",
+				"/api/auth/invite-code/check",
 				"/api/auth/register/mentor",
 				"/api/auth/register/member",
 				"/api/bottlenecks/" + ID,
