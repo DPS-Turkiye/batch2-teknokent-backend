@@ -420,6 +420,43 @@ class FirebaseBearerFilterTest {
 		}
 	}
 
+	// Moving a member and changing a startup's founder take their actor from the token and check the programs
+	// themselves, so a coordinator's own token may read and post them; nothing else under those paths opens up.
+	@Test
+	void aTokenReachesTheTeamMoveAndFounderChangePathsOnly() throws Exception {
+		AppUser coordinator = user(UserAccountStatus.APPROVED);
+		coordinator.setRole(UserRole.COORDINATOR);
+		signsInAs(coordinator);
+		String move = "/api/users/" + OTHER_USER_ID + "/team-move";
+		String founder = "/api/organizations/" + OTHER_USER_ID + "/founder";
+
+		for (String[] call : new String[][] {
+				{ "GET", move }, { "POST", move }, { "GET", founder }, { "POST", founder } }) {
+			MockFilterChain chain = new MockFilterChain();
+			filter.doFilter(request(call[0], call[1], "Bearer good"), new MockHttpServletResponse(), chain);
+
+			assertThat(chain.getRequest()).as(call[0] + " " + call[1]).isNotNull();
+			SecurityContextHolder.clearContext();
+		}
+
+		for (String[] call : new String[][] {
+				{ "DELETE", move },
+				{ "PUT", founder },
+				{ "POST", founder + "/extra" },
+				{ "POST", "/api/organizations/not-an-id/founder" },
+				{ "POST", "/api/users/not-an-id/team-move" },
+				{ "GET", "/api/organizations/" + OTHER_USER_ID + "/members" } }) {
+			MockHttpServletResponse refused = new MockHttpServletResponse();
+			MockFilterChain stopped = new MockFilterChain();
+
+			filter.doFilter(request(call[0], call[1], "Bearer good"), refused, stopped);
+
+			assertThat(refused.getStatus()).as(call[0] + " " + call[1]).isEqualTo(403);
+			assertThat(stopped.getRequest()).isNull();
+			SecurityContextHolder.clearContext();
+		}
+	}
+
 	// Endpoints off the browser's own paths trust ids sent in the request, so a token, even an
 	// admin's, must not reach them directly; the proxy sets identity from its session instead.
 	@Test

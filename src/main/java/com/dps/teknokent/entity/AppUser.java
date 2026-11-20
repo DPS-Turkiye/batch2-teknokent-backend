@@ -181,6 +181,17 @@ public class AppUser {
 		return activePermissions().contains(permission);
 	}
 
+	/**
+	 * A startup team member's account: a mentee holding no staff or mentor permission. Only these are moved
+	 * between teams or made a startup's founder by admins and coordinators.
+	 */
+	public boolean isTeamMemberAccount() {
+		Set<UserRole> active = activePermissions();
+		return active.contains(UserRole.MENTEE) && !active.contains(UserRole.ADMIN)
+				&& !active.contains(UserRole.COORDINATOR) && !active.contains(UserRole.MENTOR)
+				&& !active.contains(UserRole.ACADEMICIAN);
+	}
+
 	/** When the permission was last taken away; empty while it is held, or if it never was. */
 	public Optional<Instant> lastRevoked(UserRole permission) {
 		if (has(permission)) {
