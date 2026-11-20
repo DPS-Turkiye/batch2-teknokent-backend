@@ -187,8 +187,7 @@ public class RegistrationService {
 	 */
 	private UserResponse claimTeam(ProgramTeamInvite invite, RegisterMemberRequest request, String email) {
 		if (!invite.getLeadEmail().equalsIgnoreCase(email)) {
-			throw new InvalidRequestException(
-					"This code is for the team's lead; members can use it once the lead has joined.");
+			throw new InvalidRequestException(Texts.forRequest("error.teamCodeLeadOnly"));
 		}
 		requireLaunched(invite.getProgramId());
 		requireEditionProgram(invite.getProgramId());

@@ -802,6 +802,22 @@ class RegistrationServiceTest {
 	}
 
 	@Test
+	void registerMember_aMemberUsingTheLeadsCodeIsToldInTurkish() {
+		ProgramTeamInvite invite = new ProgramTeamInvite();
+		invite.setProgramId(PROGRAM_ID);
+		invite.setLeadEmail("deniz@kavsak.co");
+		invite.setCode("BIGG26-K4TX");
+		when(appUserRepository.existsByEmailIgnoreCase("ece@kavsak.co")).thenReturn(false);
+		when(programTeamInviteRepository.findByCode("BIGG26-K4TX")).thenReturn(Optional.of(invite));
+
+		assertThatThrownBy(() -> registrationService.registerMember(new RegisterMemberRequest(
+				"Ece Arı", "ece@kavsak.co", "BIGG26-K4TX", null, null)))
+				.isInstanceOf(InvalidRequestException.class)
+				.hasMessage("Bu kod takım liderine ait. Takım liderin kaydolduktan sonra bu kodla katılabilirsin.");
+		verify(organizationRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void registerMember_aDraftProgramsCodeDoesNotCreateTheTeamYet() {
 		ProgramTeamInvite invite = new ProgramTeamInvite();
 		invite.setProgramId(PROGRAM_ID);

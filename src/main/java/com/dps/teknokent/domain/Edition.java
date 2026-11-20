@@ -20,6 +20,7 @@ public enum Edition {
 					"/api/admin/users/*/delete",
 					"/api/assistant/**",
 					"/api/auth/institution/otg/**",
+					"/api/auth/invite-code/**",
 					"/api/auth/register/mentor/**",
 					"/api/auth/register/member/**",
 					"/api/bottlenecks/**",
