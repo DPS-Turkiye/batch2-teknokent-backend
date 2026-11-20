@@ -25,6 +25,14 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
 	Optional<Organization> findByFounderId(UUID founderId);
 
+	/** The startup a code opens, by id only, so it can be first read under its lock. */
+	@Query("select o.id from Organization o where o.inviteCode = :code")
+	Optional<UUID> findIdByInviteCode(@Param("code") String code);
+
+	/** The startup's founder by id only; empty for a startup without one. */
+	@Query("select o.founder.id from Organization o where o.id = :id and o.founder is not null")
+	Optional<UUID> findFounderIdById(@Param("id") UUID id);
+
 	/** A startup this person still leads: its founder may not delete their account before deleting it. */
 	boolean existsByFounderIdAndArchivedAtIsNullAndPersonalFalse(UUID founderId);
 

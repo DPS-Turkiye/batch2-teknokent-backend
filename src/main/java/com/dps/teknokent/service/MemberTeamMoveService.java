@@ -30,6 +30,7 @@ import com.dps.teknokent.dto.responses.MemberTeamMoveOptionsResponse;
 import com.dps.teknokent.dto.responses.MemberTeamMoveResponse;
 import com.dps.teknokent.dto.responses.TeamMoveTeamResponse;
 import com.dps.teknokent.entity.AppUser;
+import com.dps.teknokent.entity.MentorshipRequest;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramStartup;
@@ -38,6 +39,7 @@ import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -55,7 +57,8 @@ import lombok.extern.slf4j.Slf4j;
  * coordinator only between teams that are both in programs they run. Only the person goes: the old team keeps its
  * requests, mentorships, meetings, tasks and documents (their open tasks are handed over as when someone leaves),
  * and their team history records the move. A coordinator asking about anyone outside their programs gets a 404, as
- * if the person or team did not exist.
+ * if the person or team did not exist. A founder moves only when nobody else is in the startup: it is then archived
+ * as when a founder leaves alone, and its unanswered requests are withdrawn because nobody is left to follow them up.
  */
 @Slf4j
 @Service
@@ -72,6 +75,8 @@ public class MemberTeamMoveService {
 	private final ProgramStartupRepository programStartupRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final TeamChangeRequestRepository teamChangeRequestRepository;
+	private final MentorshipRequestRepository mentorshipRequestRepository;
+	private final TeamChangeService teamChangeService;
 	private final TeamMembershipService teamMembershipService;
 	private final TaskHandoverService taskHandoverService;
 	private final NotificationService notificationService;
@@ -91,7 +96,9 @@ public class MemberTeamMoveService {
 				targets = targets(mover, current);
 			}
 		}
-		return new MemberTeamMoveOptionsResponse(person.getId(), person.getFullName(), currentTeam, block, targets);
+		boolean archives = block == null && current != null && isFounder(person, current);
+		return new MemberTeamMoveOptionsResponse(person.getId(), person.getFullName(), currentTeam, block, archives,
+				targets);
 	}
 
 	@Transactional
@@ -125,11 +132,18 @@ public class MemberTeamMoveService {
 			throw new InvalidRequestException(Texts.forRequest("error.memberMoveTargetClosed"));
 		}
 
+		// Only a founder who is alone gets past teamBlock, so the startup is empty once they go.
+		boolean archives = isFounder(person, from);
 		Instant movedAt = Instant.now();
 		Set<UUID> fromPrograms = programsOf(from.getId());
 		teamMembershipService.left(person, from, TeamExitReason.MOVED);
 		cancelWaitingTeamChanges(person, from, movedAt);
 		taskHandoverService.markLeft(person, from);
+		List<MentorshipRequest> withdrawn = List.of();
+		if (archives) {
+			withdrawn = withdrawOpenRequests(from);
+			teamChangeService.archiveEmptied(from, person);
+		}
 		followTeamProgram(person, fromPrograms, to);
 		person.setOrganization(to);
 		appUserRepository.save(person);
@@ -138,10 +152,11 @@ public class MemberTeamMoveService {
 
 		List<TeamMoveTeamResponse> teams = describe(List.of(from, to), mover);
 		notifyEveryone(person, from, to);
-		log.info("Team move: user {} from organization {} to {} by {}", person.getId(), from.getId(), to.getId(),
-				mover.actor().getId());
+		notifyMentors(from, withdrawn);
+		log.info("Team move: user {} from organization {} to {} by {}{}", person.getId(), from.getId(), to.getId(),
+				mover.actor().getId(), archives ? "; the emptied organization was archived" : "");
 		return new MemberTeamMoveResponse(person.getId(), teams.get(0), teams.get(1), person.getProgramId(),
-				movedAt);
+				archives, withdrawn.size(), movedAt);
 	}
 
 	private record Mover(AppUser actor, boolean admin) {
@@ -176,7 +191,7 @@ public class MemberTeamMoveService {
 				programRepository, programCoordinatorRepository);
 	}
 
-	private static @Nullable TeamMoveBlock blockOf(AppUser person, @Nullable Organization team) {
+	private @Nullable TeamMoveBlock blockOf(AppUser person, @Nullable Organization team) {
 		TeamMoveBlock block = personBlock(person, team);
 		return block != null || team == null ? block : teamBlock(person, team);
 	}
@@ -192,14 +207,52 @@ public class MemberTeamMoveService {
 		return team == null ? TeamMoveBlock.NO_TEAM : null;
 	}
 
-	private static @Nullable TeamMoveBlock teamBlock(AppUser person, Organization team) {
+	/** A founder with others in the startup must hand it over first ("Kurucuyu değiştir"); one alone may go. */
+	private @Nullable TeamMoveBlock teamBlock(AppUser person, Organization team) {
 		if (team.isPersonal()) {
 			return TeamMoveBlock.NO_TEAM;
 		}
-		if (team.getFounder() != null && team.getFounder().getId().equals(person.getId())) {
+		if (isFounder(person, team) && !isAlone(person, team)) {
 			return TeamMoveBlock.FOUNDER;
 		}
 		return null;
+	}
+
+	private static boolean isFounder(AppUser person, Organization team) {
+		return team.getFounder() != null && team.getFounder().getId().equals(person.getId());
+	}
+
+	/**
+	 * Nobody else is in the startup: every other account that has it as its organization was rejected. Someone
+	 * still waiting for approval counts, since they may yet join.
+	 */
+	private boolean isAlone(AppUser person, Organization team) {
+		return appUserRepository.findByOrganizationIdOrderByFullNameAsc(team.getId()).stream()
+				.allMatch(member -> member.getId().equals(person.getId())
+						|| member.getStatus() == UserAccountStatus.REJECTED);
+	}
+
+	/** An emptied startup's requests still waiting for a mentor have nobody left to follow them up. */
+	private List<MentorshipRequest> withdrawOpenRequests(Organization team) {
+		List<MentorshipRequest> open = mentorshipRequestRepository
+				.findByOrganizationIdOrderByCreatedAtDesc(team.getId())
+				.stream()
+				.filter(request -> request.getStatus().isOpen())
+				.toList();
+		open.forEach(MentorshipRequest::withdraw);
+		return mentorshipRequestRepository.saveAll(open);
+	}
+
+	/** One notice per mentor, however many of the startup's requests were waiting on them. */
+	private void notifyMentors(Organization team, List<MentorshipRequest> withdrawn) {
+		Map<UUID, AppUser> mentors = new LinkedHashMap<>();
+		withdrawn.forEach(request -> mentors.putIfAbsent(request.getMentor().getId(), request.getMentor()));
+		mentors.values().stream()
+				.filter(mentor -> mentor.getStatus() != UserAccountStatus.DELETED)
+				.forEach(mentor -> notificationService.create(mentor,
+						Texts.get(mentor, "notification.requestClosedByTeamArchived.title"),
+						Texts.get(mentor, "notification.requestClosedByTeamArchived.body", team.getName()),
+						"/mentor-dashboard"));
 	}
 
 	private static void refuse(@Nullable TeamMoveBlock block) {
