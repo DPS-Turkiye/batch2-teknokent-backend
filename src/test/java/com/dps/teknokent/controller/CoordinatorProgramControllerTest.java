@@ -44,6 +44,7 @@ import com.dps.teknokent.dto.requests.NewCoordinatorInput;
 import com.dps.teknokent.dto.responses.CoordinatorProgramResponse;
 import com.dps.teknokent.dto.responses.ProgramEligibleEmailResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
+import com.dps.teknokent.dto.responses.ProgramTeamPeopleResponse;
 import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
 import com.dps.teknokent.security.AppUserPrincipal;
 import com.dps.teknokent.service.CoordinatorProgramService;
@@ -53,6 +54,7 @@ import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
 import com.dps.teknokent.service.ProgramMatchingService;
 import com.dps.teknokent.service.ProgramRosterService;
+import com.dps.teknokent.service.ProgramTeamPeopleService;
 import com.dps.teknokent.service.SyllabusPhaseService;
 
 @WebMvcTest(CoordinatorProgramController.class)
@@ -78,6 +80,8 @@ class CoordinatorProgramControllerTest {
 	private ProgramApprovalService programApprovalService;
 	@MockitoBean
 	private ProgramRosterService programRosterService;
+	@MockitoBean
+	private ProgramTeamPeopleService programTeamPeopleService;
 
 	private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
 	private static final UUID SIGNED_IN_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c9");
@@ -370,6 +374,25 @@ class CoordinatorProgramControllerTest {
 				.with(authentication(signedIn())))
 				.andExpect(status().isOk());
 		verify(programLaunchService).teamDetail(SIGNED_IN_ID, PROGRAM_ID, organizationId);
+	}
+
+	@Test
+	void searchesTheProgramsTeamPeopleAsTheSignedInUserAndNeedsAQuery() throws Exception {
+		when(programTeamPeopleService.search(SIGNED_IN_ID, PROGRAM_ID, "çağrı"))
+				.thenReturn(new ProgramTeamPeopleResponse(List.of(), false));
+
+		mockMvc.perform(get("/api/coordinator/programs/{id}/team-people", PROGRAM_ID)
+				.param("q", "çağrı")
+				.param("actorId", ACTOR_ID.toString())
+				.with(authentication(signedIn())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.people").isArray())
+				.andExpect(jsonPath("$.truncated").value(false));
+		verify(programTeamPeopleService).search(SIGNED_IN_ID, PROGRAM_ID, "çağrı");
+
+		mockMvc.perform(get("/api/coordinator/programs/{id}/team-people", PROGRAM_ID)
+				.with(authentication(signedIn())))
+				.andExpect(status().isBadRequest());
 	}
 
 	@Test

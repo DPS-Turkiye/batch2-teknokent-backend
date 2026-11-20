@@ -36,6 +36,7 @@ import com.dps.teknokent.dto.responses.ProgramEligibleEmailResponse;
 import com.dps.teknokent.dto.responses.ProgramEventResponse;
 import com.dps.teknokent.dto.responses.ProgramMatchingResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamDetailResponse;
+import com.dps.teknokent.dto.responses.ProgramTeamPeopleResponse;
 import com.dps.teknokent.dto.responses.ProgramTeamResponse;
 import com.dps.teknokent.dto.responses.SyllabusPhasesResponse;
 import com.dps.teknokent.security.CurrentActor;
@@ -46,6 +47,7 @@ import com.dps.teknokent.service.ProgramCoordinatorService;
 import com.dps.teknokent.service.ProgramLaunchService;
 import com.dps.teknokent.service.ProgramMatchingService;
 import com.dps.teknokent.service.ProgramRosterService;
+import com.dps.teknokent.service.ProgramTeamPeopleService;
 import com.dps.teknokent.service.SyllabusPhaseService;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -66,6 +68,7 @@ public class CoordinatorProgramController {
 	private final SyllabusPhaseService syllabusPhaseService;
 	private final ProgramApprovalService programApprovalService;
 	private final ProgramRosterService programRosterService;
+	private final ProgramTeamPeopleService programTeamPeopleService;
 
 	@GetMapping
 	public List<CoordinatorProgramResponse> list(@RequestParam(required = false) UUID actorId) {
@@ -238,6 +241,15 @@ public class CoordinatorProgramController {
 			@PathVariable UUID organizationId,
 			@RequestParam(required = false) UUID actorId) {
 		return programLaunchService.teamDetail(CurrentActor.resolve(actorId), id, organizationId);
+	}
+
+	/** Founders and members of the program's teams whose name matches {@code q}, each with their team. */
+	@GetMapping("/{id}/team-people")
+	public ProgramTeamPeopleResponse teamPeople(
+			@PathVariable UUID id,
+			@RequestParam String q,
+			@RequestParam(required = false) UUID actorId) {
+		return programTeamPeopleService.search(CurrentActor.resolve(actorId), id, q);
 	}
 
 	@GetMapping("/{id}/approvals")
