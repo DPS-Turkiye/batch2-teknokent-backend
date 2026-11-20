@@ -28,6 +28,25 @@ class AppUserPermissionsTest {
 		});
 	}
 
+	// Only a plain mentee is a team member admins and coordinators may move or make a founder.
+	@Test
+	void aTeamMemberAccountIsAMenteeWithoutStaffOrMentorPermissions() {
+		AppUser mentee = new AppUser();
+		mentee.setRole(UserRole.MENTEE);
+		assertThat(mentee.isTeamMemberAccount()).isTrue();
+
+		AppUser alsoMentor = new AppUser();
+		alsoMentor.setRole(UserRole.MENTEE);
+		alsoMentor.grant(UserRole.MENTOR, PermissionSource.ADMIN, Instant.now());
+		assertThat(alsoMentor.isTeamMemberAccount()).isFalse();
+
+		for (UserRole staff : new UserRole[] { UserRole.ADMIN, UserRole.COORDINATOR, UserRole.ACADEMICIAN }) {
+			AppUser other = new AppUser();
+			other.setRole(staff);
+			assertThat(other.isTeamMemberAccount()).as(staff.name()).isFalse();
+		}
+	}
+
 	// Until dual role lands, changing the role must not leave the old permission behind.
 	@Test
 	void changingTheRoleRevokesTheOldPermissionInPlace() {

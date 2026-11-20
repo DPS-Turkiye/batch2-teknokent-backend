@@ -70,6 +70,12 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	 */
 	private static final Pattern TEAM_MOVE_PATH = Pattern.compile(
 			"/api/users/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/team-move");
+	/**
+	 * Changing a startup's founder takes its actor from the token alone and checks the startup's programs itself,
+	 * so the admin's or coordinator's own token may reach it (GET for the members, POST for the change).
+	 */
+	private static final Pattern FOUNDER_CHANGE_PATH = Pattern.compile(
+			"/api/organizations/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/founder");
 
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
@@ -234,6 +240,7 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && SELF_DELETION_PATHS.contains(uri))
 				|| ("POST".equalsIgnoreCase(request.getMethod()) && WEEKLY_PROGRAM_READ_PATH.matcher(uri).matches())
 				|| (isGetOrPost(request) && TEAM_MOVE_PATH.matcher(uri).matches())
+				|| (isGetOrPost(request) && FOUNDER_CHANGE_PATH.matcher(uri).matches())
 				|| isOwnMentorProfileUpdate(request, user)
 				|| isOwnUserProfileUpdate(request, user);
 	}
