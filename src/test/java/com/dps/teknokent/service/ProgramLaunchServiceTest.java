@@ -563,7 +563,7 @@ class ProgramLaunchServiceTest {
 		assertThat(invite.getValue().getProgramId()).isEqualTo(program.getId());
 		assertThat(invite.getValue().getTeamName()).isEqualTo("Kavşak");
 		assertThat(invite.getValue().getLeadEmail()).isEqualTo("deniz@kavsak.co");
-		assertThat(invite.getValue().getCode()).matches("STARS26-[A-Z2-9]{4}");
+		assertThat(invite.getValue().getCode()).matches("STARS26-[A-Z2-9]{6}");
 		assertThat(invite.getValue().getCreatedBy()).isEqualTo(ELIF);
 		assertThat(invite.getValue().getOrganizationId()).isNull();
 		verify(programEligibilityService).requirePerson(program, "deniz@kavsak.co");
