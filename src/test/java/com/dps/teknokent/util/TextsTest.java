@@ -32,7 +32,7 @@ class TextsTest {
 		for (AppLanguage language : AppLanguage.values()) {
 			Properties raw = load(language);
 			for (String key : raw.stringPropertyNames()) {
-				String rendered = Texts.get(language, key, "a0", "a1", "a2", "a3");
+				String rendered = Texts.get(language, key, "a0", "a1", "a2", "a3", "a4");
 				String pattern = raw.getProperty(key);
 				assertThat(rendered).as(language + " " + key).doesNotContain("{");
 				assertThat(rendered.chars().filter(c -> c == '\'').count()).as(language + " " + key)

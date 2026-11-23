@@ -26,6 +26,7 @@ import com.dps.teknokent.domain.MatchNeedSource;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateMentorshipRequest;
@@ -82,6 +83,7 @@ public class ProgramMatchingService {
 	private final AppUserRepository appUserRepository;
 	private final MentorRecommendationService recommendationService;
 	private final NotificationService notificationService;
+	private final MatchProposalMailService matchProposalMailService;
 	private final PlatformTransactionManager transactionManager;
 
 	@Transactional(readOnly = true)
@@ -191,13 +193,22 @@ public class ProgramMatchingService {
 				Texts.get(mentor, "notification.matchedWithTeam.title"),
 				Texts.get(mentor, "notification.matchedWithTeam.body", program.getName(), team.getName()),
 				"/mentor-dashboard");
-		appUserRepository.findByOrganizationIdOrderByFullNameAsc(team.getId()).stream()
-				.filter(member -> member.has(UserRole.MENTEE))
-				.forEach(member -> notificationService.create(
-						member,
-						Texts.get(member, "notification.mentorAssigned.title"),
-						Texts.get(member, "notification.mentorAssigned.body", program.getName(), mentor.getFullName()),
-						"/mentorships"));
+		matchProposalMailService.send(mentor, NotificationCategory.GENERAL, "mail.matchedWithTeam",
+				"/mentor-dashboard", program.getName(), team.getName());
+		for (AppUser member : appUserRepository.findByOrganizationIdOrderByFullNameAsc(team.getId())) {
+			if (!member.has(UserRole.MENTEE)) {
+				continue;
+			}
+			notificationService.create(
+					member,
+					Texts.get(member, "notification.mentorAssigned.title"),
+					Texts.get(member, "notification.mentorAssigned.body", program.getName(), mentor.getFullName()),
+					"/mentorships");
+			if (!member.getId().equals(mentorId)) {
+				matchProposalMailService.send(member, NotificationCategory.GENERAL, "mail.mentorAssigned",
+						"/mentorships", program.getName(), mentor.getFullName());
+			}
+		}
 		return overviewOf(program);
 	}
 

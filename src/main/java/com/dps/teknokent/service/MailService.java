@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.BooleanSupplier;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,11 +55,16 @@ public class MailService {
 	}
 
 	public void sendAfterCommit(String to, String subject, String body) {
+		sendAfterCommit(to, subject, body, () -> true);
+	}
+
+	/** Asks {@code wanted} just before sending, so a lookup that fails cannot roll back the action. */
+	public void sendAfterCommit(String to, String subject, String body, BooleanSupplier wanted) {
 		if (fromAddress.isEmpty() || to == null || to.isBlank()) {
 			return;
 		}
 		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-			send(to, subject, body);
+			sendIfWanted(to, subject, body, wanted);
 			return;
 		}
 		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -67,19 +73,23 @@ public class MailService {
 				// afterCommit runs before the transaction hands its connection back, so sending here would hold
 				// that connection for the whole SES round trip.
 				try {
-					afterCommitExecutor.execute(() -> {
-						try {
-							send(to, subject, body);
-						} catch (RuntimeException error) {
-							log.warn("Email to {} failed: {}", to, error.getMessage());
-						}
-					});
+					afterCommitExecutor.execute(() -> sendIfWanted(to, subject, body, wanted));
 				} catch (RejectedExecutionException shuttingDown) {
 					// Only while shutting down; this inline send does hold the connection.
-					send(to, subject, body);
+					sendIfWanted(to, subject, body, wanted);
 				}
 			}
 		});
+	}
+
+	private void sendIfWanted(String to, String subject, String body, BooleanSupplier wanted) {
+		try {
+			if (wanted.getAsBoolean()) {
+				send(to, subject, body);
+			}
+		} catch (RuntimeException error) {
+			log.warn("Email to {} failed: {}", to, error.getMessage());
+		}
 	}
 
 	private boolean send(String to, String subject, String body) {

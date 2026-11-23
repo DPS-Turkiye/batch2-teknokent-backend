@@ -27,6 +27,7 @@ Never commit `.env`: it holds real keys.
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | Redis (no password in compose; set one in production). |
 | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3 and SES. |
 | `MAIL_FROM` | SES sender; empty sends no e-mail. |
+| `MATCH_PROPOSAL_MAIL_ENABLED` | `true` also e-mails coordinator matches and meeting proposals; off by default. |
 
 ## Sign-in
 

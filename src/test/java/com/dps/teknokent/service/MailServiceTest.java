@@ -77,6 +77,32 @@ class MailServiceTest {
 	}
 
 	@Test
+	void asksWhetherTheMailIsWantedOnlyAfterTheCommitAndSurvivesAFailedLookup() {
+		List<Runnable> queued = new ArrayList<>();
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				queued::add);
+		List<String> asked = new ArrayList<>();
+		TransactionSynchronizationManager.initSynchronization();
+		try {
+			mailService.sendAfterCommit("a@tekno.com", "Konu", "Metin", () -> {
+				asked.add("refused");
+				return false;
+			});
+			mailService.sendAfterCommit("b@tekno.com", "Konu", "Metin", () -> {
+				throw new IllegalStateException("lookup failed");
+			});
+			TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
+		} finally {
+			TransactionSynchronizationManager.clearSynchronization();
+		}
+		assertThat(asked).isEmpty();
+
+		assertThatCode(() -> queued.forEach(Runnable::run)).doesNotThrowAnyException();
+		assertThat(asked).containsExactly("refused");
+		verify(sesClient, never()).sendEmail(any(SendEmailRequest.class));
+	}
+
+	@Test
 	void sendsNothingWithoutASenderAddress() {
 		MailService mailService = new MailService(sesClient, "", "https://menton.com.tr", Runnable::run);
 
