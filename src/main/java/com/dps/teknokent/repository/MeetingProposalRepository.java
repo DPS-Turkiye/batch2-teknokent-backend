@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -18,6 +19,9 @@ public interface MeetingProposalRepository extends JpaRepository<MeetingProposal
 	boolean existsByMentorshipIdAndStatus(UUID mentorshipId, MeetingProposalStatus status);
 
 	boolean existsByReplacesMeetingIdAndStatus(UUID meetingId, MeetingProposalStatus status);
+
+	boolean existsByReplacesMeetingIdAndProposedByAndDeclinedByAndCreatedAtAfter(
+			UUID meetingId, UUID proposedBy, UUID declinedBy, Instant createdAfter);
 
 	List<MeetingProposal> findByStatusAndMentorIdOrderByScheduledAtAsc(MeetingProposalStatus status, UUID mentorId);
 

@@ -761,6 +761,19 @@ class MeetingProposalServiceTest {
 	}
 
 	@Test
+	void proposingAgainAfterDecliningOnesOwnProposalNotifiesButDoesNotEmailAgain() {
+		Meeting meeting = scheduledMeeting();
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(proposalRepository.existsByReplacesMeetingIdAndProposedByAndDeclinedByAndCreatedAtAfter(
+				eq(meeting.getId()), eq(mentor.getId()), eq(mentor.getId()), any())).thenReturn(true);
+
+		service.proposeReschedule(mentor.getId(), meeting.getId(), new RescheduleMeetingRequest(null, nextWeek, null));
+
+		verify(notificationService).create(eq(lead), any(), anyString(), anyString(), anyString());
+		verifyNoInteractions(matchProposalMailService);
+	}
+
+	@Test
 	void theProposerIsNotEmailedAndAPersonOnBothSidesIsEmailedOnce() {
 		mentorship.setMentor(lead);
 		when(coordinatorMentorshipService.requireManagedMentorship(any(), eq(mentorship.getId())))

@@ -4,15 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,6 @@ class MatchProposalMailServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new MatchProposalMailService(mailService, preferences, true);
-		lenient().when(preferences.allows(any(), any())).thenReturn(true);
 		lenient().when(mailService.link(anyString()))
 				.thenAnswer(invocation -> "https://menton.com.tr" + invocation.getArgument(0));
 	}
@@ -53,7 +53,7 @@ class MatchProposalMailServiceTest {
 	void writesTheProposalInTurkishWithTurkeyTimeAndTheLink() {
 		sendProposal();
 
-		verify(mailService).sendAfterCommit("ayse@tekno.test", "menton: görüşme önerisi yanıtınızı bekliyor", """
+		verifyMailed("menton: görüşme önerisi yanıtınızı bekliyor", """
 				Merhaba Ayşe Demir,
 
 				Koordinatör bir görüşme saati önerdi:
@@ -77,7 +77,7 @@ class MatchProposalMailServiceTest {
 		service.send(reader, NotificationCategory.GENERAL, "mail.matchedWithTeam", "/mentor-dashboard",
 				"METU Stars 2026", "Lumen");
 
-		verify(mailService).sendAfterCommit("ayse@tekno.test", "menton: new mentorship match", """
+		verifyMailed("menton: new mentorship match", """
 				Hello Ayşe Demir,
 
 				You were matched with the Lumen team in the METU Stars 2026 program.
@@ -93,7 +93,7 @@ class MatchProposalMailServiceTest {
 				"Ayşe Demir ↔ Lumen", TEN, "Deniz Ak");
 
 		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-		verify(mailService).sendAfterCommit(anyString(), anyString(), body.capture());
+		verify(mailService).sendAfterCommit(anyString(), anyString(), body.capture(), any());
 		assertThat(body.getValue()).contains("Deniz Ak görüşmeniz için yeni bir saat önerdi:");
 	}
 
@@ -121,16 +121,19 @@ class MatchProposalMailServiceTest {
 				.run(context -> context.getBean(MatchProposalMailService.class).send(reader,
 						NotificationCategory.GENERAL, "mail.matchedWithTeam", "/mentor-dashboard", "METU Stars",
 						"Lumen"));
-		verify(mailService).sendAfterCommit(anyString(), anyString(), anyString());
+		verify(mailService).sendAfterCommit(anyString(), anyString(), anyString(), any());
 	}
 
 	@Test
-	void respectsTheReadersMeetingChangePreference() {
+	void asksTheReadersMeetingChangePreferenceOnlyWhenTheMailIsAboutToGo() {
 		when(preferences.allows(reader.getId(), NotificationCategory.MEETING_CHANGE)).thenReturn(false);
 
 		sendProposal();
 
-		verify(mailService, never()).sendAfterCommit(any(), any(), any());
+		ArgumentCaptor<BooleanSupplier> wanted = ArgumentCaptor.forClass(BooleanSupplier.class);
+		verify(mailService).sendAfterCommit(anyString(), anyString(), anyString(), wanted.capture());
+		verifyNoInteractions(preferences);
+		assertThat(wanted.getValue().getAsBoolean()).isFalse();
 	}
 
 	@Test
@@ -148,9 +151,13 @@ class MatchProposalMailServiceTest {
 
 	@Test
 	void aFailureWhilePreparingTheMailNeverReachesTheAction() {
-		doThrow(new IllegalStateException("broken")).when(mailService).sendAfterCommit(any(), any(), any());
+		doThrow(new IllegalStateException("broken")).when(mailService).sendAfterCommit(any(), any(), any(), any());
 
 		assertThatCode(this::sendProposal).doesNotThrowAnyException();
+	}
+
+	private void verifyMailed(String subject, String body) {
+		verify(mailService).sendAfterCommit(eq("ayse@tekno.test"), eq(subject), eq(body), any());
 	}
 
 	private void sendProposal() {

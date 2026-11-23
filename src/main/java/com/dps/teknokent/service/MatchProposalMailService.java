@@ -1,6 +1,7 @@
 package com.dps.teknokent.service;
 
 import java.util.Arrays;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -41,15 +42,14 @@ public class MatchProposalMailService {
 			return;
 		}
 		try {
-			if (!notificationPreferenceService.allows(reader.getId(), category)) {
-				return;
-			}
+			UUID readerId = reader.getId();
 			Object[] shown = Stream.concat(
 					Stream.of(reader.getFullName(), mailService.link(path)), Arrays.stream(args)).toArray();
 			mailService.sendAfterCommit(
 					reader.getEmail(),
 					Texts.get(reader, key + ".subject", shown),
-					Texts.get(reader, key + ".body", shown));
+					Texts.get(reader, key + ".body", shown),
+					() -> notificationPreferenceService.allows(readerId, category));
 		} catch (RuntimeException failure) {
 			log.warn("Mail {} for user {} could not be prepared", key, reader.getId(), failure);
 		}

@@ -62,7 +62,7 @@ public class MeetingProposalService {
 	private static final String TEAM_HOME = "/dashboard";
 	// On a phone these pages open the mobile app, which cannot answer a proposal; this opens the web page instead.
 	private static final String OPEN_ON_WEB = "?web=1";
-	private static final Duration REMINDER_MAIL_GAP = Duration.ofHours(1);
+	private static final Duration REPEAT_MAIL_GAP = Duration.ofHours(1);
 
 	private final CoordinatorMentorshipService coordinatorMentorshipService;
 	private final CoordinatorProgramService programService;
@@ -179,7 +179,11 @@ public class MeetingProposalService {
 		List<Reader> readers = unanswered(saved);
 		Object[] args = { pairLine(saved), saved.getScheduledAt(), actor.getFullName() };
 		notifyAll(readers, "notification.newTimeProposed.title", "notification.proposalPleaseConfirm.body", args);
-		mailAll(saved, readers, "mail.newTimeProposed", args);
+		// Someone who proposes, declines it themselves and proposes again does not mail the other side each time.
+		if (!proposalRepository.existsByReplacesMeetingIdAndProposedByAndDeclinedByAndCreatedAtAfter(
+				meetingId, actorId, actorId, now.minus(REPEAT_MAIL_GAP))) {
+			mailAll(saved, readers, "mail.newTimeProposed", args);
+		}
 		return response(saved, null, actor);
 	}
 
@@ -287,7 +291,7 @@ public class MeetingProposalService {
 		Object[] args = { pairLine(proposal), proposal.getScheduledAt() };
 		notifyAll(readers, "notification.proposalWaiting.title", "notification.proposalWaiting.body", args);
 		// No mail about a time that has passed, nor a second one for a repeated click.
-		boolean recentlyReminded = lastReminder != null && lastReminder.isAfter(now.minus(REMINDER_MAIL_GAP));
+		boolean recentlyReminded = lastReminder != null && lastReminder.isAfter(now.minus(REPEAT_MAIL_GAP));
 		if (proposal.getScheduledAt().isAfter(now) && !recentlyReminded) {
 			mailAll(proposal, readers, "mail.proposalWaiting", args);
 		}
