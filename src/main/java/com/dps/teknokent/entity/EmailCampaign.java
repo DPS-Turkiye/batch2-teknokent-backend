@@ -62,6 +62,16 @@ public class EmailCampaign {
 	@Column(name = "confirmed_at")
 	private Instant confirmedAt;
 
+	/** The end of the hold; nothing leaves before it. */
+	@Column(name = "starts_at")
+	private Instant startsAt;
+
+	@Column(name = "stopped_at")
+	private Instant stoppedAt;
+
+	@Column(name = "stopped_by")
+	private UUID stoppedBy;
+
 	@Column(name = "finished_at")
 	private Instant finishedAt;
 

@@ -17,7 +17,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.config.EmailCenterSettings;
+import com.dps.teknokent.domain.EmailCampaignStatus;
 import com.dps.teknokent.domain.EmailRecipientStatus;
+import com.dps.teknokent.domain.EmailSkipReason;
 import com.dps.teknokent.domain.EmailSuppressionReason;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
@@ -132,10 +134,14 @@ public class EmailCampaignWorker {
 
 	/** One run; the scheduler's pause between runs makes {@code ratePerSecond} the ceiling. */
 	public void run() {
+		Instant now = clock.instant();
+		// Also while nothing may leave: what waited through an outage must not go out when it is over.
+		transaction.executeWithoutResult(status -> recipientRepository.skipExpired(
+				now.minus(settings.getMaxWait()), EmailSkipReason.EXPIRED.name()));
 		if (!settings.canSend() || !bounceMonitor.hearing()) {
+			finishCampaigns();
 			return;
 		}
-		Instant now = clock.instant();
 		transaction.executeWithoutResult(
 				status -> recipientRepository.failStale(now.minus(IN_DOUBT_AFTER), "NO_ANSWER"));
 		List<UUID> due = recipientRepository.findDueIds(now,
@@ -176,18 +182,22 @@ public class EmailCampaignWorker {
 
 	/** Null when the row is no longer waiting or must not be written to any more. */
 	private EmailCenterMailer.@Nullable Mail claim(UUID id, Instant now) {
-		if (recipientRepository.claim(id, now) == 0) {
+		UUID campaignId = recipientRepository.findById(id).map(EmailCampaignRecipient::getCampaignId).orElse(null);
+		EmailCampaign campaign = campaignId == null ? null : lock(campaignId);
+		// Under the lock a stop takes too: either the stop is seen here, or this row is in flight before the stop.
+		if (campaign == null || campaign.getStatus() != EmailCampaignStatus.SENDING
+				|| campaign.getStartsAt() == null || campaign.getStartsAt().isAfter(now)
+				|| recipientRepository.claim(id, now) == 0) {
 			return null;
 		}
 		EmailCampaignRecipient row = recipientRepository.findById(id).orElseThrow();
-		EmailCampaign campaign = campaignRepository.findById(row.getCampaignId()).orElseThrow();
 		Program program = programRepository.findById(campaign.getProgramId()).orElse(null);
 		AppUser sender = appUserRepository.findById(campaign.getCreatedBy()).orElse(null);
 		AppUser reader = row.getUserId() == null ? null : appUserRepository.findById(row.getUserId()).orElse(null);
-		String reason = skipReason(row, program, sender, reader);
+		EmailSkipReason reason = skipReason(row, campaign, program, sender, reader, now);
 		if (program == null || sender == null || row.getAddress() == null || reason != null) {
 			row.setStatus(EmailRecipientStatus.SKIPPED);
-			row.setErrorCode(reason);
+			row.setErrorCode(reason == null ? null : reason.name());
 			recipientRepository.save(row);
 			return null;
 		}
@@ -199,27 +209,30 @@ public class EmailCampaignWorker {
 	}
 
 	/** The reviewed list can only shrink: people who left it for good since, or a sender who may no longer write. */
-	private @Nullable String skipReason(EmailCampaignRecipient row, @Nullable Program program,
-			@Nullable AppUser sender, @Nullable AppUser reader) {
+	private @Nullable EmailSkipReason skipReason(EmailCampaignRecipient row, EmailCampaign campaign,
+			@Nullable Program program, @Nullable AppUser sender, @Nullable AppUser reader, Instant now) {
+		if (campaign.getStartsAt().plus(settings.getMaxWait()).isBefore(now)) {
+			return EmailSkipReason.EXPIRED;
+		}
 		if (row.getAddress() == null) {
-			return "NO_ADDRESS";
+			return EmailSkipReason.NO_ADDRESS;
 		}
 		if (program == null || sender == null || !maySend(sender, program)) {
-			return "SENDER_NOT_ALLOWED";
+			return EmailSkipReason.SENDER_NOT_ALLOWED;
 		}
 		if (row.getUserId() != null && (reader == null || reader.getStatus() != UserAccountStatus.APPROVED)) {
-			return "ACCOUNT_NOT_APPROVED";
+			return EmailSkipReason.ACCOUNT_NOT_APPROVED;
 		}
 		if (reader != null && !row.getAddress().equals(EmailDomains.normalizeEmail(reader.getEmail()))) {
-			return "ADDRESS_CHANGED";
+			return EmailSkipReason.ADDRESS_CHANGED;
 		}
 		if (!stillInAudience(row, program, reader)) {
-			return "LEFT_THE_PROGRAM";
+			return EmailSkipReason.LEFT_THE_PROGRAM;
 		}
 		if (suppressionService.isSuppressed(row.getAddress())) {
-			return "SUPPRESSED";
+			return EmailSkipReason.SUPPRESSED;
 		}
-		return settings.mayWriteTo(row.getAddress()) ? null : "NOT_ON_ALLOWLIST";
+		return settings.mayWriteTo(row.getAddress()) ? null : EmailSkipReason.NOT_ON_ALLOWLIST;
 	}
 
 	/** Whether the reason the person was on the reviewed list still holds. */
@@ -245,8 +258,21 @@ public class EmailCampaignWorker {
 				&& ProgramCoordination.coordinates(program, sender.getId(), programCoordinatorRepository));
 	}
 
+	private @Nullable EmailCampaign lock(UUID campaignId) {
+		return campaignRepository.findByIdForUpdate(campaignId).orElse(null);
+	}
+
 	private void record(EmailCampaignRecipient row, EmailCenterMailer.Outcome outcome) {
+		EmailCampaign campaign = lock(row.getCampaignId());
 		row.setErrorCode(outcome.errorCode());
+		if (outcome.result() == EmailCenterMailer.Result.RETRY
+				&& (campaign == null || campaign.getStatus() != EmailCampaignStatus.SENDING)) {
+			// Stopped while SES was being asked, and SES did not take it: there is no second attempt.
+			row.setStatus(EmailRecipientStatus.SKIPPED);
+			row.setErrorCode(EmailSkipReason.STOPPED.name());
+			recipientRepository.save(row);
+			return;
+		}
 		switch (outcome.result()) {
 		case ACCEPTED -> {
 			row.setStatus(EmailRecipientStatus.SENT);

@@ -31,6 +31,7 @@ Never commit `.env`: it holds real keys.
 | `EMAIL_CENTER_ENABLED` | Coordinators' and admins' mails to a program's people. Off by default. |
 | `EMAIL_CENTER_ALLOWLIST` | Addresses and domains the email center may write to; `*` is everybody, blank nobody. |
 | `EMAIL_CENTER_REPLY_TO` | Reply-To of an admin's mail; a coordinator's mail is answered to the coordinator. |
+| `EMAIL_CENTER_HOLD_SECONDS`, `EMAIL_CENTER_MAX_WAIT_MINUTES` | How long a confirmed mail waits before the first one leaves (and can be stopped), and after how long what still waits is cancelled. |
 | `EMAIL_CENTER_BOUNCE_SOURCE` | `none` (sending refused), `suppression-list` or `ses-events`. |
 | `EMAIL_CENTER_EVENTS_QUEUE_URL` | SQS queue with the SES events, for `ses-events`. |
 | `EMAIL_CENTER_CONFIGURATION_SET`, `EMAIL_CENTER_RATE_PER_SECOND`, `EMAIL_CENTER_MAX_RECIPIENTS` | SES configuration set, mails per second, and the longest list. |

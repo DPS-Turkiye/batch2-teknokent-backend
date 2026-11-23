@@ -76,6 +76,26 @@ public interface EmailCampaignRecipientRepository extends JpaRepository<EmailCam
 			""")
 	int claim(@Param("id") UUID id, @Param("now") Instant now);
 
+	/** Takes back whatever was not claimed yet; a row the worker holds is not touched. */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+			UPDATE EmailCampaignRecipient r
+			SET r.status = com.dps.teknokent.domain.EmailRecipientStatus.SKIPPED, r.errorCode = :reason,
+				r.nextAttemptAt = NULL
+			WHERE r.campaignId = :campaignId AND r.status = com.dps.teknokent.domain.EmailRecipientStatus.PENDING
+			""")
+	int skipWaiting(@Param("campaignId") UUID campaignId, @Param("reason") String reason);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+			UPDATE EmailCampaignRecipient r
+			SET r.status = com.dps.teknokent.domain.EmailRecipientStatus.SKIPPED, r.errorCode = :reason,
+				r.nextAttemptAt = NULL
+			WHERE r.status = com.dps.teknokent.domain.EmailRecipientStatus.PENDING AND r.campaignId IN
+				(SELECT c.id FROM EmailCampaign c WHERE c.startsAt < :startedBefore)
+			""")
+	int skipExpired(@Param("startedBefore") Instant startedBefore, @Param("reason") String reason);
+
 	/** For a row nothing left for: it failed before SES was asked. */
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("""

@@ -25,6 +25,8 @@ public record EmailCampaignResponse(
 		EmailCampaignStatus status,
 		@Nullable Instant testSentAt,
 		@Nullable Instant confirmedAt,
+		@Nullable Instant startsAt,
+		@Nullable Instant stoppedAt,
 		@Nullable Instant finishedAt,
 		Instant createdAt,
 		Map<EmailRecipientStatus, Long> counts) {

@@ -95,6 +95,11 @@ public class EmailCenterController {
 		return campaignService.send(CurrentActor.resolve(request.actorId()), id, request);
 	}
 
+	@PostMapping("/campaigns/{id}/stop")
+	public EmailCampaignResponse.Detail stop(@PathVariable UUID id, @Valid @RequestBody ActorRequest request) {
+		return campaignService.stop(CurrentActor.resolve(request.actorId()), id);
+	}
+
 	/** From the link in a mail, without an account: the token is the proof. Answers the same for any token. */
 	@PostMapping("/unsubscribe")
 	@ResponseStatus(HttpStatus.NO_CONTENT)

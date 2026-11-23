@@ -75,7 +75,7 @@ class EmailCenterControllerTest {
 				.content(DRAFT).with(authentication(signedIn()))).andExpect(status().isOk());
 		mockMvc.perform(delete("/api/email-center/campaigns/{id}", ID).with(authentication(signedIn())))
 				.andExpect(status().isNoContent());
-		for (String step : List.of("test", "review")) {
+		for (String step : List.of("test", "review", "stop")) {
 			mockMvc.perform(post("/api/email-center/campaigns/{id}/" + step, ID)
 					.contentType(MediaType.APPLICATION_JSON).content("{\"actorId\":\"" + FORGED + "\"}")
 					.with(authentication(signedIn()))).andExpect(status().isOk());
@@ -93,6 +93,7 @@ class EmailCenterControllerTest {
 		verify(campaignService).delete(SIGNED_IN, ID);
 		verify(campaignService).sendTest(SIGNED_IN, ID);
 		verify(campaignService).review(SIGNED_IN, ID);
+		verify(campaignService).stop(SIGNED_IN, ID);
 		verify(campaignService).send(eq(SIGNED_IN), eq(ID), any(SendEmailCampaignRequest.class));
 	}
 

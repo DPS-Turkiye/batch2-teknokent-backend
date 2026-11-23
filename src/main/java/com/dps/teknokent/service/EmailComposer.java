@@ -19,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 class EmailComposer {
 
+	private static final String LOGO_PATH = "/email/menton-odtu-teknokent.png";
+
 	private final MailService mailService;
 	private final EmailCenterSettings settings;
 
@@ -45,12 +47,25 @@ class EmailComposer {
 				EmailDomains.normalizeEmail(sender.getEmail()), mailService.link("/unsubscribe"), null);
 	}
 
+	/**
+	 * The name stands in for the image while a mail program blocks it; the file is the frontend's, without tracking.
+	 */
+	private String logo(String name) {
+		return "<p><img src=\"" + EmailHtml.escape(mailService.link(LOGO_PATH))
+				+ "\" width=\"260\" height=\"70\" alt=\""
+				+ EmailHtml.escape(name) + "\" style=\"display:block;border:0;background:#ffffff;color:#374151;"
+				+ "font:bold 14px Arial,sans-serif\"></p>";
+	}
+
 	private EmailCenterMailer.Mail compose(EmailCampaign campaign, AppUser sender, String subject, String reason,
 			String unsubscribe, String to, String page, @Nullable String oneClick) {
-		String html = campaign.getBodyHtml() + "<hr><p style=\"color:#6b7280;font-size:12px\">"
+		String name = Texts.get(AppLanguage.TR, "emailCenter.footer.sender");
+		String html = campaign.getBodyHtml() + "<hr>" + logo(name)
+				+ "<p style=\"color:#6b7280;font-size:12px\">"
 				+ EmailHtml.escape(reason) + " <a href=\"" + EmailHtml.escape(page) + "\">"
 				+ EmailHtml.escape(unsubscribe) + "</a></p>";
-		String text = EmailHtml.toText(campaign.getBodyHtml()) + "\n\n--\n" + reason + "\n" + unsubscribe + ": " + page;
+		String text = EmailHtml.toText(campaign.getBodyHtml()) + "\n\n--\n" + name + "\n" + reason + "\n"
+				+ unsubscribe + ": " + page;
 		return new EmailCenterMailer.Mail(to, replyTo(sender), subject, html, text, oneClick);
 	}
 }

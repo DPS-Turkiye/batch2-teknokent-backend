@@ -14,13 +14,17 @@ CREATE TABLE email_campaign (
     review_digest VARCHAR(64),
     reviewed_at TIMESTAMPTZ,
     confirmed_at TIMESTAMPTZ,
+    -- The end of the hold: the first mail leaves no earlier, and the confirmed mail can be stopped until then.
+    starts_at TIMESTAMPTZ,
+    stopped_at TIMESTAMPTZ,
+    stopped_by UUID REFERENCES app_user(id),
     finished_at TIMESTAMPTZ,
     alerted_problems INTEGER NOT NULL DEFAULT 0,
     last_alert_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT chk_email_campaign_audience
         CHECK (audience IN ('PARTICIPANTS', 'MENTORS', 'EVERYONE', 'UNJOINED')),
-    CONSTRAINT chk_email_campaign_status CHECK (status IN ('DRAFT', 'SENDING', 'SENT'))
+    CONSTRAINT chk_email_campaign_status CHECK (status IN ('DRAFT', 'SENDING', 'SENT', 'STOPPED'))
 );
 
 CREATE INDEX idx_email_campaign_created_by ON email_campaign (created_by, created_at DESC);

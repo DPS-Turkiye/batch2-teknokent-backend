@@ -65,6 +65,6 @@ class EmailBounceMonitorTest {
 	}
 
 	private static EmailCenterSettings settings(String source) {
-		return new EmailCenterSettings(true, "noreply@menton.test", "", "", 10, 1000, "", source, "");
+		return new EmailCenterSettings(true, "noreply@menton.test", "", "", 10, 1000, "", source, "", 300, 120);
 	}
 }

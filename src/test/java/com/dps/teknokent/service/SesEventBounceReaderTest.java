@@ -82,6 +82,6 @@ class SesEventBounceReaderTest {
 
 	private SesEventBounceReader reader(String queueUrl) {
 		return new SesEventBounceReader(sqsClient, eventService, new EmailCenterSettings(true, "", "", "", 10, 1000,
-				"set", "ses-events", queueUrl), JsonMapper.builder().build());
+				"set", "ses-events", queueUrl, 300, 120), JsonMapper.builder().build());
 	}
 }

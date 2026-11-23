@@ -1,5 +1,6 @@
 package com.dps.teknokent.config;
 
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -27,6 +28,8 @@ public class EmailCenterSettings {
 	private final String configurationSet;
 	private final EmailBounceSource bounceSource;
 	private final String eventsQueueUrl;
+	private final Duration hold;
+	private final Duration maxWait;
 
 	public EmailCenterSettings(
 			@Value("${app.mail.center.enabled:false}") boolean enabled,
@@ -37,7 +40,9 @@ public class EmailCenterSettings {
 			@Value("${app.mail.center.max-recipients:1000}") int maxRecipients,
 			@Value("${app.mail.center.configuration-set:}") String configurationSet,
 			@Value("${app.mail.center.bounce-source:none}") String bounceSource,
-			@Value("${app.mail.center.events-queue-url:}") String eventsQueueUrl) {
+			@Value("${app.mail.center.events-queue-url:}") String eventsQueueUrl,
+			@Value("${app.mail.center.hold-seconds:300}") long holdSeconds,
+			@Value("${app.mail.center.max-wait-minutes:120}") long maxWaitMinutes) {
 		this.enabled = enabled;
 		this.from = from.trim();
 		this.replyTo = replyTo.trim();
@@ -50,6 +55,8 @@ public class EmailCenterSettings {
 		this.configurationSet = configurationSet.trim();
 		this.bounceSource = EmailBounceSource.parse(bounceSource);
 		this.eventsQueueUrl = eventsQueueUrl.trim();
+		this.hold = Duration.ofSeconds(Math.max(0, holdSeconds));
+		this.maxWait = Duration.ofMinutes(Math.max(1, maxWaitMinutes));
 	}
 
 	/** Whether the deployment may write to the (normalized) address; a listed domain does not cover subdomains. */

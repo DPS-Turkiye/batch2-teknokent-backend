@@ -3,6 +3,8 @@ package com.dps.teknokent.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
+
 import org.junit.jupiter.api.Test;
 
 import com.dps.teknokent.domain.EmailBounceSource;
@@ -36,12 +38,18 @@ class EmailCenterSettingsTest {
 		assertThat(settings("", "none").hearsBounces()).isFalse();
 		assertThat(settings("", "suppression-list").hearsBounces()).isTrue();
 		assertThat(settings("", "ses-events").hearsBounces()).isFalse();
-		assertThat(new EmailCenterSettings(true, "", "", "", 10, 1000, "set", "ses-events", "https://q")
+		assertThat(new EmailCenterSettings(true, "", "", "", 10, 1000, "set", "ses-events", "https://q", 300, 120)
 				.hearsBounces()).isTrue();
+	}
+
+	@Test
+	void theHoldAndTheLongestWaitComeFromTheSettings() {
+		assertThat(settings("", "none").getHold()).isEqualTo(Duration.ofMinutes(5));
+		assertThat(settings("", "none").getMaxWait()).isEqualTo(Duration.ofHours(2));
 	}
 
 	private static EmailCenterSettings settings(String allowlist, String bounceSource) {
 		return new EmailCenterSettings(true, "noreply@menton.test", "info@menton.test", allowlist, 10, 1000, "set",
-				bounceSource, "");
+				bounceSource, "", 300, 120);
 	}
 }

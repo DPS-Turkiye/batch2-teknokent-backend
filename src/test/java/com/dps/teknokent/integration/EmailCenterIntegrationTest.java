@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -28,8 +29,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dps.teknokent.config.EmailCenterSettings;
 import com.dps.teknokent.domain.EmailAudience;
 import com.dps.teknokent.domain.EmailCampaignStatus;
 import com.dps.teknokent.domain.EmailDeliveryEvent;
@@ -66,6 +69,7 @@ import jakarta.persistence.EntityManager;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.sesv2.SesV2Client;
+import software.amazon.awssdk.services.sesv2.model.Body;
 import software.amazon.awssdk.services.sesv2.model.GetSuppressedDestinationRequest;
 import software.amazon.awssdk.services.sesv2.model.GetSuppressedDestinationResponse;
 import software.amazon.awssdk.services.sesv2.model.ListSuppressedDestinationsRequest;
@@ -103,6 +107,8 @@ class EmailCenterIntegrationTest {
 	private EmailSuppressionService suppressionService;
 	@Autowired
 	private EntityManager entityManager;
+	@MockitoSpyBean
+	private EmailCenterSettings settings;
 	@MockitoBean(name = "emailCenterSesClient")
 	private SesV2Client sesClient;
 
@@ -141,8 +147,8 @@ class EmailCenterIntegrationTest {
 		UUID off = rowOf(reviewed, member).id();
 
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(off), 2));
-		worker.run();
-		worker.run();
+		sendDue();
+		sendDue();
 
 		List<SendEmailRequest> sent = sentToPeople();
 		assertThat(sent.stream().map(request -> request.destination().toAddresses().getFirst()))
@@ -167,7 +173,7 @@ class EmailCenterIntegrationTest {
 		EmailCampaignResponse.Detail reviewed = reviewed(admin, EmailAudience.MENTORS);
 
 		service.send(admin.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
-		worker.run();
+		sendDue();
 
 		assertThat(sentToPeople().getFirst().replyToAddresses()).containsExactly("info@menton.com.tr");
 	}
@@ -176,8 +182,8 @@ class EmailCenterIntegrationTest {
 	void aSecondRunSendsNobodyAnything() {
 		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.MENTORS);
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
-		worker.run();
-		worker.run();
+		sendDue();
+		sendDue();
 
 		assertThat(sentToPeople()).hasSize(1);
 		assertThatThrownBy(() -> service.send(coordinator.getId(), idOf(reviewed),
@@ -194,7 +200,7 @@ class EmailCenterIntegrationTest {
 				.isInstanceOfSatisfying(ConflictException.class,
 						refused -> assertThat(refused.code()).isEqualTo("EMAIL_LIST_CHANGED"));
 		assertThat(service.get(coordinator.getId(), idOf(reviewed)).reviewDigest()).isNull();
-		worker.run();
+		sendDue();
 		assertThat(sentToPeople()).isEmpty();
 	}
 
@@ -229,8 +235,8 @@ class EmailCenterIntegrationTest {
 		entityManager.find(AppUser.class, founder.getId()).setEmail("new@allowed.test");
 		entityManager.flush();
 		entityManager.clear();
-		worker.run();
-		worker.run();
+		sendDue();
+		sendDue();
 
 		assertThat(sentToPeople()).isEmpty();
 		assertThat(service.get(coordinator.getId(), idOf(reviewed)).recipients())
@@ -245,7 +251,7 @@ class EmailCenterIntegrationTest {
 		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.UNJOINED);
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
 		removeAll(OrganizationPendingMember.class);
-		worker.run();
+		sendDue();
 
 		assertThat(sentToPeople()).isEmpty();
 		assertThat(only(reviewed).getErrorCode()).isEqualTo("LEFT_THE_PROGRAM");
@@ -344,7 +350,7 @@ class EmailCenterIntegrationTest {
 
 		entityManager.remove(entityManager.find(ProgramCoordinator.class, row.getId()));
 		entityManager.flush();
-		worker.run();
+		sendDue();
 
 		assertThat(sentToPeople()).isEmpty();
 		assertThat(service.get(admin.getId(), idOf(reviewed)).recipients().getFirst().status())
@@ -394,7 +400,7 @@ class EmailCenterIntegrationTest {
 		assertThat(reviewed.recipients()).extracting(EmailCampaignResponse.Recipient::exclusion)
 				.containsExactlyInAnyOrder(null, EmailExclusion.NO_ADDRESS, EmailExclusion.NOT_ELIGIBLE);
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
-		worker.run();
+		sendDue();
 		assertThat(sentToPeople().getFirst().destination().toAddresses()).containsExactly("invited@allowed.test");
 	}
 
@@ -414,7 +420,7 @@ class EmailCenterIntegrationTest {
 	void theLinkInAMailUnsubscribesItsReaderFromLaterMails() {
 		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.MENTORS);
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
-		worker.run();
+		sendDue();
 		SendEmailRequest mail = sentToPeople().getFirst();
 		Map<String, String> headers = mail.content().simple().headers().stream()
 				.collect(Collectors.toMap(MessageHeader::name, MessageHeader::value));
@@ -438,7 +444,7 @@ class EmailCenterIntegrationTest {
 		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.MENTORS);
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
 		suppressionService.suppress("mentor@allowed.test", EmailSuppressionReason.UNSUBSCRIBED);
-		worker.run();
+		sendDue();
 
 		assertThat(sentToPeople()).isEmpty();
 		assertThat(service.get(coordinator.getId(), idOf(reviewed)).recipients().getFirst().errorCode())
@@ -450,9 +456,9 @@ class EmailCenterIntegrationTest {
 		EmailCampaignResponse.Detail throttled = reviewed(coordinator, EmailAudience.MENTORS);
 		service.send(coordinator.getId(), idOf(throttled), confirm(throttled, Set.of(), 1));
 		when(sesClient.sendEmail(any(SendEmailRequest.class))).thenThrow(ses(429, "TooManyRequestsException"));
-		worker.run();
+		sendDue();
 		assertThat(only(throttled).getStatus()).isEqualTo(EmailRecipientStatus.PENDING);
-		worker.run();
+		sendDue();
 		assertThat(only(throttled).getStatus()).isEqualTo(EmailRecipientStatus.PENDING);
 
 		entityManager.createQuery("update EmailCampaignRecipient r set r.nextAttemptAt = :past")
@@ -460,7 +466,7 @@ class EmailCenterIntegrationTest {
 		entityManager.clear();
 		doThrow(ses(400, "MessageRejected")).when(sesClient)
 				.sendEmail(any(SendEmailRequest.class));
-		worker.run();
+		sendDue();
 		assertThat(only(throttled).getStatus()).isEqualTo(EmailRecipientStatus.FAILED);
 		assertThat(only(throttled).getErrorCode()).isEqualTo("MessageRejected");
 	}
@@ -471,7 +477,7 @@ class EmailCenterIntegrationTest {
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
 		doThrow(SdkClientException.create("timed out")).when(sesClient)
 				.sendEmail(any(SendEmailRequest.class));
-		worker.run();
+		sendDue();
 
 		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.FAILED);
 		assertThat(only(reviewed).getErrorCode()).isEqualTo("NO_ANSWER");
@@ -485,7 +491,7 @@ class EmailCenterIntegrationTest {
 				.setParameter("sending", EmailRecipientStatus.SENDING)
 				.setParameter("past", Instant.EPOCH).executeUpdate();
 		entityManager.clear();
-		worker.run();
+		sendDue();
 
 		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.FAILED);
 		assertThat(sentToPeople()).isEmpty();
@@ -546,7 +552,7 @@ class EmailCenterIntegrationTest {
 		EmailCampaignResponse.Detail reviewed = confirmed();
 		doReturn(suppressed("mentor@allowed.test", null)).when(sesClient)
 				.getSuppressedDestination(any(GetSuppressedDestinationRequest.class));
-		worker.run();
+		sendDue();
 
 		assertThat(sentToPeople()).isEmpty();
 		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.FAILED);
@@ -556,7 +562,7 @@ class EmailCenterIntegrationTest {
 	@Test
 	void sesListingAnAddressMarksTheMailThatCausedItAndIsReadOnce() {
 		EmailCampaignResponse.Detail reviewed = confirmed();
-		worker.run();
+		sendDue();
 		String messageId = only(reviewed).getSesMessageId();
 		doReturn(ListSuppressedDestinationsResponse.builder()
 				.suppressedDestinationSummaries(SuppressedDestinationSummary.builder()
@@ -575,7 +581,7 @@ class EmailCenterIntegrationTest {
 	@Test
 	void theSenderAndTheAdminsAreToldOnceAndAgainOnlyForNewProblems() {
 		EmailCampaignResponse.Detail reviewed = confirmed();
-		worker.run();
+		sendDue();
 		String messageId = only(reviewed).getSesMessageId();
 		scheduler.alertProblems();
 		assertThat(alertsFor(coordinator)).isEmpty();
@@ -596,7 +602,7 @@ class EmailCenterIntegrationTest {
 	@Test
 	void reportsInAnyOrderLeaveTheWorstAndUnknownMailsAreIgnored() {
 		EmailCampaignResponse.Detail reviewed = confirmed();
-		worker.run();
+		sendDue();
 		String messageId = only(reviewed).getSesMessageId();
 
 		assertThat(eventService.apply("somebody-elses", EmailDeliveryEvent.HARD_BOUNCE)).isFalse();
@@ -609,6 +615,183 @@ class EmailCenterIntegrationTest {
 		eventService.apply(messageId, EmailDeliveryEvent.COMPLAINT);
 		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.COMPLAINED);
 		assertThat(suppressionService.isSuppressed("mentor@allowed.test")).isTrue();
+	}
+
+	@Test
+	void nothingLeavesDuringTheHold() {
+		EmailCampaignResponse.Detail mail = confirmed();
+
+		worker.run();
+		worker.run();
+
+		assertThat(sentToPeople()).isEmpty();
+		EmailCampaignResponse shown = service.get(coordinator.getId(), idOf(mail)).campaign();
+		assertThat(shown.status()).isEqualTo(EmailCampaignStatus.SENDING);
+		assertThat(Duration.between(shown.confirmedAt(), shown.startsAt())).isEqualTo(Duration.ofMinutes(5));
+		sendDue();
+		assertThat(sentToPeople()).hasSize(1);
+	}
+
+	@Test
+	void aRestartDuringTheHoldKeepsTheRemainingTime() {
+		EmailCampaignResponse.Detail mail = confirmed();
+		moveStartTo(mail, Instant.now().plusSeconds(60));
+
+		// The end of the hold is all there is to it, and it is in the database: a new run finds it there.
+		worker.run();
+		assertThat(sentToPeople()).isEmpty();
+
+		moveStartTo(mail, Instant.now().minusSeconds(1));
+		worker.run();
+		assertThat(sentToPeople()).hasSize(1);
+	}
+
+	@Test
+	void theHoldIsAlsoKeptForARowThatClaimsToBeDue() {
+		EmailCampaignResponse.Detail mail = confirmed();
+		entityManager.createQuery("update EmailCampaignRecipient r set r.nextAttemptAt = :past")
+				.setParameter("past", Instant.EPOCH).executeUpdate();
+		entityManager.clear();
+
+		worker.run();
+
+		assertThat(sentToPeople()).isEmpty();
+		assertThat(only(mail).getStatus()).isEqualTo(EmailRecipientStatus.PENDING);
+	}
+
+	@Test
+	void aStopDuringTheHoldSendsNothingAndCannotBeResumed() {
+		EmailCampaignResponse.Detail mail = confirmed();
+
+		EmailCampaignResponse.Detail stopped = service.stop(coordinator.getId(), idOf(mail));
+		sendDue();
+
+		assertThat(sentToPeople()).isEmpty();
+		assertThat(stopped.campaign().status()).isEqualTo(EmailCampaignStatus.STOPPED);
+		assertThat(stopped.campaign().stoppedAt()).isNotNull();
+		assertThat(stopped.recipients()).singleElement().satisfies(row -> {
+			assertThat(row.status()).isEqualTo(EmailRecipientStatus.SKIPPED);
+			assertThat(row.errorCode()).isEqualTo("STOPPED");
+		});
+		assertThatThrownBy(() -> service.stop(coordinator.getId(), idOf(mail))).isInstanceOf(ConflictException.class);
+		assertThatThrownBy(() -> service.send(coordinator.getId(), idOf(mail), confirm(mail, Set.of(), 1)))
+				.isInstanceOf(ConflictException.class);
+		assertThatThrownBy(() -> service.review(coordinator.getId(), idOf(mail)))
+				.isInstanceOf(ConflictException.class);
+		assertThat(service.get(coordinator.getId(), idOf(mail)).campaign().status())
+				.isEqualTo(EmailCampaignStatus.STOPPED);
+	}
+
+	@Test
+	void aStopHalfwayKeepsWhatLeftAndTakesTheRestBack() {
+		EmailCampaignResponse.Detail mail = reviewed(coordinator, EmailAudience.EVERYONE);
+		service.send(coordinator.getId(), idOf(mail), confirm(mail, Set.of(), 2));
+		sendDue();
+
+		EmailCampaignResponse.Detail stopped = service.stop(coordinator.getId(), idOf(mail));
+		sendDue();
+
+		assertThat(sentToPeople()).hasSize(1);
+		assertThat(stopped.campaign().counts()).isEqualTo(
+				Map.of(EmailRecipientStatus.SENT, 1L, EmailRecipientStatus.SKIPPED, 1L));
+	}
+
+	@Test
+	void onlyTheSenderAndAdminsStopAMailAndOnlyWhileItIsBeingSent() {
+		AppUser other = user("other@staff.test", "Başka", UserRole.COORDINATOR, null);
+		entityManager.flush();
+		EmailCampaignResponse.Detail mail = confirmed();
+
+		assertThatThrownBy(() -> service.stop(other.getId(), idOf(mail)))
+				.isInstanceOf(ResourceNotFoundException.class);
+		assertThatThrownBy(() -> service.stop(mentor.getId(), idOf(mail)))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(service.stop(admin.getId(), idOf(mail)).campaign().status())
+				.isEqualTo(EmailCampaignStatus.STOPPED);
+
+		EmailCampaignResponse.Detail draft = reviewed(coordinator, EmailAudience.PARTICIPANTS);
+		assertThatThrownBy(() -> service.stop(coordinator.getId(), idOf(draft)))
+				.isInstanceOf(ConflictException.class);
+	}
+
+	@Test
+	void whatWaitedTooLongIsCancelledInsteadOfSent() {
+		EmailCampaignResponse.Detail mail = confirmed();
+		moveStartTo(mail, Instant.now().minus(Duration.ofMinutes(121)));
+
+		worker.run();
+
+		assertThat(sentToPeople()).isEmpty();
+		assertThat(only(mail).getStatus()).isEqualTo(EmailRecipientStatus.SKIPPED);
+		assertThat(only(mail).getErrorCode()).isEqualTo("EXPIRED");
+		assertThat(service.get(coordinator.getId(), idOf(mail)).campaign().status())
+				.isEqualTo(EmailCampaignStatus.SENT);
+	}
+
+	@Test
+	void switchedOffNothingLeavesAndOnAgainOnlyWhatDidNotWaitTooLong() {
+		EmailCampaignResponse.Detail early = confirmed();
+		EmailCampaignResponse.Detail late = reviewed(coordinator, EmailAudience.PARTICIPANTS);
+		service.send(coordinator.getId(), idOf(late), confirm(late, Set.of(), 1));
+		moveStartTo(early, Instant.now().minus(Duration.ofMinutes(121)));
+		moveStartTo(late, Instant.now().minus(Duration.ofMinutes(10)));
+		doReturn(false).when(settings).canSend();
+
+		worker.run();
+
+		assertThat(sentToPeople()).isEmpty();
+		assertThat(only(early).getErrorCode()).isEqualTo("EXPIRED");
+		assertThat(only(late).getStatus()).isEqualTo(EmailRecipientStatus.PENDING);
+
+		doReturn(true).when(settings).canSend();
+		worker.run();
+		worker.run();
+
+		assertThat(sentToPeople().stream().map(request -> request.destination().toAddresses().getFirst()))
+				.containsExactly("founder@allowed.test");
+	}
+
+	@Test
+	void whatWaitedJustUnderTheLimitIsStillSent() {
+		EmailCampaignResponse.Detail mail = confirmed();
+		moveStartTo(mail, Instant.now().minus(Duration.ofMinutes(119)));
+
+		worker.run();
+
+		assertThat(sentToPeople()).hasSize(1);
+	}
+
+	@Test
+	void theFooterNamesMentonWithItsLogoAndWithoutItInPlainText() {
+		confirmed();
+		sendDue();
+		Body body = sentToPeople().getFirst().content().simple().body();
+
+		assertThat(body.html().data()).contains("<img src=\"https://menton.com.tr/email/menton-odtu-teknokent.png\"",
+				"width=\"260\" height=\"70\"", "alt=\"Menton by ODT");
+		assertThat(body.text().data()).contains("--\nMenton by ODTÜ Teknokent\n").doesNotContain("img");
+	}
+
+	/** The hold over, and one run of the worker. */
+	private void sendDue() {
+		Instant past = Instant.now().minusSeconds(1);
+		entityManager.flush();
+		entityManager.createQuery("update EmailCampaign c set c.startsAt = :past where c.startsAt > :past")
+				.setParameter("past", past).executeUpdate();
+		entityManager.createQuery("update EmailCampaignRecipient r set r.nextAttemptAt = :past "
+				+ "where r.nextAttemptAt > :past and r.attempts = 0").setParameter("past", past).executeUpdate();
+		entityManager.clear();
+		worker.run();
+	}
+
+	private void moveStartTo(EmailCampaignResponse.Detail mail, Instant startsAt) {
+		entityManager.flush();
+		entityManager.createQuery("update EmailCampaign c set c.startsAt = :at where c.id = :id")
+				.setParameter("at", startsAt).setParameter("id", idOf(mail)).executeUpdate();
+		entityManager.createQuery("update EmailCampaignRecipient r set r.nextAttemptAt = :at "
+				+ "where r.campaignId = :id and r.status = :pending").setParameter("at", startsAt)
+				.setParameter("id", idOf(mail)).setParameter("pending", EmailRecipientStatus.PENDING).executeUpdate();
+		entityManager.clear();
 	}
 
 	private EmailCampaignResponse.Detail confirmed() {

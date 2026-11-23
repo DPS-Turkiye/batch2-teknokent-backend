@@ -27,6 +27,7 @@ import com.dps.teknokent.config.EmailCenterSettings;
 import com.dps.teknokent.domain.EmailAudience;
 import com.dps.teknokent.domain.EmailCampaignStatus;
 import com.dps.teknokent.domain.EmailRecipientStatus;
+import com.dps.teknokent.domain.EmailSkipReason;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.EmailCampaignRequest;
 import com.dps.teknokent.dto.requests.SendEmailCampaignRequest;
@@ -273,15 +274,37 @@ public class EmailCampaignService {
 			throw new InvalidRequestException(Texts.forRequest("error.emailCountMismatch"));
 		}
 		Instant now = clock.instant();
+		Instant startsAt = now.plus(settings.getHold());
 		for (EmailCampaignRecipient row : offered) {
 			boolean off = unticked.contains(row.getId());
 			row.setStatus(off ? EmailRecipientStatus.UNTICKED : EmailRecipientStatus.PENDING);
-			row.setNextAttemptAt(off ? null : now);
+			row.setNextAttemptAt(off ? null : startsAt);
 		}
 		recipientRepository.saveAll(offered);
 		campaign.setStatus(EmailCampaignStatus.SENDING);
 		campaign.setConfirmedAt(now);
+		campaign.setStartsAt(startsAt);
 		campaignRepository.save(campaign);
+	}
+
+	/**
+	 * Takes a confirmed mail back: nothing that has not been claimed for SES leaves any more, and it is never resumed.
+	 * The worker claims under the same lock, so after this commits at most the one mail in flight still arrives.
+	 */
+	@Transactional
+	public EmailCampaignResponse.Detail stop(UUID actorId, UUID id) {
+		requireReadable(actorId, id);
+		EmailCampaign campaign = campaignRepository.findByIdForUpdate(id).orElseThrow(() -> notFound(id));
+		if (campaign.getStatus() != EmailCampaignStatus.SENDING) {
+			throw new ConflictException(Texts.forRequest("error.emailCannotStop"));
+		}
+		recipientRepository.skipWaiting(id, EmailSkipReason.STOPPED.name());
+		Instant now = clock.instant();
+		campaign.setStatus(EmailCampaignStatus.STOPPED);
+		campaign.setStoppedAt(now);
+		campaign.setStoppedBy(actorId);
+		campaign.setFinishedAt(now);
+		return detail(campaignRepository.save(campaign));
 	}
 
 	private List<EmailAudienceResolver.Candidate> resolve(EmailCampaign campaign) {
@@ -438,6 +461,8 @@ public class EmailCampaignService {
 						campaign.getStatus(),
 						campaign.getTestSentAt(),
 						campaign.getConfirmedAt(),
+						campaign.getStartsAt(),
+						campaign.getStoppedAt(),
 						campaign.getFinishedAt(),
 						campaign.getCreatedAt(),
 						counts.getOrDefault(campaign.getId(), Map.of())))
