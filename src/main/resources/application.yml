@@ -142,6 +142,9 @@ app:
     region: ${AWS_REGION:eu-central-1}
     from: ${MAIL_FROM:}
     public-url: ${APP_PUBLIC_URL:https://menton.com.tr}
+    # E-mails for coordinator matches and meeting proposals; off until a deployment turns them on.
+    match-proposal:
+      enabled: ${MATCH_PROPOSAL_MAIL_ENABLED:false}
     # Mails coordinators and admins write to a program's people; off until a deployment turns it on.
     center:
       enabled: ${EMAIL_CENTER_ENABLED:false}
