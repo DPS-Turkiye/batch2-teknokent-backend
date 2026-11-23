@@ -8,7 +8,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -75,6 +78,8 @@ class MeetingProposalServiceTest {
 	private ProgramRepository programRepository;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private MatchProposalMailService matchProposalMailService;
 
 	@InjectMocks
 	private MeetingProposalService service;
@@ -697,6 +702,131 @@ class MeetingProposalServiceTest {
 				eq("Görüşme yeni saate taşındı"), anyString(), eq("/mentorships?tab=active"));
 		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme onaylandı"), anyString(), eq("/mentor-dashboard/calendar"));
+	}
+
+	// --- E-mails ---
+
+	@Test
+	void aProposalEmailsTheMentorAndTheTeamLeadWhoMustAnswer() {
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+
+		service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, "Tanışma", null));
+
+		verifyMailed(mentor, "mail.proposalFromCoordinator", "/mentor-dashboard?web=1");
+		verifyMailed(lead, "mail.proposalFromCoordinator", "/dashboard?web=1");
+		verifyNoMoreInteractions(matchProposalMailService);
+	}
+
+	@Test
+	void aProposalForATeamWithoutALeadEmailsEveryMember() {
+		lumen.setFounder(null);
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+
+		service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, null, null));
+
+		verifyMailed(mentor, "mail.proposalFromCoordinator", "/mentor-dashboard?web=1");
+		verifyMailed(lead, "mail.proposalFromCoordinator", "/dashboard?web=1");
+		verifyMailed(member, "mail.proposalFromCoordinator", "/dashboard?web=1");
+		verifyNoMoreInteractions(matchProposalMailService);
+	}
+
+	@Test
+	void aCoordinatorsNewTimeIsEmailedAsANewTime() {
+		Meeting meeting = scheduledMeeting();
+		when(coordinatorMentorshipService.requireManagedMentorship(coordinator.getId(), mentorship.getId()))
+				.thenReturn(new Scoped(mentorship, program));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+
+		service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, null, meeting.getId()));
+
+		verifyMailed(mentor, "mail.newTimeFromCoordinator", "/mentor-dashboard?web=1");
+		verifyMailed(lead, "mail.newTimeFromCoordinator", "/dashboard?web=1");
+	}
+
+	@Test
+	void aNewTimeFromOneSideEmailsOnlyTheOther() {
+		Meeting meeting = scheduledMeeting();
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+
+		service.proposeReschedule(mentor.getId(), meeting.getId(), new RescheduleMeetingRequest(null, nextWeek, null));
+
+		verify(matchProposalMailService).send(lead, NotificationCategory.MEETING_CHANGE, "mail.newTimeProposed",
+				"/dashboard?web=1", "Ayşe Demir ↔ Lumen", nextWeek, "Ayşe Demir");
+		verifyNoMoreInteractions(matchProposalMailService);
+	}
+
+	@Test
+	void theProposerIsNotEmailedAndAPersonOnBothSidesIsEmailedOnce() {
+		mentorship.setMentor(lead);
+		when(coordinatorMentorshipService.requireManagedMentorship(any(), eq(mentorship.getId())))
+				.thenReturn(new Scoped(mentorship, program));
+
+		service.propose(coordinator.getId(), mentorship.getId(),
+				new ProposeMeetingRequest(null, nextWeek, 45, null, null));
+		verify(matchProposalMailService, times(1)).send(eq(lead), any(), any(), any(), any(), any());
+
+		service.propose(lead.getId(), mentorship.getId(), new ProposeMeetingRequest(null, nextWeek, 45, null, null));
+		verifyNoMoreInteractions(matchProposalMailService);
+	}
+
+	@Test
+	void aReminderEmailsOnlyTheSideThatHasNotAnswered() {
+		MeetingProposal proposal = pending(null);
+		proposal.setTeamAcceptedAt(Instant.now());
+		proposal.setRemindedAt(Instant.now().minus(2, ChronoUnit.HOURS));
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		service.remind(coordinator.getId(), proposal.getId());
+
+		verifyMailed(mentor, "mail.proposalWaiting", "/mentor-dashboard?web=1");
+		verifyNoMoreInteractions(matchProposalMailService);
+	}
+
+	@Test
+	void aRepeatedReminderNotifiesAgainButEmailsOnce() {
+		MeetingProposal proposal = pending(null);
+		proposal.setTeamAcceptedAt(Instant.now());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		service.remind(coordinator.getId(), proposal.getId());
+		service.remind(coordinator.getId(), proposal.getId());
+
+		verify(notificationService, times(2)).create(eq(mentor), any(), anyString(), anyString(), anyString());
+		verifyMailed(mentor, "mail.proposalWaiting", "/mentor-dashboard?web=1");
+		verifyNoMoreInteractions(matchProposalMailService);
+	}
+
+	@Test
+	void aReminderForATimeThatHasPassedIsNotEmailed() {
+		MeetingProposal proposal = pending(null);
+		proposal.setScheduledAt(Instant.now().minusSeconds(60));
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		service.remind(coordinator.getId(), proposal.getId());
+
+		verify(notificationService).create(eq(mentor), any(), anyString(), anyString(), anyString());
+		verifyNoInteractions(matchProposalMailService);
+	}
+
+	@Test
+	void answersAreNotEmailed() {
+		MeetingProposal proposal = pending(null);
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+
+		service.accept(lead.getId(), proposal.getId());
+		service.decline(mentor.getId(), proposal.getId(), new DeclineMeetingProposalRequest(null, null));
+
+		verifyNoInteractions(matchProposalMailService);
+	}
+
+	private void verifyMailed(AppUser reader, String mailKey, String path) {
+		verify(matchProposalMailService).send(reader, NotificationCategory.MEETING_CHANGE, mailKey, path,
+				"Ayşe Demir ↔ Lumen", nextWeek);
 	}
 
 	private Meeting scheduledMeeting() {

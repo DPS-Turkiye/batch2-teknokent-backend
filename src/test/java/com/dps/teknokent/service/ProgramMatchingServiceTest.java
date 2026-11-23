@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -31,6 +32,8 @@ import com.dps.teknokent.domain.MentorMatchingMethod;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.MentorshipSource;
 import com.dps.teknokent.domain.MentorshipStatus;
+import com.dps.teknokent.domain.NotificationCategory;
+import com.dps.teknokent.domain.PermissionSource;
 import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.StartupMaturity;
 import com.dps.teknokent.domain.StartupSector;
@@ -84,6 +87,8 @@ class ProgramMatchingServiceTest {
 	private MentorRecommendationService recommendationService;
 	@Mock
 	private NotificationService notificationService;
+	@Mock
+	private MatchProposalMailService matchProposalMailService;
 	@Mock
 	private PlatformTransactionManager transactionManager;
 	@InjectMocks
@@ -152,6 +157,34 @@ class ProgramMatchingServiceTest {
 	}
 
 	@Test
+	void aMatchEmailsTheMentorAndEachMenteeOnceButNobodyElse() {
+		Program program = program();
+		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program);
+		Organization terra = team("Terra", List.of());
+		AppUser nihan = mentor("Nihan Öztürk");
+		nihan.grant(UserRole.MENTEE, PermissionSource.ADMIN, Instant.now());
+		AppUser founder = user("Mert Aydın", UserRole.MENTEE);
+		AppUser member = user("Can Er", UserRole.MENTEE);
+		AppUser advisor = user("Selin Aksoy", UserRole.ACADEMICIAN);
+		stubTeamAndPool(terra, nihan);
+		when(appUserRepository.findById(nihan.getId())).thenReturn(Optional.of(nihan));
+		when(mentorshipRepository.findByOrganizationIdIn(List.of(terra.getId()))).thenReturn(List.of());
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(terra.getId()))
+				.thenReturn(List.of(member, founder, nihan, advisor));
+		when(programStartupRepository.findByProgramIdIn(List.of(PROGRAM_ID))).thenReturn(List.of());
+
+		service.match(ELIF, PROGRAM_ID, terra.getId(), nihan.getId());
+
+		verify(matchProposalMailService).send(nihan, NotificationCategory.GENERAL, "mail.matchedWithTeam",
+				"/mentor-dashboard", program.getName(), "Terra");
+		for (AppUser mentee : List.of(founder, member)) {
+			verify(matchProposalMailService).send(mentee, NotificationCategory.GENERAL, "mail.mentorAssigned",
+					"/mentorships", program.getName(), "Nihan Öztürk");
+		}
+		verifyNoMoreInteractions(matchProposalMailService);
+	}
+
+	@Test
 	void onlyAPoolMentorWhoIsNotAlreadyWithTheTeamCanBeMatched() {
 		when(coordinatorProgramService.requireManagedProgram(ELIF, PROGRAM_ID)).thenReturn(program());
 		Organization terra = team("Terra", List.of());
@@ -167,6 +200,7 @@ class ProgramMatchingServiceTest {
 		assertThatThrownBy(() -> service.match(ELIF, PROGRAM_ID, terra.getId(), nihan.getId()))
 				.isInstanceOf(ConflictException.class);
 		verify(mentorshipRepository, never()).save(any());
+		verifyNoInteractions(matchProposalMailService);
 	}
 
 	@Test

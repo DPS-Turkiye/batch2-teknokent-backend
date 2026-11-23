@@ -1,8 +1,11 @@
 package com.dps.teknokent.service;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +60,9 @@ public class MeetingProposalService {
 	private static final Set<MentorshipStatus> OPEN = EnumSet.of(MentorshipStatus.PLANNED, MentorshipStatus.ACTIVE);
 	private static final String MENTOR_HOME = "/mentor-dashboard";
 	private static final String TEAM_HOME = "/dashboard";
+	// On a phone these pages open the mobile app, which cannot answer a proposal; this opens the web page instead.
+	private static final String OPEN_ON_WEB = "?web=1";
+	private static final Duration REMINDER_MAIL_GAP = Duration.ofHours(1);
 
 	private final CoordinatorMentorshipService coordinatorMentorshipService;
 	private final CoordinatorProgramService programService;
@@ -66,10 +72,14 @@ public class MeetingProposalService {
 	private final AppUserRepository appUserRepository;
 	private final ProgramRepository programRepository;
 	private final NotificationService notificationService;
+	private final MatchProposalMailService matchProposalMailService;
 
 	private enum Side {
 		MENTOR,
 		TEAM
+	}
+
+	private record Reader(AppUser user, String href) {
 	}
 
 	@Transactional
@@ -109,11 +119,14 @@ public class MeetingProposalService {
 		proposal.setStatus(MeetingProposalStatus.PENDING);
 		MeetingProposal saved = proposalRepository.save(proposal);
 
-		String titleKey = request.replacesMeetingId() == null
-				? "notification.proposalFromCoordinator.title"
-				: "notification.newTimeFromCoordinator.title";
-		notifyUnanswered(saved, titleKey, "notification.proposalPleaseConfirm.body", pairLine(saved),
-				saved.getScheduledAt());
+		boolean newTime = request.replacesMeetingId() != null;
+		List<Reader> readers = unanswered(saved);
+		notifyAll(readers, newTime
+				? "notification.newTimeFromCoordinator.title"
+				: "notification.proposalFromCoordinator.title",
+				"notification.proposalPleaseConfirm.body", pairLine(saved), saved.getScheduledAt());
+		mailAll(saved, readers, newTime ? "mail.newTimeFromCoordinator" : "mail.proposalFromCoordinator",
+				pairLine(saved), saved.getScheduledAt());
 		return response(saved, scoped.program(), null);
 	}
 
@@ -163,8 +176,10 @@ public class MeetingProposalService {
 		}
 		MeetingProposal saved = proposalRepository.save(proposal);
 
-		notifyUnanswered(saved, "notification.newTimeProposed.title", "notification.proposalPleaseConfirm.body",
-				pairLine(saved), saved.getScheduledAt(), actor.getFullName());
+		List<Reader> readers = unanswered(saved);
+		Object[] args = { pairLine(saved), saved.getScheduledAt(), actor.getFullName() };
+		notifyAll(readers, "notification.newTimeProposed.title", "notification.proposalPleaseConfirm.body", args);
+		mailAll(saved, readers, "mail.newTimeProposed", args);
 		return response(saved, null, actor);
 	}
 
@@ -264,10 +279,18 @@ public class MeetingProposalService {
 	@Transactional
 	public void remind(UUID actorId, UUID proposalId) {
 		MeetingProposal proposal = requireManagedPending(actorId, proposalId);
-		proposal.setRemindedAt(Instant.now());
+		Instant now = Instant.now();
+		Instant lastReminder = proposal.getRemindedAt();
+		proposal.setRemindedAt(now);
 		proposalRepository.save(proposal);
-		notifyUnanswered(proposal, "notification.proposalWaiting.title", "notification.proposalWaiting.body",
-				pairLine(proposal), proposal.getScheduledAt());
+		List<Reader> readers = unanswered(proposal);
+		Object[] args = { pairLine(proposal), proposal.getScheduledAt() };
+		notifyAll(readers, "notification.proposalWaiting.title", "notification.proposalWaiting.body", args);
+		// No mail about a time that has passed, nor a second one for a repeated click.
+		boolean recentlyReminded = lastReminder != null && lastReminder.isAfter(now.minus(REMINDER_MAIL_GAP));
+		if (proposal.getScheduledAt().isAfter(now) && !recentlyReminded) {
+			mailAll(proposal, readers, "mail.proposalWaiting", args);
+		}
 	}
 
 	/** Both sides said yes: move the replaced meeting if it is still planned, otherwise book a new one. */
@@ -318,13 +341,28 @@ public class MeetingProposalService {
 		}
 	}
 
-	private void notifyUnanswered(MeetingProposal proposal, String titleKey, String bodyKey, Object... args) {
+	private List<Reader> unanswered(MeetingProposal proposal) {
+		List<Reader> readers = new ArrayList<>();
 		if (proposal.getMentorAcceptedAt() == null) {
-			notify(proposal.getMentor(), titleKey, bodyKey, args, MENTOR_HOME);
+			readers.add(new Reader(proposal.getMentor(), MENTOR_HOME));
 		}
 		if (proposal.getTeamAcceptedAt() == null) {
-			for (AppUser responder : teamResponders(proposal.getOrganization())) {
-				notify(responder, titleKey, bodyKey, args, TEAM_HOME);
+			teamResponders(proposal.getOrganization()).forEach(user -> readers.add(new Reader(user, TEAM_HOME)));
+		}
+		return readers;
+	}
+
+	private void notifyAll(List<Reader> readers, String titleKey, String bodyKey, Object... args) {
+		readers.forEach(reader -> notify(reader.user(), titleKey, bodyKey, args, reader.href()));
+	}
+
+	/** One mail each, also for someone on both sides, and none to the person who proposed. */
+	private void mailAll(MeetingProposal proposal, List<Reader> readers, String mailKey, Object... args) {
+		Set<UUID> handled = new HashSet<>(Set.of(proposal.getProposedBy()));
+		for (Reader reader : readers) {
+			if (handled.add(reader.user().getId())) {
+				matchProposalMailService.send(reader.user(), NotificationCategory.MEETING_CHANGE, mailKey,
+						reader.href() + OPEN_ON_WEB, args);
 			}
 		}
 	}
