@@ -60,6 +60,7 @@ import com.dps.teknokent.service.EmailCampaignWorker;
 import com.dps.teknokent.service.EmailCenterScheduler;
 import com.dps.teknokent.service.EmailDeliveryEventService;
 import com.dps.teknokent.service.EmailSuppressionService;
+import com.dps.teknokent.util.EmailHtml;
 
 import jakarta.persistence.EntityManager;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
@@ -496,6 +497,28 @@ class EmailCenterIntegrationTest {
 			assertThat(template.subject()).contains("Build '26");
 			assertThat(template.bodyHtml()).contains("Elif Koordinatör").doesNotContain("{");
 		});
+	}
+
+	@Test
+	void theInviteReminderKeepsItsApprovedTurkishWording() {
+		EmailCampaignResponse.Template reminder = service.templates(coordinator.getId(), program.getId()).getFirst();
+
+		assertThat(reminder.name()).isEqualTo("Davet hatırlatması");
+		assertThat(reminder.audience()).isEqualTo(EmailAudience.UNJOINED);
+		assertThat(reminder.subject()).isEqualTo("Build '26: menton kaydınızı tamamlayın");
+		assertThat(EmailHtml.toText(reminder.bodyHtml())).isEqualTo(
+				"""
+						Merhaba,
+						Ekibiniz sizi Build '26 programındaki takımına ekledi, ancak menton kaydınız henüz tamamlanmadı.
+						Kayıt olmak için takım kodunu ekibinizden isteyin ve menton.com.tr/invite (https://menton.com.tr/invite) \
+						adresinden kaydınızı tamamlayın.
+						Bu e-postanın size yanlışlıkla geldiğini düşünüyorsanız yanıtlamanız yeterli.
+						Elif Koordinatör""");
+	}
+
+	@Test
+	void anAdminGetsTheTemplatesOfAnyProgram() {
+		assertThat(service.templates(admin.getId(), program.getId())).hasSize(4);
 	}
 
 	@Test
