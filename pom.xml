@@ -21,6 +21,7 @@
 
 		<archunit.version>1.5.1</archunit.version>
 		<awssdk.version>2.59.1</awssdk.version>
+		<owasp-html-sanitizer.version>20240325.1</owasp-html-sanitizer.version>
 		<firebase-admin.version>9.12.0</firebase-admin.version>
 		<pdfbox.version>3.0.8</pdfbox.version>
 		<springdoc.version>3.2.0</springdoc.version>
@@ -139,6 +140,17 @@
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>sesv2</artifactId>
 			<version>${awssdk.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>sqs</artifactId>
+			<version>${awssdk.version}</version>
+		</dependency>
+		<!-- Cleans the formatted text of an email-center mail before it is stored or sent. -->
+		<dependency>
+			<groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
+			<artifactId>owasp-java-html-sanitizer</artifactId>
+			<version>${owasp-html-sanitizer.version}</version>
 		</dependency>
 
 		<dependency>
