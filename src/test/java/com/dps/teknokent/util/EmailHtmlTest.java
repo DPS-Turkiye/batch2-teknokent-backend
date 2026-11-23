@@ -32,6 +32,17 @@ class EmailHtmlTest {
 	}
 
 	@Test
+	void anEditorsLinkStaysClickableAndOnlyAnHttpsOneDoes() {
+		String link = "<p><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"%s\">Kayıt</a></p>";
+
+		String https = EmailHtml.sanitize(link.formatted("https://menton.com.tr/invite"));
+		assertThat(https).contains("<a href=\"https://menton.com.tr/invite\"").contains("</a>");
+		assertThat(EmailHtml.toText(https)).isEqualTo("Kayıt (https://menton.com.tr/invite)");
+		assertThat(EmailHtml.sanitize(link.formatted("http://eski.example/a"))).doesNotContain("href");
+		assertThat(EmailHtml.toText(EmailHtml.sanitize(link.formatted("http://eski.example/a")))).isEqualTo("Kayıt");
+	}
+
+	@Test
 	void escapesANameForHtml() {
 		assertThat(EmailHtml.escape("A & <b>")).isEqualTo("A &amp; &lt;b&gt;");
 	}
