@@ -225,6 +225,19 @@ class OrganizationDataEraser {
 		update("delete from Bottleneck b where b.organization.id = :id", id);
 		update("delete from ProfileAnalysis a where a.organizationId = :id", id);
 		update("delete from OrganizationPendingMember m where m.organizationId = :id", id);
+		// The e-mail log keeps that somebody was written to, but not the people the founder listed.
+		entityManager.createQuery("update EmailCampaignRecipient r set r.address = null, r.fullName = :deleted, "
+				+ "r.teamName = :deletedTeam, r.unsubscribeTokenHash = null "
+				+ "where r.organizationId = :id and r.userId is null")
+				.setParameter("deleted", AppUser.DELETED_FULL_NAME)
+				.setParameter("deletedTeam", Organization.DELETED_NAME)
+				.setParameter("id", id)
+				.executeUpdate();
+		entityManager.createQuery("update EmailCampaignRecipient r set r.teamName = :deletedTeam "
+				+ "where r.organizationId = :id and r.userId is not null")
+				.setParameter("deletedTeam", Organization.DELETED_NAME)
+				.setParameter("id", id)
+				.executeUpdate();
 		update("delete from ProgramStartup s where s.organizationId = :id", id);
 		update("delete from ProgramTeamInvite i where i.organizationId = :id and i.joinedAt is null", id);
 		entityManager.createQuery("update ProgramTeamInvite i set i.teamName = :deleted where i.organizationId = :id")

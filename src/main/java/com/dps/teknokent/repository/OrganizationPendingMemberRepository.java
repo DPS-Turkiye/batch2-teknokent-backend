@@ -1,5 +1,6 @@
 package com.dps.teknokent.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +12,8 @@ import com.dps.teknokent.entity.OrganizationPendingMember;
 public interface OrganizationPendingMemberRepository extends JpaRepository<OrganizationPendingMember, UUID> {
 
 	List<OrganizationPendingMember> findByOrganizationIdOrderByCreatedAtAsc(UUID organizationId);
+
+	List<OrganizationPendingMember> findByOrganizationIdInOrderByCreatedAtAsc(Collection<UUID> organizationIds);
 
 	Optional<OrganizationPendingMember> findByIdAndOrganizationId(UUID id, UUID organizationId);
 

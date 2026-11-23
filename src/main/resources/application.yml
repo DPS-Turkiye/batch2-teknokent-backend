@@ -48,7 +48,7 @@ spring:
   task:
     scheduling:
       pool:
-        size: 3
+        size: 6
 
   data:
     redis:
@@ -142,6 +142,18 @@ app:
     region: ${AWS_REGION:eu-central-1}
     from: ${MAIL_FROM:}
     public-url: ${APP_PUBLIC_URL:https://menton.com.tr}
+    # Mails coordinators and admins write to a program's people; off until a deployment turns it on.
+    center:
+      enabled: ${EMAIL_CENTER_ENABLED:false}
+      reply-to: ${EMAIL_CENTER_REPLY_TO:info@menton.com.tr}
+      # Comma-separated addresses and domains it may write to; "*" opens it to everybody, blank to nobody.
+      recipient-allowlist: ${EMAIL_CENTER_ALLOWLIST:simulator.amazonses.com}
+      rate-per-second: ${EMAIL_CENTER_RATE_PER_SECOND:10}
+      interval-ms: ${EMAIL_CENTER_INTERVAL_MS:1000}
+      max-recipients: ${EMAIL_CENTER_MAX_RECIPIENTS:1000}
+      configuration-set: ${EMAIL_CENTER_CONFIGURATION_SET:}
+      # Where bounces are read from; nothing is sent while this is "none".
+      bounce-source: ${EMAIL_CENTER_BOUNCE_SOURCE:none}
   realtime:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}

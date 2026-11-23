@@ -445,6 +445,14 @@ class UserDataEraser {
 				.setParameter("id", id)
 				.setParameter("name", fullName.trim().toLowerCase(Locale.ROOT))
 				.executeUpdate();
+		// The log of an e-mail keeps that somebody was written to, not who.
+		entityManager.createQuery(
+				"update EmailCampaignRecipient r set r.address = null, r.fullName = :deleted, "
+						+ "r.unsubscribeTokenHash = null where r.userId = :id or r.address = :email")
+				.setParameter("deleted", AppUser.DELETED_FULL_NAME)
+				.setParameter("id", id)
+				.setParameter("email", email)
+				.executeUpdate();
 		// A team that joined its program through the person's address keeps the invite row, without the address.
 		entityManager.createQuery(
 				"update ProgramTeamInvite i set i.leadEmail = :placeholder where lower(i.leadEmail) = :email")

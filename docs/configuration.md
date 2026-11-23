@@ -27,6 +27,11 @@ Never commit `.env`: it holds real keys.
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | Redis (no password in compose; set one in production). |
 | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3 and SES. |
 | `MAIL_FROM` | SES sender; empty sends no e-mail. |
+| `EMAIL_CENTER_ENABLED` | Coordinators' and admins' mails to a program's people. Off by default. |
+| `EMAIL_CENTER_ALLOWLIST` | Addresses and domains the email center may write to; `*` is everybody, blank nobody. |
+| `EMAIL_CENTER_REPLY_TO` | Reply-To of an admin's mail; a coordinator's mail is answered to the coordinator. |
+| `EMAIL_CENTER_BOUNCE_SOURCE` | `none` (sending refused), `suppression-list` or `ses-events`. |
+| `EMAIL_CENTER_CONFIGURATION_SET`, `EMAIL_CENTER_RATE_PER_SECOND`, `EMAIL_CENTER_MAX_RECIPIENTS` | SES configuration set, mails per second, and the longest list. |
 
 ## Sign-in
 
