@@ -673,7 +673,8 @@ class EmailCenterIntegrationTest {
 			assertThat(row.status()).isEqualTo(EmailRecipientStatus.SKIPPED);
 			assertThat(row.errorCode()).isEqualTo("STOPPED");
 		});
-		assertThatThrownBy(() -> service.stop(coordinator.getId(), idOf(mail))).isInstanceOf(ConflictException.class);
+		assertThat(service.stop(admin.getId(), idOf(mail)).campaign().stoppedAt())
+				.isEqualTo(stopped.campaign().stoppedAt());
 		assertThatThrownBy(() -> service.send(coordinator.getId(), idOf(mail), confirm(mail, Set.of(), 1)))
 				.isInstanceOf(ConflictException.class);
 		assertThatThrownBy(() -> service.review(coordinator.getId(), idOf(mail)))
@@ -724,6 +725,18 @@ class EmailCenterIntegrationTest {
 		assertThat(sentToPeople()).isEmpty();
 		assertThat(only(mail).getStatus()).isEqualTo(EmailRecipientStatus.SKIPPED);
 		assertThat(only(mail).getErrorCode()).isEqualTo("EXPIRED");
+		assertThat(service.get(coordinator.getId(), idOf(mail)).campaign().status())
+				.isEqualTo(EmailCampaignStatus.SENT);
+		scheduler.alertProblems();
+		assertThat(alertsFor(coordinator)).hasSize(1);
+	}
+
+	@Test
+	void aMailThatIsAlreadyOutCannotBeStopped() {
+		EmailCampaignResponse.Detail mail = confirmed();
+		sendDue();
+
+		assertThatThrownBy(() -> service.stop(coordinator.getId(), idOf(mail))).isInstanceOf(ConflictException.class);
 		assertThat(service.get(coordinator.getId(), idOf(mail)).campaign().status())
 				.isEqualTo(EmailCampaignStatus.SENT);
 	}

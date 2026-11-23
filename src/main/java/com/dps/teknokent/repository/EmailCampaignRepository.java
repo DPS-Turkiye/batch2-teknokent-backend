@@ -23,6 +23,13 @@ public interface EmailCampaignRepository extends JpaRepository<EmailCampaign, UU
 
 	List<EmailCampaign> findTop100ByCreatedByOrderByCreatedAtDesc(UUID createdBy);
 
+	@Query("""
+			SELECT c.id FROM EmailCampaign c
+			WHERE c.status = com.dps.teknokent.domain.EmailCampaignStatus.SENDING AND c.startsAt < :startedBefore
+			ORDER BY c.id
+			""")
+	List<UUID> findSendingStartedBefore(@Param("startedBefore") Instant startedBefore);
+
 	/** Only the two columns: an alert may be written to the same mail meanwhile. */
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("""

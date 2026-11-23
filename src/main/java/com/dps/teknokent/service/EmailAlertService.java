@@ -13,6 +13,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.EmailRecipientStatus;
+import com.dps.teknokent.domain.EmailSkipReason;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -25,7 +26,8 @@ import com.dps.teknokent.util.Texts;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Tells a mail's sender and the admins, in the app, that some of it failed, bounced or was reported as spam. One
+ * Tells a mail's sender and the admins, in the app, that some of it failed, bounced, was reported as spam or waited too
+ * long to be sent. One
  * notification per mail at most every ten minutes, with the total so far; it names no recipient.
  */
 @Slf4j
@@ -74,7 +76,7 @@ public class EmailAlertService {
 	public void alertProblems() {
 		Instant now = clock.instant();
 		for (UUID id : recipientRepository.findCampaignsToAlert(now.minus(WATCHED), now.minus(QUIET),
-				EmailRecipientStatus.PROBLEMS)) {
+				EmailRecipientStatus.PROBLEMS, EmailSkipReason.EXPIRED.name())) {
 			try {
 				transaction.executeWithoutResult(status -> campaignRepository.findByIdForUpdate(id)
 						.ifPresent(campaign -> alert(campaign, now)));
@@ -85,8 +87,8 @@ public class EmailAlertService {
 	}
 
 	private void alert(EmailCampaign campaign, Instant now) {
-		int problems = Math.toIntExact(recipientRepository.countByCampaignIdAndStatusIn(
-				campaign.getId(), EmailRecipientStatus.PROBLEMS));
+		int problems = Math.toIntExact(recipientRepository.countProblems(
+				campaign.getId(), EmailRecipientStatus.PROBLEMS, EmailSkipReason.EXPIRED.name()));
 		Map<UUID, AppUser> readers = new LinkedHashMap<>();
 		appUserRepository.findById(campaign.getCreatedBy())
 				.filter(sender -> sender.getStatus() == UserAccountStatus.APPROVED)

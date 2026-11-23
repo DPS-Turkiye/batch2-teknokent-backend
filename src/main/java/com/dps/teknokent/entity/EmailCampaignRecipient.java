@@ -3,6 +3,8 @@ package com.dps.teknokent.entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.hibernate.annotations.DynamicUpdate;
+
 import com.dps.teknokent.domain.EmailExclusion;
 import com.dps.teknokent.domain.EmailRecipientKind;
 import com.dps.teknokent.domain.EmailRecipientStatus;
@@ -20,6 +22,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /** One person on a mail's reviewed list: who they were when it was reviewed, and what became of their mail. */
+// Only what changed is written: another job (an alert, an erasure) may write the same row meanwhile.
+@DynamicUpdate
 @Entity
 @Table(name = "email_campaign_recipient", uniqueConstraints = {
 		@UniqueConstraint(name = "uq_email_campaign_recipient_address", columnNames = { "campaign_id", "address" }),

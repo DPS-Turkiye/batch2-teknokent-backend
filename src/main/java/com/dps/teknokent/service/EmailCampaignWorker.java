@@ -136,8 +136,7 @@ public class EmailCampaignWorker {
 	public void run() {
 		Instant now = clock.instant();
 		// Also while nothing may leave: what waited through an outage must not go out when it is over.
-		transaction.executeWithoutResult(status -> recipientRepository.skipExpired(
-				now.minus(settings.getMaxWait()), EmailSkipReason.EXPIRED.name()));
+		cancelExpired(now);
 		if (!settings.canSend() || !bounceMonitor.hearing()) {
 			finishCampaigns();
 			return;
@@ -156,6 +155,21 @@ public class EmailCampaignWorker {
 			}
 		}
 		finishCampaigns();
+	}
+
+	/** Campaign first, then its rows: the order a stop and a claim lock in too. */
+	private void cancelExpired(Instant now) {
+		for (UUID id : campaignRepository.findSendingStartedBefore(now.minus(settings.getMaxWait()))) {
+			try {
+				transaction.executeWithoutResult(status -> {
+					if (lock(id) != null) {
+						recipientRepository.skipWaiting(id, EmailSkipReason.EXPIRED.name());
+					}
+				});
+			} catch (RuntimeException failure) {
+				log.error("What waited too long in e-mail {} could not be cancelled", id, failure);
+			}
+		}
 	}
 
 	private void sendOne(UUID id) {

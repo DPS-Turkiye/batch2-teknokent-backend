@@ -42,14 +42,22 @@ public interface EmailCampaignRecipientRepository extends JpaRepository<EmailCam
 			WHERE c.confirmedAt >= :confirmedSince
 				AND (c.lastAlertAt IS NULL OR c.lastAlertAt <= :quietSince)
 				AND c.alertedProblems < (SELECT COUNT(r) FROM EmailCampaignRecipient r
-					WHERE r.campaignId = c.id AND r.status IN :problems)
+					WHERE r.campaignId = c.id AND (r.status IN :problems OR r.errorCode = :expired))
 			""")
 	List<UUID> findCampaignsToAlert(
 			@Param("confirmedSince") Instant confirmedSince,
 			@Param("quietSince") Instant quietSince,
-			@Param("problems") Collection<EmailRecipientStatus> problems);
+			@Param("problems") Collection<EmailRecipientStatus> problems,
+			@Param("expired") String expired);
 
-	long countByCampaignIdAndStatusIn(UUID campaignId, Collection<EmailRecipientStatus> statuses);
+	@Query("""
+			SELECT COUNT(r) FROM EmailCampaignRecipient r
+			WHERE r.campaignId = :campaignId AND (r.status IN :problems OR r.errorCode = :expired)
+			""")
+	long countProblems(
+			@Param("campaignId") UUID campaignId,
+			@Param("problems") Collection<EmailRecipientStatus> problems,
+			@Param("expired") String expired);
 
 	@Query("""
 			SELECT r.campaignId AS campaignId, r.status AS status, COUNT(r) AS total
@@ -85,16 +93,6 @@ public interface EmailCampaignRecipientRepository extends JpaRepository<EmailCam
 			WHERE r.campaignId = :campaignId AND r.status = com.dps.teknokent.domain.EmailRecipientStatus.PENDING
 			""")
 	int skipWaiting(@Param("campaignId") UUID campaignId, @Param("reason") String reason);
-
-	@Modifying(clearAutomatically = true, flushAutomatically = true)
-	@Query("""
-			UPDATE EmailCampaignRecipient r
-			SET r.status = com.dps.teknokent.domain.EmailRecipientStatus.SKIPPED, r.errorCode = :reason,
-				r.nextAttemptAt = NULL
-			WHERE r.status = com.dps.teknokent.domain.EmailRecipientStatus.PENDING AND r.campaignId IN
-				(SELECT c.id FROM EmailCampaign c WHERE c.startsAt < :startedBefore)
-			""")
-	int skipExpired(@Param("startedBefore") Instant startedBefore, @Param("reason") String reason);
 
 	/** For a row nothing left for: it failed before SES was asked. */
 	@Modifying(clearAutomatically = true, flushAutomatically = true)

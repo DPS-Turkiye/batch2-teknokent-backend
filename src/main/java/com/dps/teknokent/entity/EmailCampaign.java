@@ -3,6 +3,8 @@ package com.dps.teknokent.entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.hibernate.annotations.DynamicUpdate;
+
 import com.dps.teknokent.domain.EmailAudience;
 import com.dps.teknokent.domain.EmailCampaignStatus;
 
@@ -17,6 +19,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /** One mail written in the email center to the people of a program. */
+// Only what changed is written: another job (an alert, an erasure) may write the same row meanwhile.
+@DynamicUpdate
 @Entity
 @Table(name = "email_campaign")
 @Getter

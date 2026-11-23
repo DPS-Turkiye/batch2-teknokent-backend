@@ -293,18 +293,24 @@ public class EmailCampaignService {
 	 */
 	@Transactional
 	public EmailCampaignResponse.Detail stop(UUID actorId, UUID id) {
-		requireReadable(actorId, id);
+		requireSender(actorId);
+		// Locked before anything else reads it, so the status below is the current one.
 		EmailCampaign campaign = campaignRepository.findByIdForUpdate(id).orElseThrow(() -> notFound(id));
+		requireReadable(actorId, id);
+		if (campaign.getStatus() == EmailCampaignStatus.STOPPED) {
+			return detail(campaign);
+		}
 		if (campaign.getStatus() != EmailCampaignStatus.SENDING) {
 			throw new ConflictException(Texts.forRequest("error.emailCannotStop"));
 		}
-		recipientRepository.skipWaiting(id, EmailSkipReason.STOPPED.name());
 		Instant now = clock.instant();
 		campaign.setStatus(EmailCampaignStatus.STOPPED);
 		campaign.setStoppedAt(now);
 		campaign.setStoppedBy(actorId);
 		campaign.setFinishedAt(now);
-		return detail(campaignRepository.save(campaign));
+		campaignRepository.saveAndFlush(campaign);
+		recipientRepository.skipWaiting(id, EmailSkipReason.STOPPED.name());
+		return detail(campaign);
 	}
 
 	private List<EmailAudienceResolver.Candidate> resolve(EmailCampaign campaign) {

@@ -1,6 +1,7 @@
 package com.dps.teknokent.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -36,11 +37,13 @@ import com.dps.teknokent.entity.EmailCampaign;
 import com.dps.teknokent.entity.EmailCampaignRecipient;
 import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.entity.ProgramMentor;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.service.EmailCampaignService;
 import com.dps.teknokent.service.EmailCampaignWorker;
 import com.dps.teknokent.service.EmailCenterScheduler;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.services.sesv2.SesV2Client;
 import software.amazon.awssdk.services.sesv2.model.SendEmailRequest;
@@ -124,6 +127,39 @@ class EmailStopRaceIntegrationTest {
 
 		verify(sesClient, times(1)).sendEmail(any(SendEmailRequest.class));
 		assertThat(statuses()).containsOnly(EmailRecipientStatus.SKIPPED);
+	}
+
+	@Test
+	void aStopThatWaitedForTheLockSeesThatTheMailIsAlreadyOut() throws Exception {
+		CountDownLatch locked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		CompletableFuture<Void> finish = CompletableFuture.runAsync(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					EmailCampaign campaign = entityManager.find(EmailCampaign.class, campaignId,
+							LockModeType.PESSIMISTIC_WRITE);
+					campaign.setStatus(EmailCampaignStatus.SENT);
+					entityManager.flush();
+					locked.countDown();
+					await(release);
+				}));
+		assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+		CompletableFuture<Object> stop = CompletableFuture.supplyAsync(
+				() -> service.stop(coordinator.getId(), campaignId));
+		Thread.sleep(300);
+		release.countDown();
+		finish.get(10, TimeUnit.SECONDS);
+
+		assertThatThrownBy(() -> stop.get(10, TimeUnit.SECONDS)).hasCauseInstanceOf(ConflictException.class);
+		assertThat(service.get(coordinator.getId(), campaignId).campaign().status())
+				.isEqualTo(EmailCampaignStatus.SENT);
+	}
+
+	private static void await(CountDownLatch latch) {
+		try {
+			assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	private void stopWhileSesIsAsked() throws Exception {
