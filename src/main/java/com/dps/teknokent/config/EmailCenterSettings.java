@@ -46,7 +46,7 @@ public class EmailCenterSettings {
 				.filter(entry -> !entry.isEmpty())
 				.collect(Collectors.toUnmodifiableSet());
 		this.ratePerSecond = Math.max(1, ratePerSecond);
-		this.maxRecipients = maxRecipients;
+		this.maxRecipients = Math.max(1, maxRecipients);
 		this.configurationSet = configurationSet.trim();
 		this.bounceSource = EmailBounceSource.parse(bounceSource);
 		this.eventsQueueUrl = eventsQueueUrl.trim();
@@ -55,7 +55,7 @@ public class EmailCenterSettings {
 	/** Whether the deployment may write to the (normalized) address; a listed domain does not cover subdomains. */
 	public boolean mayWriteTo(String address) {
 		return allowlist.contains(EVERYBODY) || allowlist.contains(address)
-				|| allowlist.contains(address.substring(address.indexOf('@') + 1));
+				|| allowlist.contains(address.substring(address.lastIndexOf('@') + 1));
 	}
 
 	/** Whether bounces are read from somewhere; a source that is not fully configured does not count. */

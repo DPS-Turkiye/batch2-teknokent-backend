@@ -141,6 +141,7 @@ class EmailCenterIntegrationTest {
 
 		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(off), 2));
 		worker.run();
+		worker.run();
 
 		List<SendEmailRequest> sent = sentToPeople();
 		assertThat(sent.stream().map(request -> request.destination().toAddresses().getFirst()))
@@ -206,6 +207,73 @@ class EmailCenterIntegrationTest {
 				confirm(reviewed, Set.of(UUID.randomUUID()), 1))).isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> service.send(coordinator.getId(), idOf(reviewed),
 				new SendEmailCampaignRequest(null, "older", Set.of(), 1))).isInstanceOf(ConflictException.class);
+	}
+
+	@Test
+	void anOlderWindowDoesNotUndoTheNewerReview() {
+		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.PARTICIPANTS);
+
+		assertThatThrownBy(() -> service.send(coordinator.getId(), idOf(reviewed),
+				new SendEmailCampaignRequest(null, "older", Set.of(), 1))).isInstanceOf(ConflictException.class);
+
+		assertThat(service.get(coordinator.getId(), idOf(reviewed)).reviewDigest())
+				.isEqualTo(reviewed.reviewDigest());
+	}
+
+	@Test
+	void whoLeftOrChangedTheirAddressSinceTheReviewIsSkipped() {
+		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.EVERYONE);
+		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 2));
+		removeAll(ProgramMentor.class);
+		entityManager.find(AppUser.class, founder.getId()).setEmail("new@allowed.test");
+		entityManager.flush();
+		entityManager.clear();
+		worker.run();
+		worker.run();
+
+		assertThat(sentToPeople()).isEmpty();
+		assertThat(service.get(coordinator.getId(), idOf(reviewed)).recipients())
+				.extracting(EmailCampaignResponse.Recipient::errorCode)
+				.containsExactlyInAnyOrder("LEFT_THE_PROGRAM", "ADDRESS_CHANGED");
+	}
+
+	@Test
+	void aListedPersonTheFounderTookOffAgainIsSkipped() {
+		listed(team, "Davetli Kişi", "invited@allowed.test");
+		entityManager.flush();
+		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.UNJOINED);
+		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
+		removeAll(OrganizationPendingMember.class);
+		worker.run();
+
+		assertThat(sentToPeople()).isEmpty();
+		assertThat(only(reviewed).getErrorCode()).isEqualTo("LEFT_THE_PROGRAM");
+	}
+
+	@Test
+	void theListDoesNotTellWhatAListedStrangersMailboxAnswered() {
+		listed(team, "Davetli Kişi", "invited@allowed.test");
+		suppressionService.suppress("invited@allowed.test", EmailSuppressionReason.COMPLAINT);
+		entityManager.flush();
+
+		assertThat(reviewed(coordinator, EmailAudience.UNJOINED).recipients())
+				.extracting(EmailCampaignResponse.Recipient::exclusion).containsExactly(EmailExclusion.NOT_ELIGIBLE);
+	}
+
+	@Test
+	void anUnsubscribeOutranksABounceInAnyOrder() {
+		suppressionService.suppress("mentor@allowed.test", EmailSuppressionReason.HARD_BOUNCE);
+		suppressionService.suppress("mentor@allowed.test", EmailSuppressionReason.UNSUBSCRIBED);
+		suppressionService.suppress("mentor@allowed.test", EmailSuppressionReason.COMPLAINT);
+
+		assertThat(reviewed(coordinator, EmailAudience.MENTORS).recipients())
+				.extracting(EmailCampaignResponse.Recipient::exclusion).containsExactly(EmailExclusion.UNSUBSCRIBED);
+	}
+
+	private void removeAll(Class<?> type) {
+		entityManager.createQuery("select e from " + type.getSimpleName() + " e", type).getResultList()
+				.forEach(entityManager::remove);
+		entityManager.flush();
 	}
 
 	@Test

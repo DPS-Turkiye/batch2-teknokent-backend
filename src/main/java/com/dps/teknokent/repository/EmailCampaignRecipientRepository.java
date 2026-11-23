@@ -33,23 +33,23 @@ public interface EmailCampaignRecipientRepository extends JpaRepository<EmailCam
 
 	Optional<EmailCampaignRecipient> findByUnsubscribeTokenHash(String unsubscribeTokenHash);
 
-	List<EmailCampaignRecipient> findByAddressAndStatusInAndSentAtAfter(
-			String address, Collection<EmailRecipientStatus> statuses, Instant sentAfter);
+	Optional<EmailCampaignRecipient> findFirstByAddressAndStatusAndSentAtAfterOrderBySentAtDesc(
+			String address, EmailRecipientStatus status, Instant sentAfter);
 
 	/** The mails with problems their sender and the admins have not been told about yet. */
 	@Query("""
 			SELECT c.id FROM EmailCampaign c
-			WHERE (c.lastAlertAt IS NULL OR c.lastAlertAt <= :quietSince)
+			WHERE c.confirmedAt >= :confirmedSince
+				AND (c.lastAlertAt IS NULL OR c.lastAlertAt <= :quietSince)
 				AND c.alertedProblems < (SELECT COUNT(r) FROM EmailCampaignRecipient r
 					WHERE r.campaignId = c.id AND r.status IN :problems)
 			""")
 	List<UUID> findCampaignsToAlert(
+			@Param("confirmedSince") Instant confirmedSince,
 			@Param("quietSince") Instant quietSince,
 			@Param("problems") Collection<EmailRecipientStatus> problems);
 
 	long countByCampaignIdAndStatusIn(UUID campaignId, Collection<EmailRecipientStatus> statuses);
-
-	boolean existsByCampaignIdAndStatusIn(UUID campaignId, Collection<EmailRecipientStatus> statuses);
 
 	@Query("""
 			SELECT r.campaignId AS campaignId, r.status AS status, COUNT(r) AS total
@@ -75,6 +75,15 @@ public interface EmailCampaignRecipientRepository extends JpaRepository<EmailCam
 			WHERE r.id = :id AND r.status = com.dps.teknokent.domain.EmailRecipientStatus.PENDING
 			""")
 	int claim(@Param("id") UUID id, @Param("now") Instant now);
+
+	/** For a row nothing left for: it failed before SES was asked. */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+			UPDATE EmailCampaignRecipient r
+			SET r.status = com.dps.teknokent.domain.EmailRecipientStatus.FAILED, r.errorCode = :code
+			WHERE r.id = :id AND r.status = com.dps.teknokent.domain.EmailRecipientStatus.PENDING
+			""")
+	int failWaiting(@Param("id") UUID id, @Param("code") String code);
 
 	/** Whether SES took a mail whose outcome was never recorded is unknown, so it is never sent again by itself. */
 	@Modifying(clearAutomatically = true, flushAutomatically = true)

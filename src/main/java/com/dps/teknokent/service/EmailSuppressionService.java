@@ -70,17 +70,10 @@ public class EmailSuppressionService {
 	@Transactional
 	public void suppress(String address, EmailSuppressionReason reason) {
 		String hash = Sha256.hex(address);
-		EmailSuppression row = suppressionRepository.findByAddressHash(hash).orElse(null);
-		if (row == null) {
-			row = new EmailSuppression();
-			row.setId(UUID.randomUUID());
-			row.setAddressHash(hash);
-			row.setCreatedAt(clock.instant());
-		} else if (reason != EmailSuppressionReason.UNSUBSCRIBED) {
-			return;
+		int added = suppressionRepository.addIfMissing(UUID.randomUUID(), hash, reason.name(), clock.instant());
+		if (added == 0 && reason == EmailSuppressionReason.UNSUBSCRIBED) {
+			suppressionRepository.changeReason(hash, reason);
 		}
-		row.setReason(reason);
-		suppressionRepository.save(row);
 	}
 
 	/** Says nothing about whether the token is known, so the link cannot be used to probe. */

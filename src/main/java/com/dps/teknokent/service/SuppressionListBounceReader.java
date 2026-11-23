@@ -71,6 +71,11 @@ class SuppressionListBounceReader implements EmailBounceReader {
 	}
 
 	@Override
+	public boolean asksPerAddress() {
+		return true;
+	}
+
+	@Override
 	public boolean refuses(String address) {
 		try {
 			sesClient.getSuppressedDestination(

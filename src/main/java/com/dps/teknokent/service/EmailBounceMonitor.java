@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 import com.dps.teknokent.config.EmailCenterSettings;
 
 import lombok.extern.slf4j.Slf4j;
-import software.amazon.awssdk.core.exception.SdkException;
 
 /**
  * Whether bounces are really being heard. A source that is configured but cannot be read (a missing permission, for
@@ -44,7 +43,8 @@ class EmailBounceMonitor {
 		try {
 			readers.forEach(EmailBounceReader::read);
 			lastRead = clock.instant();
-		} catch (SdkException unreadable) {
+		} catch (RuntimeException unreadable) {
+			// The class only: an SES error text can name an address.
 			log.warn("Bounces could not be read, so e-mails wait: {}", unreadable.getClass().getSimpleName());
 		}
 	}
@@ -53,6 +53,11 @@ class EmailBounceMonitor {
 		Instant read = lastRead;
 		return settings.hearsBounces() && !readers.isEmpty() && read != null
 				&& read.isAfter(clock.instant().minus(FRESH));
+	}
+
+	/** How many mails one run may send when each needs a question to SES first. */
+	int limit(int rate) {
+		return readers.stream().anyMatch(EmailBounceReader::asksPerAddress) ? 1 : rate;
 	}
 
 	boolean refuses(String address) {

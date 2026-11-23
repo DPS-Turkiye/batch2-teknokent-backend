@@ -2,9 +2,7 @@ package com.dps.teknokent.service;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.util.EnumSet;
 import java.util.Optional;
-import java.util.Set;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,8 +21,6 @@ public class EmailDeliveryEventService {
 
 	/** How far back an address on SES's suppression list is matched to a mail. */
 	static final Duration MATCH_WINDOW = Duration.ofDays(14);
-	private static final Set<EmailRecipientStatus> OUT = Set.copyOf(
-			EnumSet.of(EmailRecipientStatus.SENT, EmailRecipientStatus.DELIVERED));
 
 	private final EmailCampaignRecipientRepository recipientRepository;
 	private final EmailSuppressionService suppressionService;
@@ -56,7 +52,7 @@ public class EmailDeliveryEventService {
 
 	/**
 	 * An address SES no longer delivers to: not written to again, and the mail that caused it (or, when SES does not
-	 * name one, the address's last mails) is marked.
+	 * name one, the address's last mail) is marked.
 	 */
 	@Transactional
 	public void undeliverable(String address, EmailDeliveryEvent event, @Nullable String messageId) {
@@ -66,8 +62,9 @@ public class EmailDeliveryEventService {
 		// With a message id that is not ours, another mail caused it: the address is dead, but no mail of ours is
 		// blamed.
 		if (messageId == null) {
-			recipientRepository.findByAddressAndStatusInAndSentAtAfter(address, OUT,
-					clock.instant().minus(MATCH_WINDOW)).forEach(row -> apply(row, event));
+			recipientRepository.findFirstByAddressAndStatusAndSentAtAfterOrderBySentAtDesc(address,
+					EmailRecipientStatus.SENT, clock.instant().minus(MATCH_WINDOW))
+					.ifPresent(row -> apply(row, event));
 		}
 		suppressionService.suppress(address, reasonOf(event));
 	}

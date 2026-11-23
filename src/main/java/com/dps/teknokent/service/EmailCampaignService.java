@@ -249,8 +249,11 @@ public class EmailCampaignService {
 			throw new ConflictException(Texts.forRequest("error.emailTestNeeded"), TEST_NEEDED);
 		}
 		String reviewed = campaign.getReviewDigest();
-		if (reviewed == null || !reviewed.equals(request.reviewDigest())
-				|| !reviewed.equals(digest(campaign, resolve(campaign)))) {
+		if (reviewed != null && !reviewed.equals(request.reviewDigest())) {
+			// Confirmed from an older window; the newer review stays as it is.
+			throw new ConflictException(Texts.forRequest("error.emailListChanged"), LIST_CHANGED);
+		}
+		if (reviewed == null || !reviewed.equals(digest(campaign, resolve(campaign)))) {
 			dropReview(campaign);
 			campaignRepository.save(campaign);
 			throw new ConflictException(Texts.forRequest("error.emailListChanged"), LIST_CHANGED);

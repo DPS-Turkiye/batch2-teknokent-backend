@@ -173,16 +173,21 @@ class EmailAudienceResolver {
 
 	private static Candidate account(AppUser user, @Nullable Organization team, EmailRecipientKind kind) {
 		String address = EmailDomains.normalizeEmail(user.getEmail());
+		boolean usable = EmailDomains.isEmail(address);
+		EmailExclusion exclusion = usable ? null : EmailExclusion.NO_ADDRESS;
+		if (user.getStatus() != UserAccountStatus.APPROVED) {
+			exclusion = EmailExclusion.ACCOUNT_NOT_APPROVED;
+		}
 		return new Candidate(
 				user.getId(),
 				team == null ? null : team.getId(),
 				null,
 				kind,
-				address,
+				usable ? address : null,
 				user.getFullName(),
 				team == null ? null : Organization.visibleName(team),
 				user.getStatus(),
-				user.getStatus() == UserAccountStatus.APPROVED ? null : EmailExclusion.ACCOUNT_NOT_APPROVED);
+				exclusion);
 	}
 
 	private Candidate withDeliveryLimits(Candidate candidate, Map<String, EmailSuppressionReason> suppressed) {
@@ -192,7 +197,10 @@ class EmailAudienceResolver {
 		}
 		EmailExclusion exclusion = null;
 		EmailSuppressionReason reason = suppressed.get(address);
-		if (reason == EmailSuppressionReason.UNSUBSCRIBED) {
+		if (reason != null && candidate.kind() == EmailRecipientKind.UNJOINED) {
+			// A founder can list any address, so the list must not tell what somebody else's mailbox answered.
+			exclusion = EmailExclusion.NOT_ELIGIBLE;
+		} else if (reason == EmailSuppressionReason.UNSUBSCRIBED) {
 			exclusion = EmailExclusion.UNSUBSCRIBED;
 		} else if (reason != null) {
 			exclusion = EmailExclusion.UNDELIVERABLE;

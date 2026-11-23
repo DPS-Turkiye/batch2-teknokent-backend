@@ -16,17 +16,17 @@ public class EmailCenterScheduler {
 	private final EmailAlertService alertService;
 	private final EmailBounceMonitor bounceMonitor;
 
-	@Scheduled(fixedDelayString = "${app.mail.center.interval-ms:1000}")
+	@Scheduled(initialDelayString = "${app.mail.center.interval-ms:1000}", fixedDelayString = "${app.mail.center.interval-ms:1000}")
 	public void sendDue() {
 		worker.run();
 	}
 
-	@Scheduled(fixedDelayString = "${app.mail.center.bounce-interval-ms:120000}")
+	@Scheduled(initialDelayString = "${app.mail.center.bounce-interval-ms:120000}", fixedDelayString = "${app.mail.center.bounce-interval-ms:120000}")
 	public void readBounces() {
 		bounceMonitor.read();
 	}
 
-	@Scheduled(fixedDelayString = "${app.mail.center.alert-interval-ms:60000}")
+	@Scheduled(initialDelayString = "${app.mail.center.alert-interval-ms:60000}", fixedDelayString = "${app.mail.center.alert-interval-ms:60000}")
 	public void alertProblems() {
 		alertService.alertProblems();
 	}

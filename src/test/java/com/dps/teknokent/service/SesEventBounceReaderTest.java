@@ -49,6 +49,13 @@ class SesEventBounceReaderTest {
 	}
 
 	@Test
+	void anOldReportAboutAMailTheLogDoesNotKnowIsDropped() {
+		queue("{\"eventType\":\"Bounce\",\"mail\":{\"messageId\":\"m-3\",\"timestamp\":\"2026-01-01T00:00:00Z\"}}");
+		reader("https://queue").read();
+		verify(sqsClient, times(1)).deleteMessage(any(DeleteMessageRequest.class));
+	}
+
+	@Test
 	void anUnreadableMessageStaysAndAnUninterestingOneGoes() {
 		queue("not json");
 		reader("https://queue").read();

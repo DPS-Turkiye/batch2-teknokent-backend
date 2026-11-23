@@ -17,9 +17,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.config.EmailCenterSettings;
-import com.dps.teknokent.domain.EmailCampaignStatus;
 import com.dps.teknokent.domain.EmailRecipientStatus;
 import com.dps.teknokent.domain.EmailSuppressionReason;
+import com.dps.teknokent.domain.ProgramMentorStatus;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -29,23 +29,29 @@ import com.dps.teknokent.entity.Program;
 import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.EmailCampaignRecipientRepository;
 import com.dps.teknokent.repository.EmailCampaignRepository;
+import com.dps.teknokent.repository.OrganizationPendingMemberRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
+import com.dps.teknokent.repository.ProgramMentorRepository;
 import com.dps.teknokent.repository.ProgramRepository;
+import com.dps.teknokent.repository.ProgramStartupRepository;
+import com.dps.teknokent.util.EmailDomains;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.RandomTokens;
 import com.dps.teknokent.util.Sha256;
 
+import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.exception.SdkException;
 
 /**
  * Sends confirmed mails, one per person, at most the deployment's rate per run. Each row is claimed in its own
  * transaction before SES is called, so a crash leaves a row that is known to be in doubt and is never sent twice.
- * Switching the email center off stops it between two mails; what waits stays waiting.
+ * Switching the email center off stops it within a run (one second); what waits stays waiting.
  */
+@Slf4j
 @Service
 public class EmailCampaignWorker {
 
-	static final int MAX_ATTEMPTS = 3;
+	static final int MAX_ATTEMPTS = 8;
 	static final Duration IN_DOUBT_AFTER = Duration.ofMinutes(5);
 	private static final Duration RETRY_AFTER = Duration.ofMinutes(1);
 	private static final int TOKEN_BYTES = 32;
@@ -57,6 +63,9 @@ public class EmailCampaignWorker {
 	private final AppUserRepository appUserRepository;
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
+	private final ProgramStartupRepository programStartupRepository;
+	private final ProgramMentorRepository programMentorRepository;
+	private final OrganizationPendingMemberRepository pendingMemberRepository;
 	private final EmailSuppressionService suppressionService;
 	private final EmailComposer composer;
 	private final EmailCenterMailer mailer;
@@ -72,6 +81,9 @@ public class EmailCampaignWorker {
 			AppUserRepository appUserRepository,
 			ProgramRepository programRepository,
 			ProgramCoordinatorRepository programCoordinatorRepository,
+			ProgramStartupRepository programStartupRepository,
+			ProgramMentorRepository programMentorRepository,
+			OrganizationPendingMemberRepository pendingMemberRepository,
 			EmailSuppressionService suppressionService,
 			EmailComposer composer,
 			EmailCenterMailer mailer,
@@ -79,7 +91,8 @@ public class EmailCampaignWorker {
 			EmailCenterSettings settings,
 			PlatformTransactionManager transactionManager) {
 		this(campaignRepository, recipientRepository, appUserRepository, programRepository,
-				programCoordinatorRepository, suppressionService, composer, mailer, bounceMonitor, settings,
+				programCoordinatorRepository, programStartupRepository, programMentorRepository,
+				pendingMemberRepository, suppressionService, composer, mailer, bounceMonitor, settings,
 				transactionManager,
 				Clock.systemUTC());
 	}
@@ -90,6 +103,9 @@ public class EmailCampaignWorker {
 			AppUserRepository appUserRepository,
 			ProgramRepository programRepository,
 			ProgramCoordinatorRepository programCoordinatorRepository,
+			ProgramStartupRepository programStartupRepository,
+			ProgramMentorRepository programMentorRepository,
+			OrganizationPendingMemberRepository pendingMemberRepository,
 			EmailSuppressionService suppressionService,
 			EmailComposer composer,
 			EmailCenterMailer mailer,
@@ -102,6 +118,9 @@ public class EmailCampaignWorker {
 		this.appUserRepository = appUserRepository;
 		this.programRepository = programRepository;
 		this.programCoordinatorRepository = programCoordinatorRepository;
+		this.programStartupRepository = programStartupRepository;
+		this.programMentorRepository = programMentorRepository;
+		this.pendingMemberRepository = pendingMemberRepository;
 		this.suppressionService = suppressionService;
 		this.composer = composer;
 		this.mailer = mailer;
@@ -119,9 +138,16 @@ public class EmailCampaignWorker {
 		Instant now = clock.instant();
 		transaction.executeWithoutResult(
 				status -> recipientRepository.failStale(now.minus(IN_DOUBT_AFTER), "NO_ANSWER"));
-		List<UUID> due = recipientRepository.findDueIds(now, PageRequest.of(0, settings.getRatePerSecond()));
+		List<UUID> due = recipientRepository.findDueIds(now,
+				PageRequest.of(0, bounceMonitor.limit(settings.getRatePerSecond())));
 		for (UUID id : due) {
-			sendOne(id);
+			try {
+				sendOne(id);
+			} catch (RuntimeException failure) {
+				// One row that cannot be prepared must not hold up everybody behind it.
+				log.error("E-mail {} could not be sent", id, failure);
+				transaction.executeWithoutResult(status -> recipientRepository.failWaiting(id, "INTERNAL"));
+			}
 		}
 		finishCampaigns();
 	}
@@ -184,10 +210,31 @@ public class EmailCampaignWorker {
 		if (row.getUserId() != null && (reader == null || reader.getStatus() != UserAccountStatus.APPROVED)) {
 			return "ACCOUNT_NOT_APPROVED";
 		}
+		if (reader != null && !row.getAddress().equals(EmailDomains.normalizeEmail(reader.getEmail()))) {
+			return "ADDRESS_CHANGED";
+		}
+		if (!stillInAudience(row, program, reader)) {
+			return "LEFT_THE_PROGRAM";
+		}
 		if (suppressionService.isSuppressed(row.getAddress())) {
 			return "SUPPRESSED";
 		}
 		return settings.mayWriteTo(row.getAddress()) ? null : "NOT_ON_ALLOWLIST";
+	}
+
+	/** Whether the reason the person was on the reviewed list still holds. */
+	private boolean stillInAudience(EmailCampaignRecipient row, Program program, @Nullable AppUser reader) {
+		return switch (row.getKind()) {
+		case PARTICIPANT -> row.getOrganizationId() != null
+				&& programStartupRepository.findByProgramIdAndOrganizationId(program.getId(),
+						row.getOrganizationId()).isPresent();
+		case MENTOR -> reader != null && programMentorRepository
+				.findByProgramIdAndMentorId(program.getId(), reader.getId())
+				.filter(membership -> membership.getStatus() == ProgramMentorStatus.ACCEPTED)
+				.isPresent();
+		case UNJOINED -> row.getPendingMemberId() != null
+				&& pendingMemberRepository.existsById(row.getPendingMemberId());
+		};
 	}
 
 	private boolean maySend(AppUser sender, Program program) {
@@ -219,14 +266,6 @@ public class EmailCampaignWorker {
 	}
 
 	private void finishCampaigns() {
-		transaction.executeWithoutResult(status -> {
-			for (EmailCampaign campaign : campaignRepository.findByStatus(EmailCampaignStatus.SENDING)) {
-				if (!recipientRepository.existsByCampaignIdAndStatusIn(campaign.getId(), WAITING)) {
-					campaign.setStatus(EmailCampaignStatus.SENT);
-					campaign.setFinishedAt(clock.instant());
-					campaignRepository.save(campaign);
-				}
-			}
-		});
+		transaction.executeWithoutResult(status -> campaignRepository.finishDone(WAITING, clock.instant()));
 	}
 }
