@@ -2,6 +2,7 @@ package com.dps.teknokent.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doReturn;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -673,8 +675,9 @@ class EmailCenterIntegrationTest {
 			assertThat(row.status()).isEqualTo(EmailRecipientStatus.SKIPPED);
 			assertThat(row.errorCode()).isEqualTo("STOPPED");
 		});
+		// A second stop changes nothing; the database keeps microseconds, the clock may have more.
 		assertThat(service.stop(admin.getId(), idOf(mail)).campaign().stoppedAt())
-				.isEqualTo(stopped.campaign().stoppedAt());
+				.isCloseTo(stopped.campaign().stoppedAt(), within(1, ChronoUnit.MILLIS));
 		assertThatThrownBy(() -> service.send(coordinator.getId(), idOf(mail), confirm(mail, Set.of(), 1)))
 				.isInstanceOf(ConflictException.class);
 		assertThatThrownBy(() -> service.review(coordinator.getId(), idOf(mail)))
