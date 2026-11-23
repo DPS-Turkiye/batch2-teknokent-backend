@@ -31,8 +31,17 @@ class EmailCenterSettingsTest {
 		assertThatThrownBy(() -> settings("", "sometimes")).isInstanceOf(IllegalArgumentException.class);
 	}
 
+	@Test
+	void hearsBouncesOnlyFromAConfiguredSource() {
+		assertThat(settings("", "none").hearsBounces()).isFalse();
+		assertThat(settings("", "suppression-list").hearsBounces()).isTrue();
+		assertThat(settings("", "ses-events").hearsBounces()).isFalse();
+		assertThat(new EmailCenterSettings(true, "", "", "", 10, 1000, "set", "ses-events", "https://q")
+				.hearsBounces()).isTrue();
+	}
+
 	private static EmailCenterSettings settings(String allowlist, String bounceSource) {
-		return new EmailCenterSettings(true, "noreply@menton.test", "info@menton.test", allowlist, 10, 1000, "",
-				bounceSource);
+		return new EmailCenterSettings(true, "noreply@menton.test", "info@menton.test", allowlist, 10, 1000, "set",
+				bounceSource, "");
 	}
 }

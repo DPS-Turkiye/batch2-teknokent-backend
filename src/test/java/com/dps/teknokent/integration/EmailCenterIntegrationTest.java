@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -31,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.EmailAudience;
 import com.dps.teknokent.domain.EmailCampaignStatus;
+import com.dps.teknokent.domain.EmailDeliveryEvent;
 import com.dps.teknokent.domain.EmailExclusion;
 import com.dps.teknokent.domain.EmailRecipientStatus;
 import com.dps.teknokent.domain.EmailSuppressionReason;
@@ -43,6 +45,7 @@ import com.dps.teknokent.dto.requests.SendEmailCampaignRequest;
 import com.dps.teknokent.dto.responses.EmailCampaignResponse;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.EmailCampaignRecipient;
+import com.dps.teknokent.entity.Notification;
 import com.dps.teknokent.entity.Organization;
 import com.dps.teknokent.entity.OrganizationPendingMember;
 import com.dps.teknokent.entity.Program;
@@ -54,16 +57,27 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.service.EmailCampaignService;
 import com.dps.teknokent.service.EmailCampaignWorker;
+import com.dps.teknokent.service.EmailCenterScheduler;
+import com.dps.teknokent.service.EmailDeliveryEventService;
 import com.dps.teknokent.service.EmailSuppressionService;
 
 import jakarta.persistence.EntityManager;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.sesv2.SesV2Client;
+import software.amazon.awssdk.services.sesv2.model.GetSuppressedDestinationRequest;
+import software.amazon.awssdk.services.sesv2.model.GetSuppressedDestinationResponse;
+import software.amazon.awssdk.services.sesv2.model.ListSuppressedDestinationsRequest;
+import software.amazon.awssdk.services.sesv2.model.ListSuppressedDestinationsResponse;
 import software.amazon.awssdk.services.sesv2.model.MessageHeader;
+import software.amazon.awssdk.services.sesv2.model.NotFoundException;
 import software.amazon.awssdk.services.sesv2.model.SendEmailRequest;
 import software.amazon.awssdk.services.sesv2.model.SendEmailResponse;
 import software.amazon.awssdk.services.sesv2.model.SesV2Exception;
+import software.amazon.awssdk.services.sesv2.model.SuppressedDestination;
+import software.amazon.awssdk.services.sesv2.model.SuppressedDestinationAttributes;
+import software.amazon.awssdk.services.sesv2.model.SuppressedDestinationSummary;
+import software.amazon.awssdk.services.sesv2.model.SuppressionListReason;
 
 /** A mail from its draft to SES, which is a mock: nothing ever leaves. */
 @SpringBootTest
@@ -80,6 +94,10 @@ class EmailCenterIntegrationTest {
 	private EmailCampaignService service;
 	@Autowired
 	private EmailCampaignWorker worker;
+	@Autowired
+	private EmailCenterScheduler scheduler;
+	@Autowired
+	private EmailDeliveryEventService eventService;
 	@Autowired
 	private EmailSuppressionService suppressionService;
 	@Autowired
@@ -99,6 +117,11 @@ class EmailCenterIntegrationTest {
 	void setUp() {
 		when(sesClient.sendEmail(any(SendEmailRequest.class))).thenAnswer(
 				call -> SendEmailResponse.builder().messageId("ses-" + messages.incrementAndGet()).build());
+		when(sesClient.listSuppressedDestinations(any(ListSuppressedDestinationsRequest.class)))
+				.thenReturn(ListSuppressedDestinationsResponse.builder().build());
+		when(sesClient.getSuppressedDestination(any(GetSuppressedDestinationRequest.class)))
+				.thenThrow(NotFoundException.builder().build());
+		scheduler.readBounces();
 		coordinator = user("coordinator@staff.test", "Elif Koordinatör", UserRole.COORDINATOR, null);
 		admin = user("admin@staff.test", "Yönetici", UserRole.ADMIN, null);
 		program = program("Build '26", coordinator);
@@ -425,6 +448,95 @@ class EmailCenterIntegrationTest {
 				request(EmailAudience.EVERYONE, "<script>x()</script><p> </p>")))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(sesClient, never()).sendEmail(any(SendEmailRequest.class));
+	}
+
+	@Test
+	void aMailToAnAddressSesStoppedDeliveringToFailsInsteadOfVanishing() {
+		EmailCampaignResponse.Detail reviewed = confirmed();
+		doReturn(suppressed("mentor@allowed.test", null)).when(sesClient)
+				.getSuppressedDestination(any(GetSuppressedDestinationRequest.class));
+		worker.run();
+
+		assertThat(sentToPeople()).isEmpty();
+		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.FAILED);
+		assertThat(only(reviewed).getErrorCode()).isEqualTo("SES_SUPPRESSED");
+	}
+
+	@Test
+	void sesListingAnAddressMarksTheMailThatCausedItAndIsReadOnce() {
+		EmailCampaignResponse.Detail reviewed = confirmed();
+		worker.run();
+		String messageId = only(reviewed).getSesMessageId();
+		doReturn(ListSuppressedDestinationsResponse.builder()
+				.suppressedDestinationSummaries(SuppressedDestinationSummary.builder()
+						.emailAddress("Mentor@allowed.test").reason(SuppressionListReason.BOUNCE)
+						.lastUpdateTime(Instant.now()).build())
+				.build()).when(sesClient).listSuppressedDestinations(any(ListSuppressedDestinationsRequest.class));
+		doReturn(suppressed("mentor@allowed.test", messageId + "@eu-central-1.amazonses.com")).when(sesClient)
+				.getSuppressedDestination(any(GetSuppressedDestinationRequest.class));
+		scheduler.readBounces();
+		scheduler.readBounces();
+
+		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.BOUNCED);
+		assertThat(suppressionService.isSuppressed("mentor@allowed.test")).isTrue();
+	}
+
+	@Test
+	void theSenderAndTheAdminsAreToldOnceAndAgainOnlyForNewProblems() {
+		EmailCampaignResponse.Detail reviewed = confirmed();
+		worker.run();
+		String messageId = only(reviewed).getSesMessageId();
+		scheduler.alertProblems();
+		assertThat(alertsFor(coordinator)).isEmpty();
+
+		eventService.apply(messageId, EmailDeliveryEvent.HARD_BOUNCE);
+		scheduler.alertProblems();
+		scheduler.alertProblems();
+
+		assertThat(alertsFor(coordinator)).singleElement().satisfies(alert -> {
+			assertThat(alert.getBody()).contains("Konu").doesNotContain("allowed.test");
+			assertThat(alert.getHref()).isEqualTo("/coordinator/emails/" + idOf(reviewed));
+		});
+		assertThat(alertsFor(admin)).singleElement().satisfies(
+				alert -> assertThat(alert.getHref()).isEqualTo("/admin/emails/" + idOf(reviewed)));
+		assertThat(alertsFor(mentor)).isEmpty();
+	}
+
+	@Test
+	void reportsInAnyOrderLeaveTheWorstAndUnknownMailsAreIgnored() {
+		EmailCampaignResponse.Detail reviewed = confirmed();
+		worker.run();
+		String messageId = only(reviewed).getSesMessageId();
+
+		assertThat(eventService.apply("somebody-elses", EmailDeliveryEvent.HARD_BOUNCE)).isFalse();
+		eventService.apply(messageId, EmailDeliveryEvent.DELIVERED);
+		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.DELIVERED);
+		eventService.apply(messageId, EmailDeliveryEvent.SOFT_BOUNCE);
+		assertThat(suppressionService.isSuppressed("mentor@allowed.test")).isFalse();
+		eventService.apply(messageId, EmailDeliveryEvent.DELIVERED);
+		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.BOUNCED);
+		eventService.apply(messageId, EmailDeliveryEvent.COMPLAINT);
+		assertThat(only(reviewed).getStatus()).isEqualTo(EmailRecipientStatus.COMPLAINED);
+		assertThat(suppressionService.isSuppressed("mentor@allowed.test")).isTrue();
+	}
+
+	private EmailCampaignResponse.Detail confirmed() {
+		EmailCampaignResponse.Detail reviewed = reviewed(coordinator, EmailAudience.MENTORS);
+		service.send(coordinator.getId(), idOf(reviewed), confirm(reviewed, Set.of(), 1));
+		return reviewed;
+	}
+
+	private List<Notification> alertsFor(AppUser reader) {
+		entityManager.flush();
+		return entityManager.createQuery("select n from Notification n where n.recipient.id = :id",
+				Notification.class).setParameter("id", reader.getId()).getResultList();
+	}
+
+	private static GetSuppressedDestinationResponse suppressed(String address, String messageId) {
+		return GetSuppressedDestinationResponse.builder()
+				.suppressedDestination(SuppressedDestination.builder().emailAddress(address)
+						.attributes(SuppressedDestinationAttributes.builder().messageId(messageId).build()).build())
+				.build();
 	}
 
 	private EmailCampaignResponse.Detail reviewed(AppUser sender, EmailAudience audience) {

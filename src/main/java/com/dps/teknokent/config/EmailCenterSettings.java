@@ -26,6 +26,7 @@ public class EmailCenterSettings {
 	private final int maxRecipients;
 	private final String configurationSet;
 	private final EmailBounceSource bounceSource;
+	private final String eventsQueueUrl;
 
 	public EmailCenterSettings(
 			@Value("${app.mail.center.enabled:false}") boolean enabled,
@@ -35,7 +36,8 @@ public class EmailCenterSettings {
 			@Value("${app.mail.center.rate-per-second:10}") int ratePerSecond,
 			@Value("${app.mail.center.max-recipients:1000}") int maxRecipients,
 			@Value("${app.mail.center.configuration-set:}") String configurationSet,
-			@Value("${app.mail.center.bounce-source:none}") String bounceSource) {
+			@Value("${app.mail.center.bounce-source:none}") String bounceSource,
+			@Value("${app.mail.center.events-queue-url:}") String eventsQueueUrl) {
 		this.enabled = enabled;
 		this.from = from.trim();
 		this.replyTo = replyTo.trim();
@@ -47,12 +49,22 @@ public class EmailCenterSettings {
 		this.maxRecipients = maxRecipients;
 		this.configurationSet = configurationSet.trim();
 		this.bounceSource = EmailBounceSource.parse(bounceSource);
+		this.eventsQueueUrl = eventsQueueUrl.trim();
 	}
 
 	/** Whether the deployment may write to the (normalized) address; a listed domain does not cover subdomains. */
 	public boolean mayWriteTo(String address) {
 		return allowlist.contains(EVERYBODY) || allowlist.contains(address)
 				|| allowlist.contains(address.substring(address.indexOf('@') + 1));
+	}
+
+	/** Whether bounces are read from somewhere; a source that is not fully configured does not count. */
+	public boolean hearsBounces() {
+		return switch (bounceSource) {
+		case NONE -> false;
+		case SUPPRESSION_LIST -> true;
+		case SES_EVENTS -> !eventsQueueUrl.isEmpty() && !configurationSet.isEmpty();
+		};
 	}
 
 	/** Whether a mail may leave at all: switched on, and with a sender. */

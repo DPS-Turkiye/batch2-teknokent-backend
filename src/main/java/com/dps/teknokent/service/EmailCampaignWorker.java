@@ -17,9 +17,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.config.EmailCenterSettings;
-import com.dps.teknokent.domain.EmailBounceSource;
 import com.dps.teknokent.domain.EmailCampaignStatus;
 import com.dps.teknokent.domain.EmailRecipientStatus;
+import com.dps.teknokent.domain.EmailSuppressionReason;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
@@ -34,6 +34,8 @@ import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.RandomTokens;
 import com.dps.teknokent.util.Sha256;
+
+import software.amazon.awssdk.core.exception.SdkException;
 
 /**
  * Sends confirmed mails, one per person, at most the deployment's rate per run. Each row is claimed in its own
@@ -58,6 +60,7 @@ public class EmailCampaignWorker {
 	private final EmailSuppressionService suppressionService;
 	private final EmailComposer composer;
 	private final EmailCenterMailer mailer;
+	private final EmailBounceMonitor bounceMonitor;
 	private final EmailCenterSettings settings;
 	private final TransactionTemplate transaction;
 	private final Clock clock;
@@ -72,10 +75,12 @@ public class EmailCampaignWorker {
 			EmailSuppressionService suppressionService,
 			EmailComposer composer,
 			EmailCenterMailer mailer,
+			EmailBounceMonitor bounceMonitor,
 			EmailCenterSettings settings,
 			PlatformTransactionManager transactionManager) {
 		this(campaignRepository, recipientRepository, appUserRepository, programRepository,
-				programCoordinatorRepository, suppressionService, composer, mailer, settings, transactionManager,
+				programCoordinatorRepository, suppressionService, composer, mailer, bounceMonitor, settings,
+				transactionManager,
 				Clock.systemUTC());
 	}
 
@@ -88,6 +93,7 @@ public class EmailCampaignWorker {
 			EmailSuppressionService suppressionService,
 			EmailComposer composer,
 			EmailCenterMailer mailer,
+			EmailBounceMonitor bounceMonitor,
 			EmailCenterSettings settings,
 			PlatformTransactionManager transactionManager,
 			Clock clock) {
@@ -99,6 +105,7 @@ public class EmailCampaignWorker {
 		this.suppressionService = suppressionService;
 		this.composer = composer;
 		this.mailer = mailer;
+		this.bounceMonitor = bounceMonitor;
 		this.settings = settings;
 		this.transaction = new TransactionTemplate(transactionManager);
 		this.clock = clock;
@@ -106,7 +113,7 @@ public class EmailCampaignWorker {
 
 	/** One run; the scheduler's pause between runs makes {@code ratePerSecond} the ceiling. */
 	public void run() {
-		if (!settings.canSend() || settings.getBounceSource() == EmailBounceSource.NONE) {
+		if (!settings.canSend() || !bounceMonitor.hearing()) {
 			return;
 		}
 		Instant now = clock.instant();
@@ -122,10 +129,23 @@ public class EmailCampaignWorker {
 	private void sendOne(UUID id) {
 		Instant now = clock.instant();
 		transaction.execute(status -> Optional.ofNullable(claim(id, now))).ifPresent(mail -> {
-			EmailCenterMailer.Outcome outcome = mailer.send(mail);
+			EmailCenterMailer.Outcome outcome = deliver(mail);
 			transaction.executeWithoutResult(status -> recipientRepository.findById(id)
 					.ifPresent(row -> record(row, outcome)));
 		});
+	}
+
+	private EmailCenterMailer.Outcome deliver(EmailCenterMailer.Mail mail) {
+		try {
+			if (bounceMonitor.refuses(mail.to())) {
+				suppressionService.suppress(mail.to(), EmailSuppressionReason.HARD_BOUNCE);
+				return new EmailCenterMailer.Outcome(EmailCenterMailer.Result.FAILED, null, "SES_SUPPRESSED");
+			}
+		} catch (SdkException unknown) {
+			// Nothing has left yet, so this one may be tried again.
+			return new EmailCenterMailer.Outcome(EmailCenterMailer.Result.RETRY, null, "SES_UNREACHABLE");
+		}
+		return mailer.send(mail);
 	}
 
 	/** Null when the row is no longer waiting or must not be written to any more. */

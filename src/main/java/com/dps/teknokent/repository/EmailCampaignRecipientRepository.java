@@ -33,6 +33,22 @@ public interface EmailCampaignRecipientRepository extends JpaRepository<EmailCam
 
 	Optional<EmailCampaignRecipient> findByUnsubscribeTokenHash(String unsubscribeTokenHash);
 
+	List<EmailCampaignRecipient> findByAddressAndStatusInAndSentAtAfter(
+			String address, Collection<EmailRecipientStatus> statuses, Instant sentAfter);
+
+	/** The mails with problems their sender and the admins have not been told about yet. */
+	@Query("""
+			SELECT c.id FROM EmailCampaign c
+			WHERE (c.lastAlertAt IS NULL OR c.lastAlertAt <= :quietSince)
+				AND c.alertedProblems < (SELECT COUNT(r) FROM EmailCampaignRecipient r
+					WHERE r.campaignId = c.id AND r.status IN :problems)
+			""")
+	List<UUID> findCampaignsToAlert(
+			@Param("quietSince") Instant quietSince,
+			@Param("problems") Collection<EmailRecipientStatus> problems);
+
+	long countByCampaignIdAndStatusIn(UUID campaignId, Collection<EmailRecipientStatus> statuses);
+
 	boolean existsByCampaignIdAndStatusIn(UUID campaignId, Collection<EmailRecipientStatus> statuses);
 
 	@Query("""

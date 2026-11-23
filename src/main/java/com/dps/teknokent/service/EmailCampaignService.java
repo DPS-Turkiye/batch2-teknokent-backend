@@ -25,7 +25,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.dps.teknokent.config.EmailCenterSettings;
 import com.dps.teknokent.domain.EmailAudience;
-import com.dps.teknokent.domain.EmailBounceSource;
 import com.dps.teknokent.domain.EmailCampaignStatus;
 import com.dps.teknokent.domain.EmailRecipientStatus;
 import com.dps.teknokent.domain.UserRole;
@@ -70,6 +69,7 @@ public class EmailCampaignService {
 	private final EmailAudienceResolver audienceResolver;
 	private final EmailComposer composer;
 	private final EmailCenterMailer mailer;
+	private final EmailBounceMonitor bounceMonitor;
 	private final EmailCenterSettings settings;
 	private final PlatformTransactionManager transactionManager;
 	private final Clock clock;
@@ -85,10 +85,12 @@ public class EmailCampaignService {
 			EmailAudienceResolver audienceResolver,
 			EmailComposer composer,
 			EmailCenterMailer mailer,
+			EmailBounceMonitor bounceMonitor,
 			EmailCenterSettings settings,
 			PlatformTransactionManager transactionManager) {
 		this(campaignRepository, recipientRepository, programRepository, programCoordinatorRepository,
-				appUserRepository, programService, audienceResolver, composer, mailer, settings, transactionManager,
+				appUserRepository, programService, audienceResolver, composer, mailer, bounceMonitor, settings,
+				transactionManager,
 				Clock.systemUTC());
 	}
 
@@ -102,6 +104,7 @@ public class EmailCampaignService {
 			EmailAudienceResolver audienceResolver,
 			EmailComposer composer,
 			EmailCenterMailer mailer,
+			EmailBounceMonitor bounceMonitor,
 			EmailCenterSettings settings,
 			PlatformTransactionManager transactionManager,
 			Clock clock) {
@@ -114,6 +117,7 @@ public class EmailCampaignService {
 		this.audienceResolver = audienceResolver;
 		this.composer = composer;
 		this.mailer = mailer;
+		this.bounceMonitor = bounceMonitor;
 		this.settings = settings;
 		this.transactionManager = transactionManager;
 		this.clock = clock;
@@ -289,7 +293,7 @@ public class EmailCampaignService {
 
 	/** Bounces nobody hears about are the reason a mass mail does not leave without them being read. */
 	private boolean sendingOn() {
-		return settings.canSend() && settings.getBounceSource() != EmailBounceSource.NONE;
+		return settings.canSend() && bounceMonitor.hearing();
 	}
 
 	private static void write(EmailCampaign campaign, EmailCampaignRequest request) {

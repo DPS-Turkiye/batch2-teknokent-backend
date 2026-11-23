@@ -154,6 +154,10 @@ app:
       configuration-set: ${EMAIL_CENTER_CONFIGURATION_SET:}
       # Where bounces are read from; nothing is sent while this is "none".
       bounce-source: ${EMAIL_CENTER_BOUNCE_SOURCE:none}
+      bounce-interval-ms: ${EMAIL_CENTER_BOUNCE_INTERVAL_MS:120000}
+      alert-interval-ms: ${EMAIL_CENTER_ALERT_INTERVAL_MS:60000}
+      # The SQS queue a configuration set's events end up in, for "ses-events".
+      events-queue-url: ${EMAIL_CENTER_EVENTS_QUEUE_URL:}
   realtime:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}
