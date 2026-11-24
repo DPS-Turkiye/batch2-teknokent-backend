@@ -491,7 +491,7 @@ public class CoordinatorProgramService {
 		UUID mentorId = next.getMentor().getId();
 		UUID organizationId = next.getOrganization().getId();
 		int sequence = (int) meetings.stream()
-				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+				.filter(meeting -> !meeting.didNotTakePlace()
 						&& meeting.getScheduledAt() != null
 						&& !meeting.getScheduledAt().isAfter(next.getScheduledAt())
 						&& meeting.getMentor() != null
@@ -625,7 +625,7 @@ public class CoordinatorProgramService {
 	private List<CoordinatorOverviewResponse.MissingNote> missingNotes(List<Meeting> meetings, Instant now) {
 		Instant since = now.minus(MISSING_NOTE_DAYS, ChronoUnit.DAYS);
 		List<Meeting> recent = meetings.stream()
-				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+				.filter(meeting -> !meeting.didNotTakePlace()
 						&& meeting.getScheduledAt() != null
 						&& meeting.getScheduledAt().isBefore(now)
 						&& !meeting.getScheduledAt().isBefore(since)
@@ -1065,7 +1065,7 @@ public class CoordinatorProgramService {
 				.stream()
 				.filter(meeting -> meeting.getMentorshipRequest() != null
 						&& meeting.getMentorshipRequest().getId().equals(request.getId()))
-				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+				.filter(meeting -> !meeting.didNotTakePlace()
 						&& meeting.getScheduledAt() != null
 						&& meeting.getScheduledAt().isBefore(snapshot.now()))
 				.count();
@@ -1142,7 +1142,7 @@ public class CoordinatorProgramService {
 		Map<String, Instant> lastMeeting = new HashMap<>();
 		List<Meeting> meetings = meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(organizationIds);
 		for (Meeting meeting : meetings) {
-			if (meeting.getStatus() == MeetingStatus.CANCELLED || meeting.getScheduledAt() == null
+			if (meeting.didNotTakePlace() || meeting.getScheduledAt() == null
 					|| meeting.getScheduledAt().isAfter(now) || meeting.getMentor() == null) {
 				continue;
 			}

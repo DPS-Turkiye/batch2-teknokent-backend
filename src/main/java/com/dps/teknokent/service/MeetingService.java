@@ -257,6 +257,9 @@ public class MeetingService {
 					Boolean.TRUE.equals(logRequest.transcribeRequested()));
 		} else {
 			if (logRequest.scheduledAt() != null) {
+				if (!logRequest.scheduledAt().equals(meeting.getScheduledAt())) {
+					meeting.clearNoShow();
+				}
 				meeting.setScheduledAt(logRequest.scheduledAt());
 			}
 			if (logRequest.durationMinutes() != null) {
@@ -423,6 +426,11 @@ public class MeetingService {
 			throw new ConflictException("Feedback already submitted for this meeting.");
 		}
 
+		boolean byMentor = meeting.getMentor() != null && meeting.getMentor().getId().equals(authorId);
+		if (byMentor && meeting.getNoShowAt() != null) {
+			throw new ConflictException(Texts.forRequest("error.evaluationNoShow"));
+		}
+
 		MeetingFeedback feedback = new MeetingFeedback();
 		feedback.setMeeting(meeting);
 		feedback.setAuthor(author);
@@ -462,10 +470,14 @@ public class MeetingService {
 				.filter(mate -> mate.getMentor() != null && mate.getMentor().getId().equals(mentorId))
 				.filter(mate -> meeting.getScheduledAt().equals(mate.getScheduledAt()))
 				.toList();
+		if (held) {
+			// Saying it was held takes back "Girişimci katılmadı" for this team; another team's mark in the room stays.
+			meeting.clearNoShow();
+		}
 		for (Meeting mate : room) {
 			if (!held) {
 				mate.setHeldConfirmedAt(null);
-			} else if (mate.getHeldConfirmedAt() == null && mate.getStatus() != MeetingStatus.CANCELLED) {
+			} else if (mate.getHeldConfirmedAt() == null && !mate.didNotTakePlace()) {
 				mate.setHeldConfirmedAt(now);
 			}
 		}
@@ -478,6 +490,43 @@ public class MeetingService {
 			eventPublisher.publishEvent(new AchievementsMayChangeEvent(affected));
 		}
 		return MeetingResponse.fromEntity(meeting);
+	}
+
+	/**
+	 * The mentor's "Girişimci katılmadı" on a meeting that has started. Unlike {@link #confirmHeld} it is about this
+	 * team only: in a group session the other teams may have come.
+	 */
+	@Transactional
+	public MeetingResponse markNoShow(UUID meetingId, UUID mentorId, @Nullable String note) {
+		Meeting meeting = requireOwnMeeting(meetingId, mentorId);
+		Instant now = Instant.now();
+		if (meeting.getStatus() == MeetingStatus.CANCELLED) {
+			throw new InvalidRequestException(Texts.forRequest("error.noShowCancelled"));
+		}
+		if (meeting.getScheduledAt().isAfter(now)) {
+			throw new InvalidRequestException(Texts.forRequest("error.noShowTooEarly"));
+		}
+		// The mentor's scores describe a meeting that happened; the two must not stand side by side.
+		if (meetingFeedbackRepository.findByMeetingIdAndAuthorId(meetingId, mentorId).isPresent()) {
+			throw new ConflictException(Texts.forRequest("error.noShowEvaluated"));
+		}
+		meeting.markNoShow(now, note);
+		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
+	}
+
+	@Transactional
+	public MeetingResponse undoNoShow(UUID meetingId, UUID mentorId) {
+		Meeting meeting = requireOwnMeeting(meetingId, mentorId);
+		meeting.clearNoShow();
+		return MeetingResponse.fromEntity(meetingRepository.saveAndFlush(meeting));
+	}
+
+	private Meeting requireOwnMeeting(UUID meetingId, UUID mentorId) {
+		Meeting meeting = requireMeeting(meetingId);
+		if (meeting.getMentor() == null || !meeting.getMentor().getId().equals(mentorId)) {
+			throw new InvalidRequestException(Texts.forRequest("error.noShowOnlyMentor"));
+		}
+		return meeting;
 	}
 
 	@Transactional(readOnly = true)

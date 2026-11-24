@@ -117,7 +117,10 @@ public class ProgramReportService {
 		}
 	}
 
-	/** The program's meetings that took place: not cancelled, already started, and on or after {@code from}. */
+	/**
+	 * The program's meetings that took place: not cancelled, not missed by the team, already started, and on or after
+	 * {@code from}.
+	 */
 	private List<UUID> heldMeetingIds(Program program, LocalDate from) {
 		Set<UUID> teams = teamsOf(program);
 		Set<UUID> everTeams = withFormerTeams(program, teams);
@@ -127,7 +130,7 @@ public class ProgramReportService {
 		Instant since = from == null ? Instant.EPOCH : from.atStartOfDay(MeetingSlotTimes.APP_ZONE).toInstant();
 		Instant now = Instant.now();
 		List<Meeting> started = meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(everTeams).stream()
-				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED
+				.filter(meeting -> !meeting.didNotTakePlace()
 						&& meeting.getScheduledAt() != null
 						&& !meeting.getScheduledAt().isBefore(since)
 						&& !meeting.getScheduledAt().isAfter(now))

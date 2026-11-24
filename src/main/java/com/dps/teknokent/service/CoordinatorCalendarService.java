@@ -129,7 +129,8 @@ public class CoordinatorCalendarService {
 					null,
 					conflicting.contains(meeting.getId()),
 					TranscriptBotCapacityService.peak(recorded, meeting.getScheduledAt(), endOf(meeting), null),
-					null));
+					null,
+					meeting.getNoShowAt() != null));
 		}
 		Map<UUID, String> programNames = scope.stream().collect(Collectors.toMap(Program::getId, Program::getName));
 		List<ProgramEvent> events = scope.isEmpty()
@@ -157,7 +158,8 @@ public class CoordinatorCalendarService {
 					event.getDescription(),
 					false,
 					null,
-					null));
+					null,
+					false));
 		}
 		List<ProgramPlanCalendarService.Entry> planned = planCalendar.forCoordinator(scope, rangeStart,
 				rangeEnd.minusMillis(1), events);
@@ -182,7 +184,8 @@ public class CoordinatorCalendarService {
 					null,
 					false,
 					null,
-					entry.plan()));
+					entry.plan(),
+					false));
 		}
 		items.sort(Comparator.comparing(CoordinatorCalendarResponse.Item::startsAt));
 
@@ -235,7 +238,7 @@ public class CoordinatorCalendarService {
 				.toList();
 	}
 
-	/** The meeting's number within its mentor–team pair, counting every earlier meeting that was not cancelled. */
+	/** The meeting's number within its mentor–team pair, counting every earlier meeting that took place. */
 	private static @Nullable Integer sequence(Meeting meeting, Snapshot snapshot) {
 		if (meeting.getMentor() == null) {
 			return null;
@@ -243,7 +246,7 @@ public class CoordinatorCalendarService {
 		UUID mentorId = meeting.getMentor().getId();
 		return (int) snapshot.meetingsByOrganization().getOrDefault(meeting.getOrganization().getId(), List.of())
 				.stream()
-				.filter(other -> other.getStatus() != MeetingStatus.CANCELLED
+				.filter(other -> !other.didNotTakePlace()
 						&& other.getScheduledAt() != null
 						&& !other.getScheduledAt().isAfter(meeting.getScheduledAt())
 						&& other.getMentor() != null

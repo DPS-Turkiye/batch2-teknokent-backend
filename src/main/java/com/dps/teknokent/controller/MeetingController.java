@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateMeetingRequest;
 import com.dps.teknokent.dto.requests.InviteMeetingGuestRequest;
+import com.dps.teknokent.dto.requests.MarkMeetingNoShowRequest;
 import com.dps.teknokent.dto.requests.SubmitMeetingFeedbackRequest;
 import com.dps.teknokent.dto.requests.UpdateMeetingRequest;
 import com.dps.teknokent.dto.responses.MeetingFeedbackResponse;
@@ -86,6 +87,20 @@ public class MeetingController {
 	@DeleteMapping("/{id}/held")
 	public MeetingResponse undoHeld(@PathVariable UUID id, @RequestParam(required = false) UUID mentorId) {
 		return meetingService.confirmHeld(id, CurrentActor.resolve(mentorId), false);
+	}
+
+	/** "Girişimci katılmadı": only the meeting's mentor, with the same caller rules as {@link #confirmHeld}. */
+	@PostMapping("/{id}/no-show")
+	public MeetingResponse markNoShow(
+			@PathVariable UUID id,
+			@RequestParam(required = false) UUID mentorId,
+			@Valid @RequestBody MarkMeetingNoShowRequest request) {
+		return meetingService.markNoShow(id, CurrentActor.resolve(mentorId), request.note());
+	}
+
+	@DeleteMapping("/{id}/no-show")
+	public MeetingResponse undoNoShow(@PathVariable UUID id, @RequestParam(required = false) UUID mentorId) {
+		return meetingService.undoNoShow(id, CurrentActor.resolve(mentorId));
 	}
 
 	/**

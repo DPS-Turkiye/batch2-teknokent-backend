@@ -22,7 +22,7 @@ public record CoordinatorCalendarResponse(
 	 * {@code id} is the meeting's id for MEETING and the program event's id otherwise.
 	 * {@code recordingLoad}: most meeting rooms the transcript bot records at once during a MEETING, platform-wide.
 	 * {@code plan} is set for a SESSION or SPECIAL_DAY of the program's weekly plan; a session's id is derived from the
-	 * plan.
+	 * plan. {@code noShow}: the mentor marked that the team did not come to this MEETING.
 	 */
 	public record Item(
 			UUID id,
@@ -43,7 +43,8 @@ public record CoordinatorCalendarResponse(
 			@Nullable String description,
 			boolean conflict,
 			@Nullable Integer recordingLoad,
-			@Nullable ProgramCalendarPlanItem plan) {
+			@Nullable ProgramCalendarPlanItem plan,
+			boolean noShow) {
 	}
 
 	/** Meetings of one mentor that overlap in time. */
