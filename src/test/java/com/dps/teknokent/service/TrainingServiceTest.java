@@ -278,7 +278,8 @@ class TrainingServiceTest {
 
 		assertThat(result.passed()).isFalse();
 		verify(badgeService, never()).award(any(), any(), any(), any(), any());
-		verify(notificationService).create(eq(student), eq(NotificationCategory.BADGE), eq("Sınavı geçemedin"),
+		verify(notificationService).create(eq(student), eq(NotificationCategory.BADGE),
+				eq("Bu kez olmadı, tekrar deneyebilirsin"),
 				anyString(), eq("/student/peer-mentoring/training"));
 	}
 
