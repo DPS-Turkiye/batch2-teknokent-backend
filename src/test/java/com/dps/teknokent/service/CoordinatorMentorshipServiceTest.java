@@ -329,6 +329,32 @@ class CoordinatorMentorshipServiceTest {
 	}
 
 	@Test
+	void aMissedMeetingIsListedWithTheMentorsNoteButCountsAsNeitherHeldNorMissingItsNotes() {
+		Mentorship lumen = mentorship(ayse, LUMEN_ID, "Lumen", MentorshipStatus.ACTIVE);
+		Meeting missed = meeting(ayse, lumen.getOrganization(), now.minus(5, ChronoUnit.DAYS), MeetingStatus.COMPLETED,
+				null);
+		missed.markNoShow(now, "Haber vermedi");
+		stubScoped(lumen);
+		stubSnapshot(List.of(lumen), List.of(missed), Set.of());
+		when(actionItemRepository.findByOrganizationIdInAndStatusNotIn(any(), any())).thenReturn(List.of());
+		when(mentorshipRequestRepository.findByOrganizationIdInAndStatus(any(), any())).thenReturn(List.of());
+		when(mentorshipGoalRepository.findByMentorshipIdOrderBySortOrderAscCreatedAtAsc(lumen.getId()))
+				.thenReturn(List.of());
+		when(mentorshipRepository.countOrganizationsByMentor(any(), any())).thenReturn(List.of());
+		when(mentorProfileRepository.findById(AYSE_ID)).thenReturn(Optional.empty());
+		when(appUserRepository.findByOrganizationIdOrderByFullNameAsc(LUMEN_ID)).thenReturn(List.of());
+
+		var detail = service.detail(COORDINATOR_ID, lumen.getId());
+
+		assertThat(detail.pastMeetings()).isZero();
+		assertThat(detail.mentorship().missingNotes()).isZero();
+		assertThat(detail.meetings()).singleElement().satisfies(row -> {
+			assertThat(row.noShow()).isTrue();
+			assertThat(row.noShowNote()).isEqualTo("Haber vermedi");
+		});
+	}
+
+	@Test
 	void aReminderReachesTheMentorAndEveryTeamMember() {
 		Mentorship lumen = mentorship(ayse, LUMEN_ID, "Lumen", MentorshipStatus.ACTIVE);
 		stubScoped(lumen);

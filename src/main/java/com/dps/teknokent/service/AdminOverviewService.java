@@ -223,7 +223,7 @@ public class AdminOverviewService {
 				? ofTheseTeams
 				: ProgramActivity.heldIn(programId, ofTheseTeams, teams, mentorshipsByTeam(teams, formerTeams));
 		long meetingsLast8Weeks = meetingEntities.stream()
-				.filter(meeting -> meeting.getStatus() != MeetingStatus.CANCELLED)
+				.filter(meeting -> !meeting.didNotTakePlace())
 				.filter(meeting -> meeting.getScheduledAt() != null
 						&& !meeting.getScheduledAt().isBefore(now.minus(56, ChronoUnit.DAYS))
 						&& !meeting.getScheduledAt().isAfter(now))
@@ -234,7 +234,8 @@ public class AdminOverviewService {
 						meeting.getMentor().getId(),
 						meeting.getOrganization().getId(),
 						meeting.getScheduledAt(),
-						meeting.getStatus()))
+						// The report only tells held from not held, so a missed meeting reads like a cancelled one.
+						meeting.didNotTakePlace() ? MeetingStatus.CANCELLED : meeting.getStatus()))
 				.toList();
 		return new AdminOverviewResponse(
 				programs, users, mentorships, requests, bottlenecks, meetingsLast8Weeks, meetings, requestPairs);
@@ -415,7 +416,7 @@ public class AdminOverviewService {
 	private static Map<String, Instant> lastPastMeetingByPair(List<Meeting> meetings, Instant now) {
 		Map<String, Instant> last = new HashMap<>();
 		for (Meeting meeting : meetings) {
-			if (meeting.getStatus() == MeetingStatus.CANCELLED || meeting.getScheduledAt() == null) {
+			if (meeting.didNotTakePlace() || meeting.getScheduledAt() == null) {
 				continue;
 			}
 			if (meeting.getScheduledAt().isAfter(now) || meeting.getMentor() == null

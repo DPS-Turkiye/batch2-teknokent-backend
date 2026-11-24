@@ -47,6 +47,22 @@ public class Meeting {
 		return meeting;
 	}
 
+	/** Cancelled, or the team did not come: never counted as a meeting that was held. */
+	public boolean didNotTakePlace() {
+		return status == MeetingStatus.CANCELLED || noShowAt != null;
+	}
+
+	public void markNoShow(Instant at, String note) {
+		noShowAt = at;
+		noShowNote = TextUtils.normalizeOptional(note);
+		heldConfirmedAt = null;
+	}
+
+	public void clearNoShow() {
+		noShowAt = null;
+		noShowNote = null;
+	}
+
 	public Meeting copyFor(Organization guestOrganization, AppUser guestMentor) {
 		Meeting copy = new Meeting();
 		copy.organization = guestOrganization;
@@ -145,6 +161,13 @@ public class Meeting {
 
 	@Column(name = "held_confirmed_at")
 	private Instant heldConfirmedAt;
+
+	/** Set when the mentor marks that the team did not come; the meeting then counts nowhere, like a cancelled one. */
+	@Column(name = "no_show_at")
+	private Instant noShowAt;
+
+	@Column(name = "no_show_note")
+	private String noShowNote;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)

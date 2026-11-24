@@ -31,6 +31,7 @@ import com.dps.teknokent.domain.MentorshipStatus;
 import com.dps.teknokent.domain.ProgramCalendarEntryKind;
 import com.dps.teknokent.domain.ProgramEventKind;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.responses.CoordinatorCalendarResponse;
 import com.dps.teknokent.dto.responses.CoordinatorMentorshipResponse;
 import com.dps.teknokent.dto.responses.ProgramCalendarPlanItem;
 import com.dps.teknokent.entity.AppUser;
@@ -177,6 +178,20 @@ class CoordinatorCalendarServiceTest {
 		assertThat(calendar.summary().events()).isEqualTo(1);
 		assertThat(calendar.summary().deadlines()).isEqualTo(1);
 		assertThat(calendar.summary().unscheduledRisky()).isEqualTo(1);
+	}
+
+	@Test
+	void aMissedMeetingStaysOnTheCalendarMarkedAndIsSkippedWhenCountingTheNextOne() {
+		Meeting missed = meeting(ahmet, nova, at(MONDAY.plusDays(1), 11, 0));
+		missed.markNoShow(Instant.now(), null);
+		Meeting next = meeting(ahmet, nova, at(MONDAY.plusDays(2), 11, 0));
+		stubScope(List.of(missed, next));
+		when(mentorshipService.list(COORDINATOR_ID, null)).thenReturn(List.of());
+
+		var items = service.calendar(COORDINATOR_ID, null, MONDAY, MONDAY.plusDays(6)).items();
+
+		assertThat(items).extracting(CoordinatorCalendarResponse.Item::noShow).containsExactly(true, false);
+		assertThat(items.get(1).sequence()).isEqualTo(1);
 	}
 
 	@Test
