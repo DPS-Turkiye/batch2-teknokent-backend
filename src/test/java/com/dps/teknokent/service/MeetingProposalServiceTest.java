@@ -184,6 +184,7 @@ class MeetingProposalServiceTest {
 		existing.setStatus(MeetingStatus.SCHEDULED);
 		existing.setScheduledAt(Instant.now().plus(1, ChronoUnit.DAYS));
 		existing.setReminderSentAt(Instant.now());
+		existing.markNoShow(Instant.now(), "Haber vermedi");
 		MeetingProposal proposal = pending(existing.getId());
 		proposal.setMentorAcceptedAt(Instant.now());
 		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
@@ -195,6 +196,8 @@ class MeetingProposalServiceTest {
 		assertThat(response.meetingId()).isEqualTo(existing.getId());
 		assertThat(existing.getScheduledAt()).isEqualTo(nextWeek);
 		assertThat(existing.getReminderSentAt()).isNull();
+		assertThat(existing.didNotTakePlace()).isFalse();
+		assertThat(existing.getNoShowNote()).isNull();
 		verify(meetingService, never()).create(any());
 	}
 
