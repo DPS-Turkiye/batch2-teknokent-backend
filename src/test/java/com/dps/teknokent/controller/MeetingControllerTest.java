@@ -2,6 +2,7 @@ package com.dps.teknokent.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -75,6 +76,7 @@ class MeetingControllerTest {
 				MeetingStatus.SCHEDULED,
 				false,
 				null,
+				null,
 				null)));
 
 		mockMvc.perform(get("/api/meetings").param("organizationId", organizationId.toString()).with(user("test-user")))
@@ -105,6 +107,7 @@ class MeetingControllerTest {
 				"https://meet.google.com/abc-defg-hij",
 				MeetingStatus.SCHEDULED,
 				false,
+				null,
 				null,
 				null)));
 
@@ -137,6 +140,7 @@ class MeetingControllerTest {
 				MeetingStatus.SCHEDULED,
 				false,
 				null,
+				null,
 				null)));
 
 		mockMvc.perform(get("/api/meetings")
@@ -168,6 +172,7 @@ class MeetingControllerTest {
 				"https://meet.google.com/alpha-beta-gamma",
 				MeetingStatus.SCHEDULED,
 				false,
+				null,
 				null,
 				null));
 
@@ -271,6 +276,55 @@ class MeetingControllerTest {
 
 		verify(meetingService).confirmHeld(meetingId, mentorId, true);
 		verify(meetingService).confirmHeld(meetingId, mentorId, false);
+	}
+
+	@Test
+	void marksAndUndoesANoShowForTheNamedMentorOnServiceCredentials() throws Exception {
+		UUID meetingId = UUID.randomUUID();
+		UUID mentorId = UUID.randomUUID();
+
+		mockMvc.perform(post("/api/meetings/" + meetingId + "/no-show")
+				.param("mentorId", mentorId.toString())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"note\":\"Haber vermeden gelmedi\"}")
+				.with(user("test-user")))
+				.andExpect(status().isOk());
+		mockMvc.perform(delete("/api/meetings/" + meetingId + "/no-show")
+				.param("mentorId", mentorId.toString())
+				.with(user("test-user")))
+				.andExpect(status().isOk());
+
+		verify(meetingService).markNoShow(meetingId, mentorId, "Haber vermeden gelmedi");
+		verify(meetingService).undoNoShow(meetingId, mentorId);
+	}
+
+	@Test
+	void aBearerCallerMarksANoShowOnlyAsThemselves() throws Exception {
+		UUID meetingId = UUID.randomUUID();
+		UUID caller = UUID.randomUUID();
+
+		mockMvc.perform(post("/api/meetings/" + meetingId + "/no-show")
+				.param("mentorId", UUID.randomUUID().toString())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}")
+				.with(authentication(new UsernamePasswordAuthenticationToken(new AppUserPrincipal(
+						caller, "caller@test.dev", UserRole.MENTOR, UserAccountStatus.APPROVED, "caller-uid"), null,
+						List.of()))))
+				.andExpect(status().isOk());
+
+		verify(meetingService).markNoShow(meetingId, caller, null);
+	}
+
+	@Test
+	void rejectsANoShowNoteThatIsTooLong() throws Exception {
+		mockMvc.perform(post("/api/meetings/" + UUID.randomUUID() + "/no-show")
+				.param("mentorId", UUID.randomUUID().toString())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"note\":\"" + "a".repeat(256) + "\"}")
+				.with(user("test-user")))
+				.andExpect(status().isBadRequest());
+
+		verify(meetingService, never()).markNoShow(any(), any(), any());
 	}
 
 	@Test

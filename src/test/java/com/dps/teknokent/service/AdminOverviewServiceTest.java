@@ -497,11 +497,13 @@ class AdminOverviewServiceTest {
 		Meeting recent = meeting(kemal, vega, Duration.ofDays(3), MeetingStatus.COMPLETED);
 		Meeting withoutMentor = meeting(null, vega, Duration.ofDays(4), MeetingStatus.COMPLETED);
 		Meeting cancelled = meeting(kemal, vega, Duration.ofDays(5), MeetingStatus.CANCELLED);
+		Meeting missed = meeting(kemal, vega, Duration.ofDays(6), MeetingStatus.COMPLETED);
+		missed.markNoShow(Instant.now(), null);
 		Meeting tooOld = meeting(kemal, vega, Duration.ofDays(60), MeetingStatus.COMPLETED);
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
 		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, kemal));
 		when(meetingRepository.findAllByOrderByScheduledAtDesc())
-				.thenReturn(List.of(upcoming, recent, withoutMentor, cancelled, tooOld));
+				.thenReturn(List.of(upcoming, recent, withoutMentor, cancelled, missed, tooOld));
 
 		var overview = service.overview(admin.getId());
 
@@ -512,6 +514,7 @@ class AdminOverviewServiceTest {
 						tuple(upcoming.getScheduledAt(), MeetingStatus.SCHEDULED),
 						tuple(recent.getScheduledAt(), MeetingStatus.COMPLETED),
 						tuple(cancelled.getScheduledAt(), MeetingStatus.CANCELLED),
+						tuple(missed.getScheduledAt(), MeetingStatus.CANCELLED),
 						tuple(tooOld.getScheduledAt(), MeetingStatus.COMPLETED));
 	}
 
@@ -523,9 +526,12 @@ class AdminOverviewServiceTest {
 		Organization vega = organization("Vega");
 		when(domainLookupService.requireUser(admin.getId())).thenReturn(admin);
 		when(appUserRepository.findByStatusNot(UserAccountStatus.DELETED)).thenReturn(List.of(admin, kemal, deniz));
+		Meeting missed = meeting(kemal, vega, Duration.ofDays(2), MeetingStatus.COMPLETED);
+		missed.markNoShow(Instant.now(), null);
 		when(meetingRepository.findAllByOrderByScheduledAtDesc()).thenReturn(List.of(
 				meeting(kemal, vega, Duration.ofDays(-2), MeetingStatus.SCHEDULED),
 				meeting(kemal, vega, Duration.ofDays(1), MeetingStatus.CANCELLED),
+				missed,
 				meeting(kemal, vega, Duration.ofDays(3), MeetingStatus.COMPLETED),
 				meeting(kemal, vega, Duration.ofDays(10), MeetingStatus.COMPLETED)));
 		when(mentorshipService.findAll()).thenReturn(List.of(

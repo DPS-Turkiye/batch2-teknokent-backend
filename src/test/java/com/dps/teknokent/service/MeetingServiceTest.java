@@ -130,6 +130,110 @@ class MeetingServiceTest {
 	}
 
 	@Test
+	void marksThatTheTeamDidNotComeAndDropsTheHeldConfirmation() {
+		Meeting meeting = startedMeeting();
+		meeting.setHeldConfirmedAt(Instant.now());
+
+		MeetingResponse response = meetingService.markNoShow(meeting.getId(), mentorId, "  Haber vermedi  ");
+
+		assertThat(response.noShowAt()).isNotNull();
+		assertThat(response.heldConfirmedAt()).isNull();
+		assertThat(meeting.getNoShowNote()).isEqualTo("Haber vermedi");
+		assertThat(meeting.didNotTakePlace()).isTrue();
+	}
+
+	@Test
+	void undoingTheNoShowAlsoDropsItsNote() {
+		Meeting meeting = startedMeeting();
+		meeting.markNoShow(Instant.now(), "Haber vermedi");
+
+		MeetingResponse response = meetingService.undoNoShow(meeting.getId(), mentorId);
+
+		assertThat(response.noShowAt()).isNull();
+		assertThat(meeting.getNoShowNote()).isNull();
+		assertThat(meeting.didNotTakePlace()).isFalse();
+	}
+
+	@Test
+	void onlyTheMeetingsMentorMarksOrUndoesANoShow() {
+		Meeting meeting = startedMeeting();
+		UUID someoneElse = UUID.randomUUID();
+
+		assertThatThrownBy(() -> meetingService.markNoShow(meeting.getId(), someoneElse, null))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> meetingService.undoNoShow(meeting.getId(), someoneElse))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThat(meeting.getNoShowAt()).isNull();
+	}
+
+	@Test
+	void refusesANoShowBeforeTheMeetingStartsAndOnACancelledOne() {
+		Meeting upcoming = heldCandidate(mentorId, Instant.now().plus(1, ChronoUnit.HOURS), null,
+				MeetingStatus.SCHEDULED);
+		Meeting cancelled = heldCandidate(mentorId, Instant.now().minus(1, ChronoUnit.HOURS), null,
+				MeetingStatus.CANCELLED);
+		when(meetingRepository.findById(upcoming.getId())).thenReturn(Optional.of(upcoming));
+		when(meetingRepository.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+
+		assertThatThrownBy(() -> meetingService.markNoShow(upcoming.getId(), mentorId, null))
+				.isInstanceOf(InvalidRequestException.class);
+		assertThatThrownBy(() -> meetingService.markNoShow(cancelled.getId(), mentorId, null))
+				.isInstanceOf(InvalidRequestException.class);
+	}
+
+	@Test
+	void refusesANoShowOnAMeetingTheMentorAlreadyEvaluated() {
+		Meeting meeting = startedMeeting();
+		when(meetingFeedbackRepository.findByMeetingIdAndAuthorId(meeting.getId(), mentorId))
+				.thenReturn(Optional.of(new MeetingFeedback()));
+
+		assertThatThrownBy(() -> meetingService.markNoShow(meeting.getId(), mentorId, null))
+				.isInstanceOf(ConflictException.class);
+		assertThat(meeting.getNoShowAt()).isNull();
+	}
+
+	@Test
+	void theMentorCannotEvaluateAMeetingMarkedAsNoShow() {
+		Meeting meeting = heldCandidate(mentorId, Instant.now().minus(2, ChronoUnit.HOURS), null,
+				MeetingStatus.SCHEDULED);
+		meeting.markNoShow(Instant.now(), null);
+		AppUser mentor = meeting.getMentor();
+		when(domainLookupService.requireMeeting(meeting.getId())).thenReturn(meeting);
+		when(domainLookupService.requireUser(mentorId)).thenReturn(mentor);
+
+		assertThatThrownBy(() -> meetingService.submitFeedback(meeting.getId(), mentorId,
+				new SubmitMeetingFeedbackRequest(List.of(3, 3), List.of())))
+				.isInstanceOf(ConflictException.class);
+		verify(meetingFeedbackRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void confirmingAGroupSessionKeepsAnotherTeamsNoShowAndTakesBackThisOnes() {
+		Instant at = Instant.now().minus(2, ChronoUnit.HOURS);
+		Meeting meeting = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		meeting.markNoShow(at, "yanlışlıkla");
+		Meeting absentTeam = heldCandidate(mentorId, at, null, MeetingStatus.SCHEDULED);
+		absentTeam.markNoShow(at, null);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		when(meetingRepository.findByMentorIdAndScheduledAt(mentorId, at)).thenReturn(List.of(meeting, absentTeam));
+
+		MeetingResponse response = meetingService.confirmHeld(meeting.getId(), mentorId, true);
+
+		assertThat(response.heldConfirmedAt()).isNotNull();
+		assertThat(response.noShowAt()).isNull();
+		assertThat(absentTeam.getHeldConfirmedAt()).isNull();
+		assertThat(absentTeam.getNoShowAt()).isNotNull();
+	}
+
+	private Meeting startedMeeting() {
+		Meeting meeting = heldCandidate(mentorId, Instant.now().minus(2, ChronoUnit.HOURS), null,
+				MeetingStatus.SCHEDULED);
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+		lenient().when(meetingRepository.saveAndFlush(meeting)).thenReturn(meeting);
+		return meeting;
+	}
+
+	@Test
 	void confirmHeldLeavesOlderMeetingsOnTheSameMeetLinkAlone() {
 		String link = "https://meet.google.com/abc-defg-hij";
 		Instant at = Instant.now().minus(1, ChronoUnit.HOURS);

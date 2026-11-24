@@ -64,6 +64,8 @@ public record CoordinatorMentorshipResponse(
 			Instant scheduledAt,
 			Integer durationMinutes,
 			MeetingStatus status,
-			boolean hasNotes) {
+			boolean hasNotes,
+			boolean noShow,
+			@Nullable String noShowNote) {
 	}
 }

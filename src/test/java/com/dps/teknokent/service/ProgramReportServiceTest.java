@@ -121,8 +121,10 @@ class ProgramReportServiceTest {
 		Meeting notYet = meeting(MeetingStatus.SCHEDULED, Instant.now().plus(Duration.ofDays(1)), team);
 		when(programService.requireManagedProgram(actorId, program.getId())).thenReturn(program);
 		when(programStartupRepository.findByProgramIdOrderByCreatedAtAsc(program.getId())).thenReturn(List.of(startup));
+		Meeting missed = meeting(MeetingStatus.COMPLETED, Instant.now().minus(Duration.ofDays(3)), team);
+		missed.markNoShow(Instant.now(), null);
 		when(meetingRepository.findByOrganizationIdInOrderByScheduledAtDesc(Set.of(team.getId())))
-				.thenReturn(List.of(notYet, cancelled, held, beforeTheWindow));
+				.thenReturn(List.of(notYet, cancelled, held, missed, beforeTheWindow));
 		when(meetingFeedbackRepository.findByMeetingIdInAndAuthorRole(List.of(held.getId()), UserRole.MENTEE))
 				.thenReturn(List.of(feedback(held, 4, 4, 4, 4)));
 

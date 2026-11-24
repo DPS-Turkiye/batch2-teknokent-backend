@@ -14,7 +14,6 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.PeerReportStatus;
 import com.dps.teknokent.domain.PeerTopicCategory;
@@ -241,7 +240,7 @@ class PeerReportAccess {
 	private static boolean isOwnPeerMeeting(AppUser mentor, Meeting meeting) {
 		MentorshipRequest request = meeting.getMentorshipRequest();
 		return request != null
-				&& meeting.getStatus() != MeetingStatus.CANCELLED
+				&& !meeting.didNotTakePlace()
 				&& request.getMentor() != null
 				&& request.getMentor().getId().equals(mentor.getId())
 				&& PeerTopicCategory.fromText(request.getSupportArea()) != null;

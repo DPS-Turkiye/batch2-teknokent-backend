@@ -162,7 +162,9 @@ public class CoordinatorMentorshipService {
 								meeting.getScheduledAt(),
 								meeting.getDurationMinutes(),
 								meeting.getStatus(),
-								isNoted(meeting, context)))
+								isNoted(meeting, context),
+								meeting.getNoShowAt() != null,
+								meeting.getNoShowNote()))
 						.toList());
 	}
 
@@ -358,7 +360,7 @@ public class CoordinatorMentorshipService {
 	}
 
 	private static boolean isPast(Meeting meeting, Instant now) {
-		return meeting.getStatus() != MeetingStatus.CANCELLED
+		return !meeting.didNotTakePlace()
 				&& meeting.getScheduledAt() != null
 				&& meeting.getScheduledAt().isBefore(now);
 	}

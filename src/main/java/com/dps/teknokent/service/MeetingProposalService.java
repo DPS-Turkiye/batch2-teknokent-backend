@@ -312,6 +312,8 @@ public class MeetingProposalService {
 			replaced.setScheduledAt(proposal.getScheduledAt());
 			replaced.setDurationMinutes(proposal.getDurationMinutes());
 			replaced.setReminderSentAt(null);
+			// A missed meeting booked again is a meeting still to come.
+			replaced.clearNoShow();
 			meetingRepository.save(replaced);
 			proposal.setMeetingId(replaced.getId());
 		} else {

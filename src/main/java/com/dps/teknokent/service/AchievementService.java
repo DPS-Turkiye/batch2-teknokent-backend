@@ -148,7 +148,7 @@ public class AchievementService {
 		int total = 0;
 		int answers = 0;
 		for (MeetingFeedback item : feedback.findByMeetingMentorIdAndAuthorRole(userId, UserRole.MENTEE)) {
-			if (item.getAuthor().getId().equals(userId) || item.getMeeting().getStatus() == MeetingStatus.CANCELLED) {
+			if (item.getAuthor().getId().equals(userId) || item.getMeeting().didNotTakePlace()) {
 				continue;
 			}
 			boolean counted = false;
