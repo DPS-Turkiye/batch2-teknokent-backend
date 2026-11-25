@@ -80,8 +80,8 @@ public class AssistantService {
 		// ponytail: no lock, so two requests at the same moment can both pass, and a meeting booked later does not see
 		// ad-hoc bots; the dispatcher's retry on Vexa's 429 covers that until a shared ledger is worth it.
 		if (!alreadyThere
-				&& running.size() + capacityService.reservedWithinHour(Instant.now(), parsed.nativeMeetingId())
-						>= capacityService.capacity()) {
+				&& running.size() + capacityService.reservedWithinHour(Instant.now(),
+						parsed.nativeMeetingId()) >= capacityService.capacity()) {
 			throw new ConflictException(Texts.forRequest("error.recordingSlotsFull"), RECORDING_SLOTS_FULL);
 		}
 		try {
