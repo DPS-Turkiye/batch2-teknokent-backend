@@ -32,7 +32,8 @@ public class MeetLinkService {
 	static final Duration GRACE = Duration.ofMinutes(1);
 	/** After a failure Google is left alone this long. */
 	static final Duration RETRY_AFTER = Duration.ofMinutes(10);
-	private static final int BATCH = 50;
+	// Few at a time: the scheduled jobs share one thread, and Google may answer slowly.
+	private static final int BATCH = 10;
 
 	private final MeetingRepository meetingRepository;
 	private final GoogleMeetClient googleMeetClient;
