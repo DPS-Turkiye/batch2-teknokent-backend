@@ -145,6 +145,10 @@ app:
     # E-mails for coordinator matches and meeting proposals; off until a deployment turns them on.
     match-proposal:
       enabled: ${MATCH_PROPOSAL_MAIL_ENABLED:false}
+    # E-mails about requests and messages, and the follow-up of unanswered ones; off until a deployment turns it on.
+    activity:
+      enabled: ${ACTIVITY_MAIL_ENABLED:false}
+      interval-ms: ${ACTIVITY_MAIL_INTERVAL_MS:60000}
     # Mails coordinators and admins write to a program's people; off until a deployment turns it on.
     center:
       enabled: ${EMAIL_CENTER_ENABLED:false}

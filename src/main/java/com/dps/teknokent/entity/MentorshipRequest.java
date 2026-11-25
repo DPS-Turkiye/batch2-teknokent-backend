@@ -171,6 +171,20 @@ public class MentorshipRequest {
 	@Column(name = "mentee_read_at")
 	private Instant menteeReadAt;
 
+	// Written only by RequestFollowUpService's bulk updates: a request being saved at the same moment must not put an
+	// older value back, or the same person would be told again.
+	/** When the mentor was reminded that this request waits for an answer. */
+	@Column(name = "answer_reminded_at", updatable = false)
+	private Instant answerRemindedAt;
+
+	/** When the program's coordinators were told that it is still unanswered. */
+	@Column(name = "coordinator_alerted_at", updatable = false)
+	private Instant coordinatorAlertedAt;
+
+	/** The last time the mentor was mailed about messages they had not read here. */
+	@Column(name = "mentor_mailed_at", updatable = false)
+	private Instant mentorMailedAt;
+
 	public void markReadBy(AppUser reader, Instant at) {
 		if (reader.getId().equals(mentor.getId())) {
 			mentorReadAt = at;

@@ -28,6 +28,7 @@ Never commit `.env`: it holds real keys.
 | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3 and SES. |
 | `MAIL_FROM` | SES sender; empty sends no e-mail. |
 | `MATCH_PROPOSAL_MAIL_ENABLED` | `true` also e-mails coordinator matches and meeting proposals; off by default. |
+| `ACTIVITY_MAIL_ENABLED`, `ACTIVITY_MAIL_INTERVAL_MS` | `true` e-mails mentors about accepted times, messages unread for 15 minutes and requests unanswered for 2 days, and tells coordinators after 3 days; off by default. |
 | `EMAIL_CENTER_ENABLED` | Coordinators' and admins' mails to a program's people. Off by default. |
 | `EMAIL_CENTER_ALLOWLIST` | Addresses and domains the email center may write to; `*` is everybody, blank nobody. |
 | `EMAIL_CENTER_REPLY_TO` | Reply-To of an admin's mail; a coordinator's mail is answered to the coordinator. |

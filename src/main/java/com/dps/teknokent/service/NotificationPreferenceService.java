@@ -33,12 +33,21 @@ public class NotificationPreferenceService {
 		preference.setNewTasks(request.newTasks());
 		preference.setTaskDeadlines(request.taskDeadlines());
 		preference.setStartupActivity(request.startupActivity());
+		// A frontend from before the switch leaves it out; the saved choice stays.
+		if (request.emails() != null) {
+			preference.setEmails(request.emails());
+		}
 		return NotificationPreferencesResponse.fromEntity(notificationPreferenceRepository.save(preference));
 	}
 
 	@Transactional(readOnly = true)
 	public boolean allows(UUID userId, NotificationCategory category) {
 		return find(userId).allows(category);
+	}
+
+	@Transactional(readOnly = true)
+	public boolean allowsEmail(UUID userId, NotificationCategory category) {
+		return find(userId).allowsEmail(category);
 	}
 
 	private NotificationPreference find(UUID userId) {

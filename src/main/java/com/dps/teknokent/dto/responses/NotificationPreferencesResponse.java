@@ -8,7 +8,8 @@ public record NotificationPreferencesResponse(
 		boolean meetingChanges,
 		boolean newTasks,
 		boolean taskDeadlines,
-		boolean startupActivity) {
+		boolean startupActivity,
+		boolean emails) {
 
 	public static NotificationPreferencesResponse fromEntity(NotificationPreference preference) {
 		return new NotificationPreferencesResponse(
@@ -17,6 +18,7 @@ public record NotificationPreferencesResponse(
 				preference.isMeetingChanges(),
 				preference.isNewTasks(),
 				preference.isTaskDeadlines(),
-				preference.isStartupActivity());
+				preference.isStartupActivity(),
+				preference.isEmails());
 	}
 }
