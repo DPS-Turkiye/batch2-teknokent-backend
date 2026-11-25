@@ -129,9 +129,11 @@ class TranscriptBotCapacityServiceTest {
 	@Test
 	void doesNotReserveASlotAgainstTheMeetingTheBotIsAskedFor() {
 		Meeting own = meeting("abc-defg-hij", TEN.plusSeconds(20 * MINUTE), 30);
-		recorded(own, meeting("b", TEN.plusSeconds(20 * MINUTE), 30));
+		recorded(own, meeting("xyz-wxyz-abc", TEN.plusSeconds(20 * MINUTE), 30));
 
 		assertThat(capacity.reservedWithinHour(TEN, "abc-defg-hij")).isEqualTo(1);
+		assertThat(capacity.reservedWithinHour(TEN, "ABC-DEFG-HIJ")).isEqualTo(1);
+		assertThat(capacity.reservedWithinHour(TEN, "zzz-zzzz-zzz")).isEqualTo(2);
 	}
 
 	@Test
