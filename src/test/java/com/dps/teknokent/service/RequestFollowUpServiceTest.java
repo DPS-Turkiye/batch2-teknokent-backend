@@ -124,6 +124,20 @@ class RequestFollowUpServiceTest {
 	}
 
 	@Test
+	void aRequestSavedFromAnOlderCopyDoesNotUndoTheReminder() {
+		MentorshipRequest stale = request(MentorshipRequestStatus.PENDING, MORNING.minus(Duration.ofDays(3)));
+		entityManager.detach(stale);
+		service(MORNING).remindMentors(MORNING);
+
+		stale.markReadBy(mentor, MORNING);
+		requestRepository.saveAndFlush(stale);
+		entityManager.clear();
+		service(MORNING).remindMentors(MORNING);
+
+		assertThat(notifications(mentor)).hasSize(1);
+	}
+
+	@Test
 	void leavesOldRequestsAndFinishedProgramsAlone() {
 		request(MentorshipRequestStatus.PENDING, MORNING.minus(Duration.ofDays(31)));
 		program = program(ProgramStatus.COMPLETED);

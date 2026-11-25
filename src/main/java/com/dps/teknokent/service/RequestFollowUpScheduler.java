@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 import lombok.RequiredArgsConstructor;
 
-/** Runs only with the activity mails on, so nobody is marked as told before they can be mailed. */
+/** Runs only with the activity mails on, so turning them on later still reaches everyone who is waiting. */
 @Component
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "app.mail.activity", name = "enabled", havingValue = "true")
