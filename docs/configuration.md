@@ -64,6 +64,7 @@ Never commit `.env`: it holds real keys.
 |---|---|
 | `MEETING_PROVIDER_BASE_URL`, `MEETING_PROVIDER_API_KEY` | The meeting bot provider. |
 | `MEETING_TRANSCRIPT_BOT_ENABLED`, `MEETING_TRANSCRIPT_BOT_INTERVAL_MS`, `MEETING_TRANSCRIPT_BOT_MAX_CONCURRENT` | The transcript bot job and how many bots may run at once. |
+| `GOOGLE_MEET_ENABLED`, `GOOGLE_MEET_CREDENTIALS_JSON`, `GOOGLE_MEET_USER`, `GOOGLE_MEET_ACCESS_TYPE`, `GOOGLE_MEET_INTERVAL_MS` | `true` gives upcoming online meetings without a link a Google Meet link, made by the Workspace account `GOOGLE_MEET_USER`; off by default. |
 | `REALTIME_TOKEN_SECRET`, `REALTIME_TOKEN_TTL_SECONDS`, `REALTIME_ALLOWED_ORIGINS` | WebSocket tokens and allowed origins. |
 | `REALTIME_DOCUMENT_TTL_HOURS`, `REALTIME_SEED_LOCK_SECONDS` | The live meeting note kept in Redis. |
 | `DOCUMENTS_ALLOWED_ORIGINS` | Origins allowed to upload straight to the API. |

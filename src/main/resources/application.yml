@@ -169,6 +169,16 @@ app:
       alert-interval-ms: ${EMAIL_CENTER_ALERT_INTERVAL_MS:60000}
       # The SQS queue a configuration set's events end up in, for "ses-events".
       events-queue-url: ${EMAIL_CENTER_EVENTS_QUEUE_URL:}
+  # Google Meet links for meetings made in Menton, by a Workspace account; off until a deployment turns it on.
+  google-meet:
+    enabled: ${GOOGLE_MEET_ENABLED:false}
+    base-url: https://meet.googleapis.com
+    # A service account key its Workspace admin allowed to act as the user below for meetings.space.created only.
+    credentials-json: ${GOOGLE_MEET_CREDENTIALS_JSON:}
+    user: ${GOOGLE_MEET_USER:}
+    # OPEN: whoever has the link joins without being let in. The account itself is in no meeting to admit people.
+    access-type: ${GOOGLE_MEET_ACCESS_TYPE:OPEN}
+    interval-ms: ${GOOGLE_MEET_INTERVAL_MS:30000}
   realtime:
     token-secret: ${REALTIME_TOKEN_SECRET:}
     token-ttl-seconds: ${REALTIME_TOKEN_TTL_SECONDS:60}
