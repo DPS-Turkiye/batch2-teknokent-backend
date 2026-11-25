@@ -60,12 +60,14 @@ public class TranscriptBotCapacityService {
 
 	/**
 	 * Booked bots not sent yet that will be in a room at some moment of the next hour. Bots already sent are in
-	 * the provider's running count, so they are left out here.
+	 * the provider's running count, so they are left out here, and so is {@code code}'s own room: the bot asked for
+	 * now is the one it was booked for.
 	 */
-	public int reservedWithinHour(Instant now) {
+	public int reservedWithinHour(Instant now, String code) {
 		Instant until = now.plus(AD_HOC_WINDOW);
 		List<Meeting> waiting = recordedAround(now, until).stream()
 				.filter(meeting -> meeting.getBotDispatchedAt() == null)
+				.filter(meeting -> !code.equalsIgnoreCase(MeetingRooms.nativeMeetingId(meeting)))
 				.toList();
 		return peak(waiting, now, until, null);
 	}

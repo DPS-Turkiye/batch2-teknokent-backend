@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -128,7 +129,7 @@ class AssistantServiceTest {
 		allowed();
 		running("aaa-bbbb-ccc");
 		when(capacityService.capacity()).thenReturn(3);
-		when(capacityService.reservedWithinHour(any())).thenReturn(2);
+		when(capacityService.reservedWithinHour(any(), eq("abc-defg-hij"))).thenReturn(2);
 
 		assertThatThrownBy(() -> assistantService.addAdHocBot(CALLER, new AddBotRequest(URL)))
 				.isInstanceOf(ConflictException.class);
