@@ -123,7 +123,15 @@ class TranscriptBotCapacityServiceTest {
 		recorded(meeting("a", TEN.plusSeconds(20 * MINUTE), 30), meeting("b", TEN.plusSeconds(40 * MINUTE), 60),
 				sent);
 
-		assertThat(capacity.reservedWithinHour(TEN)).isEqualTo(2);
+		assertThat(capacity.reservedWithinHour(TEN, "zzz-zzzz-zzz")).isEqualTo(2);
+	}
+
+	@Test
+	void doesNotReserveASlotAgainstTheMeetingTheBotIsAskedFor() {
+		Meeting own = meeting("abc-defg-hij", TEN.plusSeconds(20 * MINUTE), 30);
+		recorded(own, meeting("b", TEN.plusSeconds(20 * MINUTE), 30));
+
+		assertThat(capacity.reservedWithinHour(TEN, "abc-defg-hij")).isEqualTo(1);
 	}
 
 	@Test
