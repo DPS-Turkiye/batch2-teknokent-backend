@@ -44,7 +44,7 @@ class MatchProposalMailServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new MatchProposalMailService(mailService, preferences, true);
+		service = new MatchProposalMailService(new NotificationMailer(mailService, preferences), true);
 		lenient().when(mailService.link(anyString()))
 				.thenAnswer(invocation -> "https://menton.com.tr" + invocation.getArgument(0));
 	}
@@ -99,7 +99,7 @@ class MatchProposalMailServiceTest {
 
 	@Test
 	void sendsNothingWhenSwitchedOff() {
-		service = new MatchProposalMailService(mailService, preferences, false);
+		service = new MatchProposalMailService(new NotificationMailer(mailService, preferences), false);
 
 		sendProposal();
 
@@ -111,6 +111,7 @@ class MatchProposalMailServiceTest {
 		ApplicationContextRunner runner = new ApplicationContextRunner()
 				.withBean(MailService.class, () -> mailService)
 				.withBean(NotificationPreferenceService.class, () -> preferences)
+				.withBean(NotificationMailer.class)
 				.withBean(MatchProposalMailService.class);
 
 		runner.run(context -> context.getBean(MatchProposalMailService.class).send(reader,
@@ -126,7 +127,7 @@ class MatchProposalMailServiceTest {
 
 	@Test
 	void asksTheReadersMeetingChangePreferenceOnlyWhenTheMailIsAboutToGo() {
-		when(preferences.allows(reader.getId(), NotificationCategory.MEETING_CHANGE)).thenReturn(false);
+		when(preferences.allowsEmail(reader.getId(), NotificationCategory.MEETING_CHANGE)).thenReturn(false);
 
 		sendProposal();
 

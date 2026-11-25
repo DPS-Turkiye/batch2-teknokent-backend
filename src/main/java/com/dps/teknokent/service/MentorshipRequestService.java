@@ -85,6 +85,8 @@ public class MentorshipRequestService {
 	private final NotificationService notificationService;
 	private final MailService mailService;
 	private final DocumentRequestService documentRequestService;
+	private final ActivityMailService activityMailService;
+	private final NotificationPreferenceService notificationPreferenceService;
 
 	/**
 	 * The proxy calls this on the service login with the caller's own scope. A missing scope is refused rather than
@@ -173,7 +175,8 @@ public class MentorshipRequestService {
 				mentor.getEmail(),
 				title,
 				Texts.get(mentor, "mail.newRequest.body", mentor.getFullName(), body,
-						mailService.link("/mentor-dashboard")));
+						mailService.link("/mentor-dashboard")),
+				() -> notificationPreferenceService.allowsEmail(mentor.getId(), NotificationCategory.GENERAL));
 		return toResponse(savedRequest);
 	}
 
@@ -255,6 +258,11 @@ public class MentorshipRequestService {
 				Texts.get(request.getMentor(), "notification.slotChosen.title"),
 				Texts.get(request.getMentor(), "notification.slotChosen.body", request.getRequester().getFullName()),
 				"/mentorships");
+		Instant startsAt = MeetingSlotTimes.parseMachineSlot(selectedSlot);
+		if (startsAt != null) {
+			activityMailService.send(request.getMentor(), NotificationCategory.MEETING_CHANGE, "mail.slotChosen",
+					"/mentorships", request.getRequester().getFullName(), startsAt);
+		}
 		return toResponse(savedRequest);
 	}
 
