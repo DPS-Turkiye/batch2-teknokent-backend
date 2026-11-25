@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -62,6 +63,37 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 			MeetingStatus status, Instant from, Instant until);
 
 	List<Meeting> findByTranscribeRequestedTrueAndBotDispatchedAtIsNotNullAndStatus(MeetingStatus status);
+
+	/** An upcoming meeting that has no link yet. */
+	interface MissingLink {
+		UUID getId();
+
+		UUID getMentorId();
+
+		Instant getScheduledAt();
+	}
+
+	/** Planned meetings with a mentor, not asked for in person, made before {@code madeBefore}; soonest first. */
+	@Query("""
+			select m.id as id, mentor.id as mentorId, m.scheduledAt as scheduledAt
+			from Meeting m join m.mentor mentor left join m.mentorshipRequest r
+			where m.status = com.dps.teknokent.domain.MeetingStatus.SCHEDULED
+			and m.scheduledAt > :now and m.createdAt <= :madeBefore
+			and (m.meetLink is null or m.meetLink = '')
+			and (r is null or r.meetingMode <> com.dps.teknokent.domain.MeetingMode.IN_PERSON)
+			order by m.scheduledAt, m.id
+			""")
+	List<MissingLink> findUpcomingWithoutLink(
+			@Param("now") Instant now, @Param("madeBefore") Instant madeBefore, Limit limit);
+
+	/** Never replaces a link someone entered meanwhile. */
+	@Transactional
+	@Modifying
+	@Query("""
+			update Meeting m set m.meetLink = :link, m.updatedAt = :at
+			where m.id in :ids and (m.meetLink is null or m.meetLink = '')
+			and m.status = com.dps.teknokent.domain.MeetingStatus.SCHEDULED""")
+	int setMissingLink(@Param("ids") Collection<UUID> ids, @Param("link") String link, @Param("at") Instant at);
 
 	// Guarded updates: the dispatcher calls Vexa with no transaction open, so the rows may have changed meanwhile.
 	@Transactional
