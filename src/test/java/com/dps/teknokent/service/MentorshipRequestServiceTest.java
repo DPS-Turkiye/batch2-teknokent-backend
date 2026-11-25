@@ -108,6 +108,10 @@ class MentorshipRequestServiceTest {
 
 	@Mock
 	private MailService mailService;
+	@Mock
+	private ActivityMailService activityMailService;
+	@Mock
+	private NotificationPreferenceService notificationPreferenceService;
 
 	@Mock
 	private DocumentRequestService documentRequestService;
@@ -297,7 +301,8 @@ class MentorshipRequestServiceTest {
 				eq("mentor@tekno.com"),
 				eq("Yeni mentorluk talebi"),
 				argThat((String body) -> body.contains("Ayşe Demir")
-						&& body.contains("Product strategy")));
+						&& body.contains("Product strategy")),
+				any());
 	}
 
 	@Test
@@ -1698,6 +1703,8 @@ class MentorshipRequestServiceTest {
 		verify(notificationService).create(request.getMentor(), NotificationCategory.MEETING_CHANGE,
 				Texts.get(request.getMentor(), "notification.slotChosen.title"),
 				Texts.get(request.getMentor(), "notification.slotChosen.body", "Ayşe Demir"), "/mentorships");
+		verify(activityMailService).send(request.getMentor(), NotificationCategory.MEETING_CHANGE, "mail.slotChosen",
+				"/mentorships", "Ayşe Demir", MeetingSlotTimes.parseMachineSlot("2099-09-13T10:30"));
 	}
 
 	@Test

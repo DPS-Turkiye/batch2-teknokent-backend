@@ -44,6 +44,10 @@ public class NotificationPreference {
 	@Column(name = "startup_activity", nullable = false)
 	private boolean startupActivity = true;
 
+	/** Every e-mail next to a notification; the category switches still apply on top. */
+	@Column(nullable = false)
+	private boolean emails = true;
+
 	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
@@ -52,6 +56,10 @@ public class NotificationPreference {
 		NotificationPreference preference = new NotificationPreference();
 		preference.userId = userId;
 		return preference;
+	}
+
+	public boolean allowsEmail(NotificationCategory category) {
+		return emails && allows(category);
 	}
 
 	// GENERAL covers account and request decisions, and BADGE badge decisions; neither is ever muted.

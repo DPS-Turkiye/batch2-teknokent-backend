@@ -171,6 +171,18 @@ public class MentorshipRequest {
 	@Column(name = "mentee_read_at")
 	private Instant menteeReadAt;
 
+	/** When the mentor was reminded that this request waits for an answer. */
+	@Column(name = "answer_reminded_at")
+	private Instant answerRemindedAt;
+
+	/** When the program's coordinators were told that it is still unanswered. */
+	@Column(name = "coordinator_alerted_at")
+	private Instant coordinatorAlertedAt;
+
+	/** The last time the mentor was mailed about messages they had not read here. */
+	@Column(name = "mentor_mailed_at")
+	private Instant mentorMailedAt;
+
 	public void markReadBy(AppUser reader, Instant at) {
 		if (reader.getId().equals(mentor.getId())) {
 			mentorReadAt = at;

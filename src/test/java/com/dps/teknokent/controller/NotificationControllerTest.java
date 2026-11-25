@@ -82,7 +82,7 @@ class NotificationControllerTest {
 	@Test
 	void savesPreferencesForTheCaller() throws Exception {
 		when(notificationPreferenceService.update(eq(USER_ID), any(UpdateNotificationPreferencesRequest.class)))
-				.thenReturn(new NotificationPreferencesResponse(false, true, true, true, false, true));
+				.thenReturn(new NotificationPreferencesResponse(false, true, true, true, false, true, true));
 
 		mockMvc.perform(put("/api/notifications/preferences")
 				.with(authentication(signedIn()))

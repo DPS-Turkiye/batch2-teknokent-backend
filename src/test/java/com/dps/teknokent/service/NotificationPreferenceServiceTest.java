@@ -43,6 +43,7 @@ class NotificationPreferenceServiceTest {
 		assertThat(preferences.newTasks()).isTrue();
 		assertThat(preferences.taskDeadlines()).isFalse();
 		assertThat(preferences.startupActivity()).isTrue();
+		assertThat(preferences.emails()).isTrue();
 	}
 
 	@Test
@@ -53,7 +54,7 @@ class NotificationPreferenceServiceTest {
 		ArgumentCaptor<NotificationPreference> saved = ArgumentCaptor.forClass(NotificationPreference.class);
 
 		var preferences = notificationPreferenceService.update(USER_ID,
-				new UpdateNotificationPreferencesRequest(false, true, false, true, true, false));
+				new UpdateNotificationPreferencesRequest(false, true, false, true, true, false, false));
 
 		verify(notificationPreferenceRepository).save(saved.capture());
 		assertThat(saved.getValue().getUserId()).isEqualTo(USER_ID);
@@ -61,6 +62,32 @@ class NotificationPreferenceServiceTest {
 		assertThat(preferences.meetingChanges()).isFalse();
 		assertThat(preferences.taskDeadlines()).isTrue();
 		assertThat(preferences.startupActivity()).isFalse();
+		assertThat(preferences.emails()).isFalse();
+	}
+
+	@Test
+	void aSaveFromBeforeTheEmailSwitchKeepsTheSavedChoice() {
+		NotificationPreference preference = NotificationPreference.defaultsFor(USER_ID);
+		preference.setEmails(false);
+		when(notificationPreferenceRepository.findById(USER_ID)).thenReturn(Optional.of(preference));
+		when(notificationPreferenceRepository.save(preference)).thenReturn(preference);
+
+		assertThat(notificationPreferenceService.update(USER_ID,
+				new UpdateNotificationPreferencesRequest(true, true, true, true, true, true, null)).emails()).isFalse();
+	}
+
+	@Test
+	void emailsFollowTheirOwnSwitchAndTheCategorysSwitch() {
+		NotificationPreference preference = NotificationPreference.defaultsFor(USER_ID);
+		assertThat(preference.allowsEmail(NotificationCategory.MESSAGE)).isTrue();
+
+		preference.setMessages(false);
+		assertThat(preference.allowsEmail(NotificationCategory.MESSAGE)).isFalse();
+		assertThat(preference.allowsEmail(NotificationCategory.GENERAL)).isTrue();
+
+		preference.setEmails(false);
+		assertThat(preference.allowsEmail(NotificationCategory.GENERAL)).isFalse();
+		assertThat(preference.allows(NotificationCategory.GENERAL)).isTrue();
 	}
 
 	@Test
