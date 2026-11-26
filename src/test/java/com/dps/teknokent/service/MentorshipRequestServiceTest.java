@@ -950,7 +950,7 @@ class MentorshipRequestServiceTest {
 		assertThat(meeting.scheduledAt()).isEqualTo(startsAt);
 		assertThat(meeting.durationMinutes()).isEqualTo(45);
 		assertThat(meeting.status()).isEqualTo(MeetingStatus.SCHEDULED);
-		verify(notificationService).create(eq(request.getMentor()), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(request.getMentor()), eq(NotificationCategory.MEETING_CHANGE),
 				any(), any(), eq("/mentor-dashboard/calendar"));
 	}
 
@@ -1584,7 +1584,7 @@ class MentorshipRequestServiceTest {
 		verifyNoInteractions(documentRequestService);
 		verify(meetingRepository, never()).saveAndFlush(any());
 		verify(mentorshipRequestMessageRepository, never()).saveAndFlush(any());
-		verify(notificationService).create(request.getRequester(),
+		verify(notificationService).createAndMail(request.getRequester(),
 				Texts.get(request.getRequester(), "notification.requestDeclined.title"), "Uzmanlık alanım değil",
 				"/mentor-request/status?request=" + REQUEST_ID);
 	}
@@ -1605,7 +1605,7 @@ class MentorshipRequestServiceTest {
 						&& question.getAuthor().getId().equals(MENTOR_ID)));
 		assertThat(request.getMentorReadAt()).isNotNull();
 		verify(meetingRepository, never()).saveAndFlush(any());
-		verify(notificationService).create(request.getRequester(),
+		verify(notificationService).createAndMail(request.getRequester(),
 				Texts.get(request.getRequester(), "notification.requestInfoNeeded.title"),
 				"Gelir modeliniz nedir?", "/mentor-request/status?request=" + REQUEST_ID);
 	}
@@ -1620,7 +1620,7 @@ class MentorshipRequestServiceTest {
 		mentorshipRequestService.decide(REQUEST_ID, decision(MentorshipRequestStatus.COUNTER_PROPOSED, message));
 
 		verify(meetingRepository, never()).saveAndFlush(any());
-		verify(notificationService).create(request.getRequester(),
+		verify(notificationService).createAndMail(request.getRequester(),
 				Texts.get(request.getRequester(), "notification.requestCounterProposed.title"), message,
 				"/mentor-request/status?request=" + REQUEST_ID);
 	}
@@ -1646,7 +1646,7 @@ class MentorshipRequestServiceTest {
 		assertThat(booked.getValue().getMentorshipRequest()).isSameAs(request);
 		verify(documentRequestService).saveTitlesOnRequest(request, request.getMentor(), List.of("Pitch deck"));
 		verify(documentRequestService).copyFromRequestToMeeting(request, booked.getValue());
-		verify(notificationService).create(request.getRequester(),
+		verify(notificationService).createAndMail(request.getRequester(),
 				Texts.get(request.getRequester(), "notification.requestAccepted.title"),
 				"Görüşme saati: 2099-03-04T11:00", "/mentor-request/status?request=" + REQUEST_ID);
 	}

@@ -82,7 +82,7 @@ public class TeamChangeService {
 			throw new InvalidRequestException(Texts.forRequest("error.teamLeaderCannotBeRemoved"));
 		}
 		TeamChangeResponse opened = open(organization, member, leader, TeamChangeKind.REMOVE);
-		notificationService.create(member, Texts.get(member, "notification.teamRemovalRequestedMember.title"),
+		notificationService.createAndMail(member, Texts.get(member, "notification.teamRemovalRequestedMember.title"),
 				Texts.get(member, "notification.teamRemovalRequestedMember.body", leader.getFullName(),
 						organization.getName()),
 				"/startup/team");
@@ -131,7 +131,7 @@ public class TeamChangeService {
 		organizationRepository.save(organization);
 		depart(leader, organization, TeamExitReason.LEFT);
 
-		notificationService.create(successor, Texts.get(successor, "notification.teamLeaderChanged.title"),
+		notificationService.createAndMail(successor, Texts.get(successor, "notification.teamLeaderChanged.title"),
 				Texts.get(successor, "notification.teamLeaderChanged.body", leader.getFullName(),
 						organization.getName()),
 				"/startup/team");
@@ -260,7 +260,7 @@ public class TeamChangeService {
 	}
 
 	private void notifyRejected(TeamChangeRequest request, AppUser recipient) {
-		notificationService.create(recipient, Texts.get(recipient, "notification.teamChangeRejected.title"),
+		notificationService.createAndMail(recipient, Texts.get(recipient, "notification.teamChangeRejected.title"),
 				Texts.get(recipient, "notification.teamChangeRejected.body", request.getOrganization().getName()),
 				"/startup/team");
 	}

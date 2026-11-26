@@ -222,7 +222,7 @@ public class MentorshipRequestService {
 			Instant chosen = MeetingSlotTimes.parseFromDecisionMessage(message);
 			ensureMeetingForAccepted(savedRequest, chosen != null ? chosen : firstOpenPreferredSlot(savedRequest));
 		}
-		notificationService.create(
+		notificationService.createAndMail(
 				request.getRequester(),
 				decision.status() == MentorshipRequestStatus.ACCEPTED
 						? Texts.get(request.getRequester(), "notification.requestAccepted.title")
@@ -397,7 +397,7 @@ public class MentorshipRequestService {
 		}
 
 		Meeting savedMeeting = meetingRepository.saveAndFlush(Meeting.forMentorshipRequest(request, slot));
-		notificationService.create(
+		notificationService.createAndMail(
 				request.getMentor(),
 				NotificationCategory.MEETING_CHANGE,
 				Texts.get(request.getMentor(), "notification.meetingPlanned.title"),

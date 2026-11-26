@@ -89,7 +89,7 @@ class AdminInterventionServiceTest {
 		when(programRepository.findById(PROGRAM)).thenReturn(Optional.of(program()));
 		Notification notification = new Notification();
 		notification.setId(NOTIFICATION);
-		when(notificationService.create(any(), anyString(), anyString(),
+		when(notificationService.createAndMail(any(), anyString(), anyString(),
 				eq("/coordinator/mentorships?mentorship=" + MENTORSHIP)))
 				.thenReturn(notification);
 		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(MENTOR, ORG))
@@ -105,7 +105,7 @@ class AdminInterventionServiceTest {
 		assertThat(saved.getValue().getNote()).isEqualTo("Not");
 		assertThat(result.coordinatorName()).isEqualTo("Deniz Acar");
 		assertThat(result.readAt()).isNull();
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				any(),
 				eq("Müdahale gerekiyor"),
 				eq("ODTÜ Stars 2026 · Ayşe Demir ↔ Lumen. 48 saat içinde görüşme planlansın Not"),
@@ -130,7 +130,8 @@ class AdminInterventionServiceTest {
 		when(appUserRepository.findAllById(any())).thenReturn(List.of(admin, first, other));
 		Notification notification = new Notification();
 		notification.setId(NOTIFICATION);
-		when(notificationService.create(eq(first), anyString(), anyString(), anyString())).thenReturn(notification);
+		when(notificationService.createAndMail(eq(first), anyString(), anyString(), anyString()))
+				.thenReturn(notification);
 		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(MENTOR, ORG))
 				.thenReturn(List.of());
 
@@ -140,7 +141,8 @@ class AdminInterventionServiceTest {
 		verify(interventionRepository).save(saved.capture());
 		assertThat(saved.getValue().getCoordinatorId()).isEqualTo(COORDINATOR);
 		assertThat(saved.getValue().getNotificationId()).isEqualTo(NOTIFICATION);
-		verify(notificationService).create(eq(other), anyString(), anyString(), anyString());
+		verify(notificationService).createAndMail(eq(other), anyString(), anyString(), anyString());
+		verify(notificationService, never()).createAndMail(eq(admin), anyString(), anyString(), anyString());
 		verify(notificationService, never()).create(eq(admin), anyString(), anyString(), anyString());
 	}
 
@@ -250,6 +252,7 @@ class AdminInterventionServiceTest {
 				.isInstanceOf(ResponseStatusException.class);
 		assertThatThrownBy(() -> service.resolve(COORDINATOR, UUID.randomUUID()))
 				.isInstanceOf(ResponseStatusException.class);
+		verify(notificationService, never()).createAndMail(any(), anyString(), anyString(), anyString());
 		verify(notificationService, never()).create(any(), anyString(), anyString(), anyString());
 		verify(interventionRepository, never()).save(any());
 	}
@@ -266,7 +269,7 @@ class AdminInterventionServiceTest {
 		when(interventionRepository.findByMentorshipIdAndResolvedAtIsNull(MENTORSHIP)).thenReturn(Optional.empty());
 		Notification notification = new Notification();
 		notification.setId(NOTIFICATION);
-		when(notificationService.create(any(), anyString(), anyString(), anyString())).thenReturn(notification);
+		when(notificationService.createAndMail(any(), anyString(), anyString(), anyString())).thenReturn(notification);
 		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(MENTOR, ORG))
 				.thenReturn(List.of());
 
@@ -293,7 +296,7 @@ class AdminInterventionServiceTest {
 		when(programRepository.findById(PROGRAM)).thenReturn(Optional.of(program()));
 		Notification notification = new Notification();
 		notification.setId(NOTIFICATION);
-		when(notificationService.create(any(), anyString(), anyString(), anyString())).thenReturn(notification);
+		when(notificationService.createAndMail(any(), anyString(), anyString(), anyString())).thenReturn(notification);
 		when(meetingRepository.findByMentorIdAndOrganizationIdOrderByScheduledAtDesc(MENTOR, ORG))
 				.thenReturn(List.of());
 

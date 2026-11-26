@@ -146,10 +146,11 @@ public class FounderChangeService {
 	}
 
 	private void notifyEveryone(AppUser actor, Organization team, @Nullable AppUser previous, AppUser successor) {
-		notificationService.create(successor, Texts.get(successor, "notification.founderChangedNew.title"),
+		notificationService.createAndMail(successor, Texts.get(successor, "notification.founderChangedNew.title"),
 				Texts.get(successor, "notification.founderChangedNew.body", team.getName()), TEAM_HREF);
 		if (previous != null && previous.getStatus() != UserAccountStatus.DELETED) {
-			notificationService.create(previous, Texts.get(previous, "notification.founderChangedPrevious.title"),
+			notificationService.createAndMail(previous,
+					Texts.get(previous, "notification.founderChangedPrevious.title"),
 					Texts.get(previous, "notification.founderChangedPrevious.body", team.getName(),
 							successor.getFullName()),
 					TEAM_HREF);
@@ -157,7 +158,7 @@ public class FounderChangeService {
 		for (Runner runner : runnersOf(team)) {
 			AppUser coordinator = runner.coordinator();
 			if (!coordinator.getId().equals(actor.getId())) {
-				notificationService.create(coordinator,
+				notificationService.createAndMail(coordinator,
 						Texts.get(coordinator, "notification.founderChangedCoordinator.title"),
 						Texts.get(coordinator, "notification.founderChangedCoordinator.body", team.getName(),
 								successor.getFullName()),

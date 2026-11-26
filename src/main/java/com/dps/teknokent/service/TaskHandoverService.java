@@ -193,7 +193,7 @@ public class TaskHandoverService {
 
 		ActionItem first = team.tasks().get(0);
 		String leaverName = first.getPreviousOwner() == null ? "" : first.getPreviousOwner().getFullName();
-		handedTo.forEach((owner, count) -> notificationService.create(owner, NotificationCategory.TASK_ASSIGNED,
+		handedTo.forEach((owner, count) -> notificationService.createAndMail(owner, NotificationCategory.TASK_ASSIGNED,
 				Texts.get(owner, "notification.tasksHandedOver.title"),
 				Texts.get(owner, "notification.tasksHandedOver.body", leaverName, count), "/startup/process"));
 	}

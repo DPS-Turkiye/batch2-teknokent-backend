@@ -26,6 +26,7 @@ public class NotificationService {
 
 	private final NotificationRepository notificationRepository;
 	private final ApplicationEventPublisher eventPublisher;
+	private final ActivityMailService activityMailService;
 
 	@Transactional(readOnly = true)
 	public List<NotificationResponse> list(UUID recipientId) {
@@ -62,6 +63,23 @@ public class NotificationService {
 	@Transactional
 	public Notification create(AppUser recipient, String title, String body, String href) {
 		return create(recipient, NotificationCategory.GENERAL, title, body, href);
+	}
+
+	/** The notification, and the same text by e-mail when the activity mails are on and the reader wants e-mail. */
+	@Transactional
+	public Notification createAndMail(AppUser recipient, String title, String body, String href) {
+		return createAndMail(recipient, NotificationCategory.GENERAL, title, body, href);
+	}
+
+	@Transactional
+	public Notification createAndMail(AppUser recipient, NotificationCategory category, String title, String body,
+			String href) {
+		Notification notification = create(recipient, category, title, body, href);
+		// A notification without a link still mails one, to the home page.
+		String path = notification.getHref() == null ? "/" : notification.getHref();
+		activityMailService.send(recipient, category, "mail.notification", path, notification.getTitle(),
+				notification.getBody() == null ? "" : notification.getBody());
+		return notification;
 	}
 
 	@Transactional

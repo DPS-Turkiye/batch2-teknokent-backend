@@ -74,7 +74,8 @@ class ProgramCoordinatorServiceTest {
 		assertThat(saved.getValue().getUserId()).isEqualTo(BURCU);
 		assertThat(saved.getValue().getAddedBy()).isEqualTo(ADMIN);
 		assertThat(result).extracting(CoordinatorRef::fullName).containsExactly("Elif Demir", "Burcu Şen");
-		verify(notificationService).create(any(), anyString(), anyString(), eq("/coordinator/programs/" + PROGRAM_ID));
+		verify(notificationService).createAndMail(any(), anyString(), anyString(),
+				eq("/coordinator/programs/" + PROGRAM_ID));
 	}
 
 	@Test

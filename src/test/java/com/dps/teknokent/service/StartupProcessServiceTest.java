@@ -325,6 +325,7 @@ class StartupProcessServiceTest {
 		assertThat(saved.getValue().getOwner()).isSameAs(organization.getFounder());
 		assertThat(saved.getValue().getCreatedBy()).isSameAs(organization.getFounder());
 		assertThat(saved.getValue().getStatus()).isEqualTo(ActionItemStatus.OPEN);
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any(), any());
 		verify(notificationService, never()).create(any(), any(), any(), any(), any());
 	}
 
@@ -340,7 +341,7 @@ class StartupProcessServiceTest {
 		startupProcessService.createAssignment(ORG_ID, new CreateProcessAssignmentRequest(
 				MENTOR_ID, null, StartupStage.FINANCE, "Finansal model", null, null, null));
 
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				eq(organization.getFounder()),
 				eq(NotificationCategory.TASK_ASSIGNED),
 				eq("Yeni görev"),

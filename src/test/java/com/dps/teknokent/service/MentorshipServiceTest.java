@@ -156,7 +156,7 @@ class MentorshipServiceTest {
 
 		assertThat(result.id()).isEqualTo(mentorshipId);
 		assertThat(result.daysPerWeek()).isEqualTo(2);
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				eq(mentee),
 				eq("Düzenli mentorlük başladı"),
 				org.mockito.ArgumentMatchers.contains("Teknokent"),
@@ -503,11 +503,12 @@ class MentorshipServiceTest {
 		assertThat(result.endDate()).isNull();
 		assertThat(result.goals()).isEqualTo("Ürün stratejisi");
 		assertThat(result.programId()).isNull();
-		verify(notificationService).create(mentee,
+		verify(notificationService).createAndMail(mentee,
 				Texts.get(mentee, "notification.regularMentorshipStarted.title"),
 				Texts.get(mentee, "notification.regularMentorshipStarted.body", "Dr. Kemal Arslan", "Teknokent",
 						Texts.get(mentee, "notification.regularMentorshipStarted.noEnd")),
 				"/mentorships?tab=regular");
+		verify(notificationService, never()).createAndMail(eq(coordinator), any(), any(), any());
 		verify(notificationService, never()).create(eq(coordinator), any(), any(), any());
 	}
 
@@ -533,7 +534,7 @@ class MentorshipServiceTest {
 		assertThat(result.daysPerWeek()).isEqualTo(7);
 		assertThat(result.programId()).isEqualTo(program.getId());
 		assertThat(result.programName()).isEqualTo("METU BİGG 2026");
-		verify(notificationService).create(mentee,
+		verify(notificationService).createAndMail(mentee,
 				Texts.get(mentee, "notification.regularMentorshipStarted.title"),
 				Texts.get(mentee, "notification.regularMentorshipStarted.body", "Dr. Kemal Arslan", "Teknokent",
 						"2026-08-10"),

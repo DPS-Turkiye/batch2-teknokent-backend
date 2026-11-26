@@ -358,8 +358,10 @@ public class MeetingProposalService {
 		return readers;
 	}
 
+	/** Proposals have their own mails (see mailAll), so these are only notifications. */
 	private void notifyAll(List<Reader> readers, String titleKey, String bodyKey, Object... args) {
-		readers.forEach(reader -> notify(reader.user(), titleKey, bodyKey, args, reader.href()));
+		readers.forEach(reader -> notificationService.create(reader.user(), NotificationCategory.MEETING_CHANGE,
+				Texts.get(reader.user(), titleKey, args), Texts.get(reader.user(), bodyKey, args), reader.href()));
 	}
 
 	/** One mail each, also for someone on both sides, and none to the person who proposed. */
@@ -379,10 +381,10 @@ public class MeetingProposalService {
 				.ifPresent(proposer -> notify(proposer, titleKey, bodyKey, args, proposerLink(proposal, proposer)));
 	}
 
-	/** Title and body are written in the reader's language, from the same arguments. */
+	/** Title and body are written in the reader's language, from the same arguments; the same text is mailed. */
 	private void notify(AppUser reader, String titleKey, String bodyKey, Object[] args, String href) {
-		notificationService.create(reader, NotificationCategory.MEETING_CHANGE, Texts.get(reader, titleKey, args),
-				Texts.get(reader, bodyKey, args), href);
+		notificationService.createAndMail(reader, NotificationCategory.MEETING_CHANGE,
+				Texts.get(reader, titleKey, args), Texts.get(reader, bodyKey, args), href);
 	}
 
 	private static String proposerLink(MeetingProposal proposal, AppUser proposer) {

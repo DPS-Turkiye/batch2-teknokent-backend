@@ -39,7 +39,8 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class NotificationReminderService {
 
-	static final Duration MEETING_LEAD = Duration.ofMinutes(30);
+	/** The reminder, in the app and by e-mail, comes an hour before the meeting. */
+	static final Duration MEETING_LEAD = Duration.ofHours(1);
 	private static final Set<ActionItemStatus> OPEN_TASK_STATUSES = Set.of(ActionItemStatus.OPEN,
 			ActionItemStatus.IN_PROGRESS);
 	private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm")
@@ -128,7 +129,7 @@ public class NotificationReminderService {
 		String startsAt = TIME.format(meeting.getScheduledAt());
 		AppUser mentor = meeting.getMentor();
 		if (mentor != null) {
-			notificationService.create(
+			notificationService.createAndMail(
 					mentor,
 					NotificationCategory.MEETING_REMINDER,
 					Texts.get(mentor, "notification.meetingSoon.title"),
@@ -136,7 +137,7 @@ public class NotificationReminderService {
 					MENTOR_MEETINGS_HREF);
 		}
 		for (AppUser mentee : menteesByTeam.getOrDefault(meeting.getOrganization().getId(), List.of())) {
-			notificationService.create(
+			notificationService.createAndMail(
 					mentee,
 					NotificationCategory.MEETING_REMINDER,
 					Texts.get(mentee, "notification.meetingSoon.title"),
@@ -179,7 +180,7 @@ public class NotificationReminderService {
 		String whenKey = task.getDueDate().equals(today)
 				? "notification.taskDeadline.today"
 				: "notification.taskDeadline.tomorrow";
-		notificationService.create(
+		notificationService.createAndMail(
 				owner,
 				NotificationCategory.TASK_DEADLINE,
 				Texts.get(owner, "notification.taskDeadline.title"),

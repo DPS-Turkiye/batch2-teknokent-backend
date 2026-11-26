@@ -166,7 +166,7 @@ public class AdminInterventionService {
 	}
 
 	private Notification notifyRunner(AppUser runner, String body, Mentorship mentorship) {
-		return notificationService.create(
+		return notificationService.createAndMail(
 				runner,
 				Texts.get(runner, "notification.interventionNeeded.title"),
 				body,

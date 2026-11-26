@@ -674,7 +674,7 @@ class MeetingServiceTest {
 		assertThat(result.transcribeRequested()).isFalse();
 		assertThat(result.mentorshipRequestId())
 				.isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000401"));
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				eq(mentee),
 				eq(NotificationCategory.MEETING_CHANGE),
 				eq("Yeni görüşme planlandı"),
@@ -1192,12 +1192,13 @@ class MeetingServiceTest {
 
 		assertThat(result.mentorId()).isNull();
 		assertThat(result.mentorshipRequestId()).isNull();
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				mentee,
 				NotificationCategory.MEETING_CHANGE,
 				"Yeni görüşme planlandı",
 				"Mentörünüz, Teknokent için yeni bir görüşme planladı · 15 Eylül Salı · 19:00.",
 				"/mentorships?tab=active");
+		verify(notificationService, never()).createAndMail(eq(teammateWhoMentors), any(), any(), any(), any());
 		verify(notificationService, never()).create(eq(teammateWhoMentors), any(), any(), any(), any());
 		verifyNoInteractions(mentorshipRequestRepository, documentRequestService);
 	}

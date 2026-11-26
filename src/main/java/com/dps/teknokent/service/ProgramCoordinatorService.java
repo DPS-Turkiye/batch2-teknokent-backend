@@ -82,7 +82,7 @@ public class ProgramCoordinatorService {
 		row.setAddedBy(actorId);
 		row.setCreatedAt(Instant.now());
 		programCoordinatorRepository.save(row);
-		notificationService.create(
+		notificationService.createAndMail(
 				user,
 				Texts.get(user, "notification.addedAsCoordinator.title"),
 				Texts.get(user, "notification.addedAsCoordinator.body", program.getName()),

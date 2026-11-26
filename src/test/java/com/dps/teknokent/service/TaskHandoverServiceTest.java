@@ -142,7 +142,7 @@ class TaskHandoverServiceTest {
 		assertThat(pitch.getOwner()).isSameAs(lead);
 		assertThat(mockups.getOwner()).isSameAs(designer);
 		assertThat(pitch.getPreviousOwner()).isSameAs(leaver);
-		verify(notificationService, times(2)).create(any(AppUser.class), eq(NotificationCategory.TASK_ASSIGNED),
+		verify(notificationService, times(2)).createAndMail(any(AppUser.class), eq(NotificationCategory.TASK_ASSIGNED),
 				anyString(), anyString(), eq("/startup/process"));
 	}
 
