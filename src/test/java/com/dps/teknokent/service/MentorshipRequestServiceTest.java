@@ -32,6 +32,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
+import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.MeetingMode;
 import com.dps.teknokent.domain.MeetingStatus;
 import com.dps.teknokent.domain.MentorshipRequestFormat;
@@ -1584,9 +1585,9 @@ class MentorshipRequestServiceTest {
 		verifyNoInteractions(documentRequestService);
 		verify(meetingRepository, never()).saveAndFlush(any());
 		verify(mentorshipRequestMessageRepository, never()).saveAndFlush(any());
-		verify(notificationService).createAndMail(request.getRequester(),
+		verify(notificationService).createAndMail(request.getRequester(), NotificationCategory.GENERAL,
 				Texts.get(request.getRequester(), "notification.requestDeclined.title"), "Uzmanlık alanım değil",
-				"/mentor-request/status?request=" + REQUEST_ID);
+				"/mentor-request/status?request=" + REQUEST_ID, "Uzmanlık alanım değil");
 	}
 
 	@Test
@@ -1605,9 +1606,9 @@ class MentorshipRequestServiceTest {
 						&& question.getAuthor().getId().equals(MENTOR_ID)));
 		assertThat(request.getMentorReadAt()).isNotNull();
 		verify(meetingRepository, never()).saveAndFlush(any());
-		verify(notificationService).createAndMail(request.getRequester(),
+		verify(notificationService).createAndMail(request.getRequester(), NotificationCategory.GENERAL,
 				Texts.get(request.getRequester(), "notification.requestInfoNeeded.title"),
-				"Gelir modeliniz nedir?", "/mentor-request/status?request=" + REQUEST_ID);
+				"Gelir modeliniz nedir?", "/mentor-request/status?request=" + REQUEST_ID, "Gelir modeliniz nedir?");
 	}
 
 	@Test
@@ -1620,9 +1621,12 @@ class MentorshipRequestServiceTest {
 		mentorshipRequestService.decide(REQUEST_ID, decision(MentorshipRequestStatus.COUNTER_PROPOSED, message));
 
 		verify(meetingRepository, never()).saveAndFlush(any());
-		verify(notificationService).createAndMail(request.getRequester(),
+		// The mail says it in words, not with the machine line of proposed times.
+		verify(notificationService).createAndMail(request.getRequester(), NotificationCategory.GENERAL,
 				Texts.get(request.getRequester(), "notification.requestCounterProposed.title"), message,
-				"/mentor-request/status?request=" + REQUEST_ID);
+				"/mentor-request/status?request=" + REQUEST_ID,
+				Texts.get(request.getRequester(), "mail.requestCounterProposed.text",
+						request.getMentor().getFullName()));
 	}
 
 	@Test
@@ -1646,9 +1650,11 @@ class MentorshipRequestServiceTest {
 		assertThat(booked.getValue().getMentorshipRequest()).isSameAs(request);
 		verify(documentRequestService).saveTitlesOnRequest(request, request.getMentor(), List.of("Pitch deck"));
 		verify(documentRequestService).copyFromRequestToMeeting(request, booked.getValue());
-		verify(notificationService).createAndMail(request.getRequester(),
+		verify(notificationService).createAndMail(request.getRequester(), NotificationCategory.GENERAL,
 				Texts.get(request.getRequester(), "notification.requestAccepted.title"),
-				"Görüşme saati: 2099-03-04T11:00", "/mentor-request/status?request=" + REQUEST_ID);
+				"Görüşme saati: 2099-03-04T11:00", "/mentor-request/status?request=" + REQUEST_ID,
+				Texts.get(request.getRequester(), "mail.requestAccepted.text", request.getMentor().getFullName(),
+						MeetingSlotTimes.formatForPeople(booked.getValue().getScheduledAt(), AppLanguage.TR)));
 	}
 
 	@Test

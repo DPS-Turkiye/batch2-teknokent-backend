@@ -49,7 +49,7 @@ public class ProgramCoordinatorService {
 		if (!user.has(UserRole.COORDINATOR) || user.getStatus() != UserAccountStatus.APPROVED) {
 			throw new InvalidRequestException("Only an approved coordinator can run a program.");
 		}
-		return attach(actorId, program, user);
+		return attach(actorId, program, user, true);
 	}
 
 	/**
@@ -67,11 +67,14 @@ public class ProgramCoordinatorService {
 				&& ProgramCoordination.coordinates(program, checked.existing().getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("This coordinator already runs the program.");
 		}
+		// Someone new was just sent the program invite with a password link; only an existing account is mailed here.
 		return attach(actorId, program,
-				adminCoordinatorService.coordinatorForNewProgram(actorId, checked, program.getName()));
+				adminCoordinatorService.coordinatorForNewProgram(actorId, checked, program.getName()),
+				checked.existing() != null);
 	}
 
-	private List<CoordinatorProgramResponse.CoordinatorRef> attach(UUID actorId, Program program, AppUser user) {
+	private List<CoordinatorProgramResponse.CoordinatorRef> attach(UUID actorId, Program program, AppUser user,
+			boolean mail) {
 		if (ProgramCoordination.coordinates(program, user.getId(), programCoordinatorRepository)) {
 			throw new InvalidRequestException("This coordinator already runs the program.");
 		}
@@ -82,11 +85,14 @@ public class ProgramCoordinatorService {
 		row.setAddedBy(actorId);
 		row.setCreatedAt(Instant.now());
 		programCoordinatorRepository.save(row);
-		notificationService.createAndMail(
-				user,
-				Texts.get(user, "notification.addedAsCoordinator.title"),
-				Texts.get(user, "notification.addedAsCoordinator.body", program.getName()),
-				"/coordinator/programs/" + program.getId());
+		String title = Texts.get(user, "notification.addedAsCoordinator.title");
+		String body = Texts.get(user, "notification.addedAsCoordinator.body", program.getName());
+		String href = "/coordinator/programs/" + program.getId();
+		if (mail) {
+			notificationService.createAndMail(user, title, body, href);
+		} else {
+			notificationService.create(user, title, body, href);
+		}
 		return refs(program);
 	}
 

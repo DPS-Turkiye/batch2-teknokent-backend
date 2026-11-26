@@ -710,6 +710,26 @@ class MeetingProposalServiceTest {
 				eq("Görüşme onaylandı"), anyString(), eq("/mentor-dashboard/calendar"));
 	}
 
+	@Test
+	void aTeamMemberWhoProposedTheNewTimeIsMailedOnlyAboutTheMovedMeeting() {
+		member.setOrganization(lumen);
+		Meeting existing = scheduledMeeting();
+		MeetingProposal proposal = pending(existing.getId());
+		proposal.setProposedBy(member.getId());
+		proposal.setTeamAcceptedAt(Instant.now());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+		when(meetingRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+		service.accept(mentor.getId(), proposal.getId());
+
+		verify(notificationService).create(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme onaylandı"), anyString(), anyString());
+		verify(notificationService, never()).createAndMail(eq(member), any(), eq("Görüşme onaylandı"), anyString(),
+				anyString());
+		verify(notificationService).createAndMail(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme yeni saate taşındı"), anyString(), eq("/mentorships?tab=active"));
+	}
+
 	// --- E-mails ---
 
 	@Test

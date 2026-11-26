@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,11 +75,18 @@ public class NotificationService {
 	@Transactional
 	public Notification createAndMail(AppUser recipient, NotificationCategory category, String title, String body,
 			String href) {
+		return createAndMail(recipient, category, title, body, href, null);
+	}
+
+	/** As above, with {@code mailText} in the mail where the notification's own text is not meant for people. */
+	@Transactional
+	public Notification createAndMail(AppUser recipient, NotificationCategory category, String title, String body,
+			String href, @Nullable String mailText) {
 		Notification notification = create(recipient, category, title, body, href);
 		// A notification without a link still mails one, to the home page.
 		String path = notification.getHref() == null ? "/" : notification.getHref();
 		activityMailService.send(recipient, category, "mail.notification", path, notification.getTitle(),
-				notification.getBody() == null ? "" : notification.getBody());
+				mailText != null ? mailText : notification.getBody() == null ? "" : notification.getBody());
 		return notification;
 	}
 

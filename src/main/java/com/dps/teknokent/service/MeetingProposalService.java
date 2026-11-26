@@ -335,7 +335,17 @@ public class MeetingProposalService {
 
 		String bodyKey = "notification.proposalConfirmed.body";
 		Object[] args = { pairLine(proposal), proposal.getScheduledAt() };
-		notifyProposer(proposal, "notification.proposalConfirmed.title", bodyKey, args);
+		// The team's mentees get the booked or moved meeting itself by mail, so a proposer among them is not mailed
+		// twice about the same time.
+		appUserRepository.findById(proposal.getProposedBy()).ifPresent(proposer -> {
+			if (onTheTeam(proposer, proposal)) {
+				notifyOnly(proposer, "notification.proposalConfirmed.title", bodyKey, args,
+						proposerLink(proposal, proposer));
+			} else {
+				notify(proposer, "notification.proposalConfirmed.title", bodyKey, args,
+						proposerLink(proposal, proposer));
+			}
+		});
 		if (!proposal.getMentor().getId().equals(proposal.getProposedBy())) {
 			notify(proposal.getMentor(), "notification.proposalConfirmed.title", bodyKey, args,
 					"/mentor-dashboard/calendar");
@@ -360,8 +370,18 @@ public class MeetingProposalService {
 
 	/** Proposals have their own mails (see mailAll), so these are only notifications. */
 	private void notifyAll(List<Reader> readers, String titleKey, String bodyKey, Object... args) {
-		readers.forEach(reader -> notificationService.create(reader.user(), NotificationCategory.MEETING_CHANGE,
-				Texts.get(reader.user(), titleKey, args), Texts.get(reader.user(), bodyKey, args), reader.href()));
+		readers.forEach(reader -> notifyOnly(reader.user(), titleKey, bodyKey, args, reader.href()));
+	}
+
+	private void notifyOnly(AppUser reader, String titleKey, String bodyKey, Object[] args, String href) {
+		notificationService.create(reader, NotificationCategory.MEETING_CHANGE, Texts.get(reader, titleKey, args),
+				Texts.get(reader, bodyKey, args), href);
+	}
+
+	/** One of the mentees members() and MeetingService tell about the meeting. */
+	private static boolean onTheTeam(AppUser user, MeetingProposal proposal) {
+		return user.has(UserRole.MENTEE) && user.getOrganization() != null && proposal.getOrganization() != null
+				&& user.getOrganization().getId().equals(proposal.getOrganization().getId());
 	}
 
 	/** One mail each, also for someone on both sides, and none to the person who proposed. */

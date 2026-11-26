@@ -94,6 +94,9 @@ class ProgramCoordinatorServiceTest {
 		verify(programCoordinatorRepository).save(saved.capture());
 		assertThat(saved.getValue().getUserId()).isEqualTo(invited);
 		assertThat(saved.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
+		// The invite already mailed them a password link; a second mail would point at a page they cannot open yet.
+		verify(notificationService).create(any(), anyString(), anyString(), eq("/coordinator/programs/" + PROGRAM_ID));
+		verify(notificationService, never()).createAndMail(any(), anyString(), anyString(), anyString());
 	}
 
 	@Test
