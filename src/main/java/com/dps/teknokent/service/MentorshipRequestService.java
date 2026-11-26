@@ -215,6 +215,11 @@ public class MentorshipRequestService {
 			saveMessage(request, mentor, MentorshipRequestMessageType.MENTOR_MESSAGE, message);
 		}
 		MentorshipRequest savedRequest = mentorshipRequestRepository.saveAndFlush(request);
+		if (decision.status() == MentorshipRequestStatus.MORE_INFO_REQUESTED
+				|| decision.status() == MentorshipRequestStatus.COUNTER_PROPOSED) {
+			// The decision mail below already carries the question or the proposed times.
+			mentorshipRequestRepository.markMenteeMailed(savedRequest.getId(), Instant.now());
+		}
 		if (decision.status() != MentorshipRequestStatus.DECLINED) {
 			documentRequestService.saveTitlesOnRequest(savedRequest, mentor, decision.requestedDocuments());
 		}

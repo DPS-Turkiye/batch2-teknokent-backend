@@ -117,12 +117,13 @@ public class RequestFollowUpService {
 		List<UUID> requestIds = reading.execute(status -> requestRepository.findIdsWithMessagesUnreadByMentor(
 				OPEN_CONVERSATIONS, since, until));
 		for (UUID requestId : orEmpty(requestIds)) {
-			attempt("Unread message mail", requestId, () -> mailUnreadMessage(requestId, since, until, now));
+			attempt("Unread message mail", requestId, () -> mailUnreadMessage(requestId, since, until));
 		}
 	}
 
-	private void mailUnreadMessage(UUID requestId, Instant since, Instant until, Instant now) {
-		if (requestRepository.claimUnreadMessageMail(requestId, since, until, now) == 0) {
+	private void mailUnreadMessage(UUID requestId, Instant since, Instant until) {
+		// Marked up to "until", not "now": a message written in the last quarter of an hour is still mailed later.
+		if (requestRepository.claimUnreadMessageMail(requestId, since, until, until) == 0) {
 			return;
 		}
 		requestRepository.findById(requestId).ifPresent(request -> activityMailService.send(

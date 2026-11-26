@@ -24,13 +24,23 @@ public interface CoordinatorConversationRepository extends JpaRepository<Coordin
 
 	Optional<CoordinatorConversation> findByProgramIdAndMentorId(UUID programId, UUID mentorId);
 
-	List<CoordinatorConversation> findByLastMessageAtAfter(Instant since);
+	/** Conversations with a message since {@code since} that one side has neither read nor been mailed about. */
+	@Query("""
+			select c.id from CoordinatorConversation c
+			where c.lastMessageAt > :since and (
+				((c.coordinatorReadAt is null or c.lastMessageAt > c.coordinatorReadAt)
+					and (c.coordinatorMailedAt is null or c.lastMessageAt > c.coordinatorMailedAt))
+				or ((c.counterpartReadAt is null or c.lastMessageAt > c.counterpartReadAt)
+					and (c.counterpartMailedAt is null or c.lastMessageAt > c.counterpartMailedAt)))
+			""")
+	List<UUID> findIdsWithUnmailedMessages(@Param("since") Instant since);
 
 	// Bulk updates: they win once even if two runs meet, and a conversation saved at the same moment keeps them.
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("""
 			update CoordinatorConversation c set c.coordinatorMailedAt = :at
 			where c.id = :id and (c.coordinatorMailedAt is null or c.coordinatorMailedAt < :newest)
+			and (c.coordinatorReadAt is null or c.coordinatorReadAt < :newest)
 			""")
 	int claimCoordinatorMail(@Param("id") UUID id, @Param("newest") Instant newest, @Param("at") Instant at);
 
@@ -38,6 +48,7 @@ public interface CoordinatorConversationRepository extends JpaRepository<Coordin
 	@Query("""
 			update CoordinatorConversation c set c.counterpartMailedAt = :at
 			where c.id = :id and (c.counterpartMailedAt is null or c.counterpartMailedAt < :newest)
+			and (c.counterpartReadAt is null or c.counterpartReadAt < :newest)
 			""")
 	int claimCounterpartMail(@Param("id") UUID id, @Param("newest") Instant newest, @Param("at") Instant at);
 }

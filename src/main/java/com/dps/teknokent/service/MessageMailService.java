@@ -4,9 +4,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +18,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.dps.teknokent.domain.NotificationCategory;
+import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.CoordinatorConversation;
 import com.dps.teknokent.entity.CoordinatorMessage;
@@ -91,7 +95,9 @@ public class MessageMailService {
 				RequestFollowUpService.OPEN_CONVERSATIONS, since, until));
 		for (UUID requestId : requestIds == null ? List.<UUID>of() : requestIds) {
 			attempt("Mentor message mail", requestId, () -> {
-				if (requestRepository.claimUnreadMenteeMessageMail(requestId, since, until, now) == 0) {
+				// Marked up to "until", not "now": a message written in the last quarter of an hour is still mailed
+				// later.
+				if (requestRepository.claimUnreadMenteeMessageMail(requestId, since, until, until) == 0) {
 					return;
 				}
 				requestRepository.findById(requestId).ifPresent(request -> activityMailService.send(
@@ -106,8 +112,8 @@ public class MessageMailService {
 
 	void mailConversations(Instant now) {
 		Instant since = now.minus(RequestFollowUpService.UNREAD_MESSAGE_WINDOW);
-		List<UUID> conversationIds = reading.execute(status -> conversationRepository.findByLastMessageAtAfter(since)
-				.stream().map(CoordinatorConversation::getId).toList());
+		List<UUID> conversationIds = reading
+				.execute(status -> conversationRepository.findIdsWithUnmailedMessages(since));
 		for (UUID conversationId : conversationIds == null ? List.<UUID>of() : conversationIds) {
 			attempt("Coordinator message mail", conversationId, () -> mailConversation(conversationId, since, now));
 		}
@@ -119,34 +125,47 @@ public class MessageMailService {
 			return;
 		}
 		Instant until = now.minus(RequestFollowUpService.UNREAD_MESSAGE_DELAY);
-		List<AppUser> counterpart = counterpart(conversation);
-		Set<UUID> counterpartIds = counterpart.stream().map(AppUser::getId).collect(Collectors.toSet());
-		List<CoordinatorMessage> due = messageRepository
+		// A message without a sender (a deleted account) has nobody to name and is not mailed.
+		List<CoordinatorMessage> fresh = messageRepository
 				.findByConversationIdAndCreatedAtAfterOrderByCreatedAtAsc(conversationId, since).stream()
 				.filter(message -> message.getSenderId() != null && !message.getCreatedAt().isAfter(until))
 				.toList();
+		if (fresh.isEmpty()) {
+			return;
+		}
+		Map<UUID, AppUser> senders = appUserRepository
+				.findAllById(fresh.stream().map(CoordinatorMessage::getSenderId).collect(Collectors.toSet())).stream()
+				.collect(Collectors.toMap(AppUser::getId, Function.identity()));
+		List<CoordinatorMessage> due = fresh.stream().filter(message -> senders.containsKey(message.getSenderId()))
+				.toList();
+		// The same rule as the conversation's own: an admin or coordinator writes for the coordinators' side.
+		Predicate<CoordinatorMessage> fromCoordinators = message -> {
+			AppUser sender = senders.get(message.getSenderId());
+			return sender != null && (sender.has(UserRole.ADMIN) || sender.has(UserRole.COORDINATOR));
+		};
 
-		Optional<CoordinatorMessage> forCoordinators = newestUnread(due.stream()
-				.filter(message -> counterpartIds.contains(message.getSenderId())).toList(),
-				conversation.getCoordinatorReadAt(), conversation.getCoordinatorMailedAt());
-		Optional<CoordinatorMessage> forCounterpart = newestUnread(due.stream()
-				.filter(message -> !counterpartIds.contains(message.getSenderId())).toList(),
+		Optional<CoordinatorMessage> forCoordinators = newestUnread(due.stream().filter(fromCoordinators.negate())
+				.toList(), conversation.getCoordinatorReadAt(), conversation.getCoordinatorMailedAt());
+		Optional<CoordinatorMessage> forCounterpart = newestUnread(due.stream().filter(fromCoordinators).toList(),
 				conversation.getCounterpartReadAt(), conversation.getCounterpartMailedAt());
 
+		// Marked up to "until", not "now": a message written in the last quarter of an hour is still mailed later.
 		forCoordinators.ifPresent(message -> {
-			if (conversationRepository.claimCoordinatorMail(conversationId, message.getCreatedAt(), now) == 1) {
+			if (conversationRepository.claimCoordinatorMail(conversationId, message.getCreatedAt(), until) == 1) {
 				List<AppUser> coordinators = programRepository.findById(conversation.getProgramId())
 						.map(program -> ProgramCoordination.runners(program, programCoordinatorRepository,
 								appUserRepository))
 						.orElse(List.of());
-				mailAll(coordinators, message, "/coordinator/messages?conversation=" + conversationId);
+				mailAll(coordinators, Objects.requireNonNull(senders.get(message.getSenderId())),
+						"/coordinator/messages?conversation="
+								+ conversationId);
 			}
 		});
 		forCounterpart.ifPresent(message -> {
-			if (conversationRepository.claimCounterpartMail(conversationId, message.getCreatedAt(), now) == 1) {
+			if (conversationRepository.claimCounterpartMail(conversationId, message.getCreatedAt(), until) == 1) {
 				String path = (conversation.getMentorId() != null ? "/mentor-dashboard/messages" : "/messages")
 						+ "?conversation=" + conversationId;
-				mailAll(counterpart, message, path);
+				mailAll(counterpart(conversation), Objects.requireNonNull(senders.get(message.getSenderId())), path);
 			}
 		});
 	}
@@ -170,11 +189,12 @@ public class MessageMailService {
 				.reduce((first, second) -> second);
 	}
 
-	private void mailAll(List<AppUser> readers, CoordinatorMessage message, String path) {
-		String sender = appUserRepository.findById(message.getSenderId()).map(AppUser::getFullName).orElse("");
+	/** One read mark per side, as in the app: once anyone on that side opened the thread, nobody there is mailed. */
+	private void mailAll(List<AppUser> readers, AppUser sender, String path) {
 		for (AppUser reader : readers) {
-			if (!reader.getId().equals(message.getSenderId())) {
-				activityMailService.send(reader, NotificationCategory.MESSAGE, "mail.unreadMessage", path, sender);
+			if (!reader.getId().equals(sender.getId())) {
+				activityMailService.send(reader, NotificationCategory.MESSAGE, "mail.unreadMessage", path,
+						sender.getFullName());
 			}
 		}
 	}

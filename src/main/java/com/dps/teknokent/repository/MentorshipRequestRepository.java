@@ -108,6 +108,14 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 			@Param("until") Instant until,
 			@Param("at") Instant at);
 
+	/**
+	 * The requester was just mailed about the mentor's decision, so the question or proposed times saved with it are
+	 * not mailed again as an unread message. Leaves the persistence context alone: the caller keeps using the request.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Query("update MentorshipRequest r set r.menteeMailedAt = :at where r.id = :id")
+	void markMenteeMailed(@Param("id") UUID id, @Param("at") Instant at);
+
 	/** Unanswered requests sent in [oldest, latest], outside any program or in an active one, not reminded yet. */
 	@Query("""
 			select r from MentorshipRequest r left join r.program p

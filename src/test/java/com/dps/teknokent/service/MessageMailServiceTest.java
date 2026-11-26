@@ -193,6 +193,38 @@ class MessageMailServiceTest {
 	}
 
 	@Test
+	void aMessageWrittenJustAfterTheMailedOneIsStillMailedWhenItsTurnComes() {
+		MentorshipRequest request = request(MentorshipRequestStatus.ACCEPTED);
+		message(request, mentor, MORNING.minus(Duration.ofMinutes(20)));
+		message(request, mentor, MORNING.minus(Duration.ofMinutes(10)));
+		CoordinatorConversation thread = conversation(team.getId(), null);
+		post(thread, coordinator, MORNING.minus(Duration.ofMinutes(20)));
+		post(thread, coordinator, MORNING.minus(Duration.ofMinutes(10)));
+
+		service(MORNING).mailUnreadMessages();
+		Instant later = MORNING.plus(Duration.ofMinutes(10));
+		service(later).mailUnreadMessages();
+
+		// Once for the conversation and once for the request, at each of the two runs.
+		mailed(founder, 4);
+		mailed(member, 2);
+	}
+
+	@Test
+	void aCoordinatorWhoIsAlsoOnTheTeamWritesForTheCoordinators() {
+		AppUser insider = user("Ece Tan", UserRole.COORDINATOR, team);
+		CoordinatorConversation thread = conversation(team.getId(), null);
+		post(thread, insider, MORNING.minus(Duration.ofMinutes(20)));
+		markRead(thread, null, MORNING.minus(Duration.ofMinutes(20)));
+
+		service(MORNING).mailConversations(MORNING);
+
+		assertThat(mailed(founder, 1).getFirst()).contains("Ece Tan");
+		verify(mailService, never()).sendAfterCommit(eq(insider.getEmail()), any(), any(), any());
+		verify(mailService, never()).sendAfterCommit(eq(coordinator.getEmail()), any(), any(), any());
+	}
+
+	@Test
 	void theSchedulerRunsOnlyWhereTheMailsAreOn() {
 		ApplicationContextRunner runner = new ApplicationContextRunner()
 				.withBean(MessageMailService.class, () -> mock(MessageMailService.class))
