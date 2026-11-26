@@ -75,6 +75,47 @@ public interface MentorshipRequestRepository extends JpaRepository<MentorshipReq
 			@Param("until") Instant until,
 			@Param("at") Instant at);
 
+	/**
+	 * Open conversations where the mentor wrote in (since, until] and the requester's side neither read nor was mailed.
+	 */
+	@Query("""
+			select r.id from MentorshipRequest r
+			where r.status in :statuses and exists (
+				select 1 from MentorshipRequestMessage m
+				where m.request = r and m.author = r.mentor
+				and m.createdAt > :since and m.createdAt <= :until
+				and (r.menteeReadAt is null or m.createdAt > r.menteeReadAt)
+				and (r.menteeMailedAt is null or m.createdAt > r.menteeMailedAt))
+			""")
+	List<UUID> findIdsWithMessagesUnreadByMentee(
+			@Param("statuses") Collection<MentorshipRequestStatus> statuses,
+			@Param("since") Instant since,
+			@Param("until") Instant until);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+			update MentorshipRequest r set r.menteeMailedAt = :at
+			where r.id = :id and exists (
+				select 1 from MentorshipRequestMessage m
+				where m.request = r and m.author = r.mentor
+				and m.createdAt > :since and m.createdAt <= :until
+				and (r.menteeReadAt is null or m.createdAt > r.menteeReadAt)
+				and (r.menteeMailedAt is null or m.createdAt > r.menteeMailedAt))
+			""")
+	int claimUnreadMenteeMessageMail(
+			@Param("id") UUID id,
+			@Param("since") Instant since,
+			@Param("until") Instant until,
+			@Param("at") Instant at);
+
+	/**
+	 * The requester was just mailed about the mentor's decision, so the question or proposed times saved with it are
+	 * not mailed again as an unread message. Leaves the persistence context alone: the caller keeps using the request.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Query("update MentorshipRequest r set r.menteeMailedAt = :at where r.id = :id")
+	void markMenteeMailed(@Param("id") UUID id, @Param("at") Instant at);
+
 	/** Unanswered requests sent in [oldest, latest], outside any program or in an active one, not reminded yet. */
 	@Query("""
 			select r from MentorshipRequest r left join r.program p

@@ -1627,6 +1627,7 @@ class MentorshipRequestServiceTest {
 				"/mentor-request/status?request=" + REQUEST_ID,
 				Texts.get(request.getRequester(), "mail.requestCounterProposed.text",
 						request.getMentor().getFullName()));
+		verify(mentorshipRequestRepository).markMenteeMailed(eq(REQUEST_ID), any());
 	}
 
 	@Test

@@ -45,4 +45,13 @@ public class CoordinatorConversation {
 
 	@Column(name = "counterpart_read_at")
 	private Instant counterpartReadAt;
+
+	// Written only by MessageMailService's bulk updates, so saving the conversation never puts an older value back.
+	/** The last time the coordinators were mailed about the other side's unread messages. */
+	@Column(name = "coordinator_mailed_at", updatable = false)
+	private Instant coordinatorMailedAt;
+
+	/** The last time the mentor or team was mailed about the coordinators' unread messages. */
+	@Column(name = "counterpart_mailed_at", updatable = false)
+	private Instant counterpartMailedAt;
 }
