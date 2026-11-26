@@ -200,7 +200,7 @@ class UserDataEraser {
 				AppUser successor = approved.isEmpty() ? null : longestStanding(organization.getId(), approved);
 				organization.setFounder(successor);
 				if (successor != null) {
-					notificationService.create(successor,
+					notificationService.createAndMail(successor,
 							Texts.get(successor, "notification.teamLeaderAfterDeletion.title"),
 							Texts.get(successor, "notification.teamLeaderAfterDeletion.body", organization.getName()),
 							"/startup/team");

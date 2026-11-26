@@ -93,7 +93,7 @@ class AdminProgramMembershipServiceTest {
 		assertThat(saved.getValue().getStatus()).isEqualTo(ProgramMentorStatus.ACCEPTED);
 		assertThat(saved.getValue().getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.COORDINATOR);
 		verify(appUserService).decide(mentor, UserAccountStatus.APPROVED);
-		verify(notificationService).create(eq(coordinator), anyString(), anyString(),
+		verify(notificationService).createAndMail(eq(coordinator), anyString(), anyString(),
 				eq("/coordinator/programs/" + PROGRAM_ID));
 	}
 
@@ -146,7 +146,7 @@ class AdminProgramMembershipServiceTest {
 		assertThat(row.getValue().getProgramId()).isEqualTo(PROGRAM_ID);
 		assertThat(startup.getActiveProgramId()).isEqualTo(PROGRAM_ID);
 		assertThat(startup.getApprovalStatus()).isEqualTo(UserAccountStatus.APPROVED);
-		verify(notificationService).create(eq(founder), anyString(), anyString(), eq("/startup"));
+		verify(notificationService).createAndMail(eq(founder), anyString(), anyString(), eq("/startup"));
 		verify(appUserService, never()).decide(any(), any());
 	}
 
@@ -178,6 +178,7 @@ class AdminProgramMembershipServiceTest {
 		assertThatThrownBy(() -> service.assignMentor(ADMIN_ID, PROGRAM_ID, founder.getId()))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programMentorRepository, never()).save(any());
+		verify(notificationService, never()).createAndMail(any(), anyString(), anyString(), anyString());
 		verify(notificationService, never()).create(any(), anyString(), anyString(), anyString());
 	}
 
@@ -201,7 +202,7 @@ class AdminProgramMembershipServiceTest {
 		assertThat(waiting.getDecidedAt()).isNotNull();
 		assertThat(waiting.getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.MENTOR);
 		verify(appUserService, never()).decide(any(), any());
-		verify(notificationService).create(eq(mentor), anyString(), anyString(), eq("/mentor-dashboard"));
+		verify(notificationService).createAndMail(eq(mentor), anyString(), anyString(), eq("/mentor-dashboard"));
 	}
 
 	@Test
@@ -215,6 +216,7 @@ class AdminProgramMembershipServiceTest {
 		assertThatThrownBy(() -> service.assignMentor(ADMIN_ID, PROGRAM_ID, mentor.getId()))
 				.isInstanceOf(InvalidRequestException.class);
 		verify(programMentorRepository, never()).save(any());
+		verify(notificationService, never()).createAndMail(any(), anyString(), anyString(), anyString());
 		verify(notificationService, never()).create(any(), anyString(), anyString(), anyString());
 	}
 
@@ -274,8 +276,9 @@ class AdminProgramMembershipServiceTest {
 		service.assignStartup(ADMIN_ID, PROGRAM_ID, startup.getId());
 
 		verify(programStartupRepository).save(any(ProgramStartup.class));
-		verify(notificationService).create(eq(coordinator), anyString(), anyString(),
+		verify(notificationService).createAndMail(eq(coordinator), anyString(), anyString(),
 				eq("/coordinator/programs/" + PROGRAM_ID));
+		verify(notificationService, never()).createAndMail(any(), anyString(), anyString(), eq("/startup"));
 		verify(notificationService, never()).create(any(), anyString(), anyString(), eq("/startup"));
 	}
 

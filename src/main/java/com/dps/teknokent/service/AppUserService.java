@@ -232,7 +232,7 @@ public class AppUserService {
 					.map(this::ensureInviteCode)
 					.orElse(null);
 		}
-		notificationService.create(
+		notificationService.createAndMail(
 				target,
 				status == UserAccountStatus.APPROVED
 						? Texts.get(target, "notification.applicationApproved.title")

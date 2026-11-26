@@ -126,7 +126,7 @@ public class ActionItemService {
 		if (mentor == null) {
 			return;
 		}
-		notificationService.create(
+		notificationService.createAndMail(
 				mentor,
 				NotificationCategory.STARTUP_ACTIVITY,
 				Texts.get(mentor, "notification.taskCompleted.title"),

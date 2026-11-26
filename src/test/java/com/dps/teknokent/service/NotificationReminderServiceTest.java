@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -69,7 +70,7 @@ class NotificationReminderServiceTest {
 	}
 
 	@Test
-	void remindsTheMentorAndTheStartupsMenteesOfAMeetingWithinHalfAnHour() {
+	void remindsTheMentorAndTheStartupsMenteesOfAMeetingWithinTheHour() {
 		Organization organization = organization();
 		AppUser mentor = user("Selin Aydın", UserRole.MENTOR);
 		AppUser founder = member("Gamze Kozak", UserRole.MENTEE, organization);
@@ -81,10 +82,11 @@ class NotificationReminderServiceTest {
 
 		reminderService.sendDueReminders();
 
-		verify(notificationService).create(mentor, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
+		verify(notificationService).createAndMail(mentor, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
 				"Döngü ile görüşmen yakında başlıyor · 12:25", "/mentor-dashboard/calendar");
-		verify(notificationService).create(founder, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
+		verify(notificationService).createAndMail(founder, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
 				"Selin Aydın ile görüşmen yakında başlıyor · 12:25", "/mentorships?tab=active");
+		verify(notificationService, never()).createAndMail(eq(coordinator), any(), any(), any(), any());
 		verify(notificationService, never()).create(eq(coordinator), any(), any(), any(), any());
 		assertThat(meeting.getReminderSentAt()).isEqualTo(NOW);
 	}
@@ -97,7 +99,7 @@ class NotificationReminderServiceTest {
 
 		reminderService.sendDueReminders();
 
-		verify(notificationService).create(founder, NotificationCategory.TASK_DEADLINE,
+		verify(notificationService).createAndMail(founder, NotificationCategory.TASK_DEADLINE,
 				"Görev teslim tarihi yaklaşıyor", "«Finansal model» görevinin son günü yarın.", "/startup/process");
 		assertThat(task.getDeadlineRemindedAt()).isEqualTo(NOW);
 	}
@@ -109,7 +111,7 @@ class NotificationReminderServiceTest {
 
 		reminderService.sendDueReminders();
 
-		verify(notificationService).create(founder, NotificationCategory.TASK_DEADLINE,
+		verify(notificationService).createAndMail(founder, NotificationCategory.TASK_DEADLINE,
 				"Görev teslim tarihi yaklaşıyor", "«Finansal model» görevinin son günü bugün.", "/startup/process");
 	}
 
@@ -121,7 +123,7 @@ class NotificationReminderServiceTest {
 
 		reminderService.sendDueReminders();
 
-		verify(notificationService).create(founder, NotificationCategory.TASK_DEADLINE,
+		verify(notificationService).createAndMail(founder, NotificationCategory.TASK_DEADLINE,
 				"Task deadline coming up", "The task “Finansal model” is due today.", "/startup/process");
 	}
 
@@ -132,12 +134,12 @@ class NotificationReminderServiceTest {
 		Meeting broken = meeting(organization(), brokenMentor, Instant.parse("2026-09-24T09:10:00Z"));
 		Meeting fine = meeting(organization(), mentor, Instant.parse("2026-09-24T09:25:00Z"));
 		dueMeetings(broken, fine);
-		when(notificationService.create(eq(brokenMentor), any(), anyString(), anyString(), anyString()))
+		when(notificationService.createAndMail(eq(brokenMentor), any(), anyString(), anyString(), anyString()))
 				.thenThrow(new IllegalStateException("bad row"));
 
 		reminderService.sendDueReminders();
 
-		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_REMINDER), anyString(),
+		verify(notificationService).createAndMail(eq(mentor), eq(NotificationCategory.MEETING_REMINDER), anyString(),
 				anyString(), eq("/mentor-dashboard/calendar"));
 		assertThat(fine.getReminderSentAt()).isEqualTo(NOW);
 		assertThat(broken.getReminderSentAt()).isNull();
@@ -156,9 +158,9 @@ class NotificationReminderServiceTest {
 
 		reminderService.sendDueReminders();
 
-		verify(notificationService).create(founder, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
+		verify(notificationService).createAndMail(founder, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
 				"Mentörünle görüşmen yakında başlıyor · 12:10", "/mentorships?tab=active");
-		verify(notificationService).create(other, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
+		verify(notificationService).createAndMail(other, NotificationCategory.MEETING_REMINDER, "Görüşmen yaklaşıyor",
 				"Mentörünle görüşmen yakında başlıyor · 12:25", "/mentorships?tab=active");
 		verify(appUserRepository).findByOrganizationIdInOrderByFullNameAsc(anyCollection());
 		verify(appUserRepository, never()).findByOrganizationIdOrderByFullNameAsc(any());
@@ -173,6 +175,7 @@ class NotificationReminderServiceTest {
 
 		reminderService.sendDueReminders();
 
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any(), any());
 		verify(notificationService, never()).create(any(), any(), any(), any(), any());
 		assertThat(meeting.getReminderSentAt()).isNull();
 	}
@@ -184,15 +187,32 @@ class NotificationReminderServiceTest {
 		ActionItem broken = task(brokenOwner, TODAY);
 		ActionItem fine = task(founder, TODAY);
 		dueTasks(broken, fine);
-		when(notificationService.create(eq(brokenOwner), any(), anyString(), anyString(), anyString()))
+		when(notificationService.createAndMail(eq(brokenOwner), any(), anyString(), anyString(), anyString()))
 				.thenThrow(new IllegalStateException("bad row"));
 
 		reminderService.sendDueReminders();
 
-		verify(notificationService).create(founder, NotificationCategory.TASK_DEADLINE,
+		verify(notificationService).createAndMail(founder, NotificationCategory.TASK_DEADLINE,
 				"Görev teslim tarihi yaklaşıyor", "«Finansal model» görevinin son günü bugün.", "/startup/process");
 		assertThat(fine.getDeadlineRemindedAt()).isEqualTo(NOW);
 		assertThat(broken.getDeadlineRemindedAt()).isNull();
+	}
+
+	@Test
+	void remindsAnHourAheadSoTheMailArrivesInTime() {
+		Organization organization = organization();
+		AppUser mentor = user("Selin Aydın", UserRole.MENTOR);
+		Meeting meeting = meeting(organization, mentor, NOW.plus(Duration.ofMinutes(55)));
+		when(meetingRepository.findByStatusAndReminderSentAtIsNullAndScheduledAtBetween(
+				MeetingStatus.SCHEDULED, NOW, NOW.plus(Duration.ofHours(1))))
+				.thenReturn(List.of(meeting));
+		when(meetingRepository.findById(meeting.getId())).thenReturn(Optional.of(meeting));
+
+		reminderService.sendDueReminders();
+
+		verify(notificationService).createAndMail(eq(mentor), eq(NotificationCategory.MEETING_REMINDER),
+				eq("Görüşmen yaklaşıyor"), anyString(), eq("/mentor-dashboard/calendar"));
+		assertThat(meeting.getReminderSentAt()).isEqualTo(NOW);
 	}
 
 	private void dueMeetings(Meeting... meetings) {

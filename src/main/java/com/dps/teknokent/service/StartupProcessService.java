@@ -144,7 +144,7 @@ public class StartupProcessService {
 		item.setCreatedBy(actor);
 		actionItemRepository.saveAndFlush(item);
 		if (!actor.getId().equals(item.getOwner().getId())) {
-			notificationService.create(
+			notificationService.createAndMail(
 					item.getOwner(),
 					NotificationCategory.TASK_ASSIGNED,
 					Texts.get(item.getOwner(), "notification.newTask.title"),

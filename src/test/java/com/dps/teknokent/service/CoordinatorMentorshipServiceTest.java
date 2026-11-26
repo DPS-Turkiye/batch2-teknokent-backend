@@ -290,6 +290,9 @@ class CoordinatorMentorshipServiceTest {
 				.isInstanceOf(InvalidRequestException.class);
 		assertThatThrownBy(() -> service.remind(COORDINATOR_ID, lumen.getId()))
 				.isInstanceOf(InvalidRequestException.class);
+		verify(notificationService, never()).createAndMail(any(), any(NotificationCategory.class), anyString(),
+				anyString(),
+				anyString());
 		verify(notificationService, never()).create(any(), any(NotificationCategory.class), anyString(), anyString(),
 				anyString());
 	}
@@ -364,11 +367,12 @@ class CoordinatorMentorshipServiceTest {
 
 		service.remind(COORDINATOR_ID, lumen.getId());
 
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				eq(ayse), eq(NotificationCategory.MEETING_REMINDER), eq("Koordinatör hatırlatması"), anyString(),
 				eq("/mentor-dashboard/calendar"));
 		verify(notificationService, times(2))
-				.create(any(), eq(NotificationCategory.MEETING_REMINDER), eq("Koordinatör hatırlatması"), anyString(),
+				.createAndMail(any(), eq(NotificationCategory.MEETING_REMINDER), eq("Koordinatör hatırlatması"),
+						anyString(),
 						eq("/mentorships?tab=active"));
 	}
 
@@ -576,9 +580,9 @@ class CoordinatorMentorshipServiceTest {
 
 		String body = Texts.get(ayse, "notification.coordinatorReminder.body", "METU Stars 2026",
 				"Ayşe Demir ↔ Lumen");
-		verify(notificationService).create(ayse, NotificationCategory.MEETING_REMINDER,
+		verify(notificationService).createAndMail(ayse, NotificationCategory.MEETING_REMINDER,
 				Texts.get(ayse, "notification.coordinatorReminder.title"), body, "/mentor-dashboard/calendar");
-		verify(notificationService).create(deniz, NotificationCategory.MEETING_REMINDER,
+		verify(notificationService).createAndMail(deniz, NotificationCategory.MEETING_REMINDER,
 				Texts.get(deniz, "notification.coordinatorReminder.title"), body, "/mentorships?tab=active");
 		// The mentorship names its program, so the team's programs are not consulted.
 		verifyNoInteractions(programStartupRepository);

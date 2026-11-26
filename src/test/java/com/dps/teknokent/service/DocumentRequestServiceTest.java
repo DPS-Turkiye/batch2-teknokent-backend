@@ -154,7 +154,7 @@ class DocumentRequestServiceTest {
 
 		documentRequestService.saveTitlesOnRequest(request, mentor, List.of("CV", "  "));
 
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				eq(mentee),
 				eq(NotificationCategory.TASK_ASSIGNED),
 				eq("Mentor belgeler istedi"),
@@ -600,9 +600,9 @@ class DocumentRequestServiceTest {
 			assertThat(item.dueDate()).isEqualTo(dueDate);
 			assertThat(item.createdById()).isEqualTo(mentor.getId());
 		});
-		verify(notificationService).create(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
+		verify(notificationService).createAndMail(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
 				"Mentor Ali şu belgeleri istedi: Pitch deck, Finansal tablolar", "/mentorships?tab=active");
-		verify(notificationService).create(englishReader, NotificationCategory.TASK_ASSIGNED,
+		verify(notificationService).createAndMail(englishReader, NotificationCategory.TASK_ASSIGNED,
 				"Your mentor asked for documents",
 				"Mentor Ali asked for these documents: Pitch deck, Finansal tablolar", "/mentorships?tab=active");
 		verifyNoMoreInteractions(notificationService);
@@ -707,7 +707,7 @@ class DocumentRequestServiceTest {
 			assertThat(item.mentorshipId()).isNull();
 			assertThat(item.organizationId()).isEqualTo(organization.getId());
 		});
-		verify(notificationService).create(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
+		verify(notificationService).createAndMail(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
 				"Mentor Ali şu belgeleri istedi: Kullanıcı akışı", "/meetings/research?id=" + meeting.getId());
 	}
 
@@ -766,7 +766,7 @@ class DocumentRequestServiceTest {
 			assertThat(item.meetingId()).isNull();
 			assertThat(item.dueDate()).isEqualTo(dueDate);
 		});
-		verify(notificationService).create(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
+		verify(notificationService).createAndMail(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
 				"Mentor Ali şu belgeleri istedi: Aylık rapor", "/mentorships?tab=regular");
 	}
 
@@ -875,7 +875,7 @@ class DocumentRequestServiceTest {
 		documentRequestService.replaceOnProgram(
 				programId, coordinator.getId(), List.of("Pitch deck", "Finansal tablolar"), null);
 
-		verify(notificationService).create(menteeOfBehind, NotificationCategory.TASK_ASSIGNED,
+		verify(notificationService).createAndMail(menteeOfBehind, NotificationCategory.TASK_ASSIGNED,
 				"Koordinatör belgeler istedi", "Koordinatör Ece şu belgeleri istedi: Finansal tablolar",
 				"/startup/files");
 		verifyNoMoreInteractions(notificationService);
@@ -948,7 +948,7 @@ class DocumentRequestServiceTest {
 			assertThat(item.getCreatedBy()).isSameAs(mentor);
 			assertThat(item.getDueDate()).isNull();
 		});
-		verify(notificationService).create(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
+		verify(notificationService).createAndMail(mentee, NotificationCategory.TASK_ASSIGNED, "Mentor belgeler istedi",
 				"Mentor Ali şu belgeleri istedi: Kullanıcı akışı, Demo videosu",
 				"/meetings/research?id=" + meeting.getId());
 	}
@@ -1064,7 +1064,8 @@ class DocumentRequestServiceTest {
 		assertThat(response).isEqualTo(new DocumentRequestUploadResponse(
 				saved.getValue().getId(), file.getId(), "pitch-deck.pdf", "application/pdf", 2048, mentee.getId(),
 				"Gülse Buran", null));
-		verify(notificationService).create(mentor, NotificationCategory.STARTUP_ACTIVITY, "İstenen belge yüklendi",
+		verify(notificationService).createAndMail(mentor, NotificationCategory.STARTUP_ACTIVITY,
+				"İstenen belge yüklendi",
 				"Gülse Buran «Pitch deck» belgesini yükledi.", "/mentorships?tab=requests");
 	}
 
@@ -1080,7 +1081,7 @@ class DocumentRequestServiceTest {
 
 		attach(item, mentee, storedDocument(mentee.getId()));
 
-		verify(notificationService).create(mentor, NotificationCategory.STARTUP_ACTIVITY,
+		verify(notificationService).createAndMail(mentor, NotificationCategory.STARTUP_ACTIVITY,
 				"Requested document uploaded", "Gülse Buran uploaded the document “User flow”.",
 				"/meetings/research?id=" + meeting.getId());
 	}
@@ -1095,7 +1096,8 @@ class DocumentRequestServiceTest {
 
 		attach(item, mentee, storedDocument(mentee.getId()));
 
-		verify(notificationService).create(mentor, NotificationCategory.STARTUP_ACTIVITY, "İstenen belge yüklendi",
+		verify(notificationService).createAndMail(mentor, NotificationCategory.STARTUP_ACTIVITY,
+				"İstenen belge yüklendi",
 				"Gülse Buran «Aylık rapor» belgesini yükledi.", "/mentorships?tab=regular");
 	}
 

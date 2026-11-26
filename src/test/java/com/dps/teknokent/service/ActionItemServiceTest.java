@@ -236,7 +236,7 @@ class ActionItemServiceTest {
 
 		actionItemService.update(actionItemId, organization.getId(), null, completion());
 
-		verify(notificationService).create(
+		verify(notificationService).createAndMail(
 				eq(mentor),
 				eq(NotificationCategory.STARTUP_ACTIVITY),
 				eq("Görev tamamlandı"),
@@ -256,6 +256,7 @@ class ActionItemServiceTest {
 
 		actionItemService.update(actionItemId, organization.getId(), null, completion());
 
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any(), any());
 		verify(notificationService, never()).create(any(), any(), any(), any(), any());
 	}
 

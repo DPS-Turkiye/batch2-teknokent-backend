@@ -249,7 +249,7 @@ public class MemberTeamMoveService {
 		withdrawn.forEach(request -> mentors.putIfAbsent(request.getMentor().getId(), request.getMentor()));
 		mentors.values().stream()
 				.filter(mentor -> mentor.getStatus() != UserAccountStatus.DELETED)
-				.forEach(mentor -> notificationService.create(mentor,
+				.forEach(mentor -> notificationService.createAndMail(mentor,
 						Texts.get(mentor, "notification.requestClosedByTeamArchived.title"),
 						Texts.get(mentor, "notification.requestClosedByTeamArchived.body", team.getName()),
 						"/mentor-dashboard"));
@@ -402,7 +402,7 @@ public class MemberTeamMoveService {
 	}
 
 	private void notifyEveryone(AppUser person, Organization from, Organization to) {
-		notificationService.create(person, Texts.get(person, "notification.memberMoved.title"),
+		notificationService.createAndMail(person, Texts.get(person, "notification.memberMoved.title"),
 				Texts.get(person, "notification.memberMoved.body", from.getName(), to.getName()), TEAM_HREF);
 		notifyFounder(from.getFounder(), person, "notification.memberMovedOut", from, to);
 		notifyFounder(to.getFounder(), person, "notification.memberMovedIn", from, to);

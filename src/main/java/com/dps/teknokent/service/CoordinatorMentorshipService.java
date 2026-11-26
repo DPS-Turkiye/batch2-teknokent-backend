@@ -175,14 +175,14 @@ public class CoordinatorMentorshipService {
 		Mentorship mentorship = scoped.mentorship();
 		String pair = mentorship.getMentor().getFullName() + " ↔ " + mentorship.getOrganization().getName();
 		String program = scoped.program().getName();
-		notificationService.create(
+		notificationService.createAndMail(
 				mentorship.getMentor(), NotificationCategory.MEETING_REMINDER,
 				Texts.get(mentorship.getMentor(), "notification.coordinatorReminder.title"),
 				Texts.get(mentorship.getMentor(), "notification.coordinatorReminder.body", program, pair),
 				"/mentor-dashboard/calendar");
 		for (AppUser member : appUserRepository
 				.findByOrganizationIdOrderByFullNameAsc(mentorship.getOrganization().getId())) {
-			notificationService.create(
+			notificationService.createAndMail(
 					member, NotificationCategory.MEETING_REMINDER,
 					Texts.get(member, "notification.coordinatorReminder.title"),
 					Texts.get(member, "notification.coordinatorReminder.body", program, pair),

@@ -205,7 +205,7 @@ public class ProgramAssignmentService {
 		actionItemRepository.save(item);
 		AppUser creator = assignment.getCreatedBy();
 		if (creator == null || !creator.getId().equals(owner.getId())) {
-			notificationService.create(
+			notificationService.createAndMail(
 					owner,
 					NotificationCategory.TASK_ASSIGNED,
 					Texts.get(owner, "notification.newTask.title"),

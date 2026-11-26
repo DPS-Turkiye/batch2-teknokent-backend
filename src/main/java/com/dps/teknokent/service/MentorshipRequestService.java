@@ -218,12 +218,15 @@ public class MentorshipRequestService {
 		if (decision.status() != MentorshipRequestStatus.DECLINED) {
 			documentRequestService.saveTitlesOnRequest(savedRequest, mentor, decision.requestedDocuments());
 		}
+		Instant meetingAt = null;
 		if (decision.status() == MentorshipRequestStatus.ACCEPTED) {
 			Instant chosen = MeetingSlotTimes.parseFromDecisionMessage(message);
-			ensureMeetingForAccepted(savedRequest, chosen != null ? chosen : firstOpenPreferredSlot(savedRequest));
+			meetingAt = chosen != null ? chosen : firstOpenPreferredSlot(savedRequest);
+			ensureMeetingForAccepted(savedRequest, meetingAt);
 		}
-		notificationService.create(
+		notificationService.createAndMail(
 				request.getRequester(),
+				NotificationCategory.GENERAL,
 				decision.status() == MentorshipRequestStatus.ACCEPTED
 						? Texts.get(request.getRequester(), "notification.requestAccepted.title")
 						: decision.status() == MentorshipRequestStatus.DECLINED
@@ -232,8 +235,25 @@ public class MentorshipRequestService {
 										? Texts.get(request.getRequester(), "notification.requestCounterProposed.title")
 										: Texts.get(request.getRequester(), "notification.requestInfoNeeded.title"),
 				message,
-				"/mentor-request/status?request=" + request.getId());
+				"/mentor-request/status?request=" + request.getId(),
+				decisionMailText(request.getRequester(), mentor, decision.status(), message, meetingAt));
 		return toResponse(savedRequest);
+	}
+
+	/**
+	 * An acceptance or a counter-proposal carries machine-readable times in its message; the mail says it in words.
+	 * A decline reason or a question is the mentor's own text and goes as written.
+	 */
+	private static String decisionMailText(AppUser reader, AppUser mentor, MentorshipRequestStatus status,
+			String message, @Nullable Instant meetingAt) {
+		return switch (status) {
+		case ACCEPTED -> meetingAt == null
+				? Texts.get(reader, "mail.requestAcceptedNoTime.text", mentor.getFullName())
+				: Texts.get(reader, "mail.requestAccepted.text", mentor.getFullName(),
+						MeetingSlotTimes.formatForPeople(meetingAt, reader.getPreferredLanguage()));
+		case COUNTER_PROPOSED -> Texts.get(reader, "mail.requestCounterProposed.text", mentor.getFullName());
+		default -> message == null ? "" : message;
+		};
 	}
 
 	@Transactional
@@ -397,7 +417,7 @@ public class MentorshipRequestService {
 		}
 
 		Meeting savedMeeting = meetingRepository.saveAndFlush(Meeting.forMentorshipRequest(request, slot));
-		notificationService.create(
+		notificationService.createAndMail(
 				request.getMentor(),
 				NotificationCategory.MEETING_CHANGE,
 				Texts.get(request.getMentor(), "notification.meetingPlanned.title"),

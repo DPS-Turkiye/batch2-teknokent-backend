@@ -217,7 +217,7 @@ public class ProgramService {
 		ProgramDrafts.requireLaunched(program);
 		AppUser mentor = requireApprovedMentor(mentorId);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.COORDINATOR);
-		notificationService.create(
+		notificationService.createAndMail(
 				mentor,
 				Texts.get(mentor, "notification.programInvite.title"),
 				Texts.get(mentor, "notification.programInvite.body", program.getName()),
@@ -235,7 +235,7 @@ public class ProgramService {
 		ProgramDrafts.requireLaunched(program);
 		upsertPending(program.getId(), mentor.getId(), ProgramMentorInvitedBy.MENTOR);
 		for (AppUser runner : runnersOf(program)) {
-			notificationService.create(
+			notificationService.createAndMail(
 					runner,
 					Texts.get(runner, "notification.joinRequest.title"),
 					Texts.get(runner, "notification.joinRequest.body", mentor.getFullName(), program.getName()),
@@ -256,7 +256,7 @@ public class ProgramService {
 		}
 		applyDecision(membership, accepted);
 		for (AppUser runner : runnersOf(requireProgram(programId))) {
-			notificationService.create(
+			notificationService.createAndMail(
 					runner,
 					Texts.get(runner, "notification.inviteAnswered.title"),
 					Texts.get(runner,
@@ -286,7 +286,7 @@ public class ProgramService {
 		}
 		applyDecision(membership, accepted);
 		AppUser applicant = domainLookupService.requireUser(mentorId);
-		notificationService.create(
+		notificationService.createAndMail(
 				applicant,
 				Texts.get(applicant, "notification.joinRequestAnswered.title"),
 				Texts.get(applicant,

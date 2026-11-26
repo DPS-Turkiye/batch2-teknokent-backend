@@ -209,7 +209,7 @@ public class ProgramTeamMoveService {
 		members.forEach(member -> recipients.putIfAbsent(member.getId(), member));
 		recipients.values().stream()
 				.filter(member -> member.getStatus() != UserAccountStatus.DELETED)
-				.forEach(member -> notificationService.create(member,
+				.forEach(member -> notificationService.createAndMail(member,
 						Texts.get(member, "notification.teamMoved.title"),
 						Texts.get(member, "notification.teamMoved.body", team.getName(), from.getName(),
 								target.getName()),
@@ -242,7 +242,7 @@ public class ProgramTeamMoveService {
 		withdrawn.forEach(request -> mentors.putIfAbsent(request.getMentor().getId(), request.getMentor()));
 		mentors.values().stream()
 				.filter(mentor -> mentor.getStatus() != UserAccountStatus.DELETED)
-				.forEach(mentor -> notificationService.create(mentor,
+				.forEach(mentor -> notificationService.createAndMail(mentor,
 						Texts.get(mentor, "notification.requestClosedByTeamMove.title"),
 						Texts.get(mentor, "notification.requestClosedByTeamMove.body", team.getName()),
 						MENTOR_HREF));

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ public class NotificationService {
 
 	private final NotificationRepository notificationRepository;
 	private final ApplicationEventPublisher eventPublisher;
+	private final ActivityMailService activityMailService;
 
 	@Transactional(readOnly = true)
 	public List<NotificationResponse> list(UUID recipientId) {
@@ -62,6 +64,30 @@ public class NotificationService {
 	@Transactional
 	public Notification create(AppUser recipient, String title, String body, String href) {
 		return create(recipient, NotificationCategory.GENERAL, title, body, href);
+	}
+
+	/** The notification, and the same text by e-mail when the activity mails are on and the reader wants e-mail. */
+	@Transactional
+	public Notification createAndMail(AppUser recipient, String title, String body, String href) {
+		return createAndMail(recipient, NotificationCategory.GENERAL, title, body, href);
+	}
+
+	@Transactional
+	public Notification createAndMail(AppUser recipient, NotificationCategory category, String title, String body,
+			String href) {
+		return createAndMail(recipient, category, title, body, href, null);
+	}
+
+	/** As above, with {@code mailText} in the mail where the notification's own text is not meant for people. */
+	@Transactional
+	public Notification createAndMail(AppUser recipient, NotificationCategory category, String title, String body,
+			String href, @Nullable String mailText) {
+		Notification notification = create(recipient, category, title, body, href);
+		// A notification without a link still mails one, to the home page.
+		String path = notification.getHref() == null ? "/" : notification.getHref();
+		activityMailService.send(recipient, category, "mail.notification", path, notification.getTitle(),
+				mailText != null ? mailText : notification.getBody() == null ? "" : notification.getBody());
+		return notification;
 	}
 
 	@Transactional

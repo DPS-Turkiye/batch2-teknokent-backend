@@ -465,7 +465,7 @@ class ProgramServiceTest {
 		verify(programMentorRepository).save(saved.capture());
 		assertThat(saved.getValue().getStatus()).isEqualTo(ProgramMentorStatus.PENDING);
 		assertThat(saved.getValue().getInvitedBy()).isEqualTo(ProgramMentorInvitedBy.MENTOR);
-		verify(notificationService).create(argThat(user -> COORDINATOR_ID.equals(user.getId())), any(), any(),
+		verify(notificationService).createAndMail(argThat(user -> COORDINATOR_ID.equals(user.getId())), any(), any(),
 				eq("/programs"));
 	}
 
@@ -478,6 +478,7 @@ class ProgramServiceTest {
 
 		assertThatThrownBy(() -> programService.requestToJoin(MENTOR_ID, PROGRAM_ID))
 				.isInstanceOf(ConflictException.class);
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any());
 		verify(notificationService, never()).create(any(), any(), any(), any());
 	}
 
@@ -495,7 +496,7 @@ class ProgramServiceTest {
 
 		assertThat(request.getStatus()).isEqualTo(ProgramMentorStatus.ACCEPTED);
 		assertThat(request.getDecidedAt()).isNotNull();
-		verify(notificationService).create(argThat(user -> MENTOR_ID.equals(user.getId())), any(), any(),
+		verify(notificationService).createAndMail(argThat(user -> MENTOR_ID.equals(user.getId())), any(), any(),
 				eq("/mentor-dashboard"));
 	}
 
@@ -644,8 +645,10 @@ class ProgramServiceTest {
 
 		programService.requestToJoin(MENTOR_ID, PROGRAM_ID);
 
-		verify(notificationService).create(argThat(user -> COORDINATOR_ID.equals(user.getId())), any(), any(),
+		verify(notificationService).createAndMail(argThat(user -> COORDINATOR_ID.equals(user.getId())), any(), any(),
 				eq("/programs"));
+		verify(notificationService, never()).createAndMail(argThat(user -> adminId.equals(user.getId())), any(), any(),
+				any());
 		verify(notificationService, never()).create(argThat(user -> adminId.equals(user.getId())), any(), any(),
 				any());
 	}
@@ -665,6 +668,7 @@ class ProgramServiceTest {
 				.hasMessageContaining("henüz başlatılmadı");
 		verify(programMentorRepository, never()).save(any());
 		verify(programStartupRepository, never()).save(any());
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any());
 		verify(notificationService, never()).create(any(), any(), any(), any());
 	}
 
@@ -844,7 +848,7 @@ class ProgramServiceTest {
 		assertThat(rejected.getDecidedAt()).isNull();
 		assertThat(rejected.getCreatedAt()).isAfter(firstAsked);
 		verify(programMentorRepository).save(rejected);
-		verify(notificationService).create(same(mentor), any(),
+		verify(notificationService).createAndMail(same(mentor), any(),
 				eq(Texts.get(mentor, "notification.programInvite.body", "Seed 2026")), eq("/mentor-dashboard"));
 	}
 
@@ -903,7 +907,7 @@ class ProgramServiceTest {
 		assertThat(pending.getStatus()).isEqualTo(ProgramMentorStatus.REJECTED);
 		assertThat(pending.getDecidedAt()).isNotNull();
 		verify(programMentorRepository).save(pending);
-		verify(notificationService).create(same(coordinator), any(),
+		verify(notificationService).createAndMail(same(coordinator), any(),
 				eq(Texts.get(coordinator, "notification.inviteDeclined.body", "Ece Demir")), eq("/programs"));
 		verifyNoInteractions(programEligibilityService);
 	}
@@ -921,7 +925,7 @@ class ProgramServiceTest {
 		programService.decideInvitation(MENTOR_ID, PROGRAM_ID, true);
 
 		verify(programEligibilityService).requireMentor(PROGRAM_ID, mentor);
-		verify(notificationService).create(same(coordinator), any(),
+		verify(notificationService).createAndMail(same(coordinator), any(),
 				eq(Texts.get(coordinator, "notification.inviteAccepted.body", "Ece Demir")), eq("/programs"));
 	}
 
@@ -956,7 +960,7 @@ class ProgramServiceTest {
 		assertThat(request.getStatus()).isEqualTo(ProgramMentorStatus.REJECTED);
 		assertThat(request.getDecidedAt()).isNotNull();
 		verify(programMentorRepository).save(request);
-		verify(notificationService).create(same(mentor), any(),
+		verify(notificationService).createAndMail(same(mentor), any(),
 				eq(Texts.get(mentor, "notification.joinRequestDeclined.body", "Seed 2026")), eq("/mentor-dashboard"));
 		verifyNoInteractions(programEligibilityService);
 	}

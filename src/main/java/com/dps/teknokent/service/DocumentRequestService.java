@@ -494,7 +494,7 @@ public class DocumentRequestService {
 		String titles = items.stream().map(DocumentRequestItem::getTitle).collect(Collectors.joining(", "));
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(organization.getId()).stream()
 				.filter(user -> user.has(UserRole.MENTEE))
-				.forEach(mentee -> notificationService.create(
+				.forEach(mentee -> notificationService.createAndMail(
 						mentee,
 						NotificationCategory.TASK_ASSIGNED,
 						Texts.get(mentee, titleKey),
@@ -518,7 +518,7 @@ public class DocumentRequestService {
 		if (mentor == null) {
 			return;
 		}
-		notificationService.create(
+		notificationService.createAndMail(
 				mentor,
 				NotificationCategory.STARTUP_ACTIVITY,
 				Texts.get(mentor, "notification.documentUploaded.title"),

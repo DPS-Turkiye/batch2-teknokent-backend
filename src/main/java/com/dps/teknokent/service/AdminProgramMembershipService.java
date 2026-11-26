@@ -71,7 +71,7 @@ public class AdminProgramMembershipService {
 		if (mentor.getStatus() == UserAccountStatus.PENDING) {
 			appUserService.decide(mentor, UserAccountStatus.APPROVED);
 		}
-		notificationService.create(mentor, Texts.get(mentor, "notification.programAssigned.title"),
+		notificationService.createAndMail(mentor, Texts.get(mentor, "notification.programAssigned.title"),
 				Texts.get(mentor, "notification.programAssigned.body", program.getName()), "/mentor-dashboard");
 		notifyCoordinators(program, mentor.getFullName());
 	}
@@ -108,7 +108,7 @@ public class AdminProgramMembershipService {
 			if (founder.getStatus() == UserAccountStatus.PENDING) {
 				appUserService.decide(founder, UserAccountStatus.APPROVED);
 			}
-			notificationService.create(founder, Texts.get(founder, "notification.startupProgramAssigned.title"),
+			notificationService.createAndMail(founder, Texts.get(founder, "notification.startupProgramAssigned.title"),
 					Texts.get(founder, "notification.startupProgramAssigned.body", startup.getName(),
 							program.getName()),
 					"/startup");
@@ -118,7 +118,7 @@ public class AdminProgramMembershipService {
 
 	private void notifyCoordinators(Program program, String memberName) {
 		ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository)
-				.forEach(coordinator -> notificationService.create(coordinator,
+				.forEach(coordinator -> notificationService.createAndMail(coordinator,
 						Texts.get(coordinator, "notification.adminAddedToProgram.title"),
 						Texts.get(coordinator, "notification.adminAddedToProgram.body", memberName, program.getName()),
 						"/coordinator/programs/" + program.getId()));

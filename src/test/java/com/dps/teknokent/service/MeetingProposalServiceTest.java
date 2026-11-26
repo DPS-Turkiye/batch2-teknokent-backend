@@ -162,7 +162,7 @@ class MeetingProposalServiceTest {
 		assertThat(booked.getValue().scheduledAt()).isEqualTo(nextWeek);
 		assertThat(booked.getValue().mentorId()).isEqualTo(mentor.getId());
 		assertThat(booked.getValue().status()).isEqualTo(MeetingStatus.SCHEDULED);
-		verify(notificationService).create(eq(coordinator), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(coordinator), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme onaylandı"), anyString(), eq("/coordinator/mentorships?mentorship=" + mentorship.getId()));
 	}
 
@@ -213,6 +213,7 @@ class MeetingProposalServiceTest {
 				new RescheduleMeetingRequest(null, nextWeek, null))).isInstanceOf(ConflictException.class);
 		verify(proposalRepository, never()).save(any());
 		verify(notificationService, never()).create(any(), any(), anyString(), anyString(), anyString());
+		verify(notificationService, never()).createAndMail(any(), any(), anyString(), anyString(), anyString());
 	}
 
 	@Test
@@ -248,7 +249,7 @@ class MeetingProposalServiceTest {
 		assertThat(response.declinedByName()).isEqualTo("Ayşe Demir");
 		assertThat(response.declineReason()).isEqualTo("O gün seyahatteyim");
 		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-		verify(notificationService).create(eq(coordinator), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(coordinator), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme önerisi reddedildi"), body.capture(), anyString());
 		assertThat(body.getValue()).endsWith(": O gün seyahatteyim");
 		assertThatThrownBy(() -> service.accept(lead.getId(), proposal.getId()))
@@ -331,7 +332,8 @@ class MeetingProposalServiceTest {
 
 		assertThat(confirmed.status()).isEqualTo(MeetingProposalStatus.CONFIRMED);
 		assertThat(meeting.getScheduledAt()).isEqualTo(nextWeek);
-		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE), eq("Görüşme onaylandı"),
+		verify(notificationService).createAndMail(eq(mentor), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme onaylandı"),
 				anyString(), eq("/mentor-dashboard/calendar"));
 	}
 
@@ -568,7 +570,7 @@ class MeetingProposalServiceTest {
 		assertThat(response.status()).isEqualTo(MeetingProposalStatus.DECLINED);
 		assertThat(response.declineReason()).isNull();
 		assertThat(response.declinedByName()).isEqualTo("Deniz Ak");
-		verify(notificationService).create(coordinator, NotificationCategory.MEETING_CHANGE,
+		verify(notificationService).createAndMail(coordinator, NotificationCategory.MEETING_CHANGE,
 				"Görüşme önerisi reddedildi",
 				"Deniz Ak · Ayşe Demir ↔ Lumen · " + MeetingSlotTimes.formatForPeople(nextWeek, AppLanguage.TR),
 				"/coordinator/mentorships?mentorship=" + mentorship.getId());
@@ -585,7 +587,7 @@ class MeetingProposalServiceTest {
 
 		service.decline(mentor.getId(), proposal.getId(), new DeclineMeetingProposalRequest(null, "Uygun değilim"));
 
-		verify(notificationService).create(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(member), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme önerisi reddedildi"), anyString(), eq("/dashboard"));
 	}
 
@@ -599,7 +601,7 @@ class MeetingProposalServiceTest {
 
 		service.decline(mentor.getId(), proposal.getId(), new DeclineMeetingProposalRequest(null, null));
 
-		verify(notificationService).create(eq(admin), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(admin), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme önerisi reddedildi"), anyString(),
 				eq("/coordinator/mentorships?mentorship=" + mentorship.getId()));
 	}
@@ -615,6 +617,7 @@ class MeetingProposalServiceTest {
 		verify(coordinatorMentorshipService).requireManagedMentorship(coordinator.getId(), mentorship.getId());
 		verify(proposalRepository).save(proposal);
 		verify(notificationService, never()).create(any(), any(), anyString(), anyString(), anyString());
+		verify(notificationService, never()).createAndMail(any(), any(), anyString(), anyString(), anyString());
 	}
 
 	@Test
@@ -683,7 +686,7 @@ class MeetingProposalServiceTest {
 		assertThat(booked.getValue().organizationId()).isEqualTo(lumen.getId());
 		assertThat(booked.getValue().durationMinutes()).isEqualTo(45);
 		verify(meetingRepository, never()).save(any());
-		verify(notificationService, never()).create(any(), any(), eq("Görüşme yeni saate taşındı"), anyString(),
+		verify(notificationService, never()).createAndMail(any(), any(), eq("Görüşme yeni saate taşındı"), anyString(),
 				anyString());
 	}
 
@@ -699,12 +702,32 @@ class MeetingProposalServiceTest {
 
 		assertThat(existing.getDurationMinutes()).isEqualTo(45);
 		verify(meetingRepository).save(existing);
-		verify(notificationService).create(eq(lead), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(lead), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme yeni saate taşındı"), anyString(), eq("/mentorships?tab=active"));
-		verify(notificationService).create(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(member), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme yeni saate taşındı"), anyString(), eq("/mentorships?tab=active"));
-		verify(notificationService).create(eq(mentor), eq(NotificationCategory.MEETING_CHANGE),
+		verify(notificationService).createAndMail(eq(mentor), eq(NotificationCategory.MEETING_CHANGE),
 				eq("Görüşme onaylandı"), anyString(), eq("/mentor-dashboard/calendar"));
+	}
+
+	@Test
+	void aTeamMemberWhoProposedTheNewTimeIsMailedOnlyAboutTheMovedMeeting() {
+		member.setOrganization(lumen);
+		Meeting existing = scheduledMeeting();
+		MeetingProposal proposal = pending(existing.getId());
+		proposal.setProposedBy(member.getId());
+		proposal.setTeamAcceptedAt(Instant.now());
+		when(proposalRepository.findById(proposal.getId())).thenReturn(Optional.of(proposal));
+		when(meetingRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+		service.accept(mentor.getId(), proposal.getId());
+
+		verify(notificationService).create(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme onaylandı"), anyString(), anyString());
+		verify(notificationService, never()).createAndMail(eq(member), any(), eq("Görüşme onaylandı"), anyString(),
+				anyString());
+		verify(notificationService).createAndMail(eq(member), eq(NotificationCategory.MEETING_CHANGE),
+				eq("Görüşme yeni saate taşındı"), anyString(), eq("/mentorships?tab=active"));
 	}
 
 	// --- E-mails ---

@@ -112,7 +112,7 @@ public class ProgramMentorRemovalService {
 		if (mentor.getStatus() == UserAccountStatus.DELETED) {
 			return;
 		}
-		notificationService.create(mentor, Texts.get(mentor, "notification.removedFromProgram.title"),
+		notificationService.createAndMail(mentor, Texts.get(mentor, "notification.removedFromProgram.title"),
 				Texts.get(mentor, "notification.removedFromProgram.body", program.getName()), MENTOR_HREF);
 	}
 
@@ -120,7 +120,7 @@ public class ProgramMentorRemovalService {
 	private void notifyCoordinators(AppUser admin, AppUser mentor, Program program) {
 		ProgramCoordination.runners(program, programCoordinatorRepository, appUserRepository).stream()
 				.filter(coordinator -> !coordinator.getId().equals(admin.getId()))
-				.forEach(coordinator -> notificationService.create(coordinator,
+				.forEach(coordinator -> notificationService.createAndMail(coordinator,
 						Texts.get(coordinator, "notification.mentorRemovedFromProgram.title"),
 						Texts.get(coordinator, "notification.mentorRemovedFromProgram.body", mentor.getFullName(),
 								program.getName()),
@@ -133,7 +133,7 @@ public class ProgramMentorRemovalService {
 		withdrawn.forEach(request -> newestByRequester.putIfAbsent(request.getRequester().getId(), request));
 		newestByRequester.values().stream()
 				.filter(request -> request.getRequester().getStatus() != UserAccountStatus.DELETED)
-				.forEach(request -> notificationService.create(request.getRequester(),
+				.forEach(request -> notificationService.createAndMail(request.getRequester(),
 						Texts.get(request.getRequester(), "notification.requestClosedByMentorRemoval.title"),
 						Texts.get(request.getRequester(), "notification.requestClosedByMentorRemoval.body",
 								mentor.getFullName(), program.getName()),

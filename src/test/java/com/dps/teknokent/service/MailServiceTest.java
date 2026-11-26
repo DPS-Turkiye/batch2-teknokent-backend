@@ -60,6 +60,29 @@ class MailServiceTest {
 	}
 
 	@Test
+	void spacesTheMailsSentAfterACommitSoABurstStaysUnderTheSendingLimit() {
+		List<Runnable> queued = new ArrayList<>();
+		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
+				queued::add, java.time.Duration.ofMillis(60));
+		TransactionSynchronizationManager.initSynchronization();
+		try {
+			for (int i = 0; i < 3; i++) {
+				mailService.sendAfterCommit("mentee" + i + "@tekno.com", "Konu", "Metin");
+			}
+			TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
+		} finally {
+			TransactionSynchronizationManager.clearSynchronization();
+		}
+
+		long started = System.nanoTime();
+		queued.forEach(Runnable::run);
+
+		verify(sesClient, org.mockito.Mockito.times(3)).sendEmail(any(SendEmailRequest.class));
+		assertThat(java.time.Duration.ofNanos(System.nanoTime() - started)).isGreaterThanOrEqualTo(
+				java.time.Duration.ofMillis(120));
+	}
+
+	@Test
 	void stillSendsAfterTheCommitWhenTheExecutorIsShuttingDown() {
 		MailService mailService = new MailService(sesClient, "noreply@menton.com.tr", "https://menton.com.tr",
 				task -> {

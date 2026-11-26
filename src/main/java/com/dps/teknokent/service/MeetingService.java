@@ -126,7 +126,7 @@ public class MeetingService {
 		}
 		appUserRepository.findByOrganizationIdOrderByFullNameAsc(meeting.getOrganization().getId()).stream()
 				.filter(user -> user.has(UserRole.MENTEE))
-				.forEach(mentee -> notificationService.create(
+				.forEach(mentee -> notificationService.createAndMail(
 						mentee,
 						NotificationCategory.MEETING_CHANGE,
 						Texts.get(mentee, "notification.meetingPlanned.title"),
