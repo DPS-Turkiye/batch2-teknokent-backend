@@ -54,7 +54,7 @@ public class RequestFollowUpService {
 	private static final LocalTime DAY_STARTS = LocalTime.of(9, 0);
 	private static final LocalTime DAY_ENDS = LocalTime.of(18, 0);
 
-	private static final Set<MentorshipRequestStatus> OPEN_CONVERSATIONS = Set.of(
+	static final Set<MentorshipRequestStatus> OPEN_CONVERSATIONS = Set.of(
 			MentorshipRequestStatus.PENDING,
 			MentorshipRequestStatus.MORE_INFO_REQUESTED,
 			MentorshipRequestStatus.COUNTER_PROPOSED,

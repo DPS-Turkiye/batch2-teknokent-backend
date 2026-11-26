@@ -185,6 +185,10 @@ public class MentorshipRequest {
 	@Column(name = "mentor_mailed_at", updatable = false)
 	private Instant mentorMailedAt;
 
+	/** The last time the requester was mailed about the mentor's messages they had not read here. */
+	@Column(name = "mentee_mailed_at", updatable = false)
+	private Instant menteeMailedAt;
+
 	public void markReadBy(AppUser reader, Instant at) {
 		if (reader.getId().equals(mentor.getId())) {
 			mentorReadAt = at;
