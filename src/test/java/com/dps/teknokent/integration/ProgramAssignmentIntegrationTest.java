@@ -10,7 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +63,7 @@ class ProgramAssignmentIntegrationTest {
 
 	private static final String ASSIGNMENTS = "/api/coordinator/programs/{programId}/assignments";
 	private static final String PROCESS = "/api/organizations/{organizationId}/process";
+	private static final DateTimeFormatter DUE = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.ROOT);
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -271,11 +274,201 @@ class ProgramAssignmentIntegrationTest {
 				.andExpect(jsonPath("$[0].teams[1].state").value("OVERDUE"));
 	}
 
+	@Test
+	void editingChangesTheOdevAndEveryTeamsCopyAndTellsOnlyOpenTeamsAboutTheNewDate() throws Exception {
+		UUID id = createdId(body("Pazar araştırması", tomorrow(), false));
+		submit(dongu, donguFounder, copiesOf(dongu).getFirst(), null).andExpect(status().isOk());
+		LocalDate later = today().plusDays(7);
+
+		update(coordinator, id, editBody("Pazar analizi", "Rakipleri de ekle.", later))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.title").value("Pazar analizi"))
+				.andExpect(jsonPath("$.description").value("Rakipleri de ekle."))
+				.andExpect(jsonPath("$.dueDate").value(later.toString()))
+				.andExpect(jsonPath("$.submittedCount").value(1))
+				.andExpect(jsonPath("$.openCount").value(1));
+
+		for (Organization team : List.of(dongu, kume)) {
+			assertThat(copiesOf(team)).singleElement().satisfies(item -> {
+				assertThat(item.getTitle()).isEqualTo("Pazar analizi");
+				assertThat(item.getDescription()).isEqualTo("Rakipleri de ekle.");
+				assertThat(item.getDueDate()).isEqualTo(later);
+			});
+		}
+		ActionItem kumeCopy = copiesOf(kume).getFirst();
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(kumeFounder.getId()))
+				.anySatisfy(notification -> {
+					assertThat(notification.getTitle()).isEqualTo("Ödev teslim tarihi değişti");
+					assertThat(notification.getBody()).contains("Pazar analizi").contains(DUE.format(later));
+					assertThat(notification.getHref()).isEqualTo("/startup/process?assignment=" + kumeCopy.getId());
+				});
+		// Döngü already handed in: only the first "new Ödev" notice.
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(donguFounder.getId())).hasSize(1);
+	}
+
+	@Test
+	void editingOnlyTheTextTellsNobodyAndKeepsAnOverdueDate() throws Exception {
+		ProgramAssignment past = pastAssignment("Geçmiş ödev");
+		copy(past, kume, kumeFounder);
+
+		update(coordinator, past.getId(), editBody("Geçmiş ödev (düzeltildi)", null, past.getDueDate()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.title").value("Geçmiş ödev (düzeltildi)"))
+				.andExpect(jsonPath("$.overdueCount").value(1));
+
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(kumeFounder.getId())).isEmpty();
+	}
+
+	@Test
+	void clearingTheDueDateTellsOpenTeamsAndExtendingAClosedOdevHandsItToTeamsThatJoinedSince() throws Exception {
+		ProgramAssignment past = pastAssignment("Geçmiş ödev");
+		copy(past, kume, kumeFounder);
+
+		update(coordinator, past.getId(), editBody("Geçmiş ödev", null, null))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.dueDate").doesNotExist())
+				.andExpect(jsonPath("$.openCount").value(2));
+
+		assertThat(copiesOf(dongu)).singleElement()
+				.satisfies(item -> assertThat(item.getDueDate()).isNull());
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(kumeFounder.getId()))
+				.singleElement()
+				.satisfies(notification -> assertThat(notification.getBody()).contains("artık bir teslim tarihi yok"));
+	}
+
+	@Test
+	void aCopyMarkedDoneElsewhereKeepsItsHandInTimeThroughAnEdit() throws Exception {
+		ProgramAssignment past = pastAssignment("Geçmiş ödev");
+		ActionItem done = copy(past, dongu, donguFounder);
+		done.setStatus(ActionItemStatus.COMPLETED);
+		actionItemRepository.saveAndFlush(done);
+		Instant markedAt = actionItemRepository.findById(done.getId()).orElseThrow().getUpdatedAt();
+
+		update(coordinator, past.getId(), editBody("Geçmiş ödev v2", null, past.getDueDate()))
+				.andExpect(status().isOk());
+
+		assertThat(actionItemRepository.findById(done.getId()).orElseThrow().getSubmittedAt()).isEqualTo(markedAt);
+	}
+
+	@Test
+	void anAdminMayEditButOthersMayNotAndTheRulesOfCreateHold() throws Exception {
+		UUID id = createdId(body("Pazar araştırması", tomorrow(), false));
+		AppUser mentor = user("Leyla Aksoy", UserRole.MENTOR, null);
+		acceptedMentorship(mentor, dongu);
+
+		update(otherCoordinator, id, editBody("X", null, null)).andExpect(status().is4xxClientError());
+		update(mentor, id, editBody("X", null, null)).andExpect(status().is4xxClientError());
+		update(donguFounder, id, editBody("X", null, null)).andExpect(status().is4xxClientError());
+		update(coordinator, id, editBody(" ", null, null)).andExpect(status().isBadRequest());
+		update(coordinator, id, editBody("X", null, today().minusDays(1))).andExpect(status().isBadRequest());
+		update(coordinator, UUID.randomUUID(), editBody("X", null, null)).andExpect(status().isNotFound());
+		assertThat(programAssignmentRepository.findById(id).orElseThrow().getTitle())
+				.isEqualTo("Pazar araştırması");
+
+		update(admin, id, editBody("Admin düzenledi", null, tomorrow())).andExpect(status().isOk());
+
+		program.setStatus(ProgramStatus.COMPLETED);
+		programRepository.saveAndFlush(program);
+		update(coordinator, id, editBody("Arşivde", null, tomorrow())).andExpect(status().isBadRequest());
+		assertThat(programAssignmentRepository.findById(id).orElseThrow().getTitle()).isEqualTo("Admin düzenledi");
+	}
+
+	@Test
+	void anOdevOfAnotherProgramIsNotFoundThroughThisOne() throws Exception {
+		ProgramAssignment elsewhere = pastAssignment("Başka program");
+		elsewhere.setProgramId(otherProgram.getId());
+		programAssignmentRepository.saveAndFlush(elsewhere);
+
+		update(coordinator, elsewhere.getId(), editBody("X", null, null)).andExpect(status().isNotFound());
+	}
+
 	private ResultActions create(AppUser actor, String body) throws Exception {
 		return mockMvc.perform(post(ASSIGNMENTS, program.getId())
 				.with(httpBasic("test", "test"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"actorId\":\"" + actor.getId() + "\"," + body + "}"));
+	}
+
+	private UUID createdId(String body) throws Exception {
+		create(coordinator, body).andExpect(status().isCreated());
+		return programAssignmentRepository.findByProgramIdOrderByCreatedAtDesc(program.getId()).getFirst().getId();
+	}
+
+	@Test
+	void aFileOdevTickedDoneWithoutItsFileIsStillOpenSoItIsToldAndNotPinned() throws Exception {
+		UUID id = createdId(body("Finansal model", tomorrow(), true));
+		ActionItem ticked = copiesOf(kume).getFirst();
+		ticked.setStatus(ActionItemStatus.COMPLETED);
+		actionItemRepository.saveAndFlush(ticked);
+
+		update(coordinator, id, editBody("Finansal model", null, today().plusDays(3))).andExpect(status().isOk());
+
+		assertThat(actionItemRepository.findById(ticked.getId()).orElseThrow().getSubmittedAt()).isNull();
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(kumeFounder.getId()))
+				.anySatisfy(
+						notification -> assertThat(notification.getTitle()).isEqualTo("Ödev teslim tarihi değişti"));
+	}
+
+	@Test
+	void aTeamThatLeftTheProgramKeepsItsCopyInStepButIsNotTold() throws Exception {
+		UUID id = createdId(body("Pazar araştırması", tomorrow(), false));
+		programStartupRepository.findByOrganizationIdOrderByCreatedAtAsc(kume.getId())
+				.forEach(programStartupRepository::delete);
+		programStartupRepository.flush();
+		LocalDate later = today().plusDays(5);
+
+		update(coordinator, id, editBody("Pazar analizi", null, later))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.teams.length()").value(1));
+
+		assertThat(copiesOf(kume)).singleElement().satisfies(item -> {
+			assertThat(item.getTitle()).isEqualTo("Pazar analizi");
+			assertThat(item.getDueDate()).isEqualTo(later);
+		});
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(kumeFounder.getId())).hasSize(1);
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(donguFounder.getId())).hasSize(2);
+	}
+
+	@Test
+	void todayIsAcceptedAnUnchangedSaveTellsNobodyAndTheEditorIsNeverTold() throws Exception {
+		UUID id = createdId(body("Pazar araştırması", tomorrow(), false));
+		ActionItem kumeCopy = copiesOf(kume).getFirst();
+		kumeCopy.setOwner(coordinator);
+		actionItemRepository.saveAndFlush(kumeCopy);
+
+		update(coordinator, id, editBody("Pazar araştırması", "Hedef pazarı anlat.", tomorrow()))
+				.andExpect(status().isOk());
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(donguFounder.getId())).hasSize(1);
+
+		update(coordinator, id, editBody("Pazar araştırması", null, today())).andExpect(status().isOk());
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(donguFounder.getId())).hasSize(2);
+		assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(coordinator.getId())).isEmpty();
+	}
+
+	@Test
+	void anOverdueDateCannotMoveToAnotherPastDay() throws Exception {
+		ProgramAssignment past = pastAssignment("Geçmiş ödev");
+
+		update(coordinator, past.getId(), editBody("Geçmiş ödev", null, past.getDueDate().minusDays(1)))
+				.andExpect(status().isBadRequest());
+		update(coordinator, past.getId(), editBody("Geçmiş ödev", null, today().minusDays(1)))
+				.andExpect(status().isBadRequest());
+
+		assertThat(programAssignmentRepository.findById(past.getId()).orElseThrow().getDueDate())
+				.isEqualTo(today().minusDays(3));
+	}
+
+	private ResultActions update(AppUser actor, UUID assignmentId, String body) throws Exception {
+		return mockMvc.perform(put(ASSIGNMENTS + "/{assignmentId}", program.getId(), assignmentId)
+				.with(httpBasic("test", "test"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"actorId\":\"" + actor.getId() + "\"," + body + "}"));
+	}
+
+	private static String editBody(String title, String description, LocalDate dueDate) {
+		return "\"title\":\"" + title + "\""
+				+ (description == null ? "" : ",\"description\":\"" + description + "\"")
+				+ (dueDate == null ? "" : ",\"dueDate\":\"" + dueDate + "\"");
 	}
 
 	private ResultActions list(AppUser actor) throws Exception {

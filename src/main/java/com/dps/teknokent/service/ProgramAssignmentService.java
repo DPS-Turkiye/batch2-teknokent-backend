@@ -3,6 +3,7 @@ package com.dps.teknokent.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -22,11 +23,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.domain.AppLanguage;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.ProgramAssignmentSubmissionState;
 import com.dps.teknokent.domain.ProgramStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProgramAssignmentRequest;
+import com.dps.teknokent.dto.requests.UpdateProgramAssignmentRequest;
 import com.dps.teknokent.dto.responses.ProgramAssignmentResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
@@ -55,6 +58,9 @@ import com.dps.teknokent.util.Texts;
  */
 @Service
 public class ProgramAssignmentService {
+
+	private static final DateTimeFormatter DUE_DATE_TR = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.ROOT);
+	private static final DateTimeFormatter DUE_DATE_EN = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
 	private static final Comparator<ProgramAssignmentResponse.TeamSubmission> BY_TEAM_NAME = Comparator
 			.comparing(team -> team.organizationName().toLowerCase(Locale.ROOT));
@@ -139,6 +145,89 @@ public class ProgramAssignmentService {
 		List<Organization> teams = teamsOf(program.getId());
 		handOutMissing(List.of(assignment), teams);
 		return describe(List.of(assignment), teams).getFirst();
+	}
+
+	/**
+	 * "Düzenle": a new title, description and due date for the Ödev and every team's copy, handed in or not. A team
+	 * whose copy is still open is told when the due date changes; text changes and teams that already handed in
+	 * get no notice.
+	 */
+	@Transactional
+	public ProgramAssignmentResponse update(UUID actorId, UUID programId, UUID assignmentId,
+			UpdateProgramAssignmentRequest request) {
+		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		if (program.getStatus() == ProgramStatus.COMPLETED) {
+			throw new InvalidRequestException(Texts.forRequest("error.programAssignmentArchivedEdit"));
+		}
+		ProgramAssignment assignment = programAssignmentRepository.findById(assignmentId)
+				.filter(found -> found.getProgramId().equals(program.getId()))
+				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
+		LocalDate dueDate = request.dueDate();
+		boolean dueDateChanged = !Objects.equals(dueDate, assignment.getDueDate());
+		// The date already set stays valid once passed, so the text of an overdue Ödev can still be fixed.
+		if (dueDateChanged && dueDate != null && dueDate.isBefore(today())) {
+			throw new InvalidRequestException(Texts.forRequest("error.programAssignmentDuePassed"));
+		}
+		String title = TextUtils.trim(request.title());
+		String description = TextUtils.normalizeOptional(request.description());
+		assignment.setTitle(title);
+		assignment.setDescription(description);
+		assignment.setDueDate(dueDate);
+		programAssignmentRepository.save(assignment);
+
+		List<Organization> teams = teamsOf(program.getId());
+		Set<UUID> current = teams.stream().map(Organization::getId).collect(Collectors.toSet());
+		List<ActionItem> toTell = new ArrayList<>();
+		for (ActionItem copy : actionItemRepository.findByProgramAssignmentIdIn(List.of(assignment.getId()))) {
+			// Read before the setters: the pin uses the copy's last change, and the edit is about to move it.
+			boolean handedIn = handedIn(copy, assignment);
+			if (handedIn) {
+				pinHandInTime(copy);
+			}
+			copy.setTitle(title);
+			copy.setDescription(description);
+			copy.setDueDate(dueDate);
+			// A team that has left the program keeps its copy in step, but is not told about it.
+			if (dueDateChanged && !handedIn && current.contains(copy.getOrganization().getId())) {
+				toTell.add(copy);
+			}
+		}
+		actionItemRepository.flush();
+		toTell.forEach(copy -> tellDueDateChanged(copy, title, dueDate, actorId));
+
+		// A later date can reopen an Ödev that had closed, which hands it to teams that joined since.
+		handOutMissing(List.of(assignment), teams);
+		return describe(List.of(assignment), teams).getFirst();
+	}
+
+	/**
+	 * A copy handed in by marking it done outside the Süreç hand-in dates its hand-in by its last change, which this
+	 * edit is about to move; pinning it keeps the team on time (or late) as it was.
+	 */
+	private static void pinHandInTime(ActionItem copy) {
+		if (copy.getSubmittedAt() == null) {
+			copy.setSubmittedAt(copy.getUpdatedAt());
+		}
+	}
+
+	private void tellDueDateChanged(ActionItem copy, String title, @Nullable LocalDate dueDate, UUID actorId) {
+		AppUser owner = copy.getOwner();
+		if (owner.getId().equals(actorId)) {
+			return;
+		}
+		String body = dueDate == null
+				? Texts.get(owner, "notification.programTaskDueCleared.body", title)
+				: Texts.get(owner, "notification.programTaskDue.body", title, formatDueDate(owner, dueDate));
+		notificationService.createAndMail(
+				owner,
+				NotificationCategory.TASK_ASSIGNED,
+				Texts.get(owner, "notification.programTaskDue.title"),
+				body,
+				"/startup/process?assignment=" + copy.getId());
+	}
+
+	private static String formatDueDate(AppUser reader, LocalDate dueDate) {
+		return (reader.getPreferredLanguage() == AppLanguage.EN ? DUE_DATE_EN : DUE_DATE_TR).format(dueDate);
 	}
 
 	/**
