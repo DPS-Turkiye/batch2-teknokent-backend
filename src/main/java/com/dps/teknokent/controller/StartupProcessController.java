@@ -3,6 +3,7 @@ package com.dps.teknokent.controller;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -76,5 +77,14 @@ public class StartupProcessController {
 			@Valid @RequestBody SubmitProcessAssignmentRequest request) {
 		return startupProcessService.submitAssignment(organizationId, assignmentId,
 				new SubmitProcessAssignmentRequest(CurrentActor.resolve(request.actorId()), request.documentId()));
+	}
+
+	/** "Kaldır": takes the handed-in file back while it could still be replaced; the Ödev is open again. */
+	@DeleteMapping("/assignments/{assignmentId}/submission")
+	public StartupProcessResponse withdrawSubmission(
+			@PathVariable UUID organizationId,
+			@PathVariable UUID assignmentId,
+			@RequestParam(required = false) UUID actorId) {
+		return startupProcessService.withdrawSubmission(organizationId, assignmentId, CurrentActor.resolve(actorId));
 	}
 }
