@@ -53,7 +53,7 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 			LocalDate from,
 			LocalDate to);
 
-	@EntityGraph(attributePaths = "organization")
+	@EntityGraph(attributePaths = { "organization", "owner" })
 	List<ActionItem> findByProgramAssignmentIdIn(Collection<UUID> programAssignmentIds);
 
 	/** The program Ödevler the team already holds a copy of. */
