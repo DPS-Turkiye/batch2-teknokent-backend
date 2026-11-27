@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -147,6 +148,20 @@ class StartupProcessControllerTest {
 						""".formatted(ACTOR_ID)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.rounds[0].id").value(ROUND_ID.toString()));
+	}
+
+	@Test
+	void withdrawsAHandedInFileForTheNamedActor() throws Exception {
+		when(startupProcessService.withdrawSubmission(ORG_ID, ASSIGNMENT_ID, ACTOR_ID))
+				.thenReturn(process(StartupStage.MVP));
+
+		mockMvc.perform(delete("/api/organizations/{id}/process/assignments/{assignmentId}/submission",
+				ORG_ID, ASSIGNMENT_ID)
+				.with(user("test-user"))
+				.param("actorId", ACTOR_ID.toString()))
+				.andExpect(status().isOk());
+
+		verify(startupProcessService).withdrawSubmission(ORG_ID, ASSIGNMENT_ID, ACTOR_ID);
 	}
 
 	@Test

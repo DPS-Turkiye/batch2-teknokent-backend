@@ -16,8 +16,11 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.dps.teknokent.domain.ActionItemStatus;
+import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
@@ -45,6 +48,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -52,17 +56,20 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.repository.StoredDocumentShareRepository;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The Süreç tab: the phases of the team's program and where today falls in them, the round it is
  * focused on, and the Ödevler it has been given. Ödevler are action items
  * marked as process assignments, so they also surface wherever action items do.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class StartupProcessService {
@@ -70,6 +77,8 @@ public class StartupProcessService {
 	private static final ZoneId PROGRAM_ZONE = ZoneId.of("Europe/Istanbul");
 	/** The 409 code the web shows the "replace window closed" text for. */
 	static final String REPLACE_CLOSED = "ASSIGNMENT_REPLACE_CLOSED";
+	/** The 409 code for "Kaldır" on an Ödev with no handed-in file. */
+	static final String NOTHING_TO_WITHDRAW = "ASSIGNMENT_NOTHING_TO_WITHDRAW";
 
 	private final DomainLookupService domainLookupService;
 	private final OrganizationRepository organizationRepository;
@@ -85,6 +94,9 @@ public class StartupProcessService {
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final AppUserRepository appUserRepository;
+	private final StoredDocumentShareRepository storedDocumentShareRepository;
+	private final DocumentRequestUploadRepository documentRequestUploadRepository;
+	private final ObjectStorage objectStorage;
 
 	/** Not read-only: a team that joined late is handed the program's open Ödevler here (ProgramAssignmentService). */
 	@Transactional
@@ -203,6 +215,69 @@ public class StartupProcessService {
 			notifyReplaced(item, organization, actor);
 		}
 		return describe(organization, today());
+	}
+
+	/**
+	 * "Kaldır": the team takes its handed-in file back, in the same window as a swap (until the end of the due day),
+	 * and the Ödev is open again as if never handed in. A file uploaded for the Ödev goes with it (row now, stored
+	 * object once the deletion has committed); a file picked from Dosyalar, or one another Ödev or a document request
+	 * still uses, is only detached.
+	 */
+	@Transactional
+	public StartupProcessResponse withdrawSubmission(UUID organizationId, UUID assignmentId, UUID actorId) {
+		Organization organization = domainLookupService.requireOrganization(organizationId);
+		requireTeamOrEditor(organization, actorId);
+		ActionItem item = actionItemRepository.findByIdAndOrganizationId(assignmentId, organizationId)
+				.filter(StartupProcessService::isAssignment)
+				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
+		UUID documentId = item.getSubmissionDocumentId();
+		if (!handedInWithFile(item) || documentId == null) {
+			throw new ConflictException(Texts.forRequest("error.assignmentNothingToWithdraw"), NOTHING_TO_WITHDRAW);
+		}
+		if (!replaceable(item, today())) {
+			throw new ConflictException(Texts.forRequest("error.assignmentReplaceClosed"), REPLACE_CLOSED);
+		}
+
+		item.setSubmissionDocumentId(null);
+		item.setSubmittedAt(null);
+		item.setStatus(ActionItemStatus.OPEN);
+		actionItemRepository.saveAndFlush(item);
+		storedDocumentRepository.findById(documentId)
+				.filter(document -> document.getKind() == DocumentKind.HOMEWORK)
+				.filter(document -> organizationId.equals(document.getOrganizationId()))
+				.filter(document -> !actionItemRepository.existsBySubmissionDocumentIdAndIdNot(documentId,
+						item.getId()))
+				// A mentor's document request may hold the same file (its link has no ON DELETE rule).
+				.filter(document -> !documentRequestUploadRepository.existsByStoredDocumentId(documentId))
+				.ifPresent(this::deleteWithItsObject);
+		return describe(organization, today());
+	}
+
+	private void deleteWithItsObject(StoredDocument document) {
+		storedDocumentShareRepository.deleteByDocumentId(document.getId());
+		storedDocumentRepository.delete(document);
+		String s3Key = document.getS3Key();
+		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+			deleteObject(document.getId(), s3Key);
+			return;
+		}
+		// The object goes only once the row's deletion has committed: a storage hiccup leaves an orphaned object
+		// rather than a record pointing at nothing.
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				deleteObject(document.getId(), s3Key);
+			}
+		});
+	}
+
+	private void deleteObject(UUID documentId, String s3Key) {
+		try {
+			objectStorage.delete(s3Key);
+		} catch (RuntimeException error) {
+			log.warn("Withdrew document {} but its stored object {} remains: {}", documentId, s3Key,
+					error.getMessage());
+		}
 	}
 
 	/**
