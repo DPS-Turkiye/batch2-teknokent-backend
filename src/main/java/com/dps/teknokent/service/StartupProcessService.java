@@ -16,11 +16,8 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.dps.teknokent.domain.ActionItemStatus;
-import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
@@ -48,7 +45,6 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
-import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -56,20 +52,17 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
-import com.dps.teknokent.repository.StoredDocumentShareRepository;
 import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 /**
  * The Süreç tab: the phases of the team's program and where today falls in them, the round it is
  * focused on, and the Ödevler it has been given. Ödevler are action items
  * marked as process assignments, so they also surface wherever action items do.
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class StartupProcessService {
@@ -94,9 +87,7 @@ public class StartupProcessService {
 	private final ProgramRepository programRepository;
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final AppUserRepository appUserRepository;
-	private final StoredDocumentShareRepository storedDocumentShareRepository;
-	private final DocumentRequestUploadRepository documentRequestUploadRepository;
-	private final ObjectStorage objectStorage;
+	private final HomeworkFileCleaner homeworkFileCleaner;
 
 	/** Not read-only: a team that joined late is handed the program's open Ödevler here (ProgramAssignmentService). */
 	@Transactional
@@ -242,42 +233,8 @@ public class StartupProcessService {
 		item.setSubmittedAt(null);
 		item.setStatus(ActionItemStatus.OPEN);
 		actionItemRepository.saveAndFlush(item);
-		storedDocumentRepository.findById(documentId)
-				.filter(document -> document.getKind() == DocumentKind.HOMEWORK)
-				.filter(document -> organizationId.equals(document.getOrganizationId()))
-				.filter(document -> !actionItemRepository.existsBySubmissionDocumentIdAndIdNot(documentId,
-						item.getId()))
-				// A mentor's document request may hold the same file (its link has no ON DELETE rule).
-				.filter(document -> !documentRequestUploadRepository.existsByStoredDocumentId(documentId))
-				.ifPresent(this::deleteWithItsObject);
+		homeworkFileCleaner.deleteIfUnused(organizationId, documentId);
 		return describe(organization, today());
-	}
-
-	private void deleteWithItsObject(StoredDocument document) {
-		storedDocumentShareRepository.deleteByDocumentId(document.getId());
-		storedDocumentRepository.delete(document);
-		String s3Key = document.getS3Key();
-		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-			deleteObject(document.getId(), s3Key);
-			return;
-		}
-		// The object goes only once the row's deletion has committed: a storage hiccup leaves an orphaned object
-		// rather than a record pointing at nothing.
-		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-			@Override
-			public void afterCommit() {
-				deleteObject(document.getId(), s3Key);
-			}
-		});
-	}
-
-	private void deleteObject(UUID documentId, String s3Key) {
-		try {
-			objectStorage.delete(s3Key);
-		} catch (RuntimeException error) {
-			log.warn("Withdrew document {} but its stored object {} remains: {}", documentId, s3Key,
-					error.getMessage());
-		}
 	}
 
 	/**

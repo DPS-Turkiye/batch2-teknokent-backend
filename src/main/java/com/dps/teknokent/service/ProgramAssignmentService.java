@@ -74,6 +74,7 @@ public class ProgramAssignmentService {
 	private final AppUserRepository appUserRepository;
 	private final StoredDocumentRepository storedDocumentRepository;
 	private final NotificationService notificationService;
+	private final HomeworkFileCleaner homeworkFileCleaner;
 	private final Clock clock;
 
 	@Autowired
@@ -81,10 +82,11 @@ public class ProgramAssignmentService {
 			ProgramAssignmentRepository programAssignmentRepository, ActionItemRepository actionItemRepository,
 			ProgramStartupRepository programStartupRepository, ProgramPhaseRepository programPhaseRepository,
 			OrganizationRepository organizationRepository, AppUserRepository appUserRepository,
-			StoredDocumentRepository storedDocumentRepository, NotificationService notificationService) {
+			StoredDocumentRepository storedDocumentRepository, NotificationService notificationService,
+			HomeworkFileCleaner homeworkFileCleaner) {
 		this(coordinatorProgramService, programAssignmentRepository, actionItemRepository, programStartupRepository,
 				programPhaseRepository, organizationRepository, appUserRepository, storedDocumentRepository,
-				notificationService, Clock.systemUTC());
+				notificationService, homeworkFileCleaner, Clock.systemUTC());
 	}
 
 	ProgramAssignmentService(CoordinatorProgramService coordinatorProgramService,
@@ -92,7 +94,7 @@ public class ProgramAssignmentService {
 			ProgramStartupRepository programStartupRepository, ProgramPhaseRepository programPhaseRepository,
 			OrganizationRepository organizationRepository, AppUserRepository appUserRepository,
 			StoredDocumentRepository storedDocumentRepository, NotificationService notificationService,
-			Clock clock) {
+			HomeworkFileCleaner homeworkFileCleaner, Clock clock) {
 		this.coordinatorProgramService = coordinatorProgramService;
 		this.programAssignmentRepository = programAssignmentRepository;
 		this.actionItemRepository = actionItemRepository;
@@ -102,6 +104,7 @@ public class ProgramAssignmentService {
 		this.appUserRepository = appUserRepository;
 		this.storedDocumentRepository = storedDocumentRepository;
 		this.notificationService = notificationService;
+		this.homeworkFileCleaner = homeworkFileCleaner;
 		this.clock = clock;
 	}
 
@@ -159,9 +162,7 @@ public class ProgramAssignmentService {
 		if (program.getStatus() == ProgramStatus.COMPLETED) {
 			throw new InvalidRequestException(Texts.forRequest("error.programAssignmentArchivedEdit"));
 		}
-		ProgramAssignment assignment = programAssignmentRepository.findById(assignmentId)
-				.filter(found -> found.getProgramId().equals(program.getId()))
-				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
+		ProgramAssignment assignment = requireAssignmentOf(program, assignmentId);
 		LocalDate dueDate = request.dueDate();
 		boolean dueDateChanged = !Objects.equals(dueDate, assignment.getDueDate());
 		// The date already set stays valid once passed, so the text of an overdue Ödev can still be fixed.
@@ -198,6 +199,34 @@ public class ProgramAssignmentService {
 		// A later date can reopen an Ödev that had closed, which hands it to teams that joined since.
 		handOutMissing(List.of(assignment), teams);
 		return describe(List.of(assignment), teams).getFirst();
+	}
+
+	/**
+	 * "Sil": the Ödev goes for good, with every team's copy and the files teams uploaded for it (rows now, stored
+	 * objects once the deletion has committed). With the Ödev gone, a team that joins later is not handed it.
+	 */
+	@Transactional
+	public void delete(UUID actorId, UUID programId, UUID assignmentId) {
+		Program program = coordinatorProgramService.requireManagedProgram(actorId, programId);
+		if (program.getStatus() == ProgramStatus.COMPLETED) {
+			throw new InvalidRequestException(Texts.forRequest("error.programAssignmentArchivedDelete"));
+		}
+		ProgramAssignment assignment = requireAssignmentOf(program, assignmentId);
+		List<ActionItem> copies = actionItemRepository.findByProgramAssignmentIdIn(List.of(assignment.getId()));
+		actionItemRepository.deleteAll(copies);
+		programAssignmentRepository.delete(assignment);
+		actionItemRepository.flush();
+		for (ActionItem copy : copies) {
+			if (copy.getSubmissionDocumentId() != null) {
+				homeworkFileCleaner.deleteIfUnused(copy.getOrganization().getId(), copy.getSubmissionDocumentId());
+			}
+		}
+	}
+
+	private ProgramAssignment requireAssignmentOf(Program program, UUID assignmentId) {
+		return programAssignmentRepository.findById(assignmentId)
+				.filter(found -> found.getProgramId().equals(program.getId()))
+				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
 	}
 
 	/**

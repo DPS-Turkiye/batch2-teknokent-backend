@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,11 +23,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.dps.teknokent.domain.ActionItemStatus;
-import com.dps.teknokent.domain.DocumentKind;
 import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
@@ -56,7 +52,6 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
-import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -64,7 +59,6 @@ import com.dps.teknokent.repository.ProgramPhaseRepository;
 import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
-import com.dps.teknokent.repository.StoredDocumentShareRepository;
 
 @ExtendWith(MockitoExtension.class)
 class StartupProcessServiceTest {
@@ -121,13 +115,7 @@ class StartupProcessServiceTest {
 	private AppUserRepository appUserRepository;
 
 	@Mock
-	private StoredDocumentShareRepository storedDocumentShareRepository;
-
-	@Mock
-	private ObjectStorage objectStorage;
-
-	@Mock
-	private DocumentRequestUploadRepository documentRequestUploadRepository;
+	private HomeworkFileCleaner homeworkFileCleaner;
 
 	@InjectMocks
 	private StartupProcessService startupProcessService;
@@ -857,102 +845,19 @@ class StartupProcessServiceTest {
 	}
 
 	@Test
-	void withdrawSubmission_reopensTheOdevAndDeletesTheFileUploadedForIt() {
+	void withdrawSubmission_reopensTheOdevAndHandsItsFileToTheCleaner() {
 		Organization organization = startup();
 		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), today());
-		StoredDocument document = document(ORG_ID);
-		document.setKind(DocumentKind.HOMEWORK);
-		document.setS3Key("documents/odev.pdf");
-		finance.setSubmissionDocumentId(document.getId());
+		UUID documentId = UUID.randomUUID();
+		finance.setSubmissionDocumentId(documentId);
 		givenTeammateWithdraws(organization, finance);
-		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
 
 		startupProcessService.withdrawSubmission(ORG_ID, finance.getId(), TEAMMATE_ID);
 
 		assertThat(finance.getStatus()).isEqualTo(ActionItemStatus.OPEN);
 		assertThat(finance.getSubmissionDocumentId()).isNull();
 		assertThat(finance.getSubmittedAt()).isNull();
-		verify(storedDocumentShareRepository).deleteByDocumentId(document.getId());
-		verify(storedDocumentRepository).delete(document);
-		verify(objectStorage).delete("documents/odev.pdf");
-	}
-
-	@Test
-	void withdrawSubmission_onlyDetachesAFilePickedFromDosyalar() {
-		Organization organization = startup();
-		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), null);
-		StoredDocument deck = document(ORG_ID);
-		deck.setKind(DocumentKind.PITCH_DECK);
-		finance.setSubmissionDocumentId(deck.getId());
-		givenTeammateWithdraws(organization, finance);
-		when(storedDocumentRepository.findById(deck.getId())).thenReturn(Optional.of(deck));
-
-		startupProcessService.withdrawSubmission(ORG_ID, finance.getId(), TEAMMATE_ID);
-
-		assertThat(finance.getSubmissionDocumentId()).isNull();
-		verify(storedDocumentRepository, never()).delete(any());
-		verify(objectStorage, never()).delete(any());
-	}
-
-	@Test
-	void withdrawSubmission_keepsAFileAnotherOdevStillUses() {
-		Organization organization = startup();
-		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), null);
-		StoredDocument document = document(ORG_ID);
-		document.setKind(DocumentKind.HOMEWORK);
-		finance.setSubmissionDocumentId(document.getId());
-		givenTeammateWithdraws(organization, finance);
-		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
-		when(actionItemRepository.existsBySubmissionDocumentIdAndIdNot(document.getId(), finance.getId()))
-				.thenReturn(true);
-
-		startupProcessService.withdrawSubmission(ORG_ID, finance.getId(), TEAMMATE_ID);
-
-		assertThat(finance.getStatus()).isEqualTo(ActionItemStatus.OPEN);
-		verify(storedDocumentRepository, never()).delete(any());
-		verify(objectStorage, never()).delete(any());
-	}
-
-	@Test
-	void withdrawSubmission_keepsAFileAMentorsDocumentRequestHolds() {
-		Organization organization = startup();
-		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), null);
-		StoredDocument document = document(ORG_ID);
-		document.setKind(DocumentKind.HOMEWORK);
-		finance.setSubmissionDocumentId(document.getId());
-		givenTeammateWithdraws(organization, finance);
-		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
-		when(documentRequestUploadRepository.existsByStoredDocumentId(document.getId())).thenReturn(true);
-
-		startupProcessService.withdrawSubmission(ORG_ID, finance.getId(), TEAMMATE_ID);
-
-		assertThat(finance.getSubmissionDocumentId()).isNull();
-		verify(storedDocumentRepository, never()).delete(any());
-		verify(objectStorage, never()).delete(any());
-	}
-
-	@Test
-	void withdrawSubmission_deletesTheStoredObjectOnlyAfterCommit() {
-		Organization organization = startup();
-		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), null);
-		StoredDocument document = document(ORG_ID);
-		document.setKind(DocumentKind.HOMEWORK);
-		document.setS3Key("documents/odev.pdf");
-		finance.setSubmissionDocumentId(document.getId());
-		givenTeammateWithdraws(organization, finance);
-		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
-		TransactionSynchronizationManager.initSynchronization();
-		try {
-			startupProcessService.withdrawSubmission(ORG_ID, finance.getId(), TEAMMATE_ID);
-			verify(objectStorage, never()).delete(any());
-
-			doThrow(new IllegalStateException("S3 down")).when(objectStorage).delete("documents/odev.pdf");
-			TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
-
-			verify(objectStorage).delete("documents/odev.pdf");
-		} finally {
-			TransactionSynchronizationManager.clearSynchronization();
-		}
+		verify(homeworkFileCleaner).deleteIfUnused(ORG_ID, documentId);
 	}
 
 	@Test

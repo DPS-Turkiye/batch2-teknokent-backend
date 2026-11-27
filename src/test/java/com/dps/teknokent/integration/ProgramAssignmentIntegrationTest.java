@@ -2,6 +2,7 @@ package com.dps.teknokent.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -456,6 +457,78 @@ class ProgramAssignmentIntegrationTest {
 
 		assertThat(programAssignmentRepository.findById(past.getId()).orElseThrow().getDueDate())
 				.isEqualTo(today().minusDays(3));
+	}
+
+	@Test
+	void deletingTakesTheOdevEveryCopyAndTheUploadedFilesButLeavesAFilePickedFromDosyalar() throws Exception {
+		UUID id = createdId(body("Finansal model", tomorrow(), true));
+		StoredDocument uploaded = document(dongu, donguFounder);
+		submit(dongu, donguFounder, copiesOf(dongu).getFirst(), uploaded.getId()).andExpect(status().isOk());
+		StoredDocument deck = document(kume, kumeFounder);
+		deck.setKind(DocumentKind.PITCH_DECK);
+		storedDocumentRepository.saveAndFlush(deck);
+		submit(kume, kumeFounder, copiesOf(kume).getFirst(), deck.getId()).andExpect(status().isOk());
+
+		remove(coordinator, id).andExpect(status().isNoContent());
+
+		assertThat(programAssignmentRepository.findById(id)).isEmpty();
+		assertThat(copiesOf(dongu)).isEmpty();
+		assertThat(copiesOf(kume)).isEmpty();
+		assertThat(storedDocumentRepository.findById(uploaded.getId())).isEmpty();
+		assertThat(storedDocumentRepository.findById(deck.getId())).isPresent();
+		list(coordinator).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+	}
+
+	@Test
+	void aDeletedOdevIsNotHandedToATeamThatJoinsLater() throws Exception {
+		UUID id = createdId(body("Süresiz ödev", null, false));
+		remove(coordinator, id).andExpect(status().isNoContent());
+
+		Organization late = team("Geç Gelen", program);
+		AppUser lateFounder = founderOf(late, "Deniz İnanç");
+		mockMvc.perform(get(PROCESS, late.getId())
+				.param("actorId", lateFounder.getId().toString())
+				.with(httpBasic("test", "test")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.assignments.length()").value(0));
+		assertThat(copiesOf(late)).isEmpty();
+	}
+
+	@Test
+	void onlyTheProgramsCoordinatorOrAnAdminMayDeleteAndNotInAnArchivedProgram() throws Exception {
+		UUID id = createdId(body("Pazar araştırması", tomorrow(), false));
+		AppUser mentor = user("Leyla Aksoy", UserRole.MENTOR, null);
+		acceptedMentorship(mentor, dongu);
+
+		remove(otherCoordinator, id).andExpect(status().is4xxClientError());
+		remove(mentor, id).andExpect(status().is4xxClientError());
+		remove(donguFounder, id).andExpect(status().is4xxClientError());
+		program.setStatus(ProgramStatus.COMPLETED);
+		programRepository.saveAndFlush(program);
+		remove(coordinator, id).andExpect(status().isBadRequest());
+		assertThat(programAssignmentRepository.findById(id)).isPresent();
+		assertThat(copiesOf(dongu)).hasSize(1);
+
+		program.setStatus(ProgramStatus.ACTIVE);
+		programRepository.saveAndFlush(program);
+		remove(admin, id).andExpect(status().isNoContent());
+		assertThat(programAssignmentRepository.findById(id)).isEmpty();
+	}
+
+	@Test
+	void anOdevOfAnotherProgramCannotBeDeletedThroughThisOne() throws Exception {
+		ProgramAssignment elsewhere = pastAssignment("Başka program");
+		elsewhere.setProgramId(otherProgram.getId());
+		programAssignmentRepository.saveAndFlush(elsewhere);
+
+		remove(coordinator, elsewhere.getId()).andExpect(status().isNotFound());
+		assertThat(programAssignmentRepository.findById(elsewhere.getId())).isPresent();
+	}
+
+	private ResultActions remove(AppUser actor, UUID assignmentId) throws Exception {
+		return mockMvc.perform(delete(ASSIGNMENTS + "/{assignmentId}", program.getId(), assignmentId)
+				.param("actorId", actor.getId().toString())
+				.with(httpBasic("test", "test")));
 	}
 
 	private ResultActions update(AppUser actor, UUID assignmentId, String body) throws Exception {

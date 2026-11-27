@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -55,5 +56,14 @@ public class ProgramAssignmentController {
 			@Valid @RequestBody UpdateProgramAssignmentRequest request) {
 		return programAssignmentService.update(CurrentActor.resolve(request.actorId()), programId, assignmentId,
 				request);
+	}
+
+	@DeleteMapping("/{assignmentId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void delete(
+			@PathVariable UUID programId,
+			@PathVariable UUID assignmentId,
+			@RequestParam(required = false) UUID actorId) {
+		programAssignmentService.delete(CurrentActor.resolve(actorId), programId, assignmentId);
 	}
 }
