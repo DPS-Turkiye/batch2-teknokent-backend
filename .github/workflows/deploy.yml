@@ -27,7 +27,7 @@ env:
   ECR_REPOSITORY: teknokent-backend
   EC2_NAME_TAG: teknokent-app
   RDS_INSTANCE_ID: teknokent-postgres
-  HEALTH_URL: https://d2ulpskrb4nc9m.cloudfront.net/api/health
+  HEALTH_URL: https://api.menton.com.tr/api/health
   HEALTH_TIMEOUT_SECONDS: "240"
   PRE_DEPLOY_SNAPSHOTS_KEPT: "5"
 

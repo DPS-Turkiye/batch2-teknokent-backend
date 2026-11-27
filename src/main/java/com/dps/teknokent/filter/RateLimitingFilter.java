@@ -143,11 +143,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 	}
 
 	/**
-	 * CloudFront appends the address it saw to whatever X-Forwarded-For the caller sent, so only the last
+	 * The ALB appends the address it saw to whatever X-Forwarded-For the caller sent, so only the last
 	 * entry is ours; the first, and X-Real-IP, are whatever the caller chose to write.
 	 */
-	// ponytail: trusts exactly one proxy hop (CloudFront). If 8080 is ever reachable directly, or a load
-	// balancer is added in front, this must key on getRemoteAddr() or skip that many trailing entries.
+	// ponytail: trusts exactly one proxy hop (the ALB, xff_header_processing_mode = append; 8080 accepts only
+	// the ALB's security group). If another proxy is added in front, skip that many trailing entries.
 	static String clientAddress(HttpServletRequest request) {
 		String forwardedFor = request.getHeader("X-Forwarded-For");
 		if (forwardedFor != null && !forwardedFor.isBlank()) {

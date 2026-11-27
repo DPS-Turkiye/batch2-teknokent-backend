@@ -25,7 +25,7 @@ import jakarta.servlet.http.HttpServletResponse;
  *
  * <p>Counted in this instance's memory, not Redis: every proxied request carries Basic, and a Redis round trip on
  * each one would cost more than the counter is worth. The address is {@link RateLimitingFilter#clientAddress}, which
- * trusts the last X-Forwarded-For entry; that is CloudFront's, unless the port is reachable without it.
+ * trusts the last X-Forwarded-For entry; that is the ALB's, the only thing that can reach the port.
  */
 public class BasicLoginThrottleFilter extends OncePerRequestFilter {
 
