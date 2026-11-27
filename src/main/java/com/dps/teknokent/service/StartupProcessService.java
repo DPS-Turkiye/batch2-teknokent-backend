@@ -22,6 +22,7 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
 import com.dps.teknokent.domain.StartupStageState;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProcessAssignmentRequest;
 import com.dps.teknokent.dto.requests.CreateStartupRoundRequest;
@@ -173,7 +174,7 @@ public class StartupProcessService {
 		ActionItem item = actionItemRepository.findByIdAndOrganizationId(assignmentId, organizationId)
 				.filter(StartupProcessService::isAssignment)
 				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
-		boolean handedIn = item.getStatus() == ActionItemStatus.COMPLETED;
+		boolean handedIn = handedInWithFile(item);
 		if (handedIn && !replaceable(item, today())) {
 			throw new ConflictException(Texts.forRequest("error.assignmentReplaceClosed"), REPLACE_CLOSED);
 		}
@@ -209,8 +210,12 @@ public class StartupProcessService {
 	 * closes, as the program's open Ödevler do not.
 	 */
 	static boolean replaceable(ActionItem item, LocalDate today) {
-		return item.getStatus() == ActionItemStatus.COMPLETED
-				&& (item.getDueDate() == null || !today.isAfter(item.getDueDate()));
+		return handedInWithFile(item) && (item.getDueDate() == null || !today.isAfter(item.getDueDate()));
+	}
+
+	// A file-optional Ödev marked done without one has nothing to replace: its first file is a late hand-in.
+	private static boolean handedInWithFile(ActionItem item) {
+		return item.getStatus() == ActionItemStatus.COMPLETED && item.getSubmissionDocumentId() != null;
 	}
 
 	// Whoever gave the Ödev hears that the file changed: the program's coordinators for a program Ödev, else the
@@ -230,6 +235,7 @@ public class StartupProcessService {
 			href = "/organizations/" + organization.getId();
 		}
 		recipients.stream()
+				.filter(recipient -> recipient.getStatus() != UserAccountStatus.DELETED)
 				.filter(recipient -> !recipient.getId().equals(actor.getId()))
 				.forEach(recipient -> notificationService.createAndMail(
 						recipient,

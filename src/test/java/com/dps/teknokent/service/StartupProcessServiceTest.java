@@ -29,6 +29,7 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
 import com.dps.teknokent.domain.StartupStageState;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProcessAssignmentRequest;
 import com.dps.teknokent.dto.requests.CreateStartupRoundRequest;
@@ -638,22 +639,22 @@ class StartupProcessServiceTest {
 
 	@Test
 	void replaceable_isOpenThroughTheDueDayAndClosedAfterIt() {
-		ActionItem handedIn = assignment("Finansal model", StartupStage.FINANCE);
-		handedIn.setStatus(ActionItemStatus.COMPLETED);
-		handedIn.setDueDate(TODAY);
+		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), TODAY);
 
-		assertThat(StartupProcessService.replaceable(handedIn, TODAY)).isTrue();
-		assertThat(StartupProcessService.replaceable(handedIn, TODAY.plusDays(1))).isFalse();
+		assertThat(StartupProcessService.replaceable(finance, TODAY)).isTrue();
+		assertThat(StartupProcessService.replaceable(finance, TODAY.plusDays(1))).isFalse();
 	}
 
 	@Test
-	void replaceable_neverClosesWithoutADueDateAndNeedsAHandIn() {
-		ActionItem handedIn = assignment("Finansal model", StartupStage.FINANCE);
-		handedIn.setStatus(ActionItemStatus.COMPLETED);
+	void replaceable_neverClosesWithoutADueDateAndNeedsAHandedInFile() {
+		ActionItem withFile = handedIn(assignment("Finansal model", StartupStage.FINANCE), null);
 		ActionItem open = assignment("Pazar araştırması", StartupStage.FINANCE);
+		ActionItem doneWithoutFile = programCopy(false);
+		doneWithoutFile.setStatus(ActionItemStatus.COMPLETED);
 
-		assertThat(StartupProcessService.replaceable(handedIn, TODAY.plusYears(1))).isTrue();
+		assertThat(StartupProcessService.replaceable(withFile, TODAY.plusYears(1))).isTrue();
 		assertThat(StartupProcessService.replaceable(open, TODAY)).isFalse();
+		assertThat(StartupProcessService.replaceable(doneWithoutFile, TODAY)).isFalse();
 	}
 
 	@Test
@@ -745,6 +746,67 @@ class StartupProcessServiceTest {
 		verify(notificationService).createAndMail(eq(coordinator), eq(NotificationCategory.STARTUP_ACTIVITY), any(),
 				any(), eq("/coordinator/programs/" + PROGRAM_ID + "/assignments"));
 		verify(notificationService, never()).createAndMail(eq(actingCoordinator), any(), any(), any(), any());
+	}
+
+	@Test
+	void submitAssignment_takesALateFirstFileForAProgramOdevAlreadyMarkedDoneWithoutOne() {
+		Organization organization = startup();
+		ActionItem homework = programCopy(false);
+		homework.setStatus(ActionItemStatus.COMPLETED);
+		homework.setDueDate(today().minusDays(2));
+		StoredDocument document = document(ORG_ID);
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(actionItemRepository.findByIdAndOrganizationId(homework.getId(), ORG_ID))
+				.thenReturn(Optional.of(homework));
+		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
+
+		startupProcessService.submitAssignment(ORG_ID, homework.getId(),
+				new SubmitProcessAssignmentRequest(TEAMMATE_ID, document.getId()));
+
+		assertThat(homework.getSubmissionDocumentId()).isEqualTo(document.getId());
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void submitAssignment_sendingTheSameFileAgainTellsNobody() {
+		Organization organization = startup();
+		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), null);
+		finance.setCreatedBy(user(MENTOR_ID, UserRole.MENTOR, null));
+		StoredDocument document = document(ORG_ID);
+		finance.setSubmissionDocumentId(document.getId());
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(actionItemRepository.findByIdAndOrganizationId(finance.getId(), ORG_ID)).thenReturn(Optional.of(finance));
+		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
+
+		startupProcessService.submitAssignment(ORG_ID, finance.getId(),
+				new SubmitProcessAssignmentRequest(TEAMMATE_ID, document.getId()));
+
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void submitAssignment_replacingAFileDoesNotTellADeletedAccount() {
+		Organization organization = startup();
+		AppUser gone = user(MENTOR_ID, UserRole.MENTOR, null);
+		gone.setStatus(UserAccountStatus.DELETED);
+		ActionItem finance = handedIn(assignment("Finansal model", StartupStage.FINANCE), null);
+		finance.setCreatedBy(gone);
+		StoredDocument document = document(ORG_ID);
+		when(domainLookupService.requireOrganization(ORG_ID)).thenReturn(organization);
+		when(domainLookupService.requireUser(TEAMMATE_ID))
+				.thenReturn(user(TEAMMATE_ID, UserRole.MENTEE, organization));
+		when(actionItemRepository.findByIdAndOrganizationId(finance.getId(), ORG_ID)).thenReturn(Optional.of(finance));
+		when(storedDocumentRepository.findById(document.getId())).thenReturn(Optional.of(document));
+
+		startupProcessService.submitAssignment(ORG_ID, finance.getId(),
+				new SubmitProcessAssignmentRequest(TEAMMATE_ID, document.getId()));
+
+		assertThat(finance.getSubmissionDocumentId()).isEqualTo(document.getId());
+		verify(notificationService, never()).createAndMail(any(), any(), any(), any(), any());
 	}
 
 	@Test
