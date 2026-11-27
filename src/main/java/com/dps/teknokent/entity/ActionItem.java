@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.dps.teknokent.domain.ActionItemStatus;
@@ -29,6 +30,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+// Only what changed is written: a coordinator's Ödev edit and a team's hand-in may update the same copy at once.
+@DynamicUpdate
 @Entity
 @Table(name = "action_item", uniqueConstraints = @UniqueConstraint(name = "uq_action_item_program_assignment", columnNames = {
 		"program_assignment_id", "organization_id" }))

@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dps.teknokent.dto.requests.CreateProgramAssignmentRequest;
+import com.dps.teknokent.dto.requests.UpdateProgramAssignmentRequest;
 import com.dps.teknokent.dto.responses.ProgramAssignmentResponse;
 import com.dps.teknokent.security.CurrentActor;
 import com.dps.teknokent.service.ProgramAssignmentService;
@@ -44,5 +46,14 @@ public class ProgramAssignmentController {
 			@PathVariable UUID programId,
 			@Valid @RequestBody CreateProgramAssignmentRequest request) {
 		return programAssignmentService.create(CurrentActor.resolve(request.actorId()), programId, request);
+	}
+
+	@PutMapping("/{assignmentId}")
+	public ProgramAssignmentResponse update(
+			@PathVariable UUID programId,
+			@PathVariable UUID assignmentId,
+			@Valid @RequestBody UpdateProgramAssignmentRequest request) {
+		return programAssignmentService.update(CurrentActor.resolve(request.actorId()), programId, assignmentId,
+				request);
 	}
 }
