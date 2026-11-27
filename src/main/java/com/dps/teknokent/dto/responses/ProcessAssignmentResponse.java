@@ -28,22 +28,24 @@ public record ProcessAssignmentResponse(
 		Instant createdAt,
 		@Nullable UUID phaseId,
 		@Nullable UUID programAssignmentId,
-		boolean fileRequired) {
+		boolean fileRequired,
+		boolean replaceable) {
 
 	/**
 	 * {@code phaseId}: the program phase the Ödev belongs to, or null ("Fazsız görevler").
 	 * {@code programAssignmentId}: the program Ödev this copy came from ("Ödev ver"), or null.
 	 * {@code fileRequired}: whether it is handed in only with a file; every Ödev but a program one that asks for no
 	 * file is.
+	 * {@code replaceable}: whether its handed-in file may still be swapped (until the end of the due day).
 	 */
 	public static ProcessAssignmentResponse fromEntity(ActionItem item, @Nullable String submissionFilename,
-			@Nullable UUID phaseId) {
+			@Nullable UUID phaseId, boolean replaceable) {
 		AppUser creator = item.getCreatedBy();
 		ProgramAssignment program = item.getProgramAssignment();
 		return new ProcessAssignmentResponse(item.getId(), item.getRound() == null ? null : item.getRound().getId(),
 				item.getStage(), item.getTitle(), item.getDescription(), item.getStatus(), item.getDueDate(),
 				item.getSubmissionDocumentId(), submissionFilename, creator == null ? null : creator.getFullName(),
 				creator == null ? null : creator.getRole(), item.getCreatedAt(), phaseId,
-				program == null ? null : program.getId(), program == null || program.isFileRequired());
+				program == null ? null : program.getId(), program == null || program.isFileRequired(), replaceable);
 	}
 }

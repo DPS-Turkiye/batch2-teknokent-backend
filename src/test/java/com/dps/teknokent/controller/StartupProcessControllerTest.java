@@ -65,7 +65,7 @@ class StartupProcessControllerTest {
 				"MVP test turu", StartupStage.MVP, LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 31), PHASE_ID);
 		ProcessAssignmentResponse assignment = new ProcessAssignmentResponse(ASSIGNMENT_ID, ROUND_ID,
 				StartupStage.FINANCE, "Finansal model", null, ActionItemStatus.OPEN, null, null, null, null, null,
-				Instant.parse("2026-08-10T09:00:00Z"), PHASE_ID, null, true);
+				Instant.parse("2026-08-10T09:00:00Z"), PHASE_ID, null, true, false);
 		ProcessPhaseResponse phase = new ProcessPhaseResponse(PHASE_ID, "Çözüm", 1, LocalDate.of(2026, 8, 1),
 				LocalDate.of(2026, 8, 31), "MVP", StartupStageState.CURRENT);
 		return new StartupProcessResponse(ORG_ID, currentStage,
