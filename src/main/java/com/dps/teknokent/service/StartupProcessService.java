@@ -22,6 +22,7 @@ import com.dps.teknokent.domain.MentorshipRequestStatus;
 import com.dps.teknokent.domain.NotificationCategory;
 import com.dps.teknokent.domain.StartupStage;
 import com.dps.teknokent.domain.StartupStageState;
+import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
 import com.dps.teknokent.dto.requests.CreateProcessAssignmentRequest;
 import com.dps.teknokent.dto.requests.CreateStartupRoundRequest;
@@ -35,17 +36,23 @@ import com.dps.teknokent.dto.responses.StartupStageResponse;
 import com.dps.teknokent.entity.ActionItem;
 import com.dps.teknokent.entity.AppUser;
 import com.dps.teknokent.entity.Organization;
+import com.dps.teknokent.entity.ProgramAssignment;
 import com.dps.teknokent.entity.ProgramPhase;
 import com.dps.teknokent.entity.StartupRound;
 import com.dps.teknokent.entity.StoredDocument;
+import com.dps.teknokent.exception.ConflictException;
 import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
+import com.dps.teknokent.repository.AppUserRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
+import com.dps.teknokent.repository.ProgramCoordinatorRepository;
 import com.dps.teknokent.repository.ProgramPhaseRepository;
+import com.dps.teknokent.repository.ProgramRepository;
 import com.dps.teknokent.repository.StartupRoundRepository;
 import com.dps.teknokent.repository.StoredDocumentRepository;
+import com.dps.teknokent.util.ProgramCoordination;
 import com.dps.teknokent.util.TextUtils;
 import com.dps.teknokent.util.Texts;
 
@@ -61,6 +68,8 @@ import lombok.RequiredArgsConstructor;
 public class StartupProcessService {
 
 	private static final ZoneId PROGRAM_ZONE = ZoneId.of("Europe/Istanbul");
+	/** The 409 code the web shows the "replace window closed" text for. */
+	static final String REPLACE_CLOSED = "ASSIGNMENT_REPLACE_CLOSED";
 
 	private final DomainLookupService domainLookupService;
 	private final OrganizationRepository organizationRepository;
@@ -73,6 +82,9 @@ public class StartupProcessService {
 	private final ProgramPhaseRepository programPhaseRepository;
 	private final StartupAccessService startupAccessService;
 	private final ProgramAssignmentService programAssignmentService;
+	private final ProgramRepository programRepository;
+	private final ProgramCoordinatorRepository programCoordinatorRepository;
+	private final AppUserRepository appUserRepository;
 
 	/** Not read-only: a team that joined late is handed the program's open Ödevler here (ProgramAssignmentService). */
 	@Transactional
@@ -158,10 +170,15 @@ public class StartupProcessService {
 	public StartupProcessResponse submitAssignment(
 			UUID organizationId, UUID assignmentId, SubmitProcessAssignmentRequest request) {
 		Organization organization = domainLookupService.requireOrganization(organizationId);
-		requireTeamOrEditor(organization, request.actorId());
+		AppUser actor = requireTeamOrEditor(organization, request.actorId());
 		ActionItem item = actionItemRepository.findByIdAndOrganizationId(assignmentId, organizationId)
 				.filter(StartupProcessService::isAssignment)
 				.orElseThrow(() -> new ResourceNotFoundException("Assignment not found: " + assignmentId));
+		boolean handedIn = handedInWithFile(item);
+		if (handedIn && !replaceable(item, today())) {
+			throw new ConflictException(Texts.forRequest("error.assignmentReplaceClosed"), REPLACE_CLOSED);
+		}
+		UUID previousDocumentId = item.getSubmissionDocumentId();
 		UUID documentId = request.documentId();
 		if (documentId == null) {
 			if (item.getProgramAssignment() == null || item.getProgramAssignment().isFileRequired()) {
@@ -182,7 +199,51 @@ public class StartupProcessService {
 		}
 		item.setStatus(ActionItemStatus.COMPLETED);
 		actionItemRepository.saveAndFlush(item);
+		if (handedIn && previousDocumentId != null && documentId != null && !documentId.equals(previousDocumentId)) {
+			notifyReplaced(item, organization, actor);
+		}
 		return describe(organization, today());
+	}
+
+	/**
+	 * A handed-in Ödev's file may be swapped until the end of its due day (Turkey time); one without a due date never
+	 * closes, as the program's open Ödevler do not.
+	 */
+	static boolean replaceable(ActionItem item, LocalDate today) {
+		return handedInWithFile(item) && (item.getDueDate() == null || !today.isAfter(item.getDueDate()));
+	}
+
+	// A file-optional Ödev marked done without one has nothing to replace: its first file is a late hand-in.
+	private static boolean handedInWithFile(ActionItem item) {
+		return item.getStatus() == ActionItemStatus.COMPLETED && item.getSubmissionDocumentId() != null;
+	}
+
+	// Whoever gave the Ödev hears that the file changed: the program's coordinators for a program Ödev, else the
+	// person who set it. The one who swapped it is never told about their own change.
+	private void notifyReplaced(ActionItem item, Organization organization, AppUser actor) {
+		ProgramAssignment programAssignment = item.getProgramAssignment();
+		List<AppUser> recipients;
+		String href;
+		if (programAssignment != null) {
+			recipients = programRepository.findById(programAssignment.getProgramId())
+					.map(program -> ProgramCoordination.runners(program, programCoordinatorRepository,
+							appUserRepository))
+					.orElse(List.of());
+			href = "/coordinator/programs/" + programAssignment.getProgramId() + "/assignments";
+		} else {
+			recipients = item.getCreatedBy() == null ? List.of() : List.of(item.getCreatedBy());
+			href = "/organizations/" + organization.getId();
+		}
+		recipients.stream()
+				.filter(recipient -> recipient.getStatus() != UserAccountStatus.DELETED)
+				.filter(recipient -> !recipient.getId().equals(actor.getId()))
+				.forEach(recipient -> notificationService.createAndMail(
+						recipient,
+						NotificationCategory.STARTUP_ACTIVITY,
+						Texts.get(recipient, "notification.homeworkReplaced.title"),
+						Texts.get(recipient, "notification.homeworkReplaced.body", organization.getName(),
+								item.getTitle()),
+						href));
 	}
 
 	StartupProcessResponse describe(Organization organization, LocalDate today) {
@@ -206,7 +267,8 @@ public class StartupProcessService {
 				rounds.stream().map(round -> roundOf(round, phases)).toList(),
 				assignments.stream()
 						.map(item -> ProcessAssignmentResponse.fromEntity(item,
-								filenames.get(item.getSubmissionDocumentId()), phaseOf(item, phases)))
+								filenames.get(item.getSubmissionDocumentId()), phaseOf(item, phases),
+								replaceable(item, today)))
 						.toList(),
 				cards.stream()
 						.filter(card -> card.state() == StartupStageState.CURRENT)
@@ -351,7 +413,7 @@ public class StartupProcessService {
 		return actor;
 	}
 
-	private void requireTeamOrEditor(Organization organization, UUID actorId) {
+	private AppUser requireTeamOrEditor(Organization organization, UUID actorId) {
 		AppUser actor = domainLookupService.requireUser(actorId);
 		boolean teamMember = actor.getOrganization() != null
 				&& organization.getId().equals(actor.getOrganization().getId());
@@ -359,6 +421,7 @@ public class StartupProcessService {
 			throw new InvalidRequestException(
 					"Only the startup's team, its mentors, an admin or a coordinator of its program can do this");
 		}
+		return actor;
 	}
 
 	private boolean isEditor(Organization organization, AppUser actor) {
