@@ -27,7 +27,7 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, UUID> {
 
 	Optional<ActionItem> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
-	boolean existsBySubmissionDocumentIdAndIdNot(UUID submissionDocumentId, UUID id);
+	boolean existsBySubmissionDocumentId(UUID submissionDocumentId);
 
 	List<ActionItem> findByOrganizationIdAndOwnerIdAndStatusIn(
 			UUID organizationId, UUID ownerId, Collection<ActionItemStatus> statuses);
