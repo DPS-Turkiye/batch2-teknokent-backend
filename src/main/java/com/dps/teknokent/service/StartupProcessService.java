@@ -48,6 +48,7 @@ import com.dps.teknokent.exception.InvalidRequestException;
 import com.dps.teknokent.exception.ResourceNotFoundException;
 import com.dps.teknokent.repository.ActionItemRepository;
 import com.dps.teknokent.repository.AppUserRepository;
+import com.dps.teknokent.repository.DocumentRequestUploadRepository;
 import com.dps.teknokent.repository.MentorshipRequestRepository;
 import com.dps.teknokent.repository.OrganizationRepository;
 import com.dps.teknokent.repository.ProgramCoordinatorRepository;
@@ -94,6 +95,7 @@ public class StartupProcessService {
 	private final ProgramCoordinatorRepository programCoordinatorRepository;
 	private final AppUserRepository appUserRepository;
 	private final StoredDocumentShareRepository storedDocumentShareRepository;
+	private final DocumentRequestUploadRepository documentRequestUploadRepository;
 	private final ObjectStorage objectStorage;
 
 	/** Not read-only: a team that joined late is handed the program's open Ödevler here (ProgramAssignmentService). */
@@ -218,8 +220,8 @@ public class StartupProcessService {
 	/**
 	 * "Kaldır": the team takes its handed-in file back, in the same window as a swap (until the end of the due day),
 	 * and the Ödev is open again as if never handed in. A file uploaded for the Ödev goes with it (row now, stored
-	 * object once the deletion has committed); a file picked from Dosyalar, or one another Ödev still uses, is only
-	 * detached.
+	 * object once the deletion has committed); a file picked from Dosyalar, or one another Ödev or a document request
+	 * still uses, is only detached.
 	 */
 	@Transactional
 	public StartupProcessResponse withdrawSubmission(UUID organizationId, UUID assignmentId, UUID actorId) {
@@ -245,6 +247,8 @@ public class StartupProcessService {
 				.filter(document -> organizationId.equals(document.getOrganizationId()))
 				.filter(document -> !actionItemRepository.existsBySubmissionDocumentIdAndIdNot(documentId,
 						item.getId()))
+				// A mentor's document request may hold the same file (its link has no ON DELETE rule).
+				.filter(document -> !documentRequestUploadRepository.existsByStoredDocumentId(documentId))
 				.ifPresent(this::deleteWithItsObject);
 		return describe(organization, today());
 	}

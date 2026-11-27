@@ -11,6 +11,8 @@ import com.dps.teknokent.entity.DocumentRequestUpload;
 
 public interface DocumentRequestUploadRepository extends JpaRepository<DocumentRequestUpload, UUID> {
 
+	boolean existsByStoredDocumentId(UUID storedDocumentId);
+
 	List<DocumentRequestUpload> findByItemIdOrderByCreatedAtAsc(UUID itemId);
 
 	List<DocumentRequestUpload> findByItemIdInOrderByCreatedAtAsc(List<UUID> itemIds);
