@@ -83,6 +83,17 @@ public class SecurityConfig {
 	private static final String NOTIFICATION_PATH = "/api/notifications/**";
 
 	/**
+	 * Paths the browser now calls directly with its own token instead of through the Next.js proxy. The bearer
+	 * filter decides which of them a given token may reach; this only lets the browser send the request.
+	 */
+	private static final String[] BROWSER_API_PATHS = {
+			"/api/auth/me",
+			"/api/users/*/profile",
+			"/api/mentors/**",
+			"/api/student/profile-completion",
+	};
+
+	/**
 	 * Sign-up and onboarding bind the new account to the caller's Firebase login. On the shared service
 	 * credentials there is no login to bind, so a row made there could later be claimed by anyone who signs up
 	 * with its address. FirebaseBearerFilter grants REGISTERING here to any valid Firebase token.
@@ -146,6 +157,16 @@ public class SecurityConfig {
 		notificationConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 		notificationConfig.setAllowCredentials(false);
 		source.registerCorsConfiguration(NOTIFICATION_PATH, notificationConfig);
+
+		CorsConfiguration browserApiConfig = new CorsConfiguration();
+		browserApiConfig.setAllowedOriginPatterns(Arrays.asList(documentsAllowedOrigins));
+		browserApiConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+		browserApiConfig.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+		browserApiConfig.setAllowCredentials(false);
+		browserApiConfig.setExposedHeaders(List.of(RateLimitingFilter.RETRY_AFTER_HEADER));
+		for (String path : BROWSER_API_PATHS) {
+			source.registerCorsConfiguration(path, browserApiConfig);
+		}
 
 		return source;
 	}

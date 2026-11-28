@@ -471,7 +471,10 @@ class FirebaseBearerFilterTest {
 					{ "PATCH", "/api/users/" + OTHER_USER_ID + "/status" },
 					{ "GET", "/api/meetings" },
 					{ "DELETE", "/api/meetings/" + OTHER_USER_ID },
-					{ "GET", "/api/profile-analyses/latest" } }) {
+					{ "GET", "/api/profile-analyses/latest" },
+					{ "POST", "/api/mentors/" + OTHER_USER_ID + "/availability" },
+					{ "DELETE", "/api/mentors/" + OTHER_USER_ID + "/availability-rules/" + OTHER_USER_ID },
+					{ "GET", "/api/mentors/" + OTHER_USER_ID + "/availability-settings" } }) {
 				MockHttpServletResponse response = new MockHttpServletResponse();
 				MockFilterChain chain = new MockFilterChain();
 
@@ -500,7 +503,18 @@ class FirebaseBearerFilterTest {
 				{ "DELETE", "/api/assistant/bots/google_meet/abc-defg-hij" },
 				{ "POST", "/api/assistant/bots/google_meet/abc-defg-hij/report" },
 				{ "GET", "/api/users/" + USER_ID + "/profile" },
-				{ "PUT", "/api/users/" + USER_ID + "/profile" } }) {
+				{ "PUT", "/api/users/" + USER_ID + "/profile" },
+				{ "GET", "/api/mentors/" + USER_ID },
+				{ "PUT", "/api/mentors/" + USER_ID },
+				{ "GET", "/api/mentors/" + USER_ID + "/availability" },
+				{ "POST", "/api/mentors/" + USER_ID + "/availability" },
+				{ "DELETE", "/api/mentors/" + USER_ID + "/availability/" + OTHER_USER_ID },
+				{ "GET", "/api/mentors/" + USER_ID + "/availability-rules" },
+				{ "POST", "/api/mentors/" + USER_ID + "/availability-rules" },
+				{ "GET", "/api/mentors/" + USER_ID + "/availability-settings" },
+				{ "PUT", "/api/mentors/" + USER_ID + "/availability-settings" },
+				{ "GET", "/api/student/profile-completion" },
+				{ "PUT", "/api/student/profile-completion" } }) {
 			MockFilterChain chain = new MockFilterChain();
 
 			filter.doFilter(request(call[0], call[1], "Bearer good"), new MockHttpServletResponse(), chain);

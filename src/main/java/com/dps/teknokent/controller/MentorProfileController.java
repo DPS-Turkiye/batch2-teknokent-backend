@@ -63,22 +63,19 @@ public class MentorProfileController {
 	public MentorProfileResponse updateProfile(
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateMentorProfileRequest request) {
-		if (!CurrentActor.resolve(id).equals(id)) {
-			throw new InvalidRequestException("You can only edit your own mentor profile");
-		}
+		requireOwn(id, "You can only edit your own mentor profile");
 		return mentorProfileService.updateProfile(id, request);
 	}
 
 	@GetMapping("/{id}/availability-rules")
 	public List<MentorAvailabilityRuleResponse> findAvailabilityRules(@PathVariable UUID id) {
+		requireOwn(id, "You can only read your own availability rules");
 		return mentorProfileService.findAvailabilityRules(id);
 	}
 
 	@GetMapping("/{id}/availability-settings")
 	public MentorAvailabilitySettingsResponse findAvailabilitySettings(@PathVariable UUID id) {
-		if (!CurrentActor.resolve(id).equals(id)) {
-			throw new InvalidRequestException("You can only read your own availability settings");
-		}
+		requireOwn(id, "You can only read your own availability settings");
 		return mentorProfileService.findAvailabilitySettings(id);
 	}
 
@@ -86,9 +83,7 @@ public class MentorProfileController {
 	public MentorAvailabilitySettingsResponse updateAvailabilitySettings(
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateMentorAvailabilitySettingsRequest request) {
-		if (!CurrentActor.resolve(id).equals(id)) {
-			throw new InvalidRequestException("You can only edit your own availability settings");
-		}
+		requireOwn(id, "You can only edit your own availability settings");
 		return mentorProfileService.updateAvailabilitySettings(id, request);
 	}
 
@@ -97,12 +92,14 @@ public class MentorProfileController {
 	public MentorAvailabilityRuleResponse createAvailabilityRule(
 			@PathVariable UUID id,
 			@Valid @RequestBody CreateMentorAvailabilityRuleRequest request) {
+		requireOwn(id, "You can only change your own availability");
 		return mentorProfileService.createAvailabilityRule(id, request);
 	}
 
 	@DeleteMapping("/{id}/availability-rules/{ruleId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteAvailabilityRule(@PathVariable UUID id, @PathVariable UUID ruleId) {
+		requireOwn(id, "You can only change your own availability");
 		mentorProfileService.deleteAvailabilityRule(id, ruleId);
 	}
 
@@ -117,12 +114,24 @@ public class MentorProfileController {
 	public MentorAvailabilitySlotResponse createAvailabilitySlot(
 			@PathVariable UUID id,
 			@Valid @RequestBody CreateMentorAvailabilitySlotRequest request) {
+		requireOwn(id, "You can only change your own availability");
 		return mentorProfileService.createAvailabilitySlot(id, request);
 	}
 
 	@DeleteMapping("/{id}/availability/{slotId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteAvailabilitySlot(@PathVariable UUID id, @PathVariable UUID slotId) {
+		requireOwn(id, "You can only change your own availability");
 		mentorProfileService.deleteAvailabilitySlot(id, slotId);
+	}
+
+	/**
+	 * A signed-in mentor may only act on their own id. On the proxy's service credentials the id is the one the
+	 * proxy took from its session, which {@link CurrentActor#resolve} returns as is.
+	 */
+	private static void requireOwn(UUID id, String message) {
+		if (!CurrentActor.resolve(id).equals(id)) {
+			throw new InvalidRequestException(message);
+		}
 	}
 }

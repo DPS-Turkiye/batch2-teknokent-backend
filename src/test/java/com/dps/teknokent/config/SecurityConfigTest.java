@@ -65,6 +65,26 @@ class SecurityConfigTest {
 		assertThat(notifications.getAllowedMethods()).contains("PATCH", "DELETE");
 	}
 
+	// The areas moved off the Next.js proxy: the browser calls them with its own token, so it needs CORS for them.
+	@Test
+	void outsideDevTheBrowserApiPathsAnswerTheFrontendsOriginForEveryMethod() {
+		CorsConfigurationSource source = corsFor("prod");
+
+		for (String path : List.of("/api/auth/me", "/api/users/41/profile", "/api/mentors/41",
+				"/api/mentors/41/availability/7",
+				"/api/student/profile-completion")) {
+			CorsConfiguration cors = source.getCorsConfiguration(request(path));
+
+			assertThat(cors.checkOrigin(FRONTEND)).as(path).isEqualTo(FRONTEND);
+			assertThat(cors.checkOrigin("https://evil.example")).as(path).isNull();
+			assertThat(cors.getAllowCredentials()).isFalse();
+			assertThat(cors.getAllowedMethods()).contains("GET", "POST", "PUT", "DELETE");
+			assertThat(cors.getAllowedHeaders()).containsExactly("Authorization", "Content-Type");
+			assertThat(cors.getExposedHeaders()).containsExactly(RateLimitingFilter.RETRY_AFTER_HEADER);
+		}
+		assertThat(source.getCorsConfiguration(request("/api/users/41/summary"))).isNull();
+	}
+
 	// spring.security.user.password unset must not turn into "any password is fine".
 	@Test
 	void theServiceCredentialIsComparedAsIsAndNeverMatchesAMissingOne() {

@@ -7,7 +7,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,10 +25,13 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.dps.teknokent.config.SecurityConfig;
 import com.dps.teknokent.domain.UserAccountStatus;
 import com.dps.teknokent.domain.UserRole;
+import com.dps.teknokent.dto.requests.CreateMentorAvailabilityRuleRequest;
+import com.dps.teknokent.dto.requests.CreateMentorAvailabilitySlotRequest;
 import com.dps.teknokent.dto.requests.UpdateMentorProfileRequest;
 import com.dps.teknokent.dto.responses.MentorProfileResponse;
 import com.dps.teknokent.dto.responses.MentorRatingResponse;
@@ -157,6 +162,71 @@ class MentorProfileControllerTest {
 				.andExpect(status().isOk());
 
 		verify(mentorProfileService).updateProfile(eq(signedIn), any(UpdateMentorProfileRequest.class));
+	}
+
+	private static final String RULE = """
+			{"dayOfWeek": "MONDAY", "startTime": "10:00", "endTime": "12:00", "slotMinutes": 30}""";
+	private static final String SLOT = """
+			{"startsAt": "2099-01-05T10:00:00Z", "durationMinutes": 30}""";
+
+	// The browser reaches these with the mentor's own token; the id in the path is the only thing naming whose
+	// availability changes, so a token may only name itself.
+	@Test
+	void refusesTouchingAnotherMentorsAvailability() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000701");
+		UUID otherMentor = UUID.fromString("00000000-0000-0000-0000-000000000702");
+		UUID item = UUID.fromString("00000000-0000-0000-0000-000000000703");
+
+		for (MockHttpServletRequestBuilder call : List.of(
+				get("/api/mentors/{id}/availability-rules", otherMentor),
+				post("/api/mentors/{id}/availability-rules", otherMentor)
+						.contentType(MediaType.APPLICATION_JSON).content(RULE),
+				delete("/api/mentors/{id}/availability-rules/{ruleId}", otherMentor, item),
+				post("/api/mentors/{id}/availability", otherMentor)
+						.contentType(MediaType.APPLICATION_JSON).content(SLOT),
+				delete("/api/mentors/{id}/availability/{slotId}", otherMentor, item))) {
+			mockMvc.perform(call.with(authentication(signedInAs(signedIn))))
+					.andExpect(status().isBadRequest());
+		}
+
+		verifyNoInteractions(mentorProfileService);
+	}
+
+	@Test
+	void letsAMentorChangeTheirOwnAvailability() throws Exception {
+		UUID signedIn = UUID.fromString("00000000-0000-0000-0000-000000000701");
+		UUID item = UUID.fromString("00000000-0000-0000-0000-000000000703");
+
+		mockMvc.perform(post("/api/mentors/{id}/availability", signedIn)
+				.with(authentication(signedInAs(signedIn)))
+				.contentType(MediaType.APPLICATION_JSON).content(SLOT))
+				.andExpect(status().isCreated());
+		mockMvc.perform(post("/api/mentors/{id}/availability-rules", signedIn)
+				.with(authentication(signedInAs(signedIn)))
+				.contentType(MediaType.APPLICATION_JSON).content(RULE))
+				.andExpect(status().isCreated());
+		mockMvc.perform(delete("/api/mentors/{id}/availability/{slotId}", signedIn, item)
+				.with(authentication(signedInAs(signedIn))))
+				.andExpect(status().isNoContent());
+
+		verify(mentorProfileService).createAvailabilitySlot(eq(signedIn),
+				any(CreateMentorAvailabilitySlotRequest.class));
+		verify(mentorProfileService).createAvailabilityRule(eq(signedIn),
+				any(CreateMentorAvailabilityRuleRequest.class));
+		verify(mentorProfileService).deleteAvailabilitySlot(signedIn, item);
+	}
+
+	// Until the proxy is gone it still names the mentor from its session, on the service credentials.
+	@Test
+	void stillLetsTheServiceCredentialsChangeTheMentorTheyName() throws Exception {
+		UUID mentor = UUID.fromString("00000000-0000-0000-0000-000000000701");
+
+		mockMvc.perform(post("/api/mentors/{id}/availability", mentor)
+				.with(user("test-user"))
+				.contentType(MediaType.APPLICATION_JSON).content(SLOT))
+				.andExpect(status().isCreated());
+
+		verify(mentorProfileService).createAvailabilitySlot(eq(mentor), any(CreateMentorAvailabilitySlotRequest.class));
 	}
 
 	@Test

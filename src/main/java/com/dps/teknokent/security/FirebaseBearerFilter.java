@@ -77,6 +77,9 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 	private static final Pattern FOUNDER_CHANGE_PATH = Pattern.compile(
 			"/api/organizations/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/founder");
 
+	/** A student's own interests and goal; the controller takes the actor from the token and nothing else. */
+	private static final String STUDENT_PROFILE_COMPLETION_PATH = "/api/student/profile-completion";
+
 	private final FirebaseTokenVerifier firebaseTokenVerifier;
 	private final AppUserRepository appUserRepository;
 	/**
@@ -242,7 +245,19 @@ public class FirebaseBearerFilter extends OncePerRequestFilter {
 				|| (isGetOrPost(request) && TEAM_MOVE_PATH.matcher(uri).matches())
 				|| (isGetOrPost(request) && FOUNDER_CHANGE_PATH.matcher(uri).matches())
 				|| isOwnMentorProfileUpdate(request, user)
-				|| isOwnUserProfileUpdate(request, user);
+				|| isOwnUserProfileUpdate(request, user)
+				|| isOwnMentorPath(request, user)
+				|| STUDENT_PROFILE_COMPLETION_PATH.equals(uri);
+	}
+
+	/**
+	 * The signed-in mentor's own profile and availability (/api/mentors/{own id} and below). Each of those
+	 * endpoints refuses an id other than the token's own, so the path is only opened for that id.
+	 */
+	private static boolean isOwnMentorPath(HttpServletRequest request, AppUser user) {
+		String own = MENTOR_PROFILE_PATH_PREFIX + user.getId();
+		String uri = request.getRequestURI();
+		return own.equals(uri) || uri.startsWith(own + "/");
 	}
 
 	private static boolean isGetOrPost(HttpServletRequest request) {
